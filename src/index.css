@@ -1,0 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+:root {
+  --color-teal-primary: #0E8388;
+  --color-teal-dark: #0B5558;
+  --color-teal-light: #2E9A9E;
+  --color-emerald-primary: #10B981;
+  --color-emerald-light: #34D399;
+  --color-terracotta-primary: #C86D39;
+  --color-terracotta-dark: #A35127;
+  --color-cream-bg: #FAF9F6;
+  --color-dark-slate: #0F172A;
+
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  color-scheme: light;
+  background-color: var(--color-cream-bg);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background-color: #0d131a;
+  color: #0F172A;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.glass-panel-dark {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0F172A;
+}
+::-webkit-scrollbar-thumb {
+  background: #0E8388;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #10B981;
+}
+
+/* 2-Card Fullscreen Split Screen Mechanics (Opción 1: 50%/50% Fijo y Estable) */
+.split-hero-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .split-hero-container {
+    flex-direction: row;
+  }
+}
+
+.split-card {
+  position: relative;
+  flex: 1 1 50%;
+  height: 100%;
+  overflow: hidden;
+  cursor: pointer;
+  /* Ancho 50% fijo y estable sin desplazamientos al hacer hover */
+}
+
+/* Internal Background Zoom & Lighting Effect on Hover */
+.split-card-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.5s ease;
+}
+
+.split-card:hover .split-card-bg {
+  transform: scale(1.08);
+}
