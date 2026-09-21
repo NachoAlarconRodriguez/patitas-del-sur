@@ -282,7 +282,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         {/* Product Title */}
         <h3
           onClick={handleCardClick}
-          className="text-base font-black text-slate-900 group-hover:text-[#0E8388] transition-colors cursor-pointer line-clamp-2 leading-snug"
+          className="font-molen font-bold text-lg sm:text-xl text-slate-900 group-hover:text-[#0E8388] transition-colors cursor-pointer line-clamp-2 leading-snug tracking-tight"
         >
           {product.name}
         </h3>
@@ -322,12 +322,14 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         </div>
 
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onAddToCart(product);
           }}
-          className="w-10 h-10 rounded-full bg-[#0E8388] text-white flex items-center justify-center hover:bg-[#0A3E40] hover:scale-105 active:scale-95 transition-all shadow-md"
+          className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-full bg-[#0E8388] text-white flex items-center justify-center hover:bg-[#0A3E40] hover:scale-105 active:scale-95 transition-all shadow-md cursor-pointer"
           title="Agregar al Carrito"
+          aria-label={`Agregar ${product.name} al carrito`}
         >
           <ShoppingBag className="w-4 h-4" />
         </button>

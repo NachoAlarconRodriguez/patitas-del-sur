@@ -56,7 +56,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         {/* Header Bar */}
         <div className="p-6 bg-gradient-to-r from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1] border-b border-slate-200/60 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Logo className="h-9" />
+            <Logo className="h-12 sm:h-14" />
           </div>
           <button
             onClick={onClose}

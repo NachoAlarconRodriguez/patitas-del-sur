@@ -193,6 +193,7 @@ export default function PromoCarousel({ petType = 'perros', onAddToCart, onSelec
   ];
 
   const promos = petType === 'perros' ? dogPromos : catPromos;
+  const [touchStartX, setTouchStartX] = useState(0);
 
   // Auto-play interval (5 seconds)
   useEffect(() => {
@@ -208,6 +209,20 @@ export default function PromoCarousel({ petType = 'perros', onAddToCart, onSelec
 
   const handleNext = () => {
     setCurrentSlide((prev) => (prev + 1) % promos.length);
+  };
+
+  const handleTouchStart = (e) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e) => {
+    const touchEndX = e.changedTouches[0].clientX;
+    const diff = touchStartX - touchEndX;
+    if (diff > 45) {
+      handleNext();
+    } else if (diff < -45) {
+      handlePrev();
+    }
   };
 
   const activePromo = promos[currentSlide];
@@ -234,7 +249,11 @@ export default function PromoCarousel({ petType = 'perros', onAddToCart, onSelec
   const activeColor = petType === 'perros' ? '#10B981' : '#C86D39';
 
   return (
-    <div className="relative w-full rounded-3xl overflow-hidden shadow-xl shadow-slate-200/60 border border-slate-200/80 select-none transition-all duration-700 min-h-[380px] md:min-h-[440px]">
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full rounded-3xl overflow-hidden shadow-xl shadow-slate-200/60 border border-slate-200/80 select-none transition-all duration-700 min-h-[380px] md:min-h-[440px]"
+    >
       
       {/* Background Gradient & Full Product Image */}
       <div className={`absolute inset-0 w-full h-full bg-gradient-to-r ${activePromo.bgGradient}`}>
@@ -265,7 +284,7 @@ export default function PromoCarousel({ petType = 'perros', onAddToCart, onSelec
           </div>
 
           {/* Title */}
-          <h2 className={`text-3xl md:text-5xl font-black ${activePromo.textColor} tracking-tight leading-tight`}>
+          <h2 className={`font-molen font-bold text-3xl md:text-4xl lg:text-5xl ${activePromo.textColor} tracking-tight leading-[1.08] max-w-xl`}>
             {activePromo.title}
           </h2>
 

@@ -18,6 +18,8 @@ import Footer from './components/Footer';
 import CartDrawer from './components/CartDrawer';
 import ProductModal from './components/ProductModal';
 import AuthModal from './components/AuthModal';
+import Preloader from './components/Preloader';
+import BottomNavBar from './components/BottomNavBar';
 
 // Helper component to scroll to top on route navigation
 function ScrollToTop() {
@@ -153,6 +155,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#0E8388] selection:text-white">
+      <Preloader />
       <ScrollToTop />
 
       {/* Global Navigation Bar */}
@@ -162,6 +165,7 @@ export default function App() {
         user={user}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
+        onSelectProduct={handleSelectProduct}
       />
 
       {/* Main Content & Routing */}
@@ -169,13 +173,7 @@ export default function App() {
         <Routes>
           <Route
             path="/"
-            element={
-              <HomeView
-                onSelectProduct={handleSelectProduct}
-                user={user}
-                onLogout={handleLogout}
-              />
-            }
+            element={<HomeView />}
           />
           <Route
             path="/perros"
@@ -252,6 +250,14 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+      />
+
+      {/* Mobile Bottom Navigation Bar */}
+      <BottomNavBar
+        cartCount={totalCartCount}
+        onOpenCart={() => setIsCartOpen(true)}
+        user={user}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
     </div>
   );

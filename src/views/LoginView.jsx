@@ -42,11 +42,11 @@ export default function LoginView({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] pt-24 pb-16 px-4 flex items-center justify-center">
+    <div className="min-h-screen bg-[#FAF9F6] pt-20 pb-28 md:pt-24 md:pb-16 px-4 flex items-center justify-center">
       <div className="max-w-4xl w-full bg-white rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden grid grid-cols-1 md:grid-cols-12 animate-in fade-in duration-500">
         
         {/* Left Side: Hero Brand Showcase */}
-        <div className="md:col-span-5 bg-gradient-to-br from-[#0A3E40] via-[#0E8388] to-[#10B981] p-8 md:p-12 text-white flex flex-col justify-between relative overflow-hidden">
+        <div className="order-2 md:order-1 md:col-span-5 bg-gradient-to-br from-[#0A3E40] via-[#0E8388] to-[#10B981] p-8 md:p-12 text-white flex flex-col justify-between relative overflow-hidden">
           <div className="relative z-10 space-y-6">
             <Link to="/" className="inline-flex items-center gap-2 text-xs font-black text-emerald-200 hover:text-white transition-colors bg-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
               <ArrowLeft className="w-4 h-4" />
@@ -91,18 +91,20 @@ export default function LoginView({ onLoginSuccess }) {
         </div>
 
         {/* Right Side: Credentials Form */}
-        <div className="md:col-span-7 p-8 md:p-12 flex flex-col justify-center space-y-6">
+        <div className="order-1 md:order-2 md:col-span-7 p-6 sm:p-8 md:p-12 flex flex-col justify-center space-y-6">
           
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4 gap-4">
             <div>
-              <h3 className="text-xl font-black text-slate-900">
+              <h3 className="text-xl sm:text-2xl font-black text-slate-900">
                 {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
               </h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
+              <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
                 {authMode === 'login' ? 'Ingresa tu correo y contraseña:' : 'Completa tus datos:'}
               </p>
             </div>
-            <Logo className="h-8" />
+            <div className="shrink-0 flex items-center justify-center p-2 rounded-2xl bg-slate-50/80 border border-slate-100 shadow-2xs">
+              <Logo className="h-14 sm:h-16 md:h-18" />
+            </div>
           </div>
 
           {/* Tab Switcher */}

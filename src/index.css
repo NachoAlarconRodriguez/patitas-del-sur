@@ -1,6 +1,21 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
+@font-face {
+  font-family: 'Molen';
+  src: url('/fonts/Molen.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.font-molen {
+  font-family: 'Molen', 'Outfit', sans-serif;
+  letter-spacing: -0.035em;
+  -webkit-text-stroke: 0.35px currentColor;
+  text-rendering: optimizeLegibility;
+}
+
 :root {
   --color-teal-primary: #0E8388;
   --color-teal-dark: #0B5558;
@@ -61,11 +76,20 @@ h1, h2, h3, h4, .font-heading {
   background: #10B981;
 }
 
+/* Safe Area Padding Utilities for iOS & modern mobile devices */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+.pt-safe {
+  padding-top: max(1rem, env(safe-area-inset-top, 1rem));
+}
+
 /* 2-Card Fullscreen Split Screen Mechanics (Opción 1: 50%/50% Fijo y Estable) */
 .split-hero-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   width: 100vw;
   overflow: hidden;
 }
@@ -73,6 +97,7 @@ h1, h2, h3, h4, .font-heading {
 @media (min-width: 768px) {
   .split-hero-container {
     flex-direction: row;
+    height: 100vh;
   }
 }
 

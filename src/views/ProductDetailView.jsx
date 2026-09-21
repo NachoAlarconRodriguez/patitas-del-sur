@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS } from '../data/mockData';
 import ProductCard from '../components/ProductCard';
@@ -341,6 +341,22 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const productImages = product.images && product.images.length > 0 ? product.images : [product.image];
 
+  const mainCtaRef = useRef(null);
+  const [showStickyBar, setShowStickyBar] = useState(false);
+
+  // IntersectionObserver to show mobile sticky bottom buy bar when main CTA scrolls out of view
+  useEffect(() => {
+    if (!mainCtaRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowStickyBar(!entry.isIntersecting);
+      },
+      { threshold: 0.1 }
+    );
+    observer.observe(mainCtaRef.current);
+    return () => observer.disconnect();
+  }, [id, product]);
+
   // Reset wizard steps and active image when product changes
   useEffect(() => {
     setActiveImageIndex(0);
@@ -602,7 +618,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               </div>
 
               {/* Product Name */}
-              <h1 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-tight">
+              <h1 className="font-molen font-bold text-3xl sm:text-4xl md:text-5xl text-slate-900 tracking-tight leading-[1.08]">
                 {product.name}
               </h1>
 
@@ -659,7 +675,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
             </div>
 
             {/* Quantity Spinner & Add to Cart Action */}
-            <div className="flex items-center gap-4 pt-2">
+            <div ref={mainCtaRef} className="flex items-center gap-4 pt-2">
               
               {/* Quantity Spinner */}
               <div className="flex items-center border border-slate-200 rounded-2xl bg-slate-50 p-1">
@@ -1329,6 +1345,55 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
         </section>
       )}
 
+      {/* Mobile Sticky Bottom Buy Bar */}
+      <div
+        className={`md:hidden fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px))] inset-x-0 z-30 p-2.5 bg-white/95 backdrop-blur-xl border-t border-slate-200/90 shadow-[0_-6px_25px_rgba(0,0,0,0.12)] transition-all duration-300 ${
+          showStickyBar ? 'translate-y-0 opacity-100 pointer-events-auto' : 'translate-y-6 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3 px-2 max-w-md mx-auto">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-10 h-10 object-contain rounded-xl bg-slate-50 p-1 border border-slate-100 shrink-0"
+            />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black text-slate-500 uppercase tracking-tight truncate">
+                {selectedWeight}
+              </div>
+              <div className="text-sm font-black text-slate-900 leading-tight">
+                {formatCLP(currentPrice)}
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={handleAddToCart}
+            className={`py-2.5 px-4 rounded-xl font-black text-xs text-white shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
+              addedSuccess
+                ? 'bg-[#10B981]'
+                : isDog
+                ? 'bg-[#0E8388]'
+                : 'bg-[#C86D39]'
+            }`}
+          >
+            {addedSuccess ? (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>¡AGREGADO!</span>
+              </>
+            ) : (
+              <>
+                <ShoppingBag className="w-4 h-4" />
+                <span>AGREGAR</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
     </div>
   );
 }
+

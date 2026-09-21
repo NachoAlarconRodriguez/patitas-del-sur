@@ -46,16 +46,26 @@ export default function ContactoView() {
               </div>
             </div>
 
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-start gap-4">
-              <div className="p-3 rounded-2xl bg-[#10B981]/10 text-[#10B981]">
+            <a
+              href="https://wa.me/56987654321?text=Hola%20Patitas%20del%20Sur%2C%20tengo%20una%20consulta%20nutricional"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-start gap-4 hover:border-emerald-300 hover:shadow-md transition-all group block active:scale-98 cursor-pointer"
+            >
+              <div className="p-3 rounded-2xl bg-[#10B981]/10 text-[#10B981] group-hover:bg-[#10B981] group-hover:text-white transition-colors shrink-0">
                 <Phone className="w-6 h-6" />
               </div>
-              <div>
-                <h4 className="font-bold text-slate-900 text-sm">WhatsApp & Teléfono</h4>
-                <p className="text-slate-500 text-xs mt-1">+56 9 8765 4321</p>
-                <p className="text-slate-400 text-[11px]">Lunes a Viernes 09:00 a 18:00 hrs</p>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-900 text-sm">WhatsApp & Asesoría</h4>
+                  <span className="text-[11px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full">
+                    Abrir Chat 💬
+                  </span>
+                </div>
+                <p className="text-slate-800 text-xs font-black mt-1">+56 9 8765 4321</p>
+                <p className="text-slate-400 text-[11px]">Atención nutricional personalizada</p>
               </div>
-            </div>
+            </a>
 
             <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 flex items-start gap-4">
               <div className="p-3 rounded-2xl bg-[#C86D39]/10 text-[#C86D39]">
