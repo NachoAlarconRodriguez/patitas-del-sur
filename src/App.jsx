@@ -20,6 +20,7 @@ import ProductModal from './components/ProductModal';
 import AuthModal from './components/AuthModal';
 import Preloader from './components/Preloader';
 import BottomNavBar from './components/BottomNavBar';
+import PWAInstallBanner from './components/PWAInstallBanner';
 
 // Helper component to scroll to top on route navigation
 function ScrollToTop() {
@@ -33,24 +34,23 @@ function ScrollToTop() {
 }
 
 export default function App() {
+  const location = useLocation();
+
   // User Authentication State (persisted in localStorage)
+  // By default, if no active PWA session exists, user is null so the login screen is the FIRST screen seen
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('patitas_user');
-    if (savedUser) {
+    const savedSession = localStorage.getItem('patitas_pwa_session');
+    if (savedSession) {
       try {
-        return JSON.parse(savedUser);
+        const parsed = JSON.parse(savedSession);
+        if (parsed && (parsed.role === 'admin' || parsed.role === 'cliente')) {
+          return parsed;
+        }
       } catch (e) {
-        console.error('Error parsing stored user', e);
+        console.error('Error parsing stored session', e);
       }
     }
-    // Default demo user for instant testing
-    return {
-      name: 'Camila Silva',
-      email: 'camila@patitasdelsur.cl',
-      petName: 'Kira 🐶',
-      petType: 'perro',
-      memberSince: 'Agosto 2026',
-    };
+    return null;
   });
 
   // Cart State (persisted in localStorage)
@@ -79,12 +79,32 @@ export default function App() {
   // Auth Handlers
   const handleLoginSuccess = (userObj) => {
     setUser(userObj);
+    localStorage.setItem('patitas_pwa_session', JSON.stringify(userObj));
     localStorage.setItem('patitas_user', JSON.stringify(userObj));
   };
 
   const handleLogout = () => {
     setUser(null);
+    localStorage.removeItem('patitas_pwa_session');
     localStorage.removeItem('patitas_user');
+  };
+
+  const handleSwitchRole = (newRole) => {
+    setUser((prev) => {
+      const updated = prev
+        ? { ...prev, role: newRole }
+        : {
+            name: newRole === 'admin' ? 'Camila Silva' : 'Felipe Soto',
+            email: newRole === 'admin' ? 'camila@patitasdelsur.cl' : 'felipe@tutor.cl',
+            role: newRole,
+            petName: newRole === 'admin' ? 'Kira 🐶' : 'Jack 🐱',
+            petType: newRole === 'admin' ? 'perro' : 'gato',
+            memberSince: 'Octubre 2026',
+          };
+      localStorage.setItem('patitas_pwa_session', JSON.stringify(updated));
+      localStorage.setItem('patitas_user', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   // Cart Handlers
@@ -152,80 +172,131 @@ export default function App() {
   };
 
   const totalCartCount = cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0);
+  const isLoginPage = !user || location.pathname === '/login';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#0E8388] selection:text-white">
       <Preloader />
       <ScrollToTop />
 
-      {/* Global Navigation Bar */}
-      <Navbar
-        cartCount={totalCartCount}
-        onOpenCart={() => setIsCartOpen(true)}
-        user={user}
-        onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        onLogout={handleLogout}
-        onSelectProduct={handleSelectProduct}
-      />
+      {/* Global Navigation Bar - Hidden on Login screen to provide an immersive PWA entry */}
+      {!isLoginPage && (
+        <Navbar
+          cartCount={totalCartCount}
+          onOpenCart={() => setIsCartOpen(true)}
+          user={user}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          onLogout={handleLogout}
+          onSelectProduct={handleSelectProduct}
+        />
+      )}
 
       {/* Main Content & Routing */}
       <main className="flex-1 w-full">
         <Routes>
           <Route
+            path="/login"
+            element={
+              user ? (
+                <Navigate to={user.role === 'admin' ? '/admin' : '/mi-cuenta'} replace />
+              ) : (
+                <LoginView onLoginSuccess={handleLoginSuccess} />
+              )
+            }
+          />
+          <Route
             path="/"
-            element={<HomeView />}
+            element={
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <HomeView />
+              )
+            }
           />
           <Route
             path="/perros"
             element={
-              <PerrosView
-                onSelectProduct={handleSelectProduct}
-                onAddToCart={handleAddToCart}
-              />
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <PerrosView
+                  onSelectProduct={handleSelectProduct}
+                  onAddToCart={handleAddToCart}
+                />
+              )
             }
           />
           <Route
             path="/gatos"
             element={
-              <GatosView
-                onSelectProduct={handleSelectProduct}
-                onAddToCart={handleAddToCart}
-              />
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <GatosView
+                  onSelectProduct={handleSelectProduct}
+                  onAddToCart={handleAddToCart}
+                />
+              )
             }
           />
           <Route
             path="/producto/:id"
             element={
-              <ProductDetailView
-                onAddToCart={handleAddToCart}
-                onSelectProduct={handleSelectProduct}
-              />
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <ProductDetailView
+                  onAddToCart={handleAddToCart}
+                  onSelectProduct={handleSelectProduct}
+                />
+              )
             }
           />
-          <Route path="/nosotros" element={<NosotrosView />} />
-          <Route path="/contacto" element={<ContactoView />} />
           <Route
-            path="/login"
-            element={<LoginView onLoginSuccess={handleLoginSuccess} />}
+            path="/nosotros"
+            element={!user ? <Navigate to="/login" replace /> : <NosotrosView />}
+          />
+          <Route
+            path="/contacto"
+            element={!user ? <Navigate to="/login" replace /> : <ContactoView />}
           />
           <Route
             path="/mi-cuenta"
             element={
-              <CustomerDashboardView
-                user={user}
-                onLogout={handleLogout}
-                onAddToCart={handleAddToCart}
-                onSelectProduct={handleSelectProduct}
-              />
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <CustomerDashboardView
+                  user={user}
+                  onLogout={handleLogout}
+                  onAddToCart={handleAddToCart}
+                  onSelectProduct={handleSelectProduct}
+                  onSwitchRole={handleSwitchRole}
+                />
+              )
             }
           />
-          <Route path="/admin" element={<AdminDashboardView user={user} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="/admin"
+            element={
+              !user ? (
+                <Navigate to="/login" replace />
+              ) : (
+                <AdminDashboardView
+                  user={user}
+                  onSwitchRole={handleSwitchRole}
+                  onLogout={handleLogout}
+                />
+              )
+            }
+          />
+          <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
         </Routes>
       </main>
 
-      {/* Global Footer */}
-      <Footer />
+      {/* Global Footer - Hidden on Login and Admin dashboards */}
+      {!isLoginPage && location.pathname !== '/admin' && <Footer />}
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer
@@ -234,6 +305,8 @@ export default function App() {
         cartItems={cartItems}
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveItem}
+        user={user}
+        onClearCart={() => setCartItems([])}
       />
 
       {/* Quick View Product Modal */}
@@ -252,13 +325,18 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {/* Mobile Bottom Navigation Bar */}
-      <BottomNavBar
-        cartCount={totalCartCount}
-        onOpenCart={() => setIsCartOpen(true)}
-        user={user}
-        onOpenAuthModal={() => setIsAuthModalOpen(true)}
-      />
+      {/* Mobile Bottom Navigation Bar - Hidden on Login and Admin */}
+      {!isLoginPage && location.pathname !== '/admin' && (
+        <BottomNavBar
+          cartCount={totalCartCount}
+          onOpenCart={() => setIsCartOpen(true)}
+          user={user}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        />
+      )}
+
+      {/* Progressive Web App Install Banner (iOS & Android) */}
+      {!isLoginPage && <PWAInstallBanner />}
     </div>
   );
 }

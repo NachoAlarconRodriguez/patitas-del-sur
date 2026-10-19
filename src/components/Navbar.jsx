@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, Search, Menu, X, ArrowLeft, User, LogOut, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 import Logo from './Logo';
 import { PRODUCTS } from '../data/mockData';
+import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 
 export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModal, onLogout, onSelectProduct }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -98,13 +99,17 @@ export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModa
   useEffect(() => {
     if (searchQuery.trim().length > 1) {
       const q = searchQuery.toLowerCase();
-      const filtered = PRODUCTS.filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.tagline.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.petType.toLowerCase().includes(q) ||
-        (p.ingredients && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
-      );
+      const hidden = getHiddenProductIdentifiers();
+      const filtered = PRODUCTS.filter((p) => {
+        if (isProductHidden(p, hidden)) return false;
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.tagline.toLowerCase().includes(q) ||
+          p.category.toLowerCase().includes(q) ||
+          p.petType.toLowerCase().includes(q) ||
+          (p.ingredients && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
+        );
+      });
       setSearchResults(filtered);
     } else {
       setSearchResults([]);

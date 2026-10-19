@@ -1,11 +1,55 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import ProductCard from '../components/ProductCard';
 import PromoCarousel from '../components/PromoCarousel';
 import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
-import { PRODUCTS, BRANDS } from '../data/mockData';
+import { PRODUCTS as FALLBACK_PRODUCTS, BRANDS } from '../data/mockData';
+import { fetchProductsFromSupabase } from '../services/productsService';
+import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 
 export default function PerrosView({ onSelectProduct, onAddToCart }) {
-  const dogProducts = useMemo(() => PRODUCTS.filter((p) => p.petType === 'perros'), []);
+  const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
+  const [hiddenProducts, setHiddenProducts] = useState(getHiddenProductIdentifiers);
+
+  // Carga en vivo desde Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const loadProducts = async () => {
+      const data = await fetchProductsFromSupabase();
+      if (isMounted && data && data.length > 0) {
+        setAllProducts(data);
+      }
+    };
+
+    loadProducts();
+
+    const handleStorage = () => {
+      setHiddenProducts(getHiddenProductIdentifiers());
+      loadProducts();
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('patitas_products_updated', loadProducts);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('patitas_products_updated', loadProducts);
+    };
+  }, []);
+
+  const dogProducts = useMemo(
+    () =>
+      allProducts.filter(
+        (p) =>
+          p.petType === 'perros' &&
+          !p.isPaused &&
+          !p.is_paused &&
+          p.isActive !== false &&
+          p.is_active !== false &&
+          !isProductHidden(p, hiddenProducts)
+      ),
+    [allProducts, hiddenProducts]
+  );
 
   // Filter States
   const [selectedBrand, setSelectedBrand] = useState('Todas');

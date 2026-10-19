@@ -1,248 +1,355 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, ArrowRight, ShieldCheck, Sparkles, Heart, CheckCircle2, ArrowLeft } from 'lucide-react';
-import Logo from '../components/Logo';
+import { useNavigate } from 'react-router-dom';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User, CheckCircle2 } from 'lucide-react';
 
 export default function LoginView({ onLoginSuccess }) {
   const navigate = useNavigate();
-  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [viewMode, setViewMode] = useState('login'); // 'login' | 'register' | 'recovery'
+
+  // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [petName, setPetName] = useState('');
-  const [petType, setPetType] = useState('perro');
+  const [showPassword, setShowPassword] = useState(false);
+  const [notice, setNotice] = useState(null);
 
-  const handleSubmit = (e) => {
+  const showNotification = (msg) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  // 1-Tap Demo Shortcuts for Prototype
+  const handleAdminDemo = () => {
+    const adminUser = {
+      name: 'Camila Silva',
+      email: 'camila@patitasdelsur.cl',
+      role: 'admin',
+      petName: 'Kira 🐶',
+      petType: 'perro',
+      memberSince: 'Octubre 2026',
+    };
+    onLoginSuccess(adminUser);
+    navigate('/admin');
+  };
+
+  const handleClientDemo = () => {
+    const clientUser = {
+      name: 'Felipe Soto',
+      email: 'felipe@tutor.cl',
+      role: 'cliente',
+      petName: 'Jack 🐱',
+      petType: 'gato',
+      memberSince: 'Octubre 2026',
+    };
+    onLoginSuccess(clientUser);
+    navigate('/mi-cuenta');
+  };
+
+  const handleLoginSubmit = (e) => {
     e.preventDefault();
 
-    // Free access: any email and password works!
+    const cleanEmail = email.trim().toLowerCase();
+    const isAdmin =
+      cleanEmail.includes('admin') ||
+      cleanEmail.includes('@patitasdelsur.cl') ||
+      cleanEmail === 'camila';
+
     const userObj = {
-      name: fullName || (email ? email.split('@')[0] : 'Camila Silva'),
-      email: email || 'camila@patitasdelsur.cl',
-      petName: petName || 'Kira 🐶',
-      petType: petType,
-      memberSince: 'Agosto 2026',
+      name: isAdmin ? 'Camila Silva' : cleanEmail ? cleanEmail.split('@')[0] : 'Cliente Tutor',
+      email: cleanEmail || (isAdmin ? 'camila@patitasdelsur.cl' : 'cliente@patitasdelsur.cl'),
+      role: isAdmin ? 'admin' : 'cliente',
+      petName: isAdmin ? 'Kira 🐶' : 'Jack 🐱',
+      petType: isAdmin ? 'perro' : 'gato',
+      memberSince: 'Octubre 2026',
+    };
+
+    onLoginSuccess(userObj);
+
+    if (isAdmin) {
+      navigate('/admin');
+    } else {
+      navigate('/mi-cuenta');
+    }
+  };
+
+  const handleRegisterSubmit = (e) => {
+    e.preventDefault();
+
+    const cleanEmail = email.trim().toLowerCase();
+    const userObj = {
+      name: fullName.trim() || 'Nuevo Tutor',
+      email: cleanEmail || 'cliente@patitasdelsur.cl',
+      role: 'cliente',
+      petName: 'Mi Mascota 🐾',
+      petType: 'perro',
+      memberSince: 'Octubre 2026',
     };
 
     onLoginSuccess(userObj);
     navigate('/mi-cuenta');
   };
 
-  const handleQuickDemo = () => {
-    const demoUser = {
-      name: 'Camila Silva',
-      email: 'camila@patitasdelsur.cl',
-      petName: 'Kira 🐶',
-      petType: 'perro',
-      memberSince: 'Agosto 2026',
-    };
-
-    onLoginSuccess(demoUser);
-    navigate('/mi-cuenta');
+  const handleRecoverySubmit = (e) => {
+    e.preventDefault();
+    showNotification(`Te hemos enviado un enlace de recuperación a ${email || 'tu correo'}.`);
+    setTimeout(() => {
+      setViewMode('login');
+    }, 2000);
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF9F6] pt-20 pb-28 md:pt-24 md:pb-16 px-4 flex items-center justify-center">
-      <div className="max-w-4xl w-full bg-white rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden grid grid-cols-1 md:grid-cols-12 animate-in fade-in duration-500">
+    <div className="min-h-dvh w-full bg-gradient-to-b from-[#093C3E] via-[#0E8388] to-[#072B2D] flex flex-col items-center justify-center p-6 select-none relative">
+      
+      {/* Toast Notificación */}
+      {notice && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{notice}</span>
+        </div>
+      )}
+
+      {/* Contenedor central minimalista para móviles */}
+      <div className="w-full max-w-sm flex flex-col items-center space-y-6 animate-in fade-in duration-300">
         
-        {/* Left Side: Hero Brand Showcase */}
-        <div className="order-2 md:order-1 md:col-span-5 bg-gradient-to-br from-[#0A3E40] via-[#0E8388] to-[#10B981] p-8 md:p-12 text-white flex flex-col justify-between relative overflow-hidden">
-          <div className="relative z-10 space-y-6">
-            <Link to="/" className="inline-flex items-center gap-2 text-xs font-black text-emerald-200 hover:text-white transition-colors bg-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Volver al sitio web</span>
-            </Link>
+        {/* Botones superiores de prototipo: Administrador y Cliente */}
+        <div className="w-full grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={handleAdminDemo}
+            className="py-2.5 px-3 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/20 backdrop-blur-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <span>🛡️</span>
+            <span>Administrador</span>
+          </button>
 
-            <div className="space-y-3 pt-4">
-              <span className="px-3.5 py-1 rounded-full text-xs font-black bg-emerald-400/20 text-emerald-300 border border-emerald-400/30 uppercase tracking-wider">
-                Club Patitas del Sur 🐾
-              </span>
-              <h2 className="text-3xl font-black tracking-tight leading-tight">
-                Panel Personal de Clientes
-              </h2>
-              <p className="text-xs text-emerald-100/90 leading-relaxed font-medium">
-                Accede a tus compras, seguimiento de envíos en tiempo real, suscripciones mensuales y la ficha de nutrición de tu mascota.
-              </p>
-            </div>
-
-            <div className="space-y-2.5 pt-4 text-xs font-bold text-emerald-100">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Descuento de 10% en tu primera compra</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Calculadora de ración guardada para tu mascota</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Envío prioritario a todo Chile</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="relative z-10 pt-8 border-t border-white/20 text-[11px] font-semibold text-emerald-200/80 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-300" />
-            <span>Acceso Seguro Liberado (Ingresa cualquier credencial)</span>
-          </div>
-
-          {/* Decorative Background Circles */}
-          <div className="absolute -bottom-16 -right-16 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
+          <button
+            type="button"
+            onClick={handleClientDemo}
+            className="py-2.5 px-3 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/20 backdrop-blur-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+          >
+            <span>🐾</span>
+            <span>Cliente</span>
+          </button>
         </div>
 
-        {/* Right Side: Credentials Form */}
-        <div className="order-1 md:order-2 md:col-span-7 p-6 sm:p-8 md:p-12 flex flex-col justify-center space-y-6">
-          
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4 gap-4">
-            <div>
-              <h3 className="text-xl sm:text-2xl font-black text-slate-900">
-                {authMode === 'login' ? 'Iniciar Sesión' : 'Crear Cuenta'}
-              </h3>
-              <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
-                {authMode === 'login' ? 'Ingresa tu correo y contraseña:' : 'Completa tus datos:'}
-              </p>
-            </div>
-            <div className="shrink-0 flex items-center justify-center p-2 rounded-2xl bg-slate-50/80 border border-slate-100 shadow-2xs">
-              <Logo className="h-14 sm:h-16 md:h-18" />
-            </div>
-          </div>
+        {/* Logo de la empresa */}
+        <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-center transition-transform hover:scale-105">
+          <img
+            src="/images/logo_patitas_del_sur.svg"
+            alt="Patitas del Sur"
+            className="h-14 sm:h-16 w-auto object-contain"
+          />
+        </div>
 
-          {/* Tab Switcher */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
-                authMode === 'login'
-                  ? 'bg-white text-[#0E8388] shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Iniciar Sesión
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${
-                authMode === 'register'
-                  ? 'bg-white text-[#0E8388] shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              Crear Cuenta
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
-            {authMode === 'register' && (
-              <div className="space-y-1">
-                <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                  Nombre Completo
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej. Camila Silva"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
-                  />
-                </div>
+        {/* ============================================================ */}
+        {/* MODO 1: INICIAR SESIÓN (DEFAULT)                             */}
+        {/* ============================================================ */}
+        {viewMode === 'login' && (
+          <form onSubmit={handleLoginSubmit} className="w-full space-y-4">
+            {/* Campo Mail */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <Mail className="w-5 h-5" />
               </div>
-            )}
-
-            {/* Email */}
-            <div className="space-y-1">
-              <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                Correo Electrónico
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="email"
-                  required
-                  placeholder="ejemplo@correo.cl"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
-                />
-              </div>
+              <input
+                type="email"
+                required
+                autoComplete="username"
+                inputMode="email"
+                placeholder="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
             </div>
 
-            {/* Password */}
-            <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                  Contraseña
-                </label>
-                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  Acceso Libre Activo
-                </span>
+            {/* Campo Contraseña */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <Lock className="w-5 h-5" />
               </div>
-              <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="password"
-                  required
-                  placeholder="Cualquier contraseña funciona"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
-                />
-              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete="current-password"
+                placeholder="Contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
             </div>
 
-            {authMode === 'register' && (
-              <div className="space-y-1 pt-1">
-                <label className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                  Nombre de tu Mascota
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Ej. Kira / Jack"
-                    value={petName}
-                    onChange={(e) => setPetName(e.target.value)}
-                    className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
-                  />
-                  <select
-                    value={petType}
-                    onChange={(e) => setPetType(e.target.value)}
-                    className="px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black focus:outline-hidden"
-                  >
-                    <option value="perro">🐶 Perro</option>
-                    <option value="gato">🐱 Gato</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Primary Action CTA */}
+            {/* Botón de Ingresar */}
             <button
               type="submit"
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white font-black text-sm hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all shadow-md flex items-center justify-center gap-2 mt-2"
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
             >
-              <span>{authMode === 'login' ? 'Entrar a Mi Panel Personal 🐾' : 'Crear mi Cuenta 🐾'}</span>
+              <span>Ingresar</span>
               <ArrowRight className="w-4 h-4" />
             </button>
 
-            {/* Demo Instant Button */}
+            {/* Los 2 botones formato texto */}
+            <div className="flex flex-col items-center gap-2 pt-3">
+              <button
+                type="button"
+                onClick={() => setViewMode('recovery')}
+                className="text-xs text-white/80 hover:text-white transition-colors cursor-pointer font-medium hover:underline py-1"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('register')}
+                className="text-xs text-white hover:text-emerald-100 font-bold transition-colors cursor-pointer hover:underline py-1"
+              >
+                Crear una cuenta nueva
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ============================================================ */}
+        {/* MODO 2: CREAR UNA CUENTA NUEVA                              */}
+        {/* ============================================================ */}
+        {viewMode === 'register' && (
+          <form onSubmit={handleRegisterSubmit} className="w-full space-y-4 animate-in fade-in duration-200">
+            {/* Campo Nombre Completo */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <User className="w-5 h-5" />
+              </div>
+              <input
+                type="text"
+                required
+                placeholder="Nombre completo"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
+            </div>
+
+            {/* Campo Mail */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <Mail className="w-5 h-5" />
+              </div>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                inputMode="email"
+                placeholder="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
+            </div>
+
+            {/* Campo Contraseña */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <Lock className="w-5 h-5" />
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required
+                autoComplete="new-password"
+                placeholder="Crear contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1"
+                title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+
+            {/* Botón de Registrarse */}
             <button
-              type="button"
-              onClick={handleQuickDemo}
-              className="w-full py-2.5 rounded-xl border border-dashed border-[#0E8388]/40 bg-[#0E8388]/10 text-[#0E8388] hover:bg-[#0E8388] hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+              type="submit"
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
             >
-              <span>⚡ O presiona aquí para entrar como Cliente Demo Rápido</span>
+              <span>Registrarse</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
 
+            {/* Botón texto para regresar */}
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('login')}
+                className="text-xs text-white hover:underline font-semibold cursor-pointer py-1"
+              >
+                ¿Ya tienes una cuenta? Iniciar sesión
+              </button>
+            </div>
           </form>
+        )}
 
-        </div>
+        {/* ============================================================ */}
+        {/* MODO 3: RECUPERAR CONTRASEÑA                                */}
+        {/* ============================================================ */}
+        {viewMode === 'recovery' && (
+          <form onSubmit={handleRecoverySubmit} className="w-full space-y-4 animate-in fade-in duration-200">
+            <p className="text-xs text-white/90 text-center font-medium px-2 leading-relaxed">
+              Ingresa tu correo registrado para enviarte un enlace de restablecimiento:
+            </p>
+
+            {/* Campo Mail */}
+            <div className="relative">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <Mail className="w-5 h-5" />
+              </div>
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                inputMode="email"
+                placeholder="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+              />
+            </div>
+
+            {/* Botón de Enviar */}
+            <button
+              type="submit"
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
+            >
+              <span>Recuperar Contraseña</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            {/* Botón texto para volver */}
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setViewMode('login')}
+                className="text-xs text-white hover:underline font-semibold cursor-pointer py-1"
+              >
+                Volver a Iniciar sesión
+              </button>
+            </div>
+          </form>
+        )}
 
       </div>
+
     </div>
   );
 }

@@ -1,29 +1,55 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, X, Sparkles, ArrowRight } from 'lucide-react';
-import { PRODUCTS } from '../data/mockData';
+import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
+import { fetchProductsFromSupabase } from '../services/productsService';
+import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 
 export default function FloatingSearch({ onSelectProduct }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
   const containerRef = useRef(null);
+
+  // Carga inicial y reactiva desde Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const loadProducts = async () => {
+      const data = await fetchProductsFromSupabase();
+      if (isMounted && data && data.length > 0) {
+        setAllProducts(data);
+      }
+    };
+    loadProducts();
+
+    window.addEventListener('patitas_products_updated', loadProducts);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('patitas_products_updated', loadProducts);
+    };
+  }, []);
 
   // Live Search filter
   useEffect(() => {
     if (query.trim().length > 1) {
       const q = query.toLowerCase();
-      const filtered = PRODUCTS.filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.tagline.toLowerCase().includes(q) ||
-        p.category.toLowerCase().includes(q) ||
-        p.petType.toLowerCase().includes(q) ||
-        (p.ingredients && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
-      );
+      const hidden = getHiddenProductIdentifiers();
+      const filtered = allProducts.filter((p) => {
+        if (p.isPaused || p.is_paused || p.isActive === false || p.is_active === false) return false;
+        if (isProductHidden(p, hidden)) return false;
+        return (
+          p.name?.toLowerCase().includes(q) ||
+          p.tagline?.toLowerCase().includes(q) ||
+          p.category?.toLowerCase().includes(q) ||
+          p.petType?.toLowerCase().includes(q) ||
+          (p.ingredients && Array.isArray(p.ingredients) && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
+        );
+      });
       setResults(filtered);
     } else {
       setResults([]);
     }
-  }, [query]);
+  }, [query, allProducts]);
 
   // Click outside listener to close search
   useEffect(() => {

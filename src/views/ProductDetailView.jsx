@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { PRODUCTS } from '../data/mockData';
+import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
+import { fetchProductsFromSupabase } from '../services/productsService';
 import ProductCard from '../components/ProductCard';
 import {
   ArrowLeft,
@@ -323,8 +324,26 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      const data = await fetchProductsFromSupabase();
+      if (isMounted && data && data.length > 0) {
+        setAllProducts(data);
+      }
+    };
+    load();
+    window.addEventListener('patitas_products_updated', load);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('patitas_products_updated', load);
+    };
+  }, []);
+
   // Find product by URL param or default to first product
-  const product = PRODUCTS.find((p) => p.id === id) || PRODUCTS[0];
+  const product = allProducts.find((p) => p.id === id) || allProducts[0] || FALLBACK_PRODUCTS[0];
   const isDog = product.petType === 'perros';
 
   const [selectedWeight, setSelectedWeight] = useState(
@@ -465,8 +484,14 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   };
 
   // Related products
-  const relatedProducts = PRODUCTS.filter(
-    (p) => p.petType === product.petType && p.id !== product.id
+  const relatedProducts = allProducts.filter(
+    (p) =>
+      p.petType === product.petType &&
+      p.id !== product.id &&
+      !p.isPaused &&
+      !p.is_paused &&
+      p.isActive !== false &&
+      p.is_active !== false
   ).slice(0, 4);
 
   return (
