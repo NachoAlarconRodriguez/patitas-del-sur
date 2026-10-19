@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, User, CheckCircle2 } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { getCustomerProfile, upsertCustomerProfile } from '../services/customersService';
 
 export default function LoginView({ onLoginSuccess }) {
   const navigate = useNavigate();
@@ -11,90 +13,182 @@ export default function LoginView({ onLoginSuccess }) {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [notice, setNotice] = useState(null);
 
   const showNotification = (msg) => {
     setNotice(msg);
-    setTimeout(() => setNotice(null), 4000);
+    setTimeout(() => setNotice(null), 5000);
   };
 
-  // 1-Tap Demo Shortcuts for Prototype
-  const handleAdminDemo = () => {
-    const adminUser = {
-      name: 'Camila Silva',
-      email: 'camila@patitasdelsur.cl',
-      role: 'admin',
-      petName: 'Kira 🐶',
-      petType: 'perro',
-      memberSince: 'Octubre 2026',
+  const buildUserSession = async (authUser) => {
+    if (!authUser) return null;
+
+    let profile = await getCustomerProfile(authUser.id);
+    if (!profile && authUser.email) {
+      profile = await getCustomerProfile(authUser.email);
+      if (profile && !profile.auth_user_id) {
+        // Link auth user id if it was missing
+        await supabase
+          .from('customers')
+          .update({ auth_user_id: authUser.id })
+          .eq('id', profile.id);
+        profile.auth_user_id = authUser.id;
+      }
+    }
+
+    if (!profile) {
+      // Create fresh customer record if none exists
+      const newCust = await upsertCustomerProfile({
+        auth_user_id: authUser.id,
+        fullName: authUser.user_metadata?.full_name || fullName || authUser.email.split('@')[0],
+        email: authUser.email,
+        role: authUser.user_metadata?.role || 'cliente',
+        city: 'Puerto Varas',
+      });
+      profile = newCust?.data || {
+        id: authUser.id,
+        full_name: authUser.user_metadata?.full_name || fullName || 'Tutor Patitas',
+        email: authUser.email,
+        role: 'cliente',
+      };
+    }
+
+    return {
+      id: profile.id,
+      auth_user_id: authUser.id,
+      name: profile.full_name || authUser.user_metadata?.full_name || 'Tutor Patitas',
+      email: profile.email || authUser.email,
+      role: profile.role || 'cliente',
+      petName: authUser.user_metadata?.pet_name || 'Mi Mascota 🐾',
+      petType: authUser.user_metadata?.pet_type || 'perro',
+      city: profile.city || 'Puerto Varas',
+      address: profile.address || '',
+      phone: profile.phone || '',
+      points: profile.points || 0,
+      memberSince: profile.created_at
+        ? new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date(profile.created_at))
+        : 'Octubre 2026',
     };
-    onLoginSuccess(adminUser);
-    navigate('/admin');
   };
 
-  const handleClientDemo = () => {
-    const clientUser = {
-      name: 'Felipe Soto',
-      email: 'felipe@tutor.cl',
-      role: 'cliente',
-      petName: 'Jack 🐱',
-      petType: 'gato',
-      memberSince: 'Octubre 2026',
-    };
-    onLoginSuccess(clientUser);
-    navigate('/mi-cuenta');
-  };
-
-  const handleLoginSubmit = (e) => {
+  // Real Supabase Login
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
+    setErrorMsg(null);
+    setLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
-    const isAdmin =
-      cleanEmail.includes('admin') ||
-      cleanEmail.includes('@patitasdelsur.cl') ||
-      cleanEmail === 'camila';
 
-    const userObj = {
-      name: isAdmin ? 'Camila Silva' : cleanEmail ? cleanEmail.split('@')[0] : 'Cliente Tutor',
-      email: cleanEmail || (isAdmin ? 'camila@patitasdelsur.cl' : 'cliente@patitasdelsur.cl'),
-      role: isAdmin ? 'admin' : 'cliente',
-      petName: isAdmin ? 'Kira 🐶' : 'Jack 🐱',
-      petType: isAdmin ? 'perro' : 'gato',
-      memberSince: 'Octubre 2026',
-    };
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password,
+      });
 
-    onLoginSuccess(userObj);
+      if (error) {
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('Credenciales incorrectas. Verifica tu correo y contraseña.');
+        } else if (error.message.includes('Email not confirmed')) {
+          throw new Error('Por favor confirma tu correo electrónico antes de ingresar.');
+        } else {
+          throw error;
+        }
+      }
 
-    if (isAdmin) {
-      navigate('/admin');
-    } else {
-      navigate('/mi-cuenta');
+      const userSession = await buildUserSession(data.user);
+      onLoginSuccess(userSession);
+
+      if (userSession.role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate('/mi-cuenta');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setErrorMsg(err.message || 'Error al iniciar sesión. Intenta nuevamente.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleRegisterSubmit = (e) => {
+  // Real Supabase Registration
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
+    setErrorMsg(null);
+    setLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
-    const userObj = {
-      name: fullName.trim() || 'Nuevo Tutor',
-      email: cleanEmail || 'cliente@patitasdelsur.cl',
-      role: 'cliente',
-      petName: 'Mi Mascota 🐾',
-      petType: 'perro',
-      memberSince: 'Octubre 2026',
-    };
+    const cleanName = fullName.trim();
 
-    onLoginSuccess(userObj);
-    navigate('/mi-cuenta');
+    if (password.length < 6) {
+      setErrorMsg('La contraseña debe tener al menos 6 caracteres.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: password,
+        options: {
+          data: {
+            full_name: cleanName,
+            role: 'cliente',
+            pet_name: 'Mi Mascota 🐾',
+            pet_type: 'perro',
+          },
+        },
+      });
+
+      if (error) {
+        if (error.message.includes('already registered')) {
+          throw new Error('Este correo ya está registrado. Por favor inicia sesión.');
+        } else {
+          throw error;
+        }
+      }
+
+      if (data?.user) {
+        const userSession = await buildUserSession(data.user);
+        showNotification('¡Cuenta creada exitosamente! Bienvenido a Patitas del Sur.');
+        onLoginSuccess(userSession);
+        navigate('/mi-cuenta');
+      }
+    } catch (err) {
+      console.error('Registration error:', err);
+      setErrorMsg(err.message || 'Error al crear la cuenta. Intenta nuevamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRecoverySubmit = (e) => {
+  // Real Supabase Password Reset
+  const handleRecoverySubmit = async (e) => {
     e.preventDefault();
-    showNotification(`Te hemos enviado un enlace de recuperación a ${email || 'tu correo'}.`);
-    setTimeout(() => {
-      setViewMode('login');
-    }, 2000);
+    setErrorMsg(null);
+    setLoading(true);
+
+    const cleanEmail = email.trim().toLowerCase();
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+
+      if (error) throw error;
+
+      showNotification(`Hemos enviado un enlace de recuperación seguro a ${cleanEmail}.`);
+      setTimeout(() => {
+        setViewMode('login');
+      }, 3500);
+    } catch (err) {
+      console.error('Recovery error:', err);
+      setErrorMsg(err.message || 'Error al solicitar recuperación. Verifica el correo ingresado.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -108,30 +202,9 @@ export default function LoginView({ onLoginSuccess }) {
         </div>
       )}
 
-      {/* Contenedor central minimalista para móviles */}
+      {/* Contenedor central de autenticación segura */}
       <div className="w-full max-w-sm flex flex-col items-center space-y-6 animate-in fade-in duration-300">
         
-        {/* Botones superiores de prototipo: Administrador y Cliente */}
-        <div className="w-full grid grid-cols-2 gap-2.5">
-          <button
-            type="button"
-            onClick={handleAdminDemo}
-            className="py-2.5 px-3 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/20 backdrop-blur-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <span>🛡️</span>
-            <span>Administrador</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleClientDemo}
-            className="py-2.5 px-3 rounded-2xl bg-white/15 hover:bg-white/25 active:scale-95 text-white border border-white/20 backdrop-blur-md text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
-          >
-            <span>🐾</span>
-            <span>Cliente</span>
-          </button>
-        </div>
-
         {/* Logo de la empresa */}
         <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-center transition-transform hover:scale-105">
           <img
@@ -140,6 +213,14 @@ export default function LoginView({ onLoginSuccess }) {
             className="h-14 sm:h-16 w-auto object-contain"
           />
         </div>
+
+        {/* Mensaje de Error */}
+        {errorMsg && (
+          <div className="w-full p-3.5 rounded-2xl bg-rose-500/20 border border-rose-400/30 text-rose-100 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-300" />
+            <span className="flex-1">{errorMsg}</span>
+          </div>
+        )}
 
         {/* ============================================================ */}
         {/* MODO 1: INICIAR SESIÓN (DEFAULT)                             */}
@@ -159,7 +240,8 @@ export default function LoginView({ onLoginSuccess }) {
                 placeholder="Correo electrónico"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
             </div>
 
@@ -175,7 +257,8 @@ export default function LoginView({ onLoginSuccess }) {
                 placeholder="Contraseña"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
               <button
                 type="button"
@@ -190,17 +273,30 @@ export default function LoginView({ onLoginSuccess }) {
             {/* Botón de Ingresar */}
             <button
               type="submit"
-              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
             >
-              <span>Ingresar</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verificando credenciales...</span>
+                </>
+              ) : (
+                <>
+                  <span>Ingresar a tu Cuenta</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
 
-            {/* Los 2 botones formato texto */}
+            {/* Enlaces de Recuperación y Registro */}
             <div className="flex flex-col items-center gap-2 pt-3">
               <button
                 type="button"
-                onClick={() => setViewMode('recovery')}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setViewMode('recovery');
+                }}
                 className="text-xs text-white/80 hover:text-white transition-colors cursor-pointer font-medium hover:underline py-1"
               >
                 ¿Olvidaste tu contraseña?
@@ -208,10 +304,13 @@ export default function LoginView({ onLoginSuccess }) {
 
               <button
                 type="button"
-                onClick={() => setViewMode('register')}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setViewMode('register');
+                }}
                 className="text-xs text-white hover:text-emerald-100 font-bold transition-colors cursor-pointer hover:underline py-1"
               >
-                Crear una cuenta nueva
+                ¿No tienes cuenta? Regístrate aquí
               </button>
             </div>
           </form>
@@ -233,7 +332,8 @@ export default function LoginView({ onLoginSuccess }) {
                 placeholder="Nombre completo"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
             </div>
 
@@ -250,7 +350,8 @@ export default function LoginView({ onLoginSuccess }) {
                 placeholder="Correo electrónico"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
             </div>
 
@@ -263,10 +364,11 @@ export default function LoginView({ onLoginSuccess }) {
                 type={showPassword ? 'text' : 'password'}
                 required
                 autoComplete="new-password"
-                placeholder="Crear contraseña"
+                placeholder="Crear contraseña (mínimo 6 caracteres)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-12 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
               <button
                 type="button"
@@ -281,17 +383,30 @@ export default function LoginView({ onLoginSuccess }) {
             {/* Botón de Registrarse */}
             <button
               type="submit"
-              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
             >
-              <span>Registrarse</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Creando tu cuenta...</span>
+                </>
+              ) : (
+                <>
+                  <span>Crear Cuenta en Patitas del Sur</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
 
             {/* Botón texto para regresar */}
             <div className="text-center pt-2">
               <button
                 type="button"
-                onClick={() => setViewMode('login')}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setViewMode('login');
+                }}
                 className="text-xs text-white hover:underline font-semibold cursor-pointer py-1"
               >
                 ¿Ya tienes una cuenta? Iniciar sesión
@@ -306,7 +421,7 @@ export default function LoginView({ onLoginSuccess }) {
         {viewMode === 'recovery' && (
           <form onSubmit={handleRecoverySubmit} className="w-full space-y-4 animate-in fade-in duration-200">
             <p className="text-xs text-white/90 text-center font-medium px-2 leading-relaxed">
-              Ingresa tu correo registrado para enviarte un enlace de restablecimiento:
+              Ingresa tu correo registrado para enviarte un enlace de restablecimiento seguro:
             </p>
 
             {/* Campo Mail */}
@@ -322,24 +437,38 @@ export default function LoginView({ onLoginSuccess }) {
                 placeholder="Correo electrónico"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all"
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-white text-slate-900 placeholder:text-slate-400 rounded-2xl text-sm font-semibold shadow-lg border border-white/50 focus:outline-hidden focus:ring-2 focus:ring-white transition-all disabled:opacity-70"
               />
             </div>
 
             {/* Botón de Enviar */}
             <button
               type="submit"
-              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
+              disabled={loading}
+              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
             >
-              <span>Recuperar Contraseña</span>
-              <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Enviando enlace...</span>
+                </>
+              ) : (
+                <>
+                  <span>Enviar Enlace de Recuperación</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
 
             {/* Botón texto para volver */}
             <div className="text-center pt-2">
               <button
                 type="button"
-                onClick={() => setViewMode('login')}
+                onClick={() => {
+                  setErrorMsg(null);
+                  setViewMode('login');
+                }}
                 className="text-xs text-white hover:underline font-semibold cursor-pointer py-1"
               >
                 Volver a Iniciar sesión

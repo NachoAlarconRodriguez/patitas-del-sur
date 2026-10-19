@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Star, ShoppingBag, Eye, Wheat, Fish, Drumstick, Beef, Sparkles, Stethoscope, Dumbbell } from 'lucide-react';
 
 // Mini Circular Ring Chart Component for numeric percentage values (% Proteína)
@@ -221,11 +221,11 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
     <div className="group relative bg-white rounded-3xl p-4 md:p-5 shadow-sm hover:shadow-2xl transition-all duration-500 border border-slate-100 flex flex-col justify-between hover:-translate-y-1.5 cursor-pointer">
       
       {/* Image Container */}
-      <div
-        onClick={handleCardClick}
-        className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-50 mb-3 flex items-center justify-center p-4 border border-slate-100/60"
+      <Link
+        to={`/producto/${product.id}`}
+        className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-50 mb-3 flex items-center justify-center p-4 border border-slate-100/60 block"
+        aria-label={`Ver detalles de ${product.name}`}
       >
-        
         {/* Rating Badge Overlay Top Right */}
         <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white/95 backdrop-blur-md px-2.5 py-1 rounded-full text-xs font-black text-amber-500 shadow-sm border border-slate-200/60">
           <Star className="w-3.5 h-3.5 fill-amber-400" />
@@ -243,10 +243,12 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         {/* Product Image */}
         <img
           src={product.image}
-          alt={product.name}
+          alt={`${product.name} - Alimento para ${isDog ? 'perros' : 'gatos'} en Puerto Varas, Patitas del Sur`}
+          loading="lazy"
+          decoding="async"
           className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
         />
-      </div>
+      </Link>
 
       {/* Content Body */}
       <div className="flex flex-col flex-grow space-y-3">
@@ -280,11 +282,13 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         </div>
 
         {/* Product Title */}
-        <h3
-          onClick={handleCardClick}
-          className="font-molen font-bold text-lg sm:text-xl text-slate-900 group-hover:text-[#0E8388] transition-colors cursor-pointer line-clamp-2 leading-snug tracking-tight"
-        >
-          {product.name}
+        <h3 className="font-molen font-bold text-lg sm:text-xl text-slate-900 line-clamp-2 leading-snug tracking-tight">
+          <Link
+            to={`/producto/${product.id}`}
+            className="group-hover:text-[#0E8388] transition-colors"
+          >
+            {product.name}
+          </Link>
         </h3>
 
         {/* Short Description */}

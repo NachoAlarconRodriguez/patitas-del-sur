@@ -5,6 +5,10 @@ import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
 import { PRODUCTS as FALLBACK_PRODUCTS, BRANDS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
+import SEOHead from '../components/SEOHead';
+import { getBreadcrumbSchema, getFAQPageSchema } from '../utils/schemaGenerators';
+import LocalDeliveryZones from '../components/LocalDeliveryZones';
+import FAQSection, { PERROS_FAQS, GENERAL_FAQS } from '../components/FAQSection';
 
 export default function PerrosView({ onSelectProduct, onAddToCart }) {
   const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
@@ -145,15 +149,45 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
 
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900">
+      <SEOHead
+        title="Alimento y Snacks Naturales para Perros en Puerto Varas"
+        description="Catálogo de alimento super premium 100% Grain Free, antiparasitarios y premios deshidratados para perros. Despacho express en Puerto Varas, Llanquihue y Frutillar."
+        canonical="/perros"
+        keywords="alimento perros puerto varas, comida perros llanquihue, bravery perros los lagos, grain free perros chile"
+        jsonLd={[
+          getBreadcrumbSchema([
+            { name: 'Inicio', url: '/' },
+            { name: 'Perros', url: '/perros' },
+          ]),
+          getFAQPageSchema([...PERROS_FAQS, ...GENERAL_FAQS.slice(0, 2)]),
+        ]}
+      />
+
+      {/* Main Catalog Header */}
+      <header className="max-w-7xl mx-auto px-6 mb-6">
+        <div className="space-y-1">
+          <span className="text-[11px] font-black uppercase tracking-wider text-[#0E8388] bg-[#0E8388]/10 px-3 py-1 rounded-full inline-block">
+            Catálogo Canino Holístico
+          </span>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+            Alimento y Snacks Naturales para Perros 🐶
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl">
+            Nutrición de alta digestibilidad, fórmulas sin cereales con salmón y cordero de la Patagonia. Despacho rápido en Puerto Varas y la cuenca del Lago Llanquihue.
+          </p>
+        </div>
+      </header>
       
       {/* Promo Carousel Banner (Máximo 5 Ofertas) */}
-      <section className="max-w-7xl mx-auto px-6 mb-10">
-        <PromoCarousel
-          petType="perros"
-          onSelectProduct={onSelectProduct}
-          onAddToCart={onAddToCart}
-        />
-      </section>
+      {dogProducts.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 mb-10">
+          <PromoCarousel
+            petType="perros"
+            onSelectProduct={onSelectProduct}
+            onAddToCart={onAddToCart}
+          />
+        </section>
+      )}
 
       {/* Main Catalog Section */}
       <section className="max-w-7xl mx-auto px-6">
@@ -242,6 +276,20 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
         )}
 
       </section>
+
+      {/* Sección de Preguntas Frecuentes y Guía Nutricional AEO */}
+      <div className="max-w-7xl mx-auto px-6 mt-16">
+        <FAQSection
+          type="perros"
+          title="Preguntas Frecuentes sobre Alimento y Salud Canina"
+          subtitle="Respuestas veterinarias directas y estructuradas sobre nutrición sin granos, snacks naturales y despacho en Puerto Varas."
+        />
+      </div>
+
+      {/* Módulo de Cobertura y Despacho Local Los Lagos */}
+      <div className="max-w-7xl mx-auto px-6 mt-10">
+        <LocalDeliveryZones />
+      </div>
 
     </div>
   );

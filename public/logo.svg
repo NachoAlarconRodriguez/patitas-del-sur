@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="pds_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0E8388"/>
+      <stop offset="100%" stop-color="#0A3E40"/>
+    </linearGradient>
+    <linearGradient id="pad_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFA07A"/>
+      <stop offset="100%" stop-color="#C86D39"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <!-- Background Squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#pds_grad)"/>
+  
+  <g filter="url(#shadow)">
+    <!-- Metacarpal Pad (Center) -->
+    <path d="M256,388 C205,388 170,342 185,296 C195,264 220,248 256,248 C292,248 317,264 327,296 C342,342 307,388 256,388 Z" fill="#FFFFFF"/>
+    <!-- Terracotta accent -->
+    <path d="M256,358 C228,358 208,332 217,302 C223,282 238,272 256,272 C274,272 289,282 295,302 C304,332 284,358 256,358 Z" fill="url(#pad_grad)"/>
+    
+    <!-- Toe 1 (Far Left) -->
+    <ellipse cx="148" cy="248" rx="34" ry="46" transform="rotate(-30 148 248)" fill="#FFFFFF"/>
+    <!-- Toe 2 (Center Left) -->
+    <ellipse cx="218" cy="178" rx="34" ry="50" transform="rotate(-10 218 178)" fill="#FFFFFF"/>
+    <!-- Toe 3 (Center Right) -->
+    <ellipse cx="294" cy="178" rx="34" ry="50" transform="rotate(10 294 178)" fill="#FFFFFF"/>
+    <!-- Toe 4 (Far Right) -->
+    <ellipse cx="364" cy="248" rx="34" ry="46" transform="rotate(30 364 248)" fill="#FFFFFF"/>
+  </g>
+</svg>

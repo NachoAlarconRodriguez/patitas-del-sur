@@ -1,77 +1,141 @@
 import React, { useState } from 'react';
-import { X, User, Lock, Mail, ShieldCheck, ArrowRight, Smartphone } from 'lucide-react';
+import { X, User, Lock, Mail, ShieldCheck, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import Logo from './Logo';
+import { supabase } from '../lib/supabase';
+import { getCustomerProfile, upsertCustomerProfile } from '../services/customersService';
 
 export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
-  const [selectedRole, setSelectedRole] = useState('cliente'); // 'cliente' | 'admin'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [petName, setPetName] = useState('');
   const [petType, setPetType] = useState('perro');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const buildUserSession = async (authUser) => {
+    if (!authUser) return null;
+
+    let profile = await getCustomerProfile(authUser.id);
+    if (!profile && authUser.email) {
+      profile = await getCustomerProfile(authUser.email);
+      if (profile && !profile.auth_user_id) {
+        await supabase
+          .from('customers')
+          .update({ auth_user_id: authUser.id })
+          .eq('id', profile.id);
+        profile.auth_user_id = authUser.id;
+      }
+    }
+
+    if (!profile) {
+      const newCust = await upsertCustomerProfile({
+        auth_user_id: authUser.id,
+        fullName: authUser.user_metadata?.full_name || fullName || authUser.email.split('@')[0],
+        email: authUser.email,
+        role: authUser.user_metadata?.role || 'cliente',
+        city: 'Puerto Varas',
+      });
+      profile = newCust?.data || {
+        id: authUser.id,
+        full_name: authUser.user_metadata?.full_name || fullName || 'Tutor Patitas',
+        email: authUser.email,
+        role: 'cliente',
+      };
+    }
+
+    return {
+      id: profile.id,
+      auth_user_id: authUser.id,
+      name: profile.full_name || authUser.user_metadata?.full_name || 'Tutor Patitas',
+      email: profile.email || authUser.email,
+      role: profile.role || 'cliente',
+      petName: authUser.user_metadata?.pet_name || petName || 'Mi Mascota 🐾',
+      petType: authUser.user_metadata?.pet_type || petType || 'perro',
+      city: profile.city || 'Puerto Varas',
+      address: profile.address || '',
+      phone: profile.phone || '',
+      points: profile.points || 0,
+      memberSince: profile.created_at
+        ? new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date(profile.created_at))
+        : 'Octubre 2026',
+    };
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSuccessMsg(true);
+    setErrorMsg(null);
+    setLoading(true);
 
-    const isDomainAdmin =
-      email && (email.toLowerCase().includes('admin') || email.toLowerCase().includes('@patitasdelsur.cl'));
-    const finalRole = selectedRole === 'admin' || isDomainAdmin ? 'admin' : 'cliente';
+    const cleanEmail = email.trim().toLowerCase();
 
-    const userObj = {
-      name:
-        fullName ||
-        (email ? email.split('@')[0] : finalRole === 'admin' ? 'Camila Silva' : 'Felipe Soto'),
-      email: email || (finalRole === 'admin' ? 'camila@patitasdelsur.cl' : 'felipe@tutor.cl'),
-      role: finalRole,
-      petName: petName || (finalRole === 'admin' ? 'Kira 🐶' : 'Jack 🐶'),
-      petType: petType,
-      memberSince: 'Agosto 2026',
-    };
+    try {
+      if (authMode === 'login') {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        });
 
-    setTimeout(() => {
-      onLoginSuccess(userObj);
-      setSuccessMsg(false);
-      onClose();
-    }, 700);
-  };
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            throw new Error('Credenciales incorrectas. Verifica tu correo y contraseña.');
+          } else {
+            throw error;
+          }
+        }
 
-  const handleDemoAdmin = () => {
-    setSuccessMsg(true);
-    const demoAdmin = {
-      name: 'Camila Silva',
-      email: 'camila@patitasdelsur.cl',
-      role: 'admin',
-      petName: 'Kira 🐶',
-      petType: 'perro',
-      memberSince: 'Agosto 2026',
-    };
-    setTimeout(() => {
-      onLoginSuccess(demoAdmin);
-      setSuccessMsg(false);
-      onClose();
-    }, 600);
-  };
+        const userObj = await buildUserSession(data.user);
+        setSuccessMsg(true);
+        setTimeout(() => {
+          onLoginSuccess(userObj);
+          setSuccessMsg(false);
+          onClose();
+        }, 600);
+      } else {
+        // Register
+        if (password.length < 6) {
+          throw new Error('La contraseña debe tener al menos 6 caracteres.');
+        }
 
-  const handleDemoClient = () => {
-    setSuccessMsg(true);
-    const demoClient = {
-      name: 'Felipe Soto',
-      email: 'felipe@tutor.cl',
-      role: 'cliente',
-      petName: 'Jack 🐶',
-      petType: 'perro',
-      memberSince: 'Julio 2026',
-    };
-    setTimeout(() => {
-      onLoginSuccess(demoClient);
-      setSuccessMsg(false);
-      onClose();
-    }, 600);
+        const { data, error } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              full_name: fullName.trim() || cleanEmail.split('@')[0],
+              role: 'cliente',
+              pet_name: petName.trim() || 'Mi Mascota 🐾',
+              pet_type: petType,
+            },
+          },
+        });
+
+        if (error) {
+          if (error.message.includes('already registered')) {
+            throw new Error('Este correo ya está registrado. Por favor inicia sesión.');
+          } else {
+            throw error;
+          }
+        }
+
+        const userObj = await buildUserSession(data.user);
+        setSuccessMsg(true);
+        setTimeout(() => {
+          onLoginSuccess(userObj);
+          setSuccessMsg(false);
+          onClose();
+        }, 600);
+      }
+    } catch (err) {
+      console.error('AuthModal error:', err);
+      setErrorMsg(err.message || 'Ocurrió un error. Por favor intenta de nuevo.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -97,44 +161,13 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         {/* Modal Body */}
         <div className="p-5 sm:p-6 space-y-4">
           
-          {/* Dual Role Selector Capsules */}
-          <div className="space-y-1">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-              Rol de Acceso PWA:
-            </span>
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => setSelectedRole('cliente')}
-                className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  selectedRole === 'cliente'
-                    ? 'bg-white text-[#0E8388] shadow-xs border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>🐾</span>
-                <span>Cliente / Tutor</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRole('admin')}
-                className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                  selectedRole === 'admin'
-                    ? 'bg-[#0A3E40] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>🛡️</span>
-                <span>Administrador</span>
-              </button>
-            </div>
-          </div>
-
           {/* Tab Selector: Iniciar Sesión / Crear Cuenta */}
           <div className="flex items-center bg-slate-50 p-1 rounded-xl border border-slate-200">
             <button
-              onClick={() => setAuthMode('login')}
+              onClick={() => {
+                setErrorMsg(null);
+                setAuthMode('login');
+              }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all ${
                 authMode === 'login'
                   ? 'bg-white text-slate-900 shadow-2xs'
@@ -144,7 +177,10 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               Iniciar Sesión
             </button>
             <button
-              onClick={() => setAuthMode('register')}
+              onClick={() => {
+                setErrorMsg(null);
+                setAuthMode('register');
+              }}
               className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all ${
                 authMode === 'register'
                   ? 'bg-white text-slate-900 shadow-2xs'
@@ -154,6 +190,14 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               Crear Cuenta
             </button>
           </div>
+
+          {/* Mensaje de Error */}
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
           {/* Success Banner */}
           {successMsg ? (
@@ -165,7 +209,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                 ¡Bienvenido a Patitas del Sur! 🐾
               </h4>
               <p className="text-xs text-emerald-700 font-medium">
-                Iniciando sesión en tu panel PWA...
+                Iniciando sesión segura en tu cuenta...
               </p>
             </div>
           ) : (
@@ -181,10 +225,11 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                     <input
                       type="text"
                       required
-                      placeholder={selectedRole === 'admin' ? 'Ej. Camila Silva' : 'Ej. Felipe Soto'}
+                      placeholder="Ej. María González"
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
+                      disabled={loading}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -200,10 +245,11 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                   <input
                     type="email"
                     required
-                    placeholder={selectedRole === 'admin' ? 'camila@patitasdelsur.cl' : 'felipe@tutor.cl'}
+                    placeholder="tucorreo@ejemplo.cl"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all disabled:opacity-60"
                   />
                 </div>
               </div>
@@ -211,7 +257,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               {/* Password */}
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                  Contraseña (Cualquiera es válida)
+                  Contraseña
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -221,15 +267,16 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
+                    disabled={loading}
+                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all disabled:opacity-60"
                   />
                 </div>
               </div>
 
-              {authMode === 'register' && selectedRole === 'cliente' && (
+              {authMode === 'register' && (
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">
-                    Nombre de tu Mascota
+                    Nombre de tu Mascota (Opcional)
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -237,11 +284,13 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
                       placeholder="Ej. Jack / Kira"
                       value={petName}
                       onChange={(e) => setPetName(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all"
+                      disabled={loading}
+                      className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden focus:border-[#0E8388] focus:bg-white transition-all disabled:opacity-60"
                     />
                     <select
                       value={petType}
                       onChange={(e) => setPetType(e.target.value)}
+                      disabled={loading}
                       className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-hidden"
                     >
                       <option value="perro">🐶 Perro</option>
@@ -254,47 +303,23 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
               {/* Primary Submit Button */}
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white font-black text-xs hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all shadow-md flex items-center justify-center gap-2 mt-1 cursor-pointer"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white font-black text-xs hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all shadow-md flex items-center justify-center gap-2 mt-2 cursor-pointer disabled:opacity-60"
               >
-                <span>
-                  {selectedRole === 'admin'
-                    ? 'Acceder como Administrador 🛡️'
-                    : 'Acceder como Cliente 🐾'}
-                </span>
-                <ArrowRight className="w-4 h-4" />
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verificando...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {authMode === 'login' ? 'Iniciar Sesión Segura' : 'Crear mi Cuenta'}
+                    </span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
-
-              {/* Demo Quick Access Buttons */}
-              <div className="pt-2 border-t border-slate-100 space-y-1.5">
-                <span className="text-[10px] font-bold text-slate-400 block text-center uppercase tracking-wider">
-                  Acceso Demo Directo:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDemoAdmin}
-                    className="p-2 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100/80 text-slate-800 text-left transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-                  >
-                    <span className="text-sm">🛡️</span>
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-black text-teal-900 truncate">Admin Demo</div>
-                      <div className="text-[9px] text-teal-700 truncate">Despachos</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDemoClient}
-                    className="p-2 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/80 text-slate-800 text-left transition-all flex items-center gap-2 cursor-pointer active:scale-95"
-                  >
-                    <span className="text-sm">🐾</span>
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-black text-emerald-900 truncate">Cliente Demo</div>
-                      <div className="text-[9px] text-emerald-700 truncate">Tutor Jack</div>
-                    </div>
-                  </button>
-                </div>
-              </div>
 
             </form>
           )}
@@ -302,7 +327,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
           {/* Footer Security Guarantee */}
           <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-2 text-[10px] font-semibold text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Acceso Seguro PWA Patitas del Sur</span>
+            <span>Autenticación Cifrada SSL con Supabase Auth</span>
           </div>
 
         </div>

@@ -23,6 +23,10 @@ export default function SplitHeroCard() {
 
   return (
     <section className="relative w-full h-[100dvh] min-h-[100dvh] overflow-hidden bg-[#FAF9F6] select-none">
+      {/* Semantic H1 for Search Engine & Screen Reader Accessibility */}
+      <h1 className="sr-only">
+        Patitas del Sur | Alimento Natural, Grain Free y Snacks Holísticos para Perros y Gatos en la Patagonia
+      </h1>
       
       {/* Mobile Segmented Mascot Switcher (Only on Mobile) */}
       <div className="md:hidden absolute top-20 left-1/2 -translate-x-1/2 z-30 flex items-center bg-white/95 backdrop-blur-md p-1 rounded-full border border-slate-200/90 shadow-lg">

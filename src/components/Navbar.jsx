@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, Search, Menu, X, ArrowLeft, User, LogOut, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 import Logo from './Logo';
 import { PRODUCTS } from '../data/mockData';
+import { fetchProductsFromSupabase } from '../services/productsService';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 
 export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModal, onLogout, onSelectProduct }) {
@@ -11,6 +12,7 @@ export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModa
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [availableProducts, setAvailableProducts] = useState(PRODUCTS);
   const [isHomeBarExpanded, setIsHomeBarExpanded] = useState(false);
   
   const userMenuRef = useRef(null);
@@ -95,18 +97,41 @@ export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModa
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSearchOpen, isHomePage, isHomeBarExpanded]);
 
+  // Synchronize available products with Supabase
+  useEffect(() => {
+    let isMounted = true;
+    const syncProducts = async () => {
+      try {
+        const prods = await fetchProductsFromSupabase();
+        if (isMounted && prods && prods.length > 0) {
+          setAvailableProducts(prods);
+        }
+      } catch (err) {
+        console.warn('Navbar: error syncing products from Supabase:', err);
+      }
+    };
+
+    syncProducts();
+    window.addEventListener('patitas_products_updated', syncProducts);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('patitas_products_updated', syncProducts);
+    };
+  }, []);
+
   // Search filter effect
   useEffect(() => {
     if (searchQuery.trim().length > 1) {
       const q = searchQuery.toLowerCase();
       const hidden = getHiddenProductIdentifiers();
-      const filtered = PRODUCTS.filter((p) => {
+      const filtered = availableProducts.filter((p) => {
         if (isProductHidden(p, hidden)) return false;
         return (
-          p.name.toLowerCase().includes(q) ||
-          p.tagline.toLowerCase().includes(q) ||
-          p.category.toLowerCase().includes(q) ||
-          p.petType.toLowerCase().includes(q) ||
+          (p.name && p.name.toLowerCase().includes(q)) ||
+          (p.tagline && p.tagline.toLowerCase().includes(q)) ||
+          (p.category && p.category.toLowerCase().includes(q)) ||
+          (p.petType && p.petType.toLowerCase().includes(q)) ||
+          (p.brand && p.brand.toLowerCase().includes(q)) ||
           (p.ingredients && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
         );
       });
@@ -114,7 +139,7 @@ export default function Navbar({ cartCount = 0, onOpenCart, user, onOpenAuthModa
     } else {
       setSearchResults([]);
     }
-  }, [searchQuery]);
+  }, [searchQuery, availableProducts]);
 
   // Format currency
   const formatCLP = (price) => {

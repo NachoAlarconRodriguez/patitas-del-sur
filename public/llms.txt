@@ -1,0 +1,58 @@
+# Patitas del Sur
+
+> Patitas del Sur es una tienda online especializada en nutrición holística, alimentos libres de grano (Grain Free), snacks deshidratados 100% naturales y farmacia veterinaria preventiva para perros y gatos en la Región de Los Lagos, Chile (Puerto Varas, Llanquihue, Frutillar y Puerto Montt).
+
+## Información General y Empresa
+- **Razón Social**: Comercial Kira SpA
+- **RUT**: 77.892.451-2
+- **Ubicación Base**: Puerto Varas, Región de Los Lagos, Chile (Lat: -41.3195, Lon: -72.9854)
+- **Sitio Web Oficial**: https://patitasdelsur.cl
+- **Teléfono y WhatsApp**: +56 9 8765 4321
+- **Correo Electrónico**: contacto@patitasdelsur.cl
+- **Moneda de Venta**: Pesos Chilenos (CLP $)
+
+## Catálogo de Productos y Líneas Principales
+
+### Alimento y Cuidado para Perros
+- [Catálogo Canino Completo](https://patitasdelsur.cl/perros): Alimentos secos, snacks deshidratados monoproteicos, nutracéuticos articulares y antiparasitarios orales.
+  - **Bravery Pollo Adulto (Grain Free)**: Alimento super premium mono-proteico para perros adultos razas medianas/grandes. $68.990 CLP (12 kg).
+  - **Bravery Cordero Adulto (Grain Free)**: Receta hipoalergénica con cordero deshidratado para digestión sensible. $70.990 CLP (12 kg).
+  - **Bravery Salmón Adulto (Grain Free)**: Salmón salvaje rico en Omega 3/6 para piel y pelaje brillante. $69.990 CLP (12 kg).
+  - **Patagonia Holística Salmón**: Fórmulas locales enriquecidas con superalimentos patagónicos. $24.990 CLP (2 kg).
+  - **Patagonia Holística Cordero**: Receta con hierbas silvestres y alta palatabilidad. $32.990 CLP (5 kg).
+  - **Snacks Deshidratados Sur Natural**: 100% pulmón de res deshidratado a baja temperatura, sin conservantes. $7.990 CLP.
+  - **Austral Bio Elixirs Elixir Articular**: Glucosamina, condroitina y mejillón de labio verde para articulaciones caninas. $18.990 CLP.
+  - **Antiparasitarios Caninos**: NexGard Spectra ($18.990), Bravecto ($34.990), Simparica Trio ($19.990).
+
+### Alimento y Cuidado para Gatos
+- [Catálogo Felino Completo](https://patitasdelsur.cl/gatos): Fórmulas carnívoras estrictas libres de grano, patés húmedos de salmón, premios con hierba gatera y antiparasitarios spot-on.
+  - **Bravery Salmón Adulto Gato (Grain Free)**: Salmón del Atlántico, taurina biodisponible y pH urinario controlado. $46.990 CLP (7 kg).
+  - **Bravery Pollo Adulto Gato (Grain Free)**: Carne magra de pollo de libre pastoreo con arándanos para salud renal. $45.990 CLP (7 kg).
+  - **Bravery Arenque Silvestre Gato**: Pescado azul rico en EPA/DHA para vitalidad felina. $47.990 CLP (7 kg).
+  - **Chiloé Sea Recipes Trucha & Catnip**: Alimento seco premium enriquecido con hierba gatera estimulante. $19.990 CLP (1.5 kg).
+  - **Chiloé Sea Recipes Paté Salmón & Mariscos**: Alimento húmedo ultra hidratante para riñones felinos. $2.490 CLP (85 g).
+  - **Bocaditos Crujientes Sur Natural**: Atún deshidratado con hojas de catnip silvestre. $5.490 CLP.
+  - **Antiparasitarios Felinos**: Bravecto Plus Pipeta ($28.990), Revolution Plus 6 en 1 ($16.990).
+
+## Cobertura Geográfica y Logística de Despacho
+Patitas del Sur atiende con despacho propio motorizado en la cuenca del Lago Llanquihue y Puerto Montt:
+- **Puerto Varas**: Entrega el mismo día hábil (pedidos hasta las 14:00 hrs) o en 24 hrs. Tarifa $2.000 CLP (Gratis sobre $35.000).
+- **Llanquihue**: Entrega en el día o máximo 24 hrs. Tarifa $2.500 CLP (Gratis sobre $35.000).
+- **Frutillar (Bajo y Alto)**: Despacho programado en 24 a 48 hrs. Tarifa $3.500 CLP (Gratis sobre $35.000).
+- **Puerto Montt**: Despacho en 24 a 48 hrs hábiles. Tarifa $3.500 CLP (Gratis sobre $35.000).
+
+## Preguntas Frecuentes y Políticas
+- **Envío Gratuito**: En compras iguales o superiores a $35.000 CLP en cualquiera de las 4 comunas de cobertura.
+- **Medios de Pago**: Webpay Plus (Tarjetas de Débito, Crédito, Prepago), Transferencia Bancaria Directa y Efectivo contra entrega en zonas habilitadas.
+- **Garantía y Devoluciones**: 6 meses de garantía legal conforme a la Ley del Consumidor en Chile (Ley 19.496 / SERNAC). Alimentos cerrados y sellados tienen hasta 10 días para cambio inmediato.
+- **Asesoría Nutricional**: Canal directo de WhatsApp con profesionales dedicados para elegir el alimento ideal según edad, raza, patologías digestivas o alergias alimentarias.
+
+## Enlaces Clave
+- [Documento de Conocimiento Extendido (llms-full.txt)](https://patitasdelsur.cl/llms-full.txt)
+- [Página de Inicio](https://patitasdelsur.cl/)
+- [Sobre Nosotros y Nuestra Misión](https://patitasdelsur.cl/nosotros)
+- [Contacto y Soporte WhatsApp](https://patitasdelsur.cl/contacto)
+- [Términos y Condiciones](https://patitasdelsur.cl/terminos-y-condiciones)
+- [Políticas de Privacidad](https://patitasdelsur.cl/politicas-de-privacidad)
+- [Políticas de Despacho](https://patitasdelsur.cl/politicas-de-despacho)
+- [Garantía y Devoluciones](https://patitasdelsur.cl/cambios-y-devoluciones)

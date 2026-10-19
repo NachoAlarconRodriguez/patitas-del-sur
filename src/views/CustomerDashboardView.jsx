@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Heart,
   ShoppingBag,
@@ -54,6 +54,8 @@ import VeterinaryConsultationModal from '../components/VeterinaryConsultationMod
 import AntiparasiticModal from '../components/AntiparasiticModal';
 import CustomerProfileModal from '../components/CustomerProfileModal';
 import RedeemPointsModal from '../components/RedeemPointsModal';
+import CustomerMembershipCard from './customer/CustomerMembershipCard';
+import CustomerOrdersTable from './customer/CustomerOrdersTable';
 import {
   getCustomerProfile,
   upsertCustomerProfile,
@@ -1432,91 +1434,10 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [orderFilterStatus, setOrderFilterStatus] = useState('todos');
   const [orderFilterSearch, setOrderFilterSearch] = useState('');
 
-  // Orders Mock Data with Categories, Delivery Schedules & Payment Types
-  const INITIAL_MOCK_ORDERS = [
-    {
-      id: 'PTS-1042',
-      date: '17 Ago 2026',
-      dateIso: '2026-08-17',
-      product: 'Bravery Cordero Adulto Raza Mediana / Grande 12kg',
-      category: 'Alimento Seco',
-      total: '$68.990',
-      pointsEarned: 689,
-      status: 'En Camino 🚚',
-      statusCode: 'en_camino',
-      statusColor: 'bg-[#0E8388]/10 text-[#0E8388] border-[#0E8388]/30',
-      deliveryDayText: 'Hoy Mismo',
-      deliverySlot: 'Tarde (14:00 - 19:00 hrs)',
-      paymentMethod: 'Tarjeta',
-      address: 'Av. Los Colonos 1420, Puerto Varas',
-    },
-    {
-      id: 'PTS-1015',
-      date: '28 Jul 2026',
-      dateIso: '2026-07-28',
-      product: 'Bravecto Plus Gatos Pipeta Spot-on (12 Semanas)',
-      category: 'Antiparasitarios / Salud',
-      total: '$28.990',
-      pointsEarned: 289,
-      status: 'Entregado ✓',
-      statusCode: 'entregado',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    },
-    {
-      id: 'PTS-0988',
-      date: '02 Jul 2026',
-      dateIso: '2026-07-02',
-      product: 'Salmón de la Patagonia Ultra Premium 2kg',
-      category: 'Alimento Seco',
-      total: '$24.990',
-      pointsEarned: 249,
-      status: 'Entregado ✓',
-      statusCode: 'entregado',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    },
-    {
-      id: 'PTS-0871',
-      date: '15 Jun 2026',
-      dateIso: '2026-06-15',
-      product: 'Pack 3x Snacks Deshidratados Pulmón de Res',
-      category: 'Snacks Naturales',
-      total: '$7.990',
-      pointsEarned: 79,
-      status: 'Entregado ✓',
-      statusCode: 'entregado',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    },
-    {
-      id: 'PTS-0750',
-      date: '10 May 2026',
-      dateIso: '2026-05-10',
-      product: 'NexGard Spectra Perros 7.5 - 15kg (Masticable Mensual)',
-      category: 'Antiparasitarios / Salud',
-      total: '$18.990',
-      pointsEarned: 189,
-      status: 'Entregado ✓',
-      statusCode: 'entregado',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-    },
-    {
-      id: 'PTS-0632',
-      date: '14 Abr 2026',
-      dateIso: '2026-04-14',
-      product: 'Bravery Pollo Adulto Raza Mediana / Grande 12kg',
-      category: 'Alimento Seco',
-      total: '$68.990',
-      pointsEarned: 689,
-      status: 'Entregado ✓',
-      statusCode: 'entregado',
-      statusColor: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-      deliveryDayText: '14 Abr 2026',
-      deliverySlot: 'Mañana (09:00 - 13:00 hrs)',
-      paymentMethod: 'Web',
-      address: 'Av. Los Colonos 1420, Puerto Varas',
-    },
-  ];
+  // Orders Mock Data with Categories, Delivery Schedules & Payment Types (0 for production)
+  const INITIAL_MOCK_ORDERS = [];
 
-  const [ordersList, setOrdersList] = useState(INITIAL_MOCK_ORDERS);
+  const [ordersList, setOrdersList] = useState([]);
 
   // Sincronizar pedidos del cliente con Supabase y reaccionar a nuevos checkouts
   useEffect(() => {
@@ -1529,8 +1450,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           const activeEmail = (profileData.email || user?.email || '').toLowerCase().trim();
           const relevantOrders = dbOrders.filter((o) =>
             (customerDbId && o.customer_id === customerDbId) ||
-            (activeEmail && o.customer_email && o.customer_email.toLowerCase().trim() === activeEmail) ||
-            !o.customer_id
+            (activeEmail && o.customer_email && o.customer_email.toLowerCase().trim() === activeEmail)
           );
 
           if (relevantOrders.length > 0) {
@@ -1567,8 +1487,12 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
               };
             });
 
-            setOrdersList([...mapped, ...INITIAL_MOCK_ORDERS.filter((m) => !mapped.some((x) => x.id === m.id))]);
+            setOrdersList(mapped);
+          } else {
+            setOrdersList([]);
           }
+        } else {
+          setOrdersList([]);
         }
       } catch (err) {
         console.error('Error fetching customer orders:', err);
@@ -1622,14 +1546,16 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [storeWeightFilter, setStoreWeightFilter] = useState('Todos');
   const [storeCategoryFilter, setStoreCategoryFilter] = useState('Todos');
 
-  // Base products filtered by pet type tab
+  // Base products filtered by pet type tab (connected to live Supabase catalog)
+  const activeCatalog = catalogProducts && catalogProducts.length > 0 ? catalogProducts : PRODUCTS;
+
   const baseStoreProducts = useMemo(() => {
-    return PRODUCTS.filter((p) => {
+    return activeCatalog.filter((p) => {
       if (storeFilter === 'perro') return p.petType === 'perros' || p.petType === 'ambos';
       if (storeFilter === 'gato') return p.petType === 'gatos' || p.petType === 'ambos';
       return true;
     });
-  }, [storeFilter]);
+  }, [storeFilter, activeCatalog]);
 
   // Brand product counts
   const storeBrandCounts = useMemo(() => {
@@ -1701,8 +1627,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     const isCat = activeSelectedPet?.type === 'gato';
     const targetSpecies = isCat ? 'gatos' : 'perros';
 
-    // Base: productos para la especie de la mascota activa o ambos
-    const speciesProducts = PRODUCTS.filter(p => p.petType === targetSpecies || p.petType === 'ambos');
+    // Base: productos para la especie de la mascota activa o ambos (desde catálogo en vivo)
+    const speciesProducts = activeCatalog.filter(p => p.petType === targetSpecies || p.petType === 'ambos');
 
     // 1. Si hay texto en el buscador
     if (storeSearchQuery.trim()) {
@@ -2175,394 +2101,27 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             )}
 
             {/* REAL PHYSICAL-STYLE DIGITAL MEMBERSHIP CARD SECTION */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-              
-              {/* Left 5 Cols: CUSTOM PATITAS DEL SUR BRAND VIP MEMBERSHIP CARD */}
-              <div className="lg:col-span-5 flex flex-col justify-between">
-                <div className="w-full aspect-[1.58/1] rounded-3xl p-6 text-slate-900 bg-gradient-to-br from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1] shadow-2xl border-2 border-[#0E8388]/30 relative overflow-hidden flex flex-col justify-between group transform transition-transform hover:scale-[1.02]">
-                  
-                  {/* Watermarked Official Patitas del Sur Logo Outline in Background */}
-                  <img
-                    src="/images/logo_patitas_del_sur.svg"
-                    alt=""
-                    className="absolute -right-8 -bottom-10 h-64 w-auto opacity-15 pointer-events-none select-none filter contrast-125"
-                  />
-
-                  {/* Decorative Brand Color Bar at Top */}
-                  <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981]" />
-
-                  {/* Card Top Row: Official Logo & Tier Badge */}
-                  <div className="relative z-10 flex items-center justify-between pt-1">
-                    <img
-                      src="/images/logo_patitas_del_sur.svg"
-                      alt="Patitas del Sur"
-                      className="h-10 w-auto object-contain drop-shadow-xs"
-                    />
-
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0A3E40] text-white shadow-md border border-[#0E8388]/40">
-                      <Award className="w-3.5 h-3.5 text-amber-300" />
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">
-                        SOCIO ORO 🥇
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Card Middle Row: Member Name, ID & Points Balance */}
-                  <div className="relative z-10 space-y-1.5 my-auto pt-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] uppercase font-black tracking-widest text-[#0E8388]">
-                        Tarjeta de Fidelización Oficial
-                      </span>
-                      <span className="text-[10px] font-mono font-bold text-slate-600">
-                        N° #PTS-1042
-                      </span>
-                    </div>
-
-                    <div className="text-xl md:text-2xl font-black text-slate-900 tracking-tight flex items-baseline justify-between">
-                      <span>{currentUser.name}</span>
-                      <span className="text-xs font-bold text-slate-500 font-mono">2026 / 2027</span>
-                    </div>
-
-                    {/* Points Box */}
-                    <div className="p-3 rounded-2xl bg-white/90 border border-[#0E8388]/30 shadow-xs flex items-center justify-between backdrop-blur-md">
-                      <div>
-                        <span className="text-[9px] uppercase font-black text-slate-500 block">Saldo de Puntos</span>
-                        <span className="text-2xl font-black text-[#0A3E40]">{userPoints.toLocaleString('es-CL')} PTS</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[9px] uppercase font-black text-slate-500 block">Valor Canjeable</span>
-                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                          ${(userPoints * 10).toLocaleString('es-CL')} CLP Dcto
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Card Bottom Row: Pet Icons & Brand Guarantee */}
-                  <div className="relative z-10 flex items-center justify-between text-xs font-bold text-slate-600 pt-2 border-t border-slate-200/80">
-                    <div className="flex items-center gap-1.5 text-[11px] font-black text-[#0A3E40]">
-                      <span>🐾 Mascotas: {currentUser.petName}</span>
-                    </div>
-                    <div className="text-[10px] font-extrabold text-[#0E8388] uppercase tracking-wider">
-                      Patitas del Sur SpA
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-
-              {/* Right 7 Cols: Progress Bar & Milestone Tier Rewards Panel */}
-              <div className="lg:col-span-7 bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-md flex flex-col justify-between space-y-6">
-                
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                    <div>
-                      <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 inline-block mb-1">
-                        Canje de Puntos por Compras 🚀
-                      </span>
-                      <h3 className="text-xl font-black text-slate-900">
-                        {userPoints < 1500 ? 'Próximo Beneficio: Envío Gratis (2 compras) 🚚' : '¡Tienes puntos listos para canjear! 🎁'}
-                      </h3>
-                      <p className="text-xs text-slate-500 font-medium mt-0.5">
-                        Al canjear un cupón, los puntos se descuentan y el beneficio aplica en tus compras indicadas.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setIsRedeemModalOpen(true)}
-                      className="px-5 py-3 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white font-black text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>Canjear Puntos</span>
-                    </button>
-                  </div>
-
-                  {/* Progress Bar Container */}
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                    <div className="flex justify-between text-xs font-black">
-                      <span className="text-slate-700">
-                        {userPoints < 1500 ? 'Progreso para Envío Gratis (1.500 Pts):' : 'Progreso a 2.000 Pts (20% Dcto + Regalo):'}
-                      </span>
-                      <span className="text-[#0E8388]">
-                        {userPoints < 1500
-                          ? `¡Faltan solo ${1500 - userPoints} Pts! (${Math.round((userPoints / 1500) * 100)}%)`
-                          : userPoints < 2000
-                          ? `¡Faltan ${2000 - userPoints} Pts! (${Math.round((userPoints / 2000) * 100)}%)`
-                          : '¡Nivel Máximo de Recompensas Alcanzado!'}
-                      </span>
-                    </div>
-                    <div className="w-full h-4 rounded-full bg-slate-200 overflow-hidden p-0.5 border border-slate-300">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981] transition-all duration-700 shadow-md relative"
-                        style={{ width: `${Math.min(100, (userPoints / 1500) * 100)}%` }}
-                      >
-                        <div className="absolute inset-0 bg-white/20 animate-pulse" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Milestone Tiers Horizontal List (Explicit Validity Per Purchases) */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {/* Milestone 1: 500 Pts */}
-                  <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 500 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                    <div className="text-[10px] font-black text-emerald-800 uppercase">500 Pts</div>
-                    <div className="font-extrabold text-slate-900">$5.000 Dcto</div>
-                    <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-                    <div className={`text-[10px] font-black ${userPoints >= 500 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {userPoints >= 500 ? '✓ Canjeable' : '🔒 Faltan Pts'}
-                    </div>
-                  </div>
-
-                  {/* Milestone 2: 1000 Pts */}
-                  <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 1000 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                    <div className="text-[10px] font-black text-emerald-800 uppercase">1.000 Pts</div>
-                    <div className="font-extrabold text-slate-900">$10.000 Dcto</div>
-                    <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-                    <div className={`text-[10px] font-black ${userPoints >= 1000 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                      {userPoints >= 1000 ? '✓ Canjeable' : '🔒 Faltan Pts'}
-                    </div>
-                  </div>
-
-                  {/* Milestone 3: 1500 Pts */}
-                  <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 1500 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-2 border-amber-300 shadow-xs'}`}>
-                    <div className="text-[10px] font-black text-amber-900 uppercase">1.500 Pts ⚡</div>
-                    <div className="font-extrabold text-slate-900">Envío Gratis</div>
-                    <div className="text-[10px] text-slate-600 font-medium">Válido: 2 compras</div>
-                    <div className="text-[10px] text-amber-800 font-black">
-                      {userPoints >= 1500 ? '✓ Canjeable' : '¡Próxima Meta!'}
-                    </div>
-                  </div>
-
-                  {/* Milestone 4: 2000 Pts */}
-                  <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 2000 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-70'}`}>
-                    <div className="text-[10px] font-black text-slate-500 uppercase">2.000 Pts 🔒</div>
-                    <div className="font-extrabold text-slate-700">20% + Regalo</div>
-                    <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-                    <div className="text-[10px] text-slate-500 font-bold">
-                      {userPoints >= 2000 ? '✓ Canjeable' : 'Bloqueado'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Active Redeemed Coupons List */}
-                {activeCoupons.length > 0 && (
-                  <div className="pt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <span>🎟️</span>
-                        <span>Cupones Activos Canjeados ({activeCoupons.length})</span>
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-bold">Listos para aplicar al pagar</span>
-                    </div>
-
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                      {activeCoupons.map((coupon) => (
-                        <div
-                          key={coupon.id}
-                          className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-xs flex items-center justify-between gap-3 shrink-0 shadow-2xs"
-                        >
-                          <div>
-                            <div className="font-black text-emerald-950 text-xs">{coupon.title}</div>
-                            <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1.5 mt-0.5">
-                              <span className="bg-emerald-100 px-1.5 py-0.2 rounded-md font-mono">{coupon.code}</span>
-                              <span>• {coupon.validity}</span>
-                            </div>
-                          </div>
-                          <span className="text-[9px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-                            Activo
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              </div>
-
-            </div>
+            <CustomerMembershipCard
+              currentUser={currentUser}
+              userPoints={userPoints}
+              activeCoupons={activeCoupons}
+              onOpenRedeemModal={() => setIsRedeemModalOpen(true)}
+            />
 
             {/* Order History Table with Interactive Filters */}
-            <div className="p-6 md:p-8 rounded-3xl bg-white border border-slate-200 shadow-md space-y-5">
-              
-              {/* Header & Filter Controls Bar */}
-              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-                <div>
-                  <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <Package className="w-5 h-5 text-[#0E8388]" />
-                    <span>Detalle de Compras Realizadas</span>
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Historial de pedidos, puntos generados y estado de despacho en tiempo real:
-                  </p>
-                </div>
-
-                {/* Filters Toolbar */}
-                <div className="flex items-center gap-2.5 flex-wrap">
-                  
-                  {/* 1. Date Filter Dropdown */}
-                  <div className="relative min-w-[145px]">
-                    <select
-                      value={orderFilterPeriod}
-                      onChange={(e) => setOrderFilterPeriod(e.target.value)}
-                      className="w-full pl-8 pr-7 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 transition-all"
-                    >
-                      <option value="todos">📅 Todas las fechas</option>
-                      <option value="30dias">⏳ Últimos 30 días</option>
-                      <option value="3meses">🗓️ Últimos 3 meses</option>
-                      <option value="2026">📆 Todo el 2026</option>
-                    </select>
-                    <Calendar className="w-3.5 h-3.5 text-[#0E8388] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* 2. Product Category Filter */}
-                  <div className="relative min-w-[155px]">
-                    <select
-                      value={orderFilterCategory}
-                      onChange={(e) => setOrderFilterCategory(e.target.value)}
-                      className="w-full pl-8 pr-7 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 transition-all"
-                    >
-                      <option value="todos">🥩 Todos los productos</option>
-                      <option value="Alimento Seco">🥩 Alimento Seco</option>
-                      <option value="Snacks Naturales">🥓 Snacks Naturales</option>
-                      <option value="Antiparasitarios / Salud">💊 Antiparasitarios</option>
-                    </select>
-                    <Package className="w-3.5 h-3.5 text-[#0E8388] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* 3. Shipment Status Filter */}
-                  <div className="relative min-w-[145px]">
-                    <select
-                      value={orderFilterStatus}
-                      onChange={(e) => setOrderFilterStatus(e.target.value)}
-                      className="w-full pl-8 pr-7 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 transition-all"
-                    >
-                      <option value="todos">🚚 Todos los estados</option>
-                      <option value="en_camino">🚚 En Camino</option>
-                      <option value="entregado">✓ Entregado</option>
-                    </select>
-                    <Truck className="w-3.5 h-3.5 text-[#0E8388] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* 4. Search Filter Input */}
-                  <div className="relative min-w-[150px] flex-1 sm:flex-initial">
-                    <input
-                      type="text"
-                      value={orderFilterSearch}
-                      onChange={(e) => setOrderFilterSearch(e.target.value)}
-                      placeholder="Buscar pedido..."
-                      className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 transition-all"
-                    />
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-
-                  {/* 5. Reset Filter Button */}
-                  {(orderFilterPeriod !== 'todos' || orderFilterCategory !== 'todos' || orderFilterStatus !== 'todos' || orderFilterSearch) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOrderFilterPeriod('todos');
-                        setOrderFilterCategory('todos');
-                        setOrderFilterStatus('todos');
-                        setOrderFilterSearch('');
-                      }}
-                      className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                      title="Restablecer filtros"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Limpiar</span>
-                    </button>
-                  )}
-
-                </div>
-              </div>
-
-              {/* Table / Results */}
-              <div className="overflow-x-auto rounded-2xl border border-slate-200/80">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
-                    <tr>
-                      <th className="px-5 py-3.5">N° Pedido</th>
-                      <th className="px-5 py-3.5">Fecha</th>
-                      <th className="px-5 py-3.5">Producto Adquirido</th>
-                      <th className="px-5 py-3.5">Entrega Programada</th>
-                      <th className="px-5 py-3.5">Puntos Ganados</th>
-                      <th className="px-5 py-3.5">Monto Total</th>
-                      <th className="px-5 py-3.5 text-center">Estado & Rastreo</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
-                    {filteredOrders.length > 0 ? (
-                      filteredOrders.map((order) => (
-                        <tr key={order.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-5 py-4 font-black text-[#0E8388] font-mono">{order.id}</td>
-                          <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{order.date}</td>
-                          <td className="px-5 py-4 font-bold text-slate-900 min-w-[200px]">{order.product}</td>
-                          <td className="px-5 py-4 whitespace-nowrap">
-                            <div className="font-extrabold text-slate-800 text-xs">
-                              {order.deliveryDayText || 'Entrega estándar'}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-medium">
-                              {order.deliverySlot || 'Tarde (14:00 - 19:00 hrs)'} · Pago: {order.paymentMethod || 'Web'}
-                            </div>
-                          </td>
-                          <td className="px-5 py-4 font-black text-amber-600 whitespace-nowrap">+{order.pointsEarned} Pts</td>
-                          <td className="px-5 py-4 font-extrabold text-slate-900 whitespace-nowrap">{order.total}</td>
-                          <td className="px-5 py-4 text-center whitespace-nowrap">
-                            <div className="flex flex-col items-center gap-1.5">
-                              <span className={`px-3 py-1 rounded-full text-[11px] font-black border ${order.statusColor}`}>
-                                {order.status}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setLiveTrackingOrder(order)}
-                                className="px-2.5 py-0.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#0E8388] font-bold text-[10px] border border-teal-200 transition-colors cursor-pointer flex items-center gap-1 active:scale-95"
-                              >
-                                <Truck className="w-3 h-3" />
-                                <span>Ver Rastreo</span>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="7" className="px-6 py-12 text-center text-slate-500">
-                          <div className="max-w-xs mx-auto space-y-2">
-                            <span className="text-3xl block">🔍</span>
-                            <div className="font-black text-slate-800 text-sm">No se encontraron compras</div>
-                            <p className="text-xs text-slate-500 font-medium">
-                              No hay pedidos que coincidan con los filtros seleccionados.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOrderFilterPeriod('todos');
-                                setOrderFilterCategory('todos');
-                                setOrderFilterStatus('todos');
-                                setOrderFilterSearch('');
-                              }}
-                              className="mt-2 px-4 py-1.5 rounded-xl bg-[#0E8388] text-white font-bold text-xs hover:bg-[#0A3E40] transition-colors cursor-pointer"
-                            >
-                              Ver todas las compras
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Table Footer Summary */}
-              <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1 pt-1">
-                <span>Mostrando <strong>{filteredOrders.length}</strong> de <strong>{ordersList.length}</strong> compras</span>
-                <span className="text-emerald-700 font-bold">✓ Puntos acumulados automáticamente</span>
-              </div>
-
-            </div>
+            <CustomerOrdersTable
+              ordersList={ordersList}
+              filteredOrders={filteredOrders}
+              orderFilterPeriod={orderFilterPeriod}
+              setOrderFilterPeriod={setOrderFilterPeriod}
+              orderFilterCategory={orderFilterCategory}
+              setOrderFilterCategory={setOrderFilterCategory}
+              orderFilterStatus={orderFilterStatus}
+              setOrderFilterStatus={setOrderFilterStatus}
+              orderFilterSearch={orderFilterSearch}
+              setOrderFilterSearch={setOrderFilterSearch}
+              onOpenLiveTracking={(order) => setLiveTrackingOrder(order)}
+            />
 
           </div>
         )}
@@ -2871,6 +2430,29 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   </button>
                 </div>
               )}
+
+              {/* Acceso directo al Catálogo General Completo */}
+              <div className="rounded-2xl bg-white border border-slate-200/80 p-4 text-center space-y-2.5 shadow-2xs">
+                <p className="text-xs font-bold text-slate-700">
+                  ¿Buscas más marcas, snacks específicos o accesorios?
+                </p>
+                <div className="flex items-center justify-center gap-2">
+                  <Link
+                    to="/perros"
+                    className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#0A3E40] text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 active:scale-95"
+                  >
+                    <span>🐶</span>
+                    <span>Catálogo Perros</span>
+                  </Link>
+                  <Link
+                    to="/gatos"
+                    className="px-3.5 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[#C86D39] text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 active:scale-95"
+                  >
+                    <span>🐱</span>
+                    <span>Catálogo Gatos</span>
+                  </Link>
+                </div>
+              </div>
             </div>
           );
         })()}

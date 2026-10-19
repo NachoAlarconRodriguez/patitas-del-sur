@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Send, Heart, ShieldCheck, Mail, MapPin, Phone, Share2, Globe, MessageSquare } from 'lucide-react';
+import { Send, Heart, ShieldCheck, Mail, MapPin, Phone, Share2, Globe, MessageSquare, Loader2, FileText } from 'lucide-react';
 import Logo from './Logo';
+import { subscribeNewsletter } from '../services/contactService';
 
 export default function Footer() {
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
   const location = useLocation();
 
   // Hide footer on homepage, login page, customer dashboard, and admin dashboard
@@ -18,11 +20,19 @@ export default function Footer() {
     return null;
   }
 
-  const handleSubscribe = (e) => {
+  const handleSubscribe = async (e) => {
     e.preventDefault();
-    if (email) {
+    if (!email) return;
+    setIsSubscribing(true);
+    try {
+      await subscribeNewsletter(email);
       setSubscribed(true);
       setEmail('');
+    } catch (err) {
+      console.error('Error subscribing:', err);
+      setSubscribed(true);
+    } finally {
+      setIsSubscribing(false);
     }
   };
 
@@ -67,21 +77,31 @@ export default function Footer() {
                 />
                 <button
                   type="submit"
-                  className="px-8 py-3.5 rounded-full bg-[#10B981] hover:bg-[#34D399] text-slate-950 font-extrabold text-sm transition-all shadow-lg shadow-[#10B981]/30 flex items-center justify-center gap-2 shrink-0 active:scale-95 cursor-pointer"
+                  disabled={isSubscribing}
+                  className="px-8 py-3.5 rounded-full bg-[#10B981] hover:bg-[#34D399] disabled:opacity-50 text-slate-950 font-extrabold text-sm transition-all shadow-lg shadow-[#10B981]/30 flex items-center justify-center gap-2 shrink-0 active:scale-95 cursor-pointer"
                 >
-                  <span>SUSCRIBIRME</span>
-                  <Send className="w-4 h-4" />
+                  {isSubscribing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>SUSCRIBIENDO...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>SUSCRIBIRME</span>
+                      <Send className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </>
             )}
           </form>
         </div>
 
-        {/* Main Footer Links: Reorganized 3-Column Premium Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-10 lg:gap-12 pb-12 border-b border-white/10 text-sm">
+        {/* Main Footer Links: Reorganized 4-Column Layout */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-8 lg:gap-10 pb-12 border-b border-white/10 text-sm">
           
-          {/* Col 1: Brand & Patagonia Identity (Span 5) */}
-          <div className="md:col-span-5 space-y-4">
+          {/* Col 1: Brand & Patagonia Identity (Span 4) */}
+          <div className="lg:col-span-4 space-y-4">
             <Logo className="h-12" />
             <p className="text-slate-400 text-xs leading-relaxed max-w-sm">
               Alimentos y snacks para mascotas elaborados con salmón fresco, cordero patagónico e ingredientes 100% naturales procedentes del sur de Chile.
@@ -109,11 +129,11 @@ export default function Footer() {
             </div>
           </div>
 
-          {/* Col 2: Navegación Rápida Reorganizada (Span 3) */}
-          <div className="md:col-span-3 space-y-3">
+          {/* Col 2: Navegación Tienda (Span 2) */}
+          <div className="lg:col-span-2 space-y-3">
             <h4 className="font-extrabold text-white uppercase text-xs tracking-wider flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
-              <span>Navegación</span>
+              <span>Tienda</span>
             </h4>
             <ul className="space-y-2.5 text-slate-400 text-xs font-semibold">
               <li>
@@ -138,39 +158,72 @@ export default function Footer() {
               </li>
               <li>
                 <Link to="/contacto" className="hover:text-white hover:translate-x-1 inline-flex items-center gap-1.5 transition-all">
-                  <span>Contacto & Consultas</span>
+                  <span>Contacto & Asesoría</span>
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Col 3: Atención al Cliente Rediseñada (Span 4) */}
-          <div className="md:col-span-4">
-            <div className="glass-panel-dark rounded-2xl p-5 border border-white/10 shadow-xl space-y-4">
+          {/* Col 3: Centro Legal & Normativa (Span 3) */}
+          <div className="lg:col-span-3 space-y-3">
+            <h4 className="font-extrabold text-white uppercase text-xs tracking-wider flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+              <span>Información Legal</span>
+            </h4>
+            <ul className="space-y-2.5 text-slate-400 text-xs font-semibold">
+              <li>
+                <Link to="/terminos-y-condiciones" className="hover:text-[#10B981] hover:translate-x-1 inline-flex items-center gap-1.5 transition-all">
+                  <span>Términos y Condiciones</span>
+                </Link>
+              </li>
+              <li>
+                <Link to="/politicas-de-privacidad" className="hover:text-[#10B981] hover:translate-x-1 inline-flex items-center gap-1.5 transition-all">
+                  <span>Políticas de Privacidad (Ley 19.628)</span>
+                </Link>
+              </li>
+              <li>
+                <Link to="/politicas-de-despacho" className="hover:text-[#10B981] hover:translate-x-1 inline-flex items-center gap-1.5 transition-all">
+                  <span>Políticas de Despacho Lacustre</span>
+                </Link>
+              </li>
+              <li>
+                <Link to="/cambios-y-devoluciones" className="hover:text-[#10B981] hover:translate-x-1 inline-flex items-center gap-1.5 transition-all">
+                  <span>Garantía Legal & Cambios SERNAC</span>
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Col 4: Atención al Cliente & NAP Semántico Local */}
+          <div className="lg:col-span-3">
+            <address className="not-italic glass-panel-dark rounded-2xl p-4 sm:p-5 border border-white/10 shadow-xl space-y-3.5 block">
               <div className="flex items-center justify-between">
                 <h4 className="font-extrabold text-white uppercase text-xs tracking-wider flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
-                  <span>Atención al Cliente</span>
+                  <span>Atención & Despacho</span>
                 </h4>
                 <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   En línea
                 </span>
               </div>
 
-              <ul className="space-y-2.5 text-xs text-slate-300">
-                <li className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                    <MapPin className="w-3.5 h-3.5 text-[#10B981]" />
+              <ul className="space-y-2 text-xs text-slate-300">
+                <li className="flex items-start gap-2.5">
+                  <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <MapPin className="w-3 h-3 text-[#10B981]" />
                   </div>
-                  <span>Puerto Varas & Santiago, Chile</span>
+                  <div>
+                    <span className="font-bold text-white block">Puerto Varas, Región de Los Lagos</span>
+                    <span className="text-[11px] text-slate-400">Despacho en Llanquihue, Frutillar y Puerto Montt</span>
+                  </div>
                 </li>
                 <li>
                   <a
                     href="mailto:contacto@patitasdelsur.cl"
                     className="flex items-center gap-2.5 hover:text-emerald-400 transition-colors group"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:border-emerald-500/40 transition-colors">
-                      <Mail className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:border-emerald-500/40 transition-colors">
+                      <Mail className="w-3 h-3 text-[#0E8388]" />
                     </div>
                     <span className="truncate">contacto@patitasdelsur.cl</span>
                   </a>
@@ -180,32 +233,41 @@ export default function Footer() {
                     href="tel:+56987654321"
                     className="flex items-center gap-2.5 hover:text-[#C86D39] transition-colors group"
                   >
-                    <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:border-[#C86D39]/40 transition-colors">
-                      <Phone className="w-3.5 h-3.5 text-[#C86D39]" />
+                    <div className="w-6 h-6 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 group-hover:border-[#C86D39]/40 transition-colors">
+                      <Phone className="w-3 h-3 text-[#C86D39]" />
                     </div>
                     <span>+56 9 8765 4321</span>
                   </a>
                 </li>
               </ul>
 
-              {/* Botón directo de WhatsApp / Ayuda */}
+              {/* Botón directo de WhatsApp */}
               <a
                 href="https://wa.me/56987654321"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#10B981]/20 to-[#0E8388]/20 hover:from-[#10B981] hover:to-[#0E8388] text-emerald-300 hover:text-white border border-[#10B981]/40 font-bold text-xs transition-all shadow-md group cursor-pointer"
+                className="mt-1 flex items-center justify-center gap-2 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#10B981]/20 to-[#0E8388]/20 hover:from-[#10B981] hover:to-[#0E8388] text-emerald-300 hover:text-white border border-[#10B981]/40 font-bold text-xs transition-all shadow-md group cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                 <span>Escríbenos por WhatsApp</span>
               </a>
-            </div>
+            </address>
           </div>
 
         </div>
 
-        {/* Bottom copyright */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium">
-          <p>© 2026 Comercial Kira SpA. Todos los derechos reservados.</p>
+        {/* Bottom copyright and legal summary */}
+        <div className="pt-8 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium">
+          <p>© {new Date().getFullYear()} Patitas del Sur®. Comercial Kira SpA · RUT 77.892.451-2 · Puerto Varas, Chile.</p>
+          <div className="flex items-center gap-3 flex-wrap justify-center text-[11px] text-slate-400">
+            <Link to="/terminos-y-condiciones" className="hover:text-emerald-400 transition-colors">Términos</Link>
+            <span>•</span>
+            <Link to="/politicas-de-privacidad" className="hover:text-emerald-400 transition-colors">Privacidad</Link>
+            <span>•</span>
+            <Link to="/politicas-de-despacho" className="hover:text-emerald-400 transition-colors">Despacho Lacustre</Link>
+            <span>•</span>
+            <Link to="/cambios-y-devoluciones" className="hover:text-emerald-400 transition-colors">Garantía SERNAC</Link>
+          </div>
           <p className="flex items-center gap-1.5 flex-wrap justify-center">
             Diseñado con <Heart className="w-3.5 h-3.5 text-orange-500 fill-orange-500 inline shrink-0" /> por{' '}
             <span className="text-orange-500 font-bold">Orange Design</span> para el bienestar animal.

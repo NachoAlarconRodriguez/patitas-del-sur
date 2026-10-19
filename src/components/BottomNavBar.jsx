@@ -7,8 +7,12 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
   const navigate = useNavigate();
   const currentPath = location.pathname;
 
-  const isActive = (path) => currentPath === path;
-  const isCustomerPWA = user?.role === 'cliente' || currentPath === '/mi-cuenta';
+  const isCustomerPWA = currentPath === '/mi-cuenta';
+
+  const isActive = (path) => {
+    if (path === '/') return currentPath === '/';
+    return currentPath.startsWith(path);
+  };
 
   // Sincronización del tab activo en la PWA del cliente ('mascotas' | 'tienda' | 'cuaderno')
   const [activeCustomerTab, setActiveCustomerTab] = useState(() => {

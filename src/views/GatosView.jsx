@@ -5,6 +5,10 @@ import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
 import { PRODUCTS as FALLBACK_PRODUCTS, BRANDS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
+import SEOHead from '../components/SEOHead';
+import { getBreadcrumbSchema, getFAQPageSchema } from '../utils/schemaGenerators';
+import LocalDeliveryZones from '../components/LocalDeliveryZones';
+import FAQSection, { GATOS_FAQS, GENERAL_FAQS } from '../components/FAQSection';
 
 export default function GatosView({ onSelectProduct, onAddToCart }) {
   const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
@@ -145,15 +149,45 @@ export default function GatosView({ onSelectProduct, onAddToCart }) {
 
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900">
+      <SEOHead
+        title="Alimento y Snacks Naturales para Gatos en Puerto Varas"
+        description="Catálogo de alimento felino super premium 100% Grain Free, patés y antiparasitarios para gatos. Despacho express en Puerto Varas, Llanquihue y Frutillar."
+        canonical="/gatos"
+        keywords="alimento gatos puerto varas, comida gatos llanquihue, bravery gatos los lagos, grain free gatos chile"
+        jsonLd={[
+          getBreadcrumbSchema([
+            { name: 'Inicio', url: '/' },
+            { name: 'Gatos', url: '/gatos' },
+          ]),
+          getFAQPageSchema([...GATOS_FAQS, ...GENERAL_FAQS.slice(0, 2)]),
+        ]}
+      />
+
+      {/* Main Catalog Header */}
+      <header className="max-w-7xl mx-auto px-6 mb-6">
+        <div className="space-y-1">
+          <span className="text-[11px] font-black uppercase tracking-wider text-[#C86D39] bg-[#C86D39]/10 px-3 py-1 rounded-full inline-block">
+            Catálogo Felino Holístico
+          </span>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+            Alimento y Snacks Naturales para Gatos 🐱
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl">
+            Recetas ricas en taurina y proteína de origen silvestre (salmón, trucha y arenque). Cuidado renal y digestivo con despacho en la Región de Los Lagos.
+          </p>
+        </div>
+      </header>
       
       {/* Promo Carousel Banner (Máximo 5 Ofertas Felinas) */}
-      <section className="max-w-7xl mx-auto px-6 mb-10">
-        <PromoCarousel
-          petType="gatos"
-          onSelectProduct={onSelectProduct}
-          onAddToCart={onAddToCart}
-        />
-      </section>
+      {catProducts.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 mb-10">
+          <PromoCarousel
+            petType="gatos"
+            onSelectProduct={onSelectProduct}
+            onAddToCart={onAddToCart}
+          />
+        </section>
+      )}
 
       {/* Main Catalog Section */}
       <section className="max-w-7xl mx-auto px-6">
@@ -242,6 +276,20 @@ export default function GatosView({ onSelectProduct, onAddToCart }) {
         )}
 
       </section>
+
+      {/* Sección de Preguntas Frecuentes y Guía Nutricional AEO */}
+      <div className="max-w-7xl mx-auto px-6 mt-16">
+        <FAQSection
+          type="gatos"
+          title="Preguntas Frecuentes sobre Alimento y Salud Felina"
+          subtitle="Respuestas veterinarias directas y estructuradas sobre nutrición carnívora estricta, prevención urinaria y despacho en Los Lagos."
+        />
+      </div>
+
+      {/* Módulo de Cobertura y Despacho Local Los Lagos */}
+      <div className="max-w-7xl mx-auto px-6 mt-10">
+        <LocalDeliveryZones />
+      </div>
 
     </div>
   );

@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import ProductCard from '../components/ProductCard';
+import SEOHead from '../components/SEOHead';
+import { getProductSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
 import {
   ArrowLeft,
   Star,
@@ -344,10 +346,10 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
   // Find product by URL param or default to first product
   const product = allProducts.find((p) => p.id === id) || allProducts[0] || FALLBACK_PRODUCTS[0];
-  const isDog = product.petType === 'perros';
+  const isDog = product?.petType === 'perros';
 
   const [selectedWeight, setSelectedWeight] = useState(
-    product.weights ? product.weights[0] : 'Estándar'
+    product?.weights ? product.weights[0] : 'Estándar'
   );
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState('ingredientes');
@@ -358,7 +360,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   const [selectedBreedSize, setSelectedBreedSize] = useState(null);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const productImages = product.images && product.images.length > 0 ? product.images : [product.image];
+  const productImages = product?.images && product.images.length > 0 ? product.images : [product?.image || '/images/hero_dog.png'];
 
   const mainCtaRef = useRef(null);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -383,6 +385,26 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     setSelectedLifeStage(null);
     setSelectedBreedSize(null);
   }, [id, product]);
+
+  // Scroll to top on product change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (product?.weights && product.weights.length > 0) {
+      setSelectedWeight(product.weights[0]);
+    }
+  }, [id, product]);
+
+  if (!product) {
+    return (
+      <div className="pt-36 pb-24 max-w-4xl mx-auto px-6 text-center space-y-4">
+        <h2 className="text-2xl font-black text-slate-800">Producto no disponible</h2>
+        <p className="text-slate-500 text-sm">El catálogo se encuentra en actualización o el producto consultado no existe.</p>
+        <Link to="/perros" className="inline-block px-6 py-2.5 rounded-full bg-[#0E8388] text-white text-xs font-bold">
+          Explorar Catálogo
+        </Link>
+      </div>
+    );
+  }
 
   const getFeedingGuide = () => {
     if (!isDog) {
@@ -441,14 +463,6 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     (row) => currentWeightNum >= row.min && currentWeightNum <= row.max
   ) || feedingGuide[0];
 
-  // Scroll to top on product change
-  useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (product.weights && product.weights.length > 0) {
-      setSelectedWeight(product.weights[0]);
-    }
-  }, [id, product]);
-
   // Calculate dynamic price based on weight selection (multiplier preview)
   const getCalculatedPrice = () => {
     let price = product.price;
@@ -496,6 +510,22 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
+      <SEOHead
+        title={product.name}
+        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${product.tagline || 'Alimento holístico y natural para mascotas.'} Despacho a domicilio en Puerto Varas, Llanquihue y Región de Los Lagos.`}
+        canonical={`/producto/${product.id}`}
+        ogImage={product.image}
+        ogType="product"
+        keywords={`${product.name}, ${product.brand || ''}, alimento ${isDog ? 'perros' : 'gatos'} puerto varas, comida mascotas llanquihue`}
+        jsonLd={[
+          getProductSchema(product),
+          getBreadcrumbSchema([
+            { name: 'Inicio', url: '/' },
+            { name: isDog ? 'Perros' : 'Gatos', url: isDog ? '/perros' : '/gatos' },
+            { name: product.name, url: `/producto/${product.id}` },
+          ]),
+        ]}
+      />
       
       {/* 1. Breadcrumbs & Top Back Navigation */}
       <div className="max-w-7xl mx-auto px-6 mb-6">

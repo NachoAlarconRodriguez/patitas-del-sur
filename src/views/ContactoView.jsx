@@ -1,8 +1,14 @@
 import React, { useState } from 'react';
-import { Send, CheckCircle2, MessageSquare, Phone, Mail, MapPin } from 'lucide-react';
+import { Send, CheckCircle2, Phone, Mail, MapPin, Loader2 } from 'lucide-react';
+import { sendContactMessage } from '../services/contactService';
+import SEOHead from '../components/SEOHead';
+import { getOrganizationSchema, getLocalBusinessSchema, getFAQPageSchema } from '../utils/schemaGenerators';
+import LocalDeliveryZones from '../components/LocalDeliveryZones';
+import FAQSection, { PERROS_FAQS, GATOS_FAQS, GENERAL_FAQS } from '../components/FAQSection';
 
 export default function ContactoView() {
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     nombre: '',
     email: '',
@@ -10,13 +16,39 @@ export default function ContactoView() {
     mensaje: '',
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      await sendContactMessage({
+        name: formData.nombre,
+        email: formData.email,
+        petType: formData.mascota,
+        message: formData.mensaje,
+      });
+      setSubmitted(true);
+      setFormData({ nombre: '', email: '', mascota: 'perro', mensaje: '' });
+    } catch (err) {
+      console.error('Error submitting contact form:', err);
+      setSubmitted(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] text-slate-900 min-h-screen">
+      <SEOHead
+        title="Contacto y Asesoría Nutricional en Puerto Varas"
+        description="Contáctanos para orientación personalizada sobre la alimentación de tu perro o gato. Atención vía WhatsApp y despacho en Puerto Varas, Llanquihue y Frutillar."
+        canonical="/contacto"
+        keywords="contacto patitas del sur, veterinaria puerto varas, nutricion mascotas llanquihue, whatsapp alimentos mascotas"
+        jsonLd={[
+          getOrganizationSchema(),
+          getLocalBusinessSchema(),
+          getFAQPageSchema([...PERROS_FAQS.slice(0, 2), ...GATOS_FAQS.slice(0, 2), ...GENERAL_FAQS]),
+        ]}
+      />
       <div className="max-w-7xl mx-auto px-6">
         
         <div className="text-center max-w-2xl mx-auto mb-14 space-y-3">
@@ -174,15 +206,39 @@ export default function ContactoView() {
 
                 <button
                   type="submit"
-                  className="w-full py-4 rounded-2xl bg-[#0E8388] hover:bg-[#10B981] text-white font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-[#0E8388]/30 transition-transform active:scale-95"
+                  disabled={isSubmitting}
+                  className="w-full py-4 rounded-2xl bg-[#0E8388] hover:bg-[#10B981] disabled:opacity-50 text-white font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-[#0E8388]/30 transition-transform active:scale-95 cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>ENVIAR CONSULTA</span>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>ENVIANDO CONSULTA...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>ENVIAR CONSULTA</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}
           </div>
 
+        </div>
+
+        {/* Módulo de Cobertura y Despacho Local */}
+        <div className="mt-14">
+          <LocalDeliveryZones />
+        </div>
+
+        {/* Módulo de Preguntas Frecuentes y Respuestas AEO */}
+        <div className="mt-14">
+          <FAQSection
+            type="all"
+            title="Preguntas Frecuentes antes de Contactarnos"
+            subtitle="Revisa las dudas más habituales sobre cobertura, métodos de pago y recomendaciones de alimentos."
+          />
         </div>
 
       </div>

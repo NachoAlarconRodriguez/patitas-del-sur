@@ -1,10 +1,19 @@
 import React from 'react';
 import { ShieldCheck, HeartHandshake, Leaf, Award, MapPin } from 'lucide-react';
 import Logo from '../components/Logo';
+import SEOHead from '../components/SEOHead';
+import { getOrganizationSchema } from '../utils/schemaGenerators';
 
 export default function NosotrosView() {
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] text-slate-900 min-h-screen">
+      <SEOHead
+        title="Nuestra Historia y Misión en la Patagonia"
+        description="Conoce la historia de Patitas del Sur: nutrición animal holística, ingredientes puros de la Patagonia chilena y formulación veterinaria con origen en Puerto Varas."
+        canonical="/nosotros"
+        keywords="patitas del sur nosotros, historia patitas del sur, alimento mascotas puerto varas, nutricion holistica patagonia"
+        jsonLd={getOrganizationSchema()}
+      />
       
       {/* Brand Story Hero */}
       <section className="max-w-5xl mx-auto px-6 text-center space-y-6 mb-16">

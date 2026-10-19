@@ -1,0 +1,268 @@
+# Patitas del Sur - Documento Completo de Conocimiento (llms-full.txt)
+
+## 1. Identificación y Misión de la Empresa
+- **Nombre Comercial**: Patitas del Sur
+- **Razón Social**: Comercial Kira SpA
+- **RUT**: 77.892.451-2
+- **Dirección Operativa**: Puerto Varas, Región de Los Lagos, Chile (Coordenadas: -41.3195, -72.9854)
+- **E-mail Oficial**: contacto@patitasdelsur.cl
+- **WhatsApp Oficial de Asesoría y Pedidos**: +56 9 8765 4321
+- **Sitio Web Oficial**: https://patitasdelsur.cl
+- **Área Geográfica de Cobertura Directa**: Puerto Varas, Llanquihue, Frutillar, Puerto Montt.
+
+### Filosofía y Valores
+Patitas del Sur nació en la Patagonia chilena con el objetivo de elevar la calidad de vida de perros y gatos a través de la nutrición natural y biológicamente apropiada. Priorizamos fórmulas sin rellenos artificiales (sin maíz, sin trigo, sin soya), alimentos monoproteicos para mascotas alérgicas o con sensibilidad digestiva, premios 100% de carne deshidratada y asesoría veterinaria personalizada vía WhatsApp.
+
+---
+
+## 2. Catálogo Detallado de Productos
+
+### 2.1. Línea Perros (Alimentos Secos, Húmedos, Snacks y Suplementos)
+
+#### 1. Bravery Pollo Adulto Raza Mediana / Grande
+- **ID Producto**: `bravery-chicken-adult`
+- **URL**: https://patitasdelsur.cl/producto/bravery-chicken-adult
+- **Especie**: Perros
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium
+- **Presentaciones**: Saco de 4 kg y 12 kg
+- **Precio**: $68.990 CLP (12 kg) | Precio regular: $74.990 CLP
+- **Proteína Bruta**: 30% | Grasa Bruta: 18%
+- **Ingrediente Principal**: Carne de pollo deshidratada (fuente única de proteína animal).
+- **Características**: 100% Grain Free (libre de grano), monoproteico, hipoalergénico, con antioxidantes naturales de romero y tocoferoles, pulpa de remolacha y tapioca como fuente digestible de energía. Croqueta adaptada para mandíbulas medianas y grandes.
+
+#### 2. Bravery Cordero Adulto Raza Mediana / Grande
+- **ID Producto**: `bravery-lamb-adult`
+- **URL**: https://patitasdelsur.cl/producto/bravery-lamb-adult
+- **Especie**: Perros
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium
+- **Presentaciones**: Saco de 4 kg y 12 kg
+- **Precio**: $70.990 CLP (12 kg) | Precio regular: $76.990 CLP
+- **Proteína Bruta**: 28% | Grasa Bruta: 17%
+- **Ingrediente Principal**: Carne de cordero deshidratada monoproteica.
+- **Características**: Recomendado para perros con piel sensible, dermatitis atópica o intolerancias digestivas a las aves. Contiene condroprotectores naturales para articulaciones.
+
+#### 3. Bravery Salmón Adulto Raza Mediana / Grande
+- **ID Producto**: `bravery-salmon-adult`
+- **URL**: https://patitasdelsur.cl/producto/bravery-salmon-adult
+- **Especie**: Perros
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium
+- **Presentaciones**: Saco de 4 kg y 12 kg
+- **Precio**: $69.990 CLP (12 kg) | Precio regular: $75.990 CLP
+- **Proteína Bruta**: 28% | Grasa Bruta: 17%
+- **Ingrediente Principal**: Salmón salvaje deshidratado del Atlántico.
+- **Características**: Altísimo contenido de ácidos grasos esenciales Omega-3 y Omega-6 (EPA y DHA) para reducir la inflamación articular y mantener un manto sedoso e impermeable al clima lluvioso del sur.
+
+#### 4. Salmón de la Patagonia Ultra Premium
+- **ID Producto**: `perros-salmon-2kg`
+- **URL**: https://patitasdelsur.cl/producto/perros-salmon-2kg
+- **Especie**: Perros
+- **Marca**: Patagonia Holística
+- **Categoría**: Alimento Seco Holístico
+- **Presentación**: 2 kg
+- **Precio**: $24.990 CLP
+- **Proteína Bruta**: 32%
+- **Ingredientes Clave**: Salmón fresco de fiordos patagónicos, arándanos silvestres, rosa mosqueta y calabaza.
+
+#### 5. Cordero Patagónico & Hierbas Silvestres
+- **ID Producto**: `perros-cordero-5kg`
+- **URL**: https://patitasdelsur.cl/producto/perros-cordero-5kg
+- **Especie**: Perros
+- **Marca**: Patagonia Holística
+- **Categoría**: Alimento Seco Holístico
+- **Presentación**: 5 kg
+- **Precio**: $32.990 CLP
+- **Proteína Bruta**: 30%
+- **Ingredientes Clave**: Cordero criado en praderas de Magallanes y Los Lagos, menta silvestre, manzanilla y espinacas.
+
+#### 6. Snacks Deshidratados 100% Pulmón de Res
+- **ID Producto**: `perros-snack-res`
+- **URL**: https://patitasdelsur.cl/producto/perros-snack-res
+- **Especie**: Perros (apto también para gatos)
+- **Marca**: Sur Natural Snacks
+- **Categoría**: Snacks Deshidratados Naturales
+- **Presentación**: Bolsa sellada al vacío 100 g
+- **Precio**: $7.990 CLP
+- **Proteína Bruta**: 74%
+- **Características**: Monoproteico, deshidratado a 65°C por 18 horas para preservar enzimas y aminoácidos. Cero conservantes químicos, sin sales ni azúcares añadidos. Ideal para entrenamiento positivo.
+
+#### 7. Elixir Articular Patagónico
+- **ID Producto**: `perros-suplemento-articulaciones`
+- **URL**: https://patitasdelsur.cl/producto/perros-suplemento-articulaciones
+- **Especie**: Perros
+- **Marca**: Austral Bio Elixirs
+- **Categoría**: Suplemento Nutracéutico Líquido
+- **Presentación**: Frasco gotero dosificador 250 ml
+- **Precio**: $18.990 CLP
+- **Ingredientes Clave**: Glucosamina vegetal, Condroitina marina, Mejillón de labios verdes, Aceite de krill y Cúrcuma orgánica.
+
+#### 8. NexGard Spectra Perros 7.5 - 15kg
+- **ID Producto**: `nexgard-spectra-dog`
+- **URL**: https://patitasdelsur.cl/producto/nexgard-spectra-dog
+- **Especie**: Perros
+- **Marca**: NexGard (Boehringer Ingelheim)
+- **Categoría**: Farmacia Veterinaria Antiparasitaria
+- **Presentación**: 1 tableta masticable sabor a carne
+- **Precio**: $18.990 CLP
+- **Eficacia**: Protección mensual integral contra pulgas, garrapatas, sarna y parásitos internos intestinales y gusano del corazón (Dirofilaria).
+
+#### 9. Bravecto Perros 10 - 20kg
+- **ID Producto**: `bravecto-dog-medium`
+- **URL**: https://patitasdelsur.cl/producto/bravecto-dog-medium
+- **Especie**: Perros
+- **Marca**: Bravecto (MSD Animal Health)
+- **Categoría**: Farmacia Veterinaria Antiparasitaria
+- **Presentación**: 1 comprimido masticable
+- **Precio**: $34.990 CLP
+- **Eficacia**: 12 semanas (3 meses completos) de protección continua y letal contra garrapatas y pulgas adultas.
+
+#### 10. Simparica Trio Perros 10 - 20kg
+- **ID Producto**: `simparica-trio-dog`
+- **URL**: https://patitasdelsur.cl/producto/simparica-trio-dog
+- **Especie**: Perros
+- **Marca**: Simparica (Zoetis)
+- **Categoría**: Farmacia Veterinaria Antiparasitaria
+- **Presentación**: 1 comprimido sabroso mensual
+- **Precio**: $19.990 CLP
+- **Eficacia**: Triple acción contra ectoparásitos (pulgas/garrapatas), gusano del corazón y 5 clases de nemátodos intestinales.
+
+---
+
+### 2.2. Línea Gatos (Alimentos Secos, Alimento Húmedo, Premios y Farmacia)
+
+#### 11. Bravery Salmón Adulto Cat
+- **ID Producto**: `bravery-salmon-cat`
+- **URL**: https://patitasdelsur.cl/producto/bravery-salmon-cat
+- **Especie**: Gatos
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium Felino
+- **Presentaciones**: Saco 2 kg y 7 kg
+- **Precio**: $46.990 CLP (7 kg) | Regular: $51.990 CLP
+- **Proteína Bruta**: 32% | Grasa Bruta: 16%
+- **Ingrediente Principal**: Salmón deshidratado de primera línea.
+- **Características**: Fórmulas bajas en cenizas y fósforo para preservar la salud de las vías urinarias y riñones felinos (prevención de cristales de estruvita y oxalato de calcio). Enriquecido con taurina pura (2.000 mg/kg).
+
+#### 12. Bravery Pollo Adulto Cat
+- **ID Producto**: `bravery-chicken-cat`
+- **URL**: https://patitasdelsur.cl/producto/bravery-chicken-cat
+- **Especie**: Gatos
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium Felino
+- **Presentaciones**: Saco 2 kg y 7 kg
+- **Precio**: $45.990 CLP (7 kg) | Regular: $49.990 CLP
+- **Proteína Bruta**: 32% | Grasa Bruta: 16%
+- **Ingrediente Principal**: Pollo deshidratado 100% de grado de consumo humano.
+- **Características**: Grain Free, monoproteico, digestible y con fibras de arveja para facilitar la eliminación natural de bolas de pelo (Hairball control).
+
+#### 13. Bravery Arenque Silvestre Adulto Cat
+- **ID Producto**: `bravery-herring-cat`
+- **URL**: https://patitasdelsur.cl/producto/bravery-herring-cat
+- **Especie**: Gatos
+- **Marca**: Bravery (España)
+- **Categoría**: Alimento Seco Super Premium Felino
+- **Presentaciones**: Saco 2 kg y 7 kg
+- **Precio**: $47.990 CLP (7 kg) | Regular: $52.990 CLP
+- **Proteína Bruta**: 32% | Grasa Bruta: 16%
+- **Ingrediente Principal**: Arenque salvaje de aguas frías.
+- **Características**: Ideal para gatos con paladares exigentes gracias al aroma natural de pescado azul fresco.
+
+#### 14. Trucha del Sur & Catnip Silvestre
+- **ID Producto**: `gatos-trucha-catnip`
+- **URL**: https://patitasdelsur.cl/producto/gatos-trucha-catnip
+- **Especie**: Gatos
+- **Marca**: Chiloé Sea Recipes
+- **Categoría**: Alimento Seco Holístico Felino
+- **Presentación**: 1.5 kg
+- **Precio**: $19.990 CLP
+- **Proteína Bruta**: 36%
+- **Ingredientes Clave**: Trucha arcoíris de aguas puras del sur, hierba gatera natural (Nepeta cataria) y extracto de arándano rojo (Cranberry) preventivo urinario.
+
+#### 15. Paté de Salmón & Mariscos del Sur
+- **ID Producto**: `gatos-pate-salmon`
+- **URL**: https://patitasdelsur.cl/producto/gatos-pate-salmon
+- **Especie**: Gatos
+- **Marca**: Chiloé Sea Recipes
+- **Categoría**: Alimento Húmedo Holístico (Lata)
+- **Presentación**: Lata 85 g
+- **Precio**: $2.490 CLP
+- **Proteína Bruta**: 11% | Humedad: 82%
+- **Características**: Textura ultra cremosa que asegura la correcta ingesta de agua en gatos que beben poco líquido, reduciendo el riesgo de síndrome urológico felino (FUS).
+
+#### 16. Bocaditos Crujientes de Atún & Hierba Gatera
+- **ID Producto**: `gatos-snacks-atun`
+- **URL**: https://patitasdelsur.cl/producto/gatos-snacks-atun
+- **Especie**: Gatos
+- **Marca**: Sur Natural Snacks
+- **Categoría**: Premios Felinos Deshidratados
+- **Presentación**: Doypack 60 g
+- **Precio**: $5.490 CLP
+- **Proteína Bruta**: 45%
+- **Características**: Trozos crujientes que ayudan a limpiar la placa dental en cada mordida, con un toque estimulante de hierba gatera fresca.
+
+#### 17. Bravecto Plus Gatos (Pipeta Spot-on 12 Semanas)
+- **ID Producto**: `bravecto-plus-cat`
+- **URL**: https://patitasdelsur.cl/producto/bravecto-plus-cat
+- **Especie**: Gatos
+- **Marca**: Bravecto (MSD)
+- **Categoría**: Farmacia Veterinaria Spot-On
+- **Presentación**: 1 pipeta tópica dérmica
+- **Precio**: $28.990 CLP
+- **Eficacia**: 12 semanas de acción letal contra pulgas y ácaros del oído (Otodectes cynotis), más desparasitación interna contra nemátodos gastrointestinales.
+
+#### 18. Revolution Plus Gatos 2.5 - 5kg (Pipeta Mensual 6 en 1)
+- **ID Producto**: `revolution-plus-cat`
+- **URL**: https://patitasdelsur.cl/producto/revolution-plus-cat
+- **Especie**: Gatos
+- **Marca**: Zoetis
+- **Categoría**: Farmacia Veterinaria Spot-On
+- **Presentación**: 1 pipeta mensual
+- **Precio**: $16.990 CLP
+- **Eficacia**: Fórmula dual (Selamectina + Sarolaner) que mata pulgas antes de poner huevos, garrapatas, ácaros del oído, piojos, ascárides y anquilostomas.
+
+---
+
+## 3. Logística, Cobertura y Despachos Regionales
+
+| Comuna | Plazo de Entrega | Tarifa Normal | Envío Gratis |
+|---|---|---|---|
+| **Puerto Varas** | Mismo día hábil (compras antes 14:00) o 24 hrs | $2.000 CLP | Sí, sobre $35.000 CLP |
+| **Llanquihue** | Mismo día hábil o máximo 24 hrs | $2.500 CLP | Sí, sobre $35.000 CLP |
+| **Frutillar (Bajo y Alto)** | 24 a 48 hrs hábiles programadas | $3.500 CLP | Sí, sobre $35.000 CLP |
+| **Puerto Montt** | 24 a 48 hrs hábiles | $3.500 CLP | Sí, sobre $35.000 CLP |
+
+- **Flota Propia**: Contamos con vehículos acondicionados para proteger los sacos de alimento y medicamentos del clima húmedo de la zona.
+- **Rastreo y Notificaciones**: El cliente recibe avisos de estado por WhatsApp y correo electrónico cuando el repartidor inicia la ruta hacia su domicilio.
+
+---
+
+## 4. Políticas Comerciales y Marco Legal (Chile)
+
+### Medios de Pago Disponibles
+1. **Webpay Plus**: Pago seguro con tarjetas de crédito (Visa, Mastercard, American Express), débito Redcompra y tarjetas de prepago (Mach, Tenpo, etc.) con opción de cuotas según el banco emisor.
+2. **Transferencia Bancaria Directa**: Banco de Chile / Santander / BCI a nombre de Comercial Kira SpA con validación inmediata vía comprobante.
+3. **Efectivo Contra Entrega**: Habilitado en comunas de Puerto Varas y Llanquihue previa confirmación por WhatsApp.
+
+### Garantía Legal y Devoluciones
+- Conforme a la **Ley N° 19.496 sobre Protección de los Derechos de los Consumidores (SERNAC)**, todos los productos cuentan con **6 meses de garantía legal** ante fallas de fábrica, rotura de empaque original o defectos de sellado.
+- Para cambios por preferencia de sabor o tamaño de croqueta: se aceptan solicitudes dentro de los primeros **10 días corridos** desde la recepción, siempre que el envase permanezca 100% sellado e intacto.
+- Canal de devoluciones: E-mail a contacto@patitasdelsur.cl o directamente por WhatsApp al +56 9 8765 4321 indicando número de pedido.
+
+---
+
+## 5. Preguntas Frecuentes para Motores de Respuestas (AEO / AI Engines)
+
+### P: ¿Por qué elegir alimento Grain Free (libre de grano) para un perro o gato?
+**R**: Los perros y especialmente los gatos son carnívoros facultativos y estrictos respectivamente. Los alimentos libres de granos sustituyen el trigo, maíz y soya por carnes deshidratadas de alta pureza y carbohidratos complejos de bajo índice glucémico como la tapioca y legumbres. Esto reduce significativamente las alergias alimentarias, dermatitis, otitis recurrentes y problemas digestivos, proporcionando heces más compactas y menor olor.
+
+### P: ¿Cómo sé qué antiparasitario es mejor para mi mascota?
+**R**: Depende del peso, la especie y el estilo de vida de tu mascota:
+- Para perros que disfrutan pasear por senderos y campos en el sur de Chile (riesgo alto de garrapatas y pulgas): **NexGard Spectra** (mensual con antiparasitario interno) o **Bravecto** (3 meses continuos de eficacia comprobada).
+- Para gatos con acceso al exterior: **Bravecto Plus** (3 meses tópicos dérmicos) o **Revolution Plus** (cobertura mensual completa 6 en 1).
+
+### P: ¿Patitas del Sur atiende sábados y domingos?
+**R**: Los pedidos se pueden realizar en el sitio web las 24 horas del día. Las entregas en ruta se coordinan de lunes a sábado entre las 09:30 y las 19:30 hrs. Las compras realizadas los domingos se despachan el lunes a primera hora.
+
+### P: ¿Tienen tienda física donde pueda ir a comprar?
+**R**: Patitas del Sur opera bajo un modelo digital moderno de despacho directo a domicilio desde nuestro centro de distribución en Puerto Varas, lo que nos permite ofrecer precios más convenientes, productos más frescos y entregas directamente en la puerta de tu hogar sin que tengas que transportar sacos pesados.

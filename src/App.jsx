@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
-// Views
+// Core Views for instant first paint
 import HomeView from './views/HomeView';
 import PerrosView from './views/PerrosView';
 import GatosView from './views/GatosView';
-import ProductDetailView from './views/ProductDetailView';
-import NosotrosView from './views/NosotrosView';
-import ContactoView from './views/ContactoView';
-import LoginView from './views/LoginView';
-import CustomerDashboardView from './views/CustomerDashboardView';
-import AdminDashboardView from './views/AdminDashboardView';
+
+// Code-split Views loaded on demand (dramatically reduces initial JS bundle)
+const ProductDetailView = lazy(() => import('./views/ProductDetailView'));
+const NosotrosView = lazy(() => import('./views/NosotrosView'));
+const ContactoView = lazy(() => import('./views/ContactoView'));
+const LoginView = lazy(() => import('./views/LoginView'));
+const CustomerDashboardView = lazy(() => import('./views/CustomerDashboardView'));
+const AdminDashboardView = lazy(() => import('./views/AdminDashboardView'));
+const LegalView = lazy(() => import('./views/LegalView'));
 
 // Components
 import Navbar from './components/Navbar';
@@ -21,6 +24,10 @@ import AuthModal from './components/AuthModal';
 import Preloader from './components/Preloader';
 import BottomNavBar from './components/BottomNavBar';
 import PWAInstallBanner from './components/PWAInstallBanner';
+import RouteLoadingFallback from './components/RouteLoadingFallback';
+
+import { supabase } from './lib/supabase';
+import { getCustomerProfile } from './services/customersService';
 
 // Helper component to scroll to top on route navigation
 function ScrollToTop() {
@@ -33,13 +40,27 @@ function ScrollToTop() {
   return null;
 }
 
+// Limpieza inicial para arrancar el sistema en 0 (sin datos residuales de demo)
+if (typeof window !== 'undefined' && !localStorage.getItem('patitas_system_zero_v1')) {
+  localStorage.removeItem('patitas_orders');
+  localStorage.removeItem('patitas_inventory');
+  localStorage.removeItem('patitas_expenses');
+  localStorage.removeItem('patitas_vehicles');
+  localStorage.removeItem('patitas_invoices');
+  localStorage.removeItem('patitas_convenios');
+  localStorage.removeItem('patitas_paused_products');
+  localStorage.removeItem('patitas_deleted_products');
+  localStorage.removeItem('patitas_cart');
+  localStorage.removeItem('patitas_saved_cart');
+  localStorage.setItem('patitas_system_zero_v1', 'true');
+}
+
 export default function App() {
   const location = useLocation();
 
-  // User Authentication State (persisted in localStorage)
-  // By default, if no active PWA session exists, user is null so the login screen is the FIRST screen seen
+  // User Authentication State (persisted in localStorage + synchronized with Supabase Auth)
   const [user, setUser] = useState(() => {
-    const savedSession = localStorage.getItem('patitas_pwa_session');
+    const savedSession = localStorage.getItem('patitas_user') || localStorage.getItem('patitas_pwa_session');
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
@@ -76,6 +97,78 @@ export default function App() {
     localStorage.setItem('patitas_cart', JSON.stringify(cartItems));
   }, [cartItems]);
 
+  // Synchronize real Supabase Auth session on mount and state changes
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = (await getCustomerProfile(session.user.id)) || (await getCustomerProfile(session.user.email));
+          if (profile) {
+            const userObj = {
+              id: profile.id,
+              auth_user_id: session.user.id,
+              name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
+              email: profile.email || session.user.email,
+              role: profile.role || 'cliente',
+              petName: session.user.user_metadata?.pet_name || 'Mi Mascota 🐾',
+              petType: session.user.user_metadata?.pet_type || 'perro',
+              city: profile.city || 'Puerto Varas',
+              address: profile.address || '',
+              phone: profile.phone || '',
+              points: profile.points || 0,
+              memberSince: profile.created_at
+                ? new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date(profile.created_at))
+                : 'Octubre 2026',
+            };
+            setUser(userObj);
+            localStorage.setItem('patitas_user', JSON.stringify(userObj));
+            localStorage.setItem('patitas_pwa_session', JSON.stringify(userObj));
+          }
+        }
+      } catch (err) {
+        console.error('Error synchronizing auth session:', err);
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
+        const profile = (await getCustomerProfile(session.user.id)) || (await getCustomerProfile(session.user.email));
+        if (profile) {
+          const userObj = {
+            id: profile.id,
+            auth_user_id: session.user.id,
+            name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
+            email: profile.email || session.user.email,
+            role: profile.role || 'cliente',
+            petName: session.user.user_metadata?.pet_name || 'Mi Mascota 🐾',
+            petType: session.user.user_metadata?.pet_type || 'perro',
+            city: profile.city || 'Puerto Varas',
+            address: profile.address || '',
+            phone: profile.phone || '',
+            points: profile.points || 0,
+            memberSince: profile.created_at
+              ? new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date(profile.created_at))
+              : 'Octubre 2026',
+          };
+          setUser(userObj);
+          localStorage.setItem('patitas_user', JSON.stringify(userObj));
+          localStorage.setItem('patitas_pwa_session', JSON.stringify(userObj));
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        localStorage.removeItem('patitas_pwa_session');
+        localStorage.removeItem('patitas_user');
+      }
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
   // Auth Handlers
   const handleLoginSuccess = (userObj) => {
     setUser(userObj);
@@ -83,7 +176,12 @@ export default function App() {
     localStorage.setItem('patitas_user', JSON.stringify(userObj));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Error during signOut:', e);
+    }
     setUser(null);
     localStorage.removeItem('patitas_pwa_session');
     localStorage.removeItem('patitas_user');
@@ -91,16 +189,8 @@ export default function App() {
 
   const handleSwitchRole = (newRole) => {
     setUser((prev) => {
-      const updated = prev
-        ? { ...prev, role: newRole }
-        : {
-            name: newRole === 'admin' ? 'Camila Silva' : 'Felipe Soto',
-            email: newRole === 'admin' ? 'camila@patitasdelsur.cl' : 'felipe@tutor.cl',
-            role: newRole,
-            petName: newRole === 'admin' ? 'Kira 🐶' : 'Jack 🐱',
-            petType: newRole === 'admin' ? 'perro' : 'gato',
-            memberSince: 'Octubre 2026',
-          };
+      if (!prev) return null;
+      const updated = { ...prev, role: newRole };
       localStorage.setItem('patitas_pwa_session', JSON.stringify(updated));
       localStorage.setItem('patitas_user', JSON.stringify(updated));
       return updated;
@@ -172,7 +262,7 @@ export default function App() {
   };
 
   const totalCartCount = cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0);
-  const isLoginPage = !user || location.pathname === '/login';
+  const isLoginPage = location.pathname === '/login';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#0E8388] selection:text-white">
@@ -193,106 +283,88 @@ export default function App() {
 
       {/* Main Content & Routing */}
       <main className="flex-1 w-full">
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              user ? (
-                <Navigate to={user.role === 'admin' ? '/admin' : '/mi-cuenta'} replace />
-              ) : (
-                <LoginView onLoginSuccess={handleLoginSuccess} />
-              )
-            }
-          />
-          <Route
-            path="/"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
-                <HomeView />
-              )
-            }
-          />
-          <Route
-            path="/perros"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                user ? (
+                  <Navigate to={user.role === 'admin' ? '/admin' : '/mi-cuenta'} replace />
+                ) : (
+                  <LoginView onLoginSuccess={handleLoginSuccess} />
+                )
+              }
+            />
+            <Route path="/" element={<HomeView />} />
+            <Route
+              path="/perros"
+              element={
                 <PerrosView
                   onSelectProduct={handleSelectProduct}
                   onAddToCart={handleAddToCart}
                 />
-              )
-            }
-          />
-          <Route
-            path="/gatos"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
+              }
+            />
+            <Route
+              path="/gatos"
+              element={
                 <GatosView
                   onSelectProduct={handleSelectProduct}
                   onAddToCart={handleAddToCart}
                 />
-              )
-            }
-          />
-          <Route
-            path="/producto/:id"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
+              }
+            />
+            <Route
+              path="/producto/:id"
+              element={
                 <ProductDetailView
                   onAddToCart={handleAddToCart}
                   onSelectProduct={handleSelectProduct}
                 />
-              )
-            }
-          />
-          <Route
-            path="/nosotros"
-            element={!user ? <Navigate to="/login" replace /> : <NosotrosView />}
-          />
-          <Route
-            path="/contacto"
-            element={!user ? <Navigate to="/login" replace /> : <ContactoView />}
-          />
-          <Route
-            path="/mi-cuenta"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
-                <CustomerDashboardView
-                  user={user}
-                  onLogout={handleLogout}
-                  onAddToCart={handleAddToCart}
-                  onSelectProduct={handleSelectProduct}
-                  onSwitchRole={handleSwitchRole}
-                />
-              )
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              !user ? (
-                <Navigate to="/login" replace />
-              ) : (
-                <AdminDashboardView
-                  user={user}
-                  onSwitchRole={handleSwitchRole}
-                  onLogout={handleLogout}
-                />
-              )
-            }
-          />
-          <Route path="*" element={<Navigate to={user ? '/' : '/login'} replace />} />
-        </Routes>
+              }
+            />
+            <Route path="/nosotros" element={<NosotrosView />} />
+            <Route path="/contacto" element={<ContactoView />} />
+            <Route path="/legal" element={<LegalView />} />
+            <Route path="/terminos-y-condiciones" element={<LegalView />} />
+            <Route path="/politicas-de-privacidad" element={<LegalView />} />
+            <Route path="/politicas-de-despacho" element={<LegalView />} />
+            <Route path="/cambios-y-devoluciones" element={<LegalView />} />
+            <Route
+              path="/mi-cuenta"
+              element={
+                !user ? (
+                  <Navigate to="/login" replace />
+                ) : (
+                  <CustomerDashboardView
+                    user={user}
+                    onLogout={handleLogout}
+                    onAddToCart={handleAddToCart}
+                    onSelectProduct={handleSelectProduct}
+                    onSwitchRole={handleSwitchRole}
+                  />
+                )
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                !user ? (
+                  <Navigate to="/login" replace />
+                ) : user.role !== 'admin' ? (
+                  <Navigate to="/mi-cuenta" replace />
+                ) : (
+                  <AdminDashboardView
+                    user={user}
+                    onSwitchRole={handleSwitchRole}
+                    onLogout={handleLogout}
+                  />
+                )
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </main>
 
       {/* Global Footer - Hidden on Login and Admin dashboards */}
