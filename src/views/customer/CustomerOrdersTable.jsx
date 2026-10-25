@@ -1,5 +1,138 @@
 import React from 'react';
-import { Package, Calendar, ChevronDown, Truck, Search, RotateCcw } from 'lucide-react';
+import { Package, Calendar, ChevronDown, Truck, Search, RotateCcw, Clock, AlertTriangle, Check } from 'lucide-react';
+
+/**
+ * Helper para parsear cualquier fecha a ISO YYYY-MM-DD
+ */
+function parseDateToIso(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+
+  // YYYY-MM-DD (ej: 2026-10-24)
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.split('T')[0];
+  }
+
+  // DD/MM/YYYY o DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    const y = dmyMatch[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  // Formato español texto: "23 oct 2026", "23 oct.", "24 octubre 2026"
+  const textMatch = trimmed.match(/^(\d{1,2})\s+([a-zA-Záéíóúñ]+)\.?\s*(\d{4})?/i);
+  if (textMatch) {
+    const day = textMatch[1].padStart(2, '0');
+    const monthStr = textMatch[2].toLowerCase().slice(0, 3);
+    const months = {
+      ene: '01', feb: '02', mar: '03', abr: '04', may: '05', jun: '06',
+      jul: '07', ago: '08', sep: '09', oct: '10', nov: '11', dic: '12'
+    };
+    const m = months[monthStr];
+    const y = textMatch[3] || String(new Date().getFullYear());
+    if (m) {
+      return `${y}-${m}-${day}`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Helper para formatear fecha de entrega, rango horario y detectar atraso
+ */
+function getDeliveryInfo(order) {
+  const statusCode = String(order.statusCode || order.status || '').toLowerCase();
+  const isDelivered = statusCode.includes('entregado');
+  const isCancelled = statusCode.includes('cancelado');
+
+  // Fecha actual local
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentDay = String(now.getDate()).padStart(2, '0');
+  const currentIsoDate = `${currentYear}-${currentMonth}-${currentDay}`;
+
+  // 1. Obtener fecha de entrega prometida
+  let rawDate = order.deliveryDate || order.dateIso || '';
+  if (!rawDate && order.date) {
+    rawDate = order.date;
+  }
+
+  const cleanIso = parseDateToIso(rawDate);
+  let formattedDate = '';
+  let isDelayed = false;
+
+  if (cleanIso) {
+    const parts = cleanIso.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+
+    const monthName = d.toLocaleDateString('es-CL', { month: 'short' });
+    const fullDateText = `${d.getDate()} ${monthName} ${d.getFullYear()}`;
+
+    if (cleanIso === currentIsoDate) {
+      formattedDate = `Hoy, ${d.getDate()} ${monthName}`;
+    } else {
+      formattedDate = fullDateText;
+    }
+
+    // Comprobar si está atrasado (solo si no está entregado ni cancelado)
+    if (!isDelivered && !isCancelled) {
+      if (cleanIso < currentIsoDate) {
+        // La fecha prometida ya pasó
+        isDelayed = true;
+      } else if (cleanIso === currentIsoDate) {
+        // Es hoy: comprobar si ya pasó el rango horario
+        const slotLower = String(order.deliverySlot || '').toLowerCase();
+        const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+
+        // Slot mañana: vence a las 13:30 (810 min)
+        if (slotLower.includes('mañana') || slotLower.includes('13:30') || slotLower.includes('13:00')) {
+          if (currentTotalMinutes > 810) {
+            isDelayed = true;
+          }
+        }
+        // Slot tarde: vence a las 19:30 (1170 min) o 19:00 (1140 min)
+        else if (slotLower.includes('tarde') || slotLower.includes('19:30') || slotLower.includes('19:00')) {
+          if (currentTotalMinutes > 1170) {
+            isDelayed = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (!formattedDate) {
+    formattedDate = order.deliveryDayText || order.date || 'Fecha por confirmar';
+  }
+
+  // 2. Extraer rango horario limpio (eliminando medios de pago y textos innecesarios)
+  let cleanSlot = String(order.deliverySlot || 'Horario por coordinar');
+  if (cleanSlot.includes('·')) {
+    cleanSlot = cleanSlot.split('·')[0].trim();
+  }
+  if (cleanSlot.includes('Pago:')) {
+    cleanSlot = cleanSlot.split('Pago:')[0].trim();
+  }
+
+  // Si tiene el rango entre paréntesis (ej: "Mañana (10:00 - 13:30 hrs)"), extraer solo las horas
+  const timeRangeMatch = cleanSlot.match(/\(([\d\:\s\-–]+(?:hrs|horas)?)\)/i);
+  if (timeRangeMatch && timeRangeMatch[1]) {
+    cleanSlot = timeRangeMatch[1].trim();
+  }
+
+  return {
+    formattedDate,
+    cleanSlot,
+    isDelayed,
+  };
+}
 
 export default function CustomerOrdersTable({
   ordersList = [],
@@ -120,7 +253,7 @@ export default function CustomerOrdersTable({
               <th className="px-5 py-3.5">Entrega Programada</th>
               <th className="px-5 py-3.5">Puntos Ganados</th>
               <th className="px-5 py-3.5">Monto Total</th>
-              <th className="px-5 py-3.5 text-center">Estado & Rastreo</th>
+              <th className="px-5 py-3.5 text-center">Estado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
@@ -131,31 +264,65 @@ export default function CustomerOrdersTable({
                   <td className="px-5 py-4 text-slate-500 whitespace-nowrap">{order.date}</td>
                   <td className="px-5 py-4 font-bold text-slate-900 min-w-[200px]">{order.product}</td>
                   <td className="px-5 py-4 whitespace-nowrap">
-                    <div className="font-extrabold text-slate-800 text-xs">
-                      {order.deliveryDayText || 'Entrega estándar'}
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-medium">
-                      {order.deliverySlot || 'Tarde (14:00 - 19:00 hrs)'} · Pago: {order.paymentMethod || 'Web'}
-                    </div>
+                    {(() => {
+                      const { formattedDate, cleanSlot, isDelayed } = getDeliveryInfo(order);
+                      return isDelayed ? (
+                        <div className="inline-flex flex-col gap-0.5 px-2.5 py-1.5 rounded-xl bg-rose-50/80 border border-rose-200">
+                          <div className="font-black text-xs flex items-center gap-1.5 text-rose-700">
+                            <Calendar className="w-3.5 h-3.5 shrink-0 text-rose-600" />
+                            <span>{formattedDate}</span>
+                            <span className="px-1.5 py-0.5 rounded-md bg-rose-200 text-rose-800 text-[9.5px] font-black inline-flex items-center gap-0.5">
+                              <AlertTriangle className="w-2.5 h-2.5 text-rose-700 shrink-0" />
+                              Atrasado
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-bold text-rose-600 flex items-center gap-1.5">
+                            <Clock className="w-3 h-3 shrink-0 text-rose-500" />
+                            <span>{cleanSlot}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <div className="font-black text-xs text-slate-800 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 shrink-0 text-[#0E8388]" />
+                            <span>{formattedDate}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
+                            <Clock className="w-3 h-3 shrink-0 text-slate-400" />
+                            <span>{cleanSlot}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </td>
-                  <td className="px-5 py-4 font-black text-amber-600 whitespace-nowrap">+{order.pointsEarned} Pts</td>
+                  <td className="px-5 py-4 whitespace-nowrap">
+                    {(() => {
+                      const isPaid = String(order.paymentStatus || '').toLowerCase() === 'pagado';
+                      return (
+                        <div className="space-y-0.5">
+                          <div className={`font-black text-xs ${isPaid ? 'text-amber-600' : 'text-slate-600'}`}>
+                            +{order.pointsEarned} Pts
+                          </div>
+                          <div>
+                            {isPaid ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">
+                                <Check className="w-2.5 h-2.5 stroke-[3]" /> Acreditados
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200" title="Los puntos se sumarán a tu saldo cuando el pago sea aprobado">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" /> Pago pendiente
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td className="px-5 py-4 font-extrabold text-slate-900 whitespace-nowrap">{order.total}</td>
                   <td className="px-5 py-4 text-center whitespace-nowrap">
-                    <div className="flex flex-col items-center gap-1.5">
-                      <span className={`px-3 py-1 rounded-full text-[11px] font-black border ${order.statusColor}`}>
-                        {order.status}
-                      </span>
-                      {onOpenLiveTracking && (
-                        <button
-                          type="button"
-                          onClick={() => onOpenLiveTracking(order)}
-                          className="px-2.5 py-0.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#0E8388] font-bold text-[10px] border border-teal-200 transition-colors cursor-pointer flex items-center gap-1 active:scale-95"
-                        >
-                          <Truck className="w-3 h-3" />
-                          <span>Ver Rastreo</span>
-                        </button>
-                      )}
-                    </div>
+                    <span className={`inline-block px-3 py-1 rounded-full text-[11px] font-black border ${order.statusColor}`}>
+                      {order.status}
+                    </span>
                   </td>
                 </tr>
               ))
@@ -197,7 +364,10 @@ export default function CustomerOrdersTable({
       {/* Table Footer Summary */}
       <div className="flex items-center justify-between text-xs text-slate-500 font-semibold px-1 pt-1">
         <span>Mostrando <strong>{filteredOrders.length}</strong> de <strong>{ordersList.length}</strong> compras</span>
-        <span className="text-emerald-700 font-bold">✓ Puntos acumulados automáticamente</span>
+        <span className="text-slate-600 font-bold flex items-center gap-1.5 text-[11px]">
+          <Check className="w-3.5 h-3.5 text-[#0E8388] shrink-0" />
+          Puntos se acreditan automáticamente al confirmar el pago
+        </span>
       </div>
     </div>
   );

@@ -4,7 +4,9 @@ import PromoCarousel from '../components/PromoCarousel';
 import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
 import { PRODUCTS as FALLBACK_PRODUCTS, BRANDS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
+import { supabase } from '../lib/supabase';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
+import { groupProductsForStore } from '../utils/productVariants';
 import SEOHead from '../components/SEOHead';
 import { getBreadcrumbSchema, getFAQPageSchema } from '../utils/schemaGenerators';
 import LocalDeliveryZones from '../components/LocalDeliveryZones';
@@ -34,16 +36,25 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
     window.addEventListener('storage', handleStorage);
     window.addEventListener('patitas_products_updated', loadProducts);
 
+    // Canal en tiempo real para reflejar nuevos productos o sabores de inmediato
+    const channel = supabase
+      .channel('products-realtime-perros')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        loadProducts();
+      })
+      .subscribe();
+
     return () => {
       isMounted = false;
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('patitas_products_updated', loadProducts);
+      supabase.removeChannel(channel);
     };
   }, []);
 
   const dogProducts = useMemo(
-    () =>
-      allProducts.filter(
+    () => {
+      const filtered = allProducts.filter(
         (p) =>
           p.petType === 'perros' &&
           !p.isPaused &&
@@ -51,7 +62,9 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
           p.isActive !== false &&
           p.is_active !== false &&
           !isProductHidden(p, hiddenProducts)
-      ),
+      );
+      return groupProductsForStore(filtered);
+    },
     [allProducts, hiddenProducts]
   );
 
@@ -183,6 +196,7 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
         <section className="max-w-7xl mx-auto px-6 mb-10">
           <PromoCarousel
             petType="perros"
+            products={dogProducts}
             onSelectProduct={onSelectProduct}
             onAddToCart={onAddToCart}
           />

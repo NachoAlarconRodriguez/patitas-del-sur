@@ -12,6 +12,8 @@ import {
   Search,
 } from 'lucide-react';
 import { WhatsAppIcon } from './OfficialIcons';
+import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
+import { ALLOWED_COMMUNES, detectCommuneFromAddress } from '../services/googleMapsService';
 
 // Lista de países con prefijo telefónico
 const COUNTRY_CODES = [
@@ -24,103 +26,76 @@ const COUNTRY_CODES = [
   { code: '+34', country: 'España', flag: '🇪🇸', mask: '612 34 56 78' },
 ];
 
-// Comunas principales de la Región de Los Lagos
-const LOS_LAGOS_COMMUNES = [
-  'Puerto Montt',
-  'Puerto Varas',
-  'Llanquihue',
-  'Frutillar',
-  'Alerce',
-  'Osorno',
-  'Castro',
-  'Ancud',
-  'Calbuco',
-  'Fresia',
-  'Los Muermos',
-  'Chonchi',
-  'Otra comuna',
-];
-
-// Base referencial de calles y avenidas populares en la Región de Los Lagos
-const LOS_LAGOS_PLACES_DB = [
-  { street: 'Av. Los Notros 1420', sector: 'Mirador de la Bahía', city: 'Puerto Montt' },
-  { street: 'Av. Los Notros 850', sector: 'Valle Volcanes', city: 'Puerto Montt' },
-  { street: 'Av. Diego Portales 800', sector: 'Costanera', city: 'Puerto Montt' },
-  { street: 'Av. Cuarta Terraza 1120', sector: 'Valle Volcanes', city: 'Puerto Montt' },
-  { street: 'Calle San Martín 450', sector: 'Centro', city: 'Puerto Montt' },
-  { street: 'Calle Antonio Varas 580', sector: 'Centro', city: 'Puerto Montt' },
-  { street: 'Calle Guillermo Gallardo 240', sector: 'Centro', city: 'Puerto Montt' },
-  { street: 'Calle Benavente 730', sector: 'Centro', city: 'Puerto Montt' },
-  { street: 'Calle Egaña 320', sector: 'Centro', city: 'Puerto Montt' },
-  { street: 'Av. Austral 1050', sector: 'Valle Volcanes', city: 'Puerto Montt' },
-  { street: 'Calle Sargento Silva 640', sector: 'Manuel Montt', city: 'Puerto Montt' },
-  { street: 'Av. Transversal 1 #320', sector: 'Alerce Norte', city: 'Alerce' },
-  { street: 'Calle Los Alerces 210', sector: 'Alerce Sur', city: 'Alerce' },
-  { street: 'Calle San Francisco 650', sector: 'Centro', city: 'Puerto Varas' },
-  { street: 'Calle Del Salvador 340', sector: 'Centro', city: 'Puerto Varas' },
-  { street: 'Calle San Pedro 210', sector: 'Centro', city: 'Puerto Varas' },
-  { street: 'Calle Santa Rosa 450', sector: 'Costanera', city: 'Puerto Varas' },
-  { street: 'Calle Walker Martínez 280', sector: 'Centro', city: 'Puerto Varas' },
-  { street: 'Av. Gramado 120', sector: 'Entrada Norte', city: 'Puerto Varas' },
-  { street: 'Av. Vicente Pérez Rosales 890', sector: 'Costanera', city: 'Llanquihue' },
-  { street: 'Calle Baquedano 410', sector: 'Centro', city: 'Llanquihue' },
-  { street: 'Av. Bernardo Philippi 1250', sector: 'Costanera Bajo', city: 'Frutillar' },
-  { street: 'Calle Carlos Richter 310', sector: 'Frutillar Alto', city: 'Frutillar' },
-  { street: 'Calle Eleuterio Ramírez 780', sector: 'Centro', city: 'Osorno' },
-  { street: 'Calle Mackenna 920', sector: 'Centro', city: 'Osorno' },
-  { street: 'Calle San Martín 340', sector: 'Plaza de Armas', city: 'Castro' },
-  { street: 'Calle Blanco Encalada 210', sector: 'Costanera', city: 'Castro' },
-];
-
 export default function CustomerProfileModal({
   isOpen,
   onClose,
   profileData,
   onSaveProfile,
 }) {
+  // Formateador estricto para número telefónico chileno en formato "x xxxx xxxx" (9 dígitos)
+  const formatChileanPhone = (val) => {
+    if (!val) return '';
+    let digits = String(val).replace(/\D/g, '');
+    if (digits.startsWith('56') && digits.length > 9) {
+      digits = digits.slice(2);
+    }
+    const limited = digits.slice(0, 9);
+    if (limited.length <= 1) return limited;
+    if (limited.length <= 5) return `${limited.slice(0, 1)} ${limited.slice(1)}`;
+    return `${limited.slice(0, 1)} ${limited.slice(1, 5)} ${limited.slice(5)}`;
+  };
+
   // Parsing inicial del teléfono separando prefijo (+56) y número
   const parsePhone = (fullPhone = '') => {
     const trimmed = (fullPhone || '').trim();
+    if (trimmed === '+56 9 8456 1234' || trimmed === '9 8456 1234') {
+      return { countryCode: '+56', phoneDigits: '' };
+    }
     for (const c of COUNTRY_CODES) {
       if (trimmed.startsWith(c.code)) {
+        const rawRem = trimmed.slice(c.code.length).trim();
         return {
           countryCode: c.code,
-          phoneDigits: trimmed.slice(c.code.length).trim(),
+          phoneDigits: c.code === '+56' ? formatChileanPhone(rawRem) : rawRem,
         };
       }
     }
     return {
       countryCode: '+56',
-      phoneDigits: trimmed.replace(/^\+?56\s?/, ''),
+      phoneDigits: formatChileanPhone(trimmed.replace(/^\+?56\s?/, '')),
     };
   };
 
-  const initialPhone = parsePhone(profileData?.phone || '+56 9 8456 1234');
+  const initialPhone = parsePhone(profileData?.phone || '');
 
   const [selectedCountry, setSelectedCountry] = useState(
     COUNTRY_CODES.find((c) => c.code === initialPhone.countryCode) || COUNTRY_CODES[0]
   );
-  const [phoneDigits, setPhoneDigits] = useState(initialPhone.phoneDigits);
+  const [phoneDigits, setPhoneDigits] = useState(initialPhone.phoneDigits || '');
   const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
   const countryDropdownRef = useRef(null);
 
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    address: '',
-    dept: '',
-    city: 'Puerto Montt',
-    notes: '',
-    notifyWhatsapp: true,
-    notifyEmail: true,
-    ...profileData,
-  });
+  const cleanInitialAddress = profileData?.address === 'Av. Los Notros 1420' ? '' : (profileData?.address || '');
+  const cleanInitialDept =
+    profileData?.dept === 'Depto 402' || profileData?.depto === 'Depto 402'
+      ? ''
+      : profileData?.dept || profileData?.depto || '';
 
-  // Autocomplete de Google Maps (Región de Los Lagos)
-  const [addressQuery, setAddressQuery] = useState(profileData?.address || '');
-  const [addressSuggestions, setAddressSuggestions] = useState([]);
-  const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
-  const addressContainerRef = useRef(null);
+  const [formData, setFormData] = useState({
+    name: profileData?.name || profileData?.full_name || '',
+    email: profileData?.email || '',
+    address: cleanInitialAddress,
+    dept: cleanInitialDept,
+    depto: cleanInitialDept,
+    city: profileData?.city || '',
+    notes: profileData?.notes || profileData?.delivery_reference || profileData?.deliveryReference || '',
+    delivery_reference: profileData?.notes || profileData?.delivery_reference || profileData?.deliveryReference || '',
+    notifyWhatsapp: profileData?.notifyWhatsapp !== false,
+    notifyEmail: profileData?.notifyEmail !== false,
+    ...profileData,
+    address: cleanInitialAddress,
+    dept: cleanInitialDept,
+  });
 
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -129,32 +104,40 @@ export default function CustomerProfileModal({
   // Sincronizar datos al abrir el modal
   useEffect(() => {
     if (isOpen && profileData) {
-      const p = parsePhone(profileData.phone);
+      const p = parsePhone(profileData.phone || '');
       setSelectedCountry(
         COUNTRY_CODES.find((c) => c.code === p.countryCode) || COUNTRY_CODES[0]
       );
-      setPhoneDigits(p.phoneDigits || '9 8456 1234');
-      setAddressQuery(profileData.address || 'Av. Los Notros 1420');
+      setPhoneDigits(p.phoneDigits || '');
+      const addr = profileData.address === 'Av. Los Notros 1420' ? '' : (profileData.address || '');
+      const deptVal =
+        profileData.dept === 'Depto 402' || profileData.depto === 'Depto 402'
+          ? ''
+          : profileData.dept || profileData.depto || '';
+
+      const notesVal =
+        profileData.notes || profileData.delivery_reference || profileData.deliveryReference || '';
 
       setFormData({
-        name: profileData.name || '',
+        name: profileData.name || profileData.full_name || '',
         email: profileData.email || '',
-        address: profileData.address || '',
-        dept: profileData.dept || '',
-        city: profileData.city || 'Puerto Montt',
-        notes: profileData.notes || '',
+        address: addr,
+        dept: deptVal,
+        depto: deptVal,
+        city: profileData.city || '',
+        notes: notesVal,
+        delivery_reference: notesVal,
         notifyWhatsapp: profileData.notifyWhatsapp !== false,
         notifyEmail: profileData.notifyEmail !== false,
       });
 
       setShowSuccess(false);
       setErrorMsg('');
-      setIsSuggestionsOpen(false);
       setIsCountryDropdownOpen(false);
     }
   }, [isOpen, profileData]);
 
-  // Cierre de dropdowns al hacer clic fuera
+  // Cierre de dropdown de país al hacer clic fuera
   useEffect(() => {
     const handleOutsideClick = (e) => {
       if (
@@ -162,12 +145,6 @@ export default function CustomerProfileModal({
         !countryDropdownRef.current.contains(e.target)
       ) {
         setIsCountryDropdownOpen(false);
-      }
-      if (
-        addressContainerRef.current &&
-        !addressContainerRef.current.contains(e.target)
-      ) {
-        setIsSuggestionsOpen(false);
       }
     };
 
@@ -180,57 +157,6 @@ export default function CustomerProfileModal({
       document.removeEventListener('touchstart', handleOutsideClick);
     };
   }, [isOpen]);
-
-  // Generador inteligente de sugerencias de Google Maps restringido a la Región de Los Lagos
-  const handleAddressInputChange = (val) => {
-    setAddressQuery(val);
-    setFormData((prev) => ({ ...prev, address: val }));
-    if (errorMsg) setErrorMsg('');
-
-    const clean = val.trim().toLowerCase();
-    if (clean.length < 2) {
-      setAddressSuggestions([]);
-      setIsSuggestionsOpen(false);
-      return;
-    }
-
-    // Filtrar de la base de Los Lagos por coincidencia de texto
-    const matched = LOS_LAGOS_PLACES_DB.filter(
-      (p) =>
-        p.street.toLowerCase().includes(clean) ||
-        p.sector.toLowerCase().includes(clean) ||
-        p.city.toLowerCase().includes(clean)
-    );
-
-    // Si el usuario escribe algo específico que no está en la base fija, sintetizamos opciones válidas en Los Lagos
-    let finalSuggestions = [...matched];
-    if (finalSuggestions.length < 4) {
-      const targetCommunes = ['Puerto Montt', 'Puerto Varas', 'Llanquihue', 'Frutillar', 'Osorno'];
-      targetCommunes.forEach((commune) => {
-        if (!finalSuggestions.some((s) => s.city.toLowerCase() === commune.toLowerCase())) {
-          finalSuggestions.push({
-            street: val.trim(),
-            sector: 'Sector Residencial',
-            city: commune,
-          });
-        }
-      });
-    }
-
-    setAddressSuggestions(finalSuggestions.slice(0, 5));
-    setIsSuggestionsOpen(true);
-  };
-
-  const handleSelectSuggestion = (suggestion) => {
-    const selectedAddress = suggestion.street;
-    setAddressQuery(selectedAddress);
-    setFormData((prev) => ({
-      ...prev,
-      address: selectedAddress,
-      city: suggestion.city,
-    }));
-    setIsSuggestionsOpen(false);
-  };
 
   if (!isOpen) return null;
 
@@ -251,12 +177,28 @@ export default function CustomerProfileModal({
       return;
     }
 
+    if (selectedCountry.code === '+56') {
+      const cleanDigits = phoneDigits.replace(/\D/g, '');
+      if (cleanDigits.length !== 9) {
+        setErrorMsg('El teléfono móvil debe tener exactamente 9 dígitos en formato 9 xxxx xxxx (ni más ni menos).');
+        return;
+      }
+    }
+
     const fullPhoneNumber = `${selectedCountry.code} ${phoneDigits.trim()}`;
+
+    const cleanDept = (formData.dept || formData.depto || '').trim();
+    const cleanNotes = (formData.notes || formData.delivery_reference || '').trim();
 
     const updated = {
       ...formData,
-      address: addressQuery.trim(),
+      address: (formData.address || '').trim(),
       phone: fullPhoneNumber,
+      dept: cleanDept,
+      depto: cleanDept,
+      notes: cleanNotes,
+      delivery_reference: cleanNotes,
+      deliveryReference: cleanNotes,
     };
 
     setIsSaving(true);
@@ -278,9 +220,9 @@ export default function CustomerProfileModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
     >
-      <div className="bg-white rounded-3xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
+      <div className="bg-white rounded-3xl w-full max-w-2xl sm:max-w-3xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
         
         {/* HEADER */}
         <div className="bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-4 sm:p-5 relative shrink-0">
@@ -422,10 +364,15 @@ export default function CustomerProfileModal({
                     <input
                       type="tel"
                       required
+                      maxLength={selectedCountry.code === '+56' ? 11 : 16}
                       value={phoneDigits}
-                      onChange={(e) => setPhoneDigits(e.target.value)}
-                      placeholder="9 8456 1234"
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPhoneDigits(selectedCountry.code === '+56' ? formatChileanPhone(val) : val);
+                        if (errorMsg) setErrorMsg('');
+                      }}
+                      placeholder={selectedCountry.code === '+56' ? "Ej. 9 5333 2492" : "Ej. 1234 5678"}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-mono font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
                     />
                   </div>
                 </div>
@@ -446,7 +393,7 @@ export default function CustomerProfileModal({
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleChange('email', e.target.value)}
-                    placeholder="felipe@tutor.cl"
+                    placeholder="tu-correo@ejemplo.com"
                     className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
                   />
                 </div>
@@ -470,87 +417,41 @@ export default function CustomerProfileModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               
-              {/* Campo Calle y Número con Autocomplete de Google Maps */}
-              <div className="space-y-1 sm:col-span-2 relative" ref={addressContainerRef}>
+              {/* Campo Calle y Número con Autocomplete de Google Maps (Ancho completo para ver sugerencias íntegras) */}
+              <div className="space-y-1 sm:col-span-3">
                 <label className="text-[11px] font-bold text-slate-600 block">
                   Calle y Número <span className="text-rose-500">*</span>
                 </label>
                 
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#0E8388]" />
-                  <input
-                    type="text"
-                    required
-                    value={addressQuery}
-                    onChange={(e) => handleAddressInputChange(e.target.value)}
-                    onFocus={() => {
-                      if (addressQuery.trim().length >= 2) setIsSuggestionsOpen(true);
-                    }}
-                    placeholder="Escribe tu calle (ej. Av. Los Notros 1420...)"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
-                  />
-                  {addressQuery && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddressQuery('');
-                        setAddressSuggestions([]);
-                        setIsSuggestionsOpen(false);
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Desplegable de Sugerencias de Google Maps (Región de Los Lagos) */}
-                {isSuggestionsOpen && addressSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-emerald-200/90 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 text-[10px] text-slate-400 font-bold">
-                      <span className="flex items-center gap-1 text-[#0E8388]">
-                        <Navigation className="w-3 h-3 text-[#0E8388]" />
-                        <span>Sugerencias de Google Maps</span>
-                      </span>
-                      <span className="text-[9px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-black">
-                        Región de Los Lagos
-                      </span>
-                    </div>
-
-                    <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                      {addressSuggestions.map((suggestion, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => handleSelectSuggestion(suggestion)}
-                          className="p-2 rounded-xl hover:bg-emerald-50/70 transition-colors cursor-pointer flex items-start gap-2.5 text-left group"
-                        >
-                          <div className="w-6 h-6 rounded-lg bg-emerald-100/70 text-[#0E8388] flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-105 transition-transform">
-                            <MapPin className="w-3.5 h-3.5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs font-bold text-slate-900 group-hover:text-[#0A3E40] truncate">
-                              {suggestion.street}
-                            </div>
-                            <div className="text-[10px] text-slate-400 font-medium truncate">
-                              {suggestion.sector ? `${suggestion.sector}, ` : ''}{suggestion.city}, Región de Los Lagos
-                            </div>
-                          </div>
-                          <span className="text-[9.5px] font-black text-[#0E8388] self-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                            Seleccionar
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="text-[9.5px] text-slate-400 text-center pt-1 border-t border-slate-100">
-                      Restringido a comunas de la Región de Los Lagos
-                    </div>
-                  </div>
-                )}
+                <GoogleAddressAutocomplete
+                  value={formData.address || ''}
+                  onChange={(val) => {
+                    const autoCity = detectCommuneFromAddress(val);
+                    setFormData((prev) => ({
+                      ...prev,
+                      address: val,
+                      ...(autoCity ? { city: autoCity } : {}),
+                    }));
+                    if (errorMsg) setErrorMsg('');
+                  }}
+                  onSelect={(item) => {
+                    const autoCity =
+                      item.city ||
+                      detectCommuneFromAddress(item.formattedAddress || item.street) ||
+                      detectCommuneFromAddress(item.mainText);
+                    setFormData((prev) => ({
+                      ...prev,
+                      address: item.street,
+                      city: autoCity || prev.city,
+                    }));
+                  }}
+                  placeholder="Escribe tu calle y número (ej. Av. Los Colonos 1420...)"
+                  required
+                />
               </div>
 
               {/* Depto / Casa */}
-              <div className="space-y-1">
+              <div className="space-y-1 sm:col-span-1">
                 <label className="text-[11px] font-bold text-slate-600 block">
                   Depto / Block / Casa
                 </label>
@@ -566,18 +467,26 @@ export default function CustomerProfileModal({
                 </div>
               </div>
 
-              {/* Comuna / Ciudad (Sincronizada con Google Maps) */}
-              <div className="space-y-1 sm:col-span-3">
-                <label className="text-[11px] font-bold text-slate-600 block">
-                  Comuna / Ciudad (Región de Los Lagos)
-                </label>
+              {/* Comuna / Ciudad (Sincronizada automáticamente con Google Maps) */}
+              <div className="space-y-1 sm:col-span-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-600 block">
+                    Comuna / Ciudad (Zona de Despacho)
+                  </label>
+                  {formData.city && (
+                    <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" /> Auto-detectada
+                    </span>
+                  )}
+                </div>
                 <div className="relative">
                   <select
-                    value={formData.city || 'Puerto Montt'}
+                    value={formData.city || ''}
                     onChange={(e) => handleChange('city', e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all cursor-pointer"
                   >
-                    {LOS_LAGOS_COMMUNES.map((comuna) => (
+                    <option value="">Selecciona tu comuna...</option>
+                    {ALLOWED_COMMUNES.map((comuna) => (
                       <option key={comuna} value={comuna}>
                         {comuna} (Región de Los Lagos)
                       </option>

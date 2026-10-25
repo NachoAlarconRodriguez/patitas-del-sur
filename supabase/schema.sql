@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
     address TEXT,
     depto TEXT,
     delivery_reference TEXT,
+    saved_addresses JSONB DEFAULT '[]'::jsonb,
     whatsapp_notifications BOOLEAN DEFAULT true,
     role TEXT NOT NULL DEFAULT 'cliente', -- 'cliente', 'admin'
     points INTEGER DEFAULT 0,
@@ -268,6 +269,12 @@ CREATE TABLE IF NOT EXISTS public.purchase_invoices (
     total_bruto NUMERIC(12, 2) DEFAULT 0,
     status TEXT DEFAULT 'pendiente', -- 'pagada', 'pendiente'
     payment_method TEXT,
+    has_shipping_cost BOOLEAN DEFAULT false,
+    shipping_cost_neto NUMERIC(12, 2) DEFAULT 0,
+    shipping_invoice_number TEXT,
+    shipping_provider TEXT,
+    shipping_distribution_method TEXT DEFAULT 'units', -- 'units' | 'value'
+    items JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -301,6 +308,26 @@ CREATE TABLE IF NOT EXISTS public.store_settings (
     value JSONB NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- -------------------------------------------------------------------------
+-- 13. TABLA: FINANZAS - INVERSIONES Y APORTES DE SOCIOS (partner_investments)
+-- -------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.partner_investments (
+    id TEXT PRIMARY KEY, -- 'INV-01', 'INV-02'
+    partner_name TEXT NOT NULL,
+    partner_rut TEXT,
+    amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+    date DATE NOT NULL,
+    investment_type TEXT NOT NULL DEFAULT 'capital_inicial', -- 'capital_inicial', 'aumento_capital', 'liquidez', 'compra_activos', 'prestamo_socio', 'otro'
+    investment_type_label TEXT,
+    payment_method TEXT DEFAULT 'Transferencia Bancaria',
+    destination_account TEXT,
+    reference_number TEXT,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_partner_investments_date ON public.partner_investments(date DESC);
 
 -- =========================================================================
 -- ROW LEVEL SECURITY (RLS) - POLÍTICAS DE ACCESO

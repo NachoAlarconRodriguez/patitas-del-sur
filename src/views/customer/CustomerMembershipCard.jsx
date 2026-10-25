@@ -4,9 +4,28 @@ import { Award, Sparkles } from 'lucide-react';
 export default function CustomerMembershipCard({
   currentUser,
   userPoints = 0,
+  pendingPoints = 0,
   activeCoupons = [],
   onOpenRedeemModal,
+  tiers = [
+    { points: 100, discount: 3000, label: '$3.000 Dcto', validity: 'Válido: 1 compra', icon: '💵' },
+    { points: 200, discount: 7000, label: '$7.000 Dcto', validity: 'Válido: 1 compra', icon: '💰' },
+    { points: 350, discount: 14000, label: '$14.000 Dcto', validity: 'Válido: 1 compra', icon: '🏷️' },
+    { points: 500, discount: 25000, label: '$25.000 Dcto', validity: 'Válido: 1 compra', icon: '👑' },
+  ],
 }) {
+  // Calcular próximo nivel objetivo
+  const nextTier = tiers.find((t) => userPoints < t.points) || tiers[tiers.length - 1];
+  const isMaxTier = userPoints >= tiers[tiers.length - 1].points;
+  const targetPoints = nextTier.points;
+  const progressPercent = isMaxTier
+    ? 100
+    : Math.min(100, Math.round((userPoints / targetPoints) * 100));
+
+  // Calcular valor canjeable actual según el nivel más alto alcanzable
+  const highestAffordableTier = [...tiers].reverse().find((t) => userPoints >= t.points);
+  const redeemableValue = highestAffordableTier ? highestAffordableTier.discount : 0;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
       {/* Left 5 Cols: CUSTOM PATITAS DEL SUR BRAND VIP MEMBERSHIP CARD */}
@@ -50,7 +69,7 @@ export default function CustomerMembershipCard({
             </div>
 
             <div className="text-xl md:text-2xl font-black text-slate-900 tracking-tight flex items-baseline justify-between">
-              <span>{currentUser?.name || 'Tutor Patitas'}</span>
+              <span>{currentUser?.name || currentUser?.full_name || 'Tutor Patitas'}</span>
               <span className="text-xs font-bold text-slate-500 font-mono">2026 / 2027</span>
             </div>
 
@@ -58,12 +77,21 @@ export default function CustomerMembershipCard({
             <div className="p-3 rounded-2xl bg-white/90 border border-[#0E8388]/30 shadow-xs flex items-center justify-between backdrop-blur-md">
               <div>
                 <span className="text-[9px] uppercase font-black text-slate-500 block">Saldo de Puntos</span>
-                <span className="text-2xl font-black text-[#0A3E40]">{userPoints.toLocaleString('es-CL')} PTS</span>
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-2xl font-black text-[#0A3E40]">{userPoints.toLocaleString('es-CL')} PTS</span>
+                  {pendingPoints > 0 && (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md" title="Puntos pendientes de validación de pago">
+                      +{pendingPoints} pendientes
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="text-right">
                 <span className="text-[9px] uppercase font-black text-slate-500 block">Valor Canjeable</span>
                 <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                  ${(userPoints * 10).toLocaleString('es-CL')} CLP Dcto
+                  {redeemableValue > 0
+                    ? `$${redeemableValue.toLocaleString('es-CL')} CLP Dcto`
+                    : `$0 CLP Dcto`}
                 </span>
               </div>
             </div>
@@ -90,10 +118,12 @@ export default function CustomerMembershipCard({
                 Canje de Puntos por Compras 🚀
               </span>
               <h3 className="text-xl font-black text-slate-900">
-                {userPoints < 1500 ? 'Próximo Beneficio: Envío Gratis (2 compras) 🚚' : '¡Tienes puntos listos para canjear! 🎁'}
+                {isMaxTier
+                  ? '¡Nivel Máximo VIP! Tienes $25.000 listos para canjear 👑'
+                  : `Próximo Beneficio: Cupón ${nextTier.label} ${nextTier.icon || '🎁'}`}
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Al canjear un cupón, los puntos se descuentan y el beneficio aplica en tus compras indicadas.
+                Acumula 1 punto por cada $1.000 en tus compras. Al canjear un cupón, se descuentan tus puntos y aplicas el descuento en dinero directo.
               </p>
             </div>
             <button
@@ -110,20 +140,20 @@ export default function CustomerMembershipCard({
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
             <div className="flex justify-between text-xs font-black">
               <span className="text-slate-700">
-                {userPoints < 1500 ? 'Progreso para Envío Gratis (1.500 Pts):' : 'Progreso a 2.000 Pts (20% Dcto + Regalo):'}
+                {isMaxTier
+                  ? '¡Meta VIP Alcanzada (500 Pts)!'
+                  : `Progreso para ${nextTier.label} (${nextTier.points.toLocaleString('es-CL')} Pts):`}
               </span>
               <span className="text-[#0E8388]">
-                {userPoints < 1500
-                  ? `¡Faltan solo ${1500 - userPoints} Pts! (${Math.round((userPoints / 1500) * 100)}%)`
-                  : userPoints < 2000
-                  ? `¡Faltan ${2000 - userPoints} Pts! (${Math.round((userPoints / 2000) * 100)}%)`
-                  : '¡Nivel Máximo de Recompensas Alcanzado!'}
+                {isMaxTier
+                  ? '✓ Puntos listos para canjear'
+                  : `¡Faltan solo ${Math.max(0, targetPoints - userPoints)} Pts! (${progressPercent}%)`}
               </span>
             </div>
             <div className="w-full h-4 rounded-full bg-slate-200 overflow-hidden p-0.5 border border-slate-300">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981] transition-all duration-700 shadow-md relative"
-                style={{ width: `${Math.min(100, (userPoints / 1500) * 100)}%` }}
+                style={{ width: `${progressPercent}%` }}
               >
                 <div className="absolute inset-0 bg-white/20 animate-pulse" />
               </div>
@@ -131,47 +161,53 @@ export default function CustomerMembershipCard({
           </div>
         </div>
 
-        {/* Milestone Tiers Horizontal List (Explicit Validity Per Purchases) */}
+        {/* Milestone Tiers Horizontal List (4 Tiers in Cash Discounts) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Milestone 1: 500 Pts */}
-          <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 500 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-            <div className="text-[10px] font-black text-emerald-800 uppercase">500 Pts</div>
-            <div className="font-extrabold text-slate-900">$5.000 Dcto</div>
-            <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-            <div className={`text-[10px] font-black ${userPoints >= 500 ? 'text-emerald-700' : 'text-slate-400'}`}>
-              {userPoints >= 500 ? '✓ Canjeable' : '🔒 Faltan Pts'}
-            </div>
-          </div>
+          {tiers.map((tier) => {
+            const isReached = userPoints >= tier.points;
+            const isNext = !isReached && tier.points === nextTier.points;
 
-          {/* Milestone 2: 1000 Pts */}
-          <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 1000 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-            <div className="text-[10px] font-black text-emerald-800 uppercase">1.000 Pts</div>
-            <div className="font-extrabold text-slate-900">$10.000 Dcto</div>
-            <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-            <div className={`text-[10px] font-black ${userPoints >= 1000 ? 'text-emerald-700' : 'text-slate-400'}`}>
-              {userPoints >= 1000 ? '✓ Canjeable' : '🔒 Faltan Pts'}
-            </div>
-          </div>
-
-          {/* Milestone 3: 1500 Pts */}
-          <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 1500 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-2 border-amber-300 shadow-xs'}`}>
-            <div className="text-[10px] font-black text-amber-900 uppercase">1.500 Pts ⚡</div>
-            <div className="font-extrabold text-slate-900">Envío Gratis</div>
-            <div className="text-[10px] text-slate-600 font-medium">Válido: 2 compras</div>
-            <div className="text-[10px] text-amber-800 font-black">
-              {userPoints >= 1500 ? '✓ Canjeable' : '¡Próxima Meta!'}
-            </div>
-          </div>
-
-          {/* Milestone 4: 2000 Pts */}
-          <div className={`p-3 rounded-2xl border text-xs space-y-1 ${userPoints >= 2000 ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 opacity-70'}`}>
-            <div className="text-[10px] font-black text-slate-500 uppercase">2.000 Pts 🔒</div>
-            <div className="font-extrabold text-slate-700">20% + Regalo</div>
-            <div className="text-[10px] text-slate-600 font-medium">Válido: 1 compra</div>
-            <div className="text-[10px] text-slate-500 font-bold">
-              {userPoints >= 2000 ? '✓ Canjeable' : 'Bloqueado'}
-            </div>
-          </div>
+            return (
+              <div
+                key={tier.points}
+                className={`p-3 rounded-2xl border text-xs space-y-1 transition-all ${
+                  isReached
+                    ? 'bg-emerald-50 border-emerald-300 shadow-xs'
+                    : isNext
+                    ? 'bg-amber-50/70 border-2 border-amber-300 shadow-xs'
+                    : 'bg-slate-50 border-slate-200 opacity-60'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div
+                    className={`text-[10px] font-black uppercase ${
+                      isReached ? 'text-emerald-800' : isNext ? 'text-amber-900' : 'text-slate-500'
+                    }`}
+                  >
+                    {tier.points} Pts
+                  </div>
+                  <span className="text-xs">{tier.icon}</span>
+                </div>
+                <div className="font-extrabold text-slate-900">{tier.label}</div>
+                <div className="text-[10px] text-slate-600 font-medium">{tier.validity}</div>
+                <div
+                  className={`text-[10px] font-black ${
+                    isReached
+                      ? 'text-emerald-700'
+                      : isNext
+                      ? 'text-amber-800'
+                      : 'text-slate-400'
+                  }`}
+                >
+                  {isReached
+                    ? '✓ Canjeable'
+                    : isNext
+                    ? '¡Próxima Meta!'
+                    : `🔒 Faltan ${tier.points - userPoints} Pts`}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* Active Redeemed Coupons List */}

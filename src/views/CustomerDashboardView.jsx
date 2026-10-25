@@ -44,6 +44,7 @@ import {
   Gift,
 } from 'lucide-react';
 import { PRODUCTS, BRANDS } from '../data/mockData';
+import { isProductOutOfStock } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import PromoCarousel from '../components/PromoCarousel';
 import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
@@ -71,27 +72,78 @@ import {
 } from '../services/healthLogsService.js';
 import {
   fetchOrdersFromSupabase,
+  createOrderInSupabase,
+  getNextOrderId,
 } from '../services/ordersService.js';
 import {
   fetchProductsFromSupabase,
 } from '../services/productsService.js';
 import { supabase } from '../lib/supabase.js';
 
+const KNOWN_BRANDS = [
+  'Alpha Spirit',
+  'Acana',
+  'Orijen',
+  'Bravery',
+  'Fit',
+  'Nomade',
+  'Stay Happy',
+  'Dr. Pet',
+  'Dr Pet',
+  'Patagonia Holística',
+  'Patagonia',
+  'Sur Natural',
+  'Austral Bio',
+  'Chiloé Sea',
+];
+
+// Helper para extraer la marca y limpiar el nombre del producto en vistas compactas (Opción 1 Apple Eyebrow)
+const extractBrandAndCleanName = (product) => {
+  let brand = (product?.brand || '').trim();
+  let cleanName = (product?.name || product?.foodName || '').trim();
+
+  if (!brand) {
+    const matchedBrand = KNOWN_BRANDS.find((b) =>
+      cleanName.toLowerCase().startsWith(b.toLowerCase())
+    );
+    if (matchedBrand) {
+      brand = matchedBrand;
+    }
+  }
+
+  if (brand && cleanName.toLowerCase().startsWith(brand.toLowerCase())) {
+    cleanName = cleanName.slice(brand.length).trim();
+  }
+
+  cleanName = cleanName.replace(/^[-–—:·\s]+/, '');
+
+  return {
+    brand: brand.toUpperCase(),
+    cleanName: cleanName || product?.name || product?.foodName || '',
+  };
+};
+
 /* Carrusel Automático de Productos Destacados con Motions de Transición de Alto Nivel */
-function FeaturedProductsCarousel({ pet, currentProduct, onAddToCart, onSelectProduct, setOrderToastMessage, formatCLP }) {
+function FeaturedProductsCarousel({ pet, currentProduct, catalogProducts, onAddToCart, onSelectProduct, setOrderToastMessage, formatCLP }) {
   const [featuredIndex, setFeaturedIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
   // Computar productos destacados según especie de la mascota (excluyendo el alimento habitual actual)
   const featuredProducts = useMemo(() => {
+    const source = (catalogProducts && catalogProducts.length > 0) ? catalogProducts : PRODUCTS;
     const species = pet?.type === 'gato' ? 'gatos' : 'perros';
-    const filtered = PRODUCTS.filter(p => p.petType === species && p.id !== currentProduct?.id);
+    const filtered = source.filter(p => {
+      const pPetType = (p.petType || p.pet_type || '').toLowerCase();
+      const matchSpecies = pPetType.includes(pet?.type === 'gato' ? 'gato' : 'perro') || pPetType === 'ambos' || pPetType === 'todos';
+      const isNotPaused = !p.isPaused && !p.is_paused && p.isActive !== false && p.is_active !== false;
+      return matchSpecies && p.id !== currentProduct?.id && isNotPaused;
+    });
     if (filtered.length < 4) {
-      const fallback = PRODUCTS.filter(p => p.id !== currentProduct?.id);
+      const fallback = source.filter(p => p.id !== currentProduct?.id && !p.isPaused && !p.is_paused);
       return [...filtered, ...fallback].slice(0, 9);
     }
     return filtered.slice(0, 9);
-  }, [pet?.type, currentProduct?.id]);
+  }, [pet?.type, currentProduct?.id, catalogProducts]);
 
   // Reiniciar slide al cambiar de mascota
   useEffect(() => {
@@ -120,7 +172,7 @@ function FeaturedProductsCarousel({ pet, currentProduct, onAddToCart, onSelectPr
         <div className="flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-[#0E8388] animate-pulse" />
           <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight">
-            Destacados para {pet.name.split(' ')[0]}
+            Destacados para {pet?.name ? pet.name.split(' ')[0] : 'tu regalón'}
           </span>
         </div>
 
@@ -178,59 +230,80 @@ function FeaturedProductsCarousel({ pet, currentProduct, onAddToCart, onSelectPr
             transform: `translateX(calc(-${featuredIndex} * ((100% + 8px) / 3)))`,
           }}
         >
-          {featuredProducts.map((prod) => (
-            <div
-              key={prod.id}
-              onClick={() => onSelectProduct && onSelectProduct(prod)}
-              className="w-[calc((100%-16px)/3)] shrink-0 bg-white border border-slate-200/90 hover:border-[#0E8388]/60 rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between shadow-2xs hover:shadow-md transition-all duration-300 group cursor-pointer active:scale-[0.98]"
-            >
-              {/* Tag / Badge */}
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[9px] font-extrabold text-[#0E8388] bg-teal-50 px-1.5 py-0.5 rounded-md truncate max-w-full">
-                  {prod.badge || prod.brand || 'Destacado'}
-                </span>
-              </div>
+          {featuredProducts.map((prod) => {
+            const isOutOfStock = isProductOutOfStock(prod);
+            return (
+              <div
+                key={prod.id}
+                onClick={() => onSelectProduct && onSelectProduct(prod)}
+                className={`w-[calc((100%-16px)/3)] shrink-0 bg-white border rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between transition-all duration-300 group select-none ${
+                  isOutOfStock
+                    ? 'border-slate-200/60 opacity-80'
+                    : 'border-slate-200/90 hover:border-[#0E8388]/60 shadow-2xs hover:shadow-md cursor-pointer active:scale-[0.98]'
+                }`}
+              >
+                {/* Tag / Badge */}
+                <div className="flex items-center justify-between mb-1">
+                  {isOutOfStock ? (
+                    <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-md truncate max-w-full">
+                      Agotado
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-extrabold text-[#0E8388] bg-teal-50 px-1.5 py-0.5 rounded-md truncate max-w-full">
+                      {prod.badge || prod.brand || 'Destacado'}
+                    </span>
+                  )}
+                </div>
 
-              {/* Imagen centrada */}
-              <div className="w-full h-14 sm:h-16 rounded-xl bg-slate-50/70 p-1 flex items-center justify-center my-0.5 overflow-hidden">
-                <img
-                  src={prod.image || '/images/hero_dog.png'}
-                  alt={prod.name}
-                  className="max-h-full max-w-full object-contain group-hover:scale-110 transition-transform duration-500 ease-out"
-                  loading="lazy"
-                />
-              </div>
+                {/* Imagen centrada */}
+                <div className="w-full h-14 sm:h-16 rounded-xl bg-slate-50/70 p-1 flex items-center justify-center my-0.5 overflow-hidden">
+                  <img
+                    src={prod.image || '/images/hero_dog.png'}
+                    alt={prod.name}
+                    className={`max-h-full max-w-full object-contain duration-500 ease-out ${
+                      isOutOfStock ? 'grayscale-[35%]' : 'group-hover:scale-110 transition-transform'
+                    }`}
+                    loading="lazy"
+                  />
+                </div>
 
-              {/* Información y Compra Rápida */}
-              <div className="mt-1 space-y-1">
-                <h4
-                  className="text-[10.5px] sm:text-xs font-bold text-slate-800 line-clamp-1 leading-tight group-hover:text-[#0E8388] transition-colors"
-                  title={prod.name}
-                >
-                  {prod.name}
-                </h4>
-
-                <div className="flex items-center justify-between pt-0.5">
-                  <span className="text-[10px] sm:text-[11.5px] font-black text-[#0A3E40] truncate">
-                    {formatCLP(prod.price)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const weight = prod.weights?.[0] || '1 unidad';
-                      onAddToCart(prod, weight, 1);
-                      setOrderToastMessage(`✓ ${prod.name.split(' ')[0]} agregado al carrito`);
-                    }}
-                    className="w-6 h-6 rounded-lg bg-teal-50 hover:bg-[#0E8388] text-[#0E8388] hover:text-white flex items-center justify-center transition-all shadow-2xs active:scale-90 cursor-pointer"
-                    title="Agregar al carrito"
+                {/* Información y Compra Rápida */}
+                <div className="mt-1 space-y-1">
+                  <h4
+                    className="text-[10.5px] sm:text-xs font-bold text-slate-800 line-clamp-1 leading-tight group-hover:text-[#0E8388] transition-colors"
+                    title={prod.name}
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
+                    {extractBrandAndCleanName(prod).cleanName}
+                  </h4>
+
+                  <div className="flex items-center justify-between pt-0.5">
+                    <span className="text-[10px] sm:text-[11.5px] font-black text-[#0A3E40] truncate">
+                      {formatCLP(prod.price)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isOutOfStock}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isOutOfStock) return;
+                        const weight = prod.weights?.[0] || '1 unidad';
+                        onAddToCart(prod, weight, 1);
+                        setOrderToastMessage(`✓ ${prod.name.split(' ')[0]} agregado al carrito`);
+                      }}
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
+                        isOutOfStock
+                          ? 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
+                          : 'bg-teal-50 hover:bg-[#0E8388] text-[#0E8388] hover:text-white shadow-2xs active:scale-90 cursor-pointer'
+                      }`}
+                      title={isOutOfStock ? 'Producto sin stock' : 'Agregar al carrito'}
+                    >
+                      {isOutOfStock ? <X className="w-3 h-3 text-slate-400" /> : <Plus className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -249,8 +322,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   });
 
   // Estado para el Cuaderno Veterinario en vista principal
-  const [cuadernoActivePetId, setCuadernoActivePetId] = useState('pet-1');
+  const [cuadernoActivePetId, setCuadernoActivePetId] = useState(null);
   const [cuadernoCategoryFilter, setCuadernoCategoryFilter] = useState('todas'); // 'todas' | 'vacunas' | 'antiparasitario' | 'consulta'
+
+  // Cambio de pestañas responsivo unificado (Desktop tabs y navegación PWA)
+  const handleSwitchTab = (tabKey) => {
+    setActiveTab(tabKey);
+    navigate(`/mi-cuenta?tab=${tabKey}`, { replace: true });
+    window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: tabKey }));
+    window.dispatchEvent(new CustomEvent('patitas_customer_tab', { detail: tabKey }));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Sincronizar tab cuando el BottomNavBar emite un evento o cambia la URL
   useEffect(() => {
@@ -302,6 +384,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     };
   }, []);
 
+  // Catálogo activo general conectado al backend con fallback
+  const activeCatalog = useMemo(() => {
+    return catalogProducts && catalogProducts.length > 0 ? catalogProducts : PRODUCTS;
+  }, [catalogProducts]);
+
   const [storeFilter, setStoreFilter] = useState('todos'); // 'todos' | 'perro' | 'gato'
   const [storeMobileCategory, setStoreMobileCategory] = useState('destacados'); // 'destacados' | 'alimento' | 'antiparasitarios' | 'snacks' | 'todos'
   
@@ -315,51 +402,219 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [newPetWeight, setNewPetWeight] = useState('');
   const [newPetSterilized, setNewPetSterilized] = useState('si');
   const [newPetFoodSearch, setNewPetFoodSearch] = useState('');
-  const [newPetFood, setNewPetFood] = useState('Bravery Cordero Adulto Raza Mediana / Grande 12kg');
+  const [newPetFood, setNewPetFood] = useState('');
+  const [newPetSelectedProduct, setNewPetSelectedProduct] = useState(null);
   const [isCustomFood, setIsCustomFood] = useState(false);
   const [customFoodName, setCustomFoodName] = useState('');
   const [isFoodDropdownOpen, setIsFoodDropdownOpen] = useState(false);
   const [newPetDuration, setNewPetDuration] = useState('30');
+  const foodDropdownRef = useRef(null);
 
-  // Calculate age from ISO birthdate (YYYY-MM-DD)
-  const calculateAgeFromBirthdate = (isoDate) => {
-    if (!isoDate) return '';
-    const parts = isoDate.split('-');
-    if (parts.length !== 3) return '';
-    const birthYear = parseInt(parts[0], 10);
-    const birthMonth = parseInt(parts[1], 10);
-    const birthDay = parseInt(parts[2], 10);
-    if (isNaN(birthYear) || isNaN(birthMonth) || isNaN(birthDay)) return '';
+  // Alimentos filtrados inteligentemente desde el backend para el Asistente de Registro de Mascota
+  const availablePetFoods = useMemo(() => {
+    if (!activeCatalog || activeCatalog.length === 0) return [];
 
-    const today = new Date();
-    let age = today.getFullYear() - birthYear;
-    const m = today.getMonth() + 1 - birthMonth;
-    if (m < 0 || (m === 0 && today.getDate() < birthDay)) {
-      age--;
+    // 1. Filtrar SOLO alimentos (excluyendo arena sanitaria, antiparasitarios, etc.)
+    const foodOnly = activeCatalog.filter((p) => {
+      if (!p) return false;
+      if (p.isActive === false || p.is_active === false) return false;
+
+      const cat = (p.category || '').toLowerCase().trim();
+      const nonFoodKeywords = [
+        'arena',
+        'arena sanitaria',
+        'antiparasitario',
+        'pipeta',
+        'collar',
+        'comprimido',
+        'accesorio',
+        'juguete',
+        'higiene',
+        'shampoo',
+        'champu',
+        'farmacia',
+        'cama',
+        'correa',
+        'plato',
+        'comedero'
+      ];
+      if (nonFoodKeywords.some((nfc) => cat.includes(nfc))) {
+        return false;
+      }
+      if (cat.includes('alimento') || cat.includes('comida') || cat.includes('pienso') || cat.includes('nutricion')) {
+        return true;
+      }
+      return cat === '' || cat === 'general';
+    });
+
+    // 2. Filtrar por especie (perro vs gato) para no mostrar un listado infinito
+    const speciesFoods = foodOnly.filter((p) => {
+      if (!newPetType) return true;
+      const pt = (p.petType || p.pet_type || p.type || '').toLowerCase().trim();
+      if (newPetType === 'perro') {
+        return pt.includes('perro') || pt.includes('canin') || pt === 'ambos' || pt === 'todos' || pt === '';
+      }
+      if (newPetType === 'gato') {
+        return pt.includes('gato') || pt.includes('felin') || pt === 'ambos' || pt === 'todos' || pt === '';
+      }
+      return true;
+    });
+
+    // 3. Filtrar en tiempo real según lo que el usuario está escribiendo
+    const q = (newPetFoodSearch || '').trim();
+    if (!q) {
+      return speciesFoods;
     }
-    return age >= 0 ? `${age}` : '0';
+
+    const normalize = (str) =>
+      (str || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+    const searchWords = normalize(q).split(/\s+/).filter(Boolean);
+
+    return speciesFoods.filter((p) => {
+      const weightStr = Array.isArray(p.weights) ? p.weights.join(' ') : (p.weight || p.format || '');
+      const searchable = normalize(`
+        ${p.name || ''} 
+        ${p.brand || ''} 
+        ${p.tagline || p.description || ''} 
+        ${p.category || ''}
+        ${weightStr}
+      `);
+      return searchWords.every((word) => searchable.includes(word));
+    });
+  }, [activeCatalog, newPetType, newPetFoodSearch]);
+
+  // Cerrar el menú flotante de alimentos al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (foodDropdownRef.current && !foodDropdownRef.current.contains(event.target)) {
+        setIsFoodDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Recargar productos desde el backend al abrir el modal de mascota
+  useEffect(() => {
+    if (isAddPetModalOpen) {
+      fetchProductsFromSupabase().then((dbProds) => {
+        if (dbProds && dbProds.length > 0) {
+          setCatalogProducts(dbProds);
+        }
+      }).catch(console.warn);
+    }
+  }, [isAddPetModalOpen]);
+
+  // Limpiar y reiniciar formulario de nueva mascota
+  const resetPetModalForm = () => {
+    setPetStep(1);
+    setNewPetName('');
+    setNewPetBirthdate('');
+    setNewPetAge('');
+    setNewPetWeight('');
+    setNewPetSterilized('si');
+    setNewPetFoodSearch('');
+    setNewPetFood('');
+    setNewPetSelectedProduct(null);
+    setIsCustomFood(false);
+    setCustomFoodName('');
+    setIsFoodDropdownOpen(false);
+    setNewPetDuration('30');
+    setIsAddPetModalOpen(false);
   };
 
-  const handleBirthdateChange = (isoDate) => {
-    setNewPetBirthdate(isoDate);
-    const calculatedAge = calculateAgeFromBirthdate(isoDate);
+  // Calculate age in years and months from birthdate (Date, ISO string or Spanish string)
+  const calculateAgeFromBirthdate = (input) => {
+    if (!input) return '';
+    let birthDate = null;
+
+    if (input instanceof Date && !isNaN(input.getTime())) {
+      birthDate = input;
+    } else if (typeof input === 'string') {
+      const trimmed = input.trim();
+      // Check ISO YYYY-MM-DD
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('-');
+        if (parts.length === 3) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10) - 1;
+          const d = parseInt(parts[2], 10);
+          if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+            birthDate = new Date(y, m, d);
+          }
+        }
+      }
+      // Check Spanish string "10 de Febrero 2024"
+      if (!birthDate && trimmed.includes('de')) {
+        const match = trimmed.match(/(\d{1,2})\s+de\s+([a-zA-ZáéíóúÁÉÍÓÚ]+)\s+(\d{4})/i);
+        if (match) {
+          const day = parseInt(match[1], 10);
+          const monthName = match[2].toLowerCase();
+          const year = parseInt(match[3], 10);
+          const monthNames = [
+            'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+            'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
+          ];
+          const mIdx = monthNames.findIndex((m) => m === monthName);
+          if (mIdx !== -1) {
+            birthDate = new Date(year, mIdx, day);
+          }
+        }
+      }
+      if (!birthDate) {
+        const parsed = new Date(trimmed);
+        if (!isNaN(parsed.getTime())) birthDate = parsed;
+      }
+    }
+
+    if (!birthDate) return '';
+
+    const today = new Date();
+    let years = today.getFullYear() - birthDate.getFullYear();
+    let months = today.getMonth() - birthDate.getMonth();
+    let days = today.getDate() - birthDate.getDate();
+
+    if (days < 0) {
+      months--;
+    }
+    if (months < 0) {
+      years--;
+      months += 12;
+    }
+
+    if (years < 0) return 'Recién nacido';
+
+    const yearStr = years === 1 ? '1 año' : `${years} años`;
+    const monthStr = months === 1 ? '1 mes' : `${months} meses`;
+
+    if (years > 0 && months > 0) {
+      return `${yearStr} y ${monthStr}`;
+    } else if (years > 0) {
+      return yearStr;
+    } else if (months > 0) {
+      return monthStr;
+    } else {
+      return 'Menos de 1 mes';
+    }
+  };
+
+  const handleBirthdateChange = (spanishDate, isoDate, dateObj) => {
+    const selectedDate = spanishDate || isoDate;
+    setNewPetBirthdate(selectedDate);
+    const calculatedAge = calculateAgeFromBirthdate(dateObj || isoDate || spanishDate);
     setNewPetAge(calculatedAge);
   };
 
   const handleAgeChange = (e) => {
-    const rawVal = e.target.value.replace(/[^0-9]/g, '');
-    setNewPetAge(rawVal);
-    if (rawVal) {
-      const ageNum = parseInt(rawVal, 10);
-      const today = new Date();
-      const targetYear = today.getFullYear() - ageNum;
-      const formattedMonth = String(today.getMonth() + 1).padStart(2, '0');
-      const formattedDay = String(today.getDate()).padStart(2, '0');
-      const calculatedIso = `${targetYear}-${formattedMonth}-${formattedDay}`;
-      setNewPetBirthdate(calculatedIso);
-    } else {
-      setNewPetBirthdate('');
-    }
+    setNewPetAge(e.target.value);
   };
 
   // Modal for Pet Health Log (Bitácora de Salud)
@@ -496,7 +751,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [schedCustomDate, setSchedCustomDate] = useState('2026-08-20');
   const [schedTimeSlot, setSchedTimeSlot] = useState('tarde'); // 'manana' (09:00 - 13:00) | 'tarde' (14:00 - 19:00)
   const [schedPaymentMethod, setSchedPaymentMethod] = useState('Tarjeta'); // 'Web' | 'Tarjeta' | 'Efectivo' | 'Transferencia'
-  const [schedAddress, setSchedAddress] = useState('Av. Los Colonos 1420, Depto 402, Puerto Varas');
+  const [schedAddress, setSchedAddress] = useState('');
   const [orderToastMessage, setOrderToastMessage] = useState(null);
   const [liveTrackingOrder, setLiveTrackingOrder] = useState(null);
 
@@ -516,72 +771,73 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   };
 
   // Loyalty Points & Coupons State
-  const [userPoints, setUserPoints] = useState(1250);
+  const [userPoints, setUserPoints] = useState(0);
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
-  const [activeCoupons, setActiveCoupons] = useState([
-    {
-      id: 'CUPON-BIENVENIDA-10K',
-      title: 'Cupón $10.000 CLP Dcto.',
-      pointsCost: 1000,
-      validity: 'Válido para 1 compra',
-      remainingUses: 1,
-      code: 'PTS-ORO-10K',
-      date: 'Canje ciclo anterior',
-    }
-  ]);
+  const [activeCoupons, setActiveCoupons] = useState([]);
   const [redeemSuccessMessage, setRedeemSuccessMessage] = useState(null);
 
   const REDEEM_REWARDS = [
     {
-      id: 'reward-500',
-      points: 500,
-      discountLabel: '$5.000 Dcto.',
-      title: 'Cupón $5.000 CLP de Descuento',
+      id: 'reward-100',
+      points: 100,
+      discountLabel: '$3.000 Dcto.',
+      discountAmount: 3000,
+      title: 'Cupón $3.000 CLP de Descuento',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $5.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $3.000 de descuento directo en el total de tu próxima compra.',
       icon: '💵',
     },
     {
-      id: 'reward-1000',
-      points: 1000,
-      discountLabel: '$10.000 Dcto.',
-      title: 'Cupón $10.000 CLP de Descuento',
+      id: 'reward-200',
+      points: 200,
+      discountLabel: '$7.000 Dcto.',
+      discountAmount: 7000,
+      title: 'Cupón $7.000 CLP de Descuento',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $10.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $7.000 de descuento directo en el total de tu próxima compra.',
       icon: '💰',
     },
     {
-      id: 'reward-1500',
-      points: 1500,
-      discountLabel: 'Envío Gratis',
-      title: 'Cupón Despacho Gratis a Domicilio',
-      validity: 'Válido en tus próximas 2 compras',
-      description: 'Envío 100% gratuito a domicilio aplicable en tus próximos 2 pedidos.',
-      icon: '🚚',
+      id: 'reward-350',
+      points: 350,
+      discountLabel: '$14.000 Dcto.',
+      discountAmount: 14000,
+      title: 'Cupón $14.000 CLP de Descuento',
+      validity: 'Válido para 1 compra',
+      description: 'Aplica $14.000 de descuento directo en el total de tu próxima compra.',
+      icon: '🏷️',
     },
     {
-      id: 'reward-2000',
-      points: 2000,
-      discountLabel: '20% Dcto. + Snack',
-      title: 'Cupón 20% Dcto + Snack de Regalo',
+      id: 'reward-500',
+      points: 500,
+      discountLabel: '$25.000 Dcto.',
+      discountAmount: 25000,
+      title: 'Cupón $25.000 CLP de Descuento VIP',
       validity: 'Válido para 1 compra',
-      description: '20% de descuento total en tu pedido + 1 Snack 100% Natural de premio.',
-      icon: '🎁',
+      description: 'Aplica $25.000 de descuento directo en el total de tu próxima compra.',
+      icon: '👑',
     },
   ];
 
   const handleRedeemReward = async (reward) => {
     if (userPoints < reward.points) return;
 
-    setUserPoints(prev => prev - reward.points);
+    const remainingPoints = Math.max(0, userPoints - reward.points);
+    setUserPoints(remainingPoints);
+
+    const randomChars = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const couponCode = `PTS-${randomChars}`;
+
     const newCoupon = {
       id: `CUPON-${Date.now()}`,
       title: reward.title,
       pointsCost: reward.points,
       validity: reward.validity,
-      remainingUses: reward.id === 'reward-1500' ? 2 : 1,
-      code: `PTS-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      remainingUses: 1,
+      code: couponCode,
       date: 'Canjeado hoy',
+      discountAmount: reward.discountAmount || 3000,
+      status: 'activo',
     };
     setActiveCoupons(prev => [newCoupon, ...prev]);
 
@@ -591,17 +847,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
         await updateCustomerPoints(customerDbId, -reward.points);
         await supabase.from('points_redemptions').insert({
           customer_id: customerDbId,
-          reward_id: reward.id === 'reward-1500' ? 'rew-envio-gratis' : reward.id === 'reward-1000' ? 'rew-dscto-10' : 'rew-dscto-10',
+          reward_id: reward.id,
           points_spent: reward.points,
           coupon_code: newCoupon.code,
-          status: 'activo'
+          status: 'activo',
         });
       } catch (err) {
         console.error('Error synchronizing points redemption to Supabase:', err);
       }
     }
 
-    setRedeemSuccessMessage(`🎉 ¡Canje exitoso! Se descontaron ${reward.points.toLocaleString('es-CL')} Pts. Tu ${reward.title} (${reward.validity}) ya está activo para tus compras.`);
+    setRedeemSuccessMessage(`🎉 ¡Canje exitoso! Se descontaron ${reward.points.toLocaleString('es-CL')} Pts de tu tarjeta. Tu ${reward.title} ya está activo.`);
     setTimeout(() => {
       setRedeemSuccessMessage(null);
     }, 4500);
@@ -610,27 +866,33 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const getReplenishProducts = (pet) => {
     if (!pet) return { currentProduct: null, similarProducts: [] };
 
+    const pool = activeCatalog && activeCatalog.length > 0 ? activeCatalog : PRODUCTS;
     const petTypeFilter = pet.type === 'gato' ? 'gatos' : 'perros';
     
-    // Find current main product
-    const currentProduct = PRODUCTS.find(p => 
-      p.petType === petTypeFilter && (
-        (p.id === 'bravery-chicken-adult' && pet.foodName.toLowerCase().includes('pollo') && pet.type === 'perro') ||
-        (p.id === 'bravery-salmon-cat' && pet.foodName.toLowerCase().includes('salmón') && pet.type === 'gato') ||
-        pet.foodName.toLowerCase().includes(p.name.toLowerCase()) ||
-        p.name.toLowerCase().includes(pet.foodName.toLowerCase().split(' ')[0])
-      )
-    ) || PRODUCTS.find(p => p.petType === petTypeFilter && p.category === 'Alimento Seco') || PRODUCTS[0];
+    // Find current main product matching species and name
+    const currentProduct = pool.find(p => {
+      const pPetType = (p.petType || p.pet_type || '').toLowerCase();
+      const matchSpecies = pPetType.includes(pet.type === 'gato' ? 'gato' : 'perro') || pPetType === 'ambos' || pPetType === 'todos';
+      if (!matchSpecies) return false;
+      const fName = (pet.foodName || '').toLowerCase();
+      const pName = (p.name || '').toLowerCase();
+      return fName.includes(pName) || pName.includes(fName.split(' ')[0]);
+    }) || pool.find(p => {
+      const pPetType = (p.petType || p.pet_type || '').toLowerCase();
+      const isFood = (p.category || '').toLowerCase().includes('alimento');
+      return (pPetType.includes(pet.type === 'gato' ? 'gato' : 'perro') || pPetType === 'ambos') && isFood;
+    }) || pool[0];
 
-    // Similar products: same petType, same category ('Alimento Seco'), excluding currentProduct
-    // Prioritize same brand (Bravery)
-    const otherProducts = PRODUCTS.filter(p => 
-      p.id !== currentProduct.id &&
-      p.petType === petTypeFilter &&
-      p.category === 'Alimento Seco'
-    ).sort((a, b) => {
-      if (a.brand === currentProduct.brand && b.brand !== currentProduct.brand) return -1;
-      if (b.brand === currentProduct.brand && a.brand !== currentProduct.brand) return 1;
+    // Similar products: same species, same category, excluding currentProduct
+    const otherProducts = pool.filter(p => {
+      if (!p || p.id === currentProduct?.id) return false;
+      const pPetType = (p.petType || p.pet_type || '').toLowerCase();
+      const matchSpecies = pPetType.includes(pet.type === 'gato' ? 'gato' : 'perro') || pPetType === 'ambos' || pPetType === 'todos';
+      const isFood = (p.category || '').toLowerCase().includes('alimento');
+      return matchSpecies && isFood;
+    }).sort((a, b) => {
+      if (a.brand === currentProduct?.brand && b.brand !== currentProduct?.brand) return -1;
+      if (b.brand === currentProduct?.brand && a.brand !== currentProduct?.brand) return 1;
       return 0;
     });
 
@@ -641,6 +903,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setSelectedReplenishPet(pet);
     setReplenishQuantity(1);
     setReplenishAddedSuccess(false);
+
+    if (!schedAddress && profileData?.address) {
+      const fullAddr = profileData.address + (profileData.dept ? `, ${profileData.dept}` : '') + (profileData.city ? `, ${profileData.city}` : '');
+      setSchedAddress(fullAddr);
+    }
 
     const { currentProduct } = getReplenishProducts(pet);
     if (currentProduct && currentProduct.weights && currentProduct.weights.length > 0) {
@@ -665,33 +932,49 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     navigate('/');
   };
 
+  // Helper para sanitizar valores demo antiguos de sesiones previas
+  const sanitizeCustomerProfile = (data) => {
+    if (!data) return data;
+    return {
+      ...data,
+      phone: (data.phone === '+56 9 8456 1234' || data.phone === '9 8456 1234') ? '' : (data.phone || ''),
+      address: data.address === 'Av. Los Notros 1420' ? '' : (data.address || ''),
+      dept: data.dept === 'Depto 402' ? '' : (data.dept || ''),
+    };
+  };
+
   // State for Customer Profile & Personal Info
   const [profileData, setProfileData] = useState(() => {
-    const saved = localStorage.getItem('patitas_customer_profile');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error('Error parsing customer profile', e);
+    if (user?.email) {
+      const saved = localStorage.getItem(`patitas_customer_profile_${user.email}`);
+      if (saved) {
+        try {
+          return sanitizeCustomerProfile(JSON.parse(saved));
+        } catch (e) {
+          console.error('Error parsing customer profile', e);
+        }
       }
     }
-    return {
-      name: user?.name || 'Felipe Soto',
-      email: user?.email || 'felipe@tutor.cl',
-      phone: user?.phone || '+56 9 8456 1234',
-      address: user?.address || 'Av. Los Notros 1420',
-      dept: user?.dept || 'Depto 402',
-      city: user?.city || 'Puerto Montt',
-      notes: user?.notes || 'Dejar en conserjería si no respondo el timbre',
+    return sanitizeCustomerProfile({
+      name: user?.name || user?.fullName || (user?.email ? user.email.split('@')[0] : 'Tutor Patitas'),
+      email: user?.email || '',
+      phone: user?.phone || '',
+      address: user?.address || '',
+      dept: user?.dept || '',
+      city: user?.city || '',
+      notes: user?.notes || '',
       notifyWhatsapp: true,
       notifyEmail: true,
       memberSince: user?.memberSince || 'Octubre 2026',
-    };
+    });
   });
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   const handleSaveProfile = async (updatedProfile) => {
     setProfileData(updatedProfile);
+    if (user?.email) {
+      localStorage.setItem(`patitas_customer_profile_${user.email}`, JSON.stringify(updatedProfile));
+    }
     localStorage.setItem('patitas_customer_profile', JSON.stringify(updatedProfile));
 
     // Sincronizar también con la sesión activa de la PWA
@@ -728,32 +1011,103 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   // Sincronizar Perfil de Cliente y Puntos desde Supabase al iniciar
   useEffect(() => {
     let isMounted = true;
-    const targetEmail = (profileData.email || user?.email || 'felipe@tutor.cl').toLowerCase().trim();
+    const targetEmail = (user?.email || profileData.email || '').toLowerCase().trim();
+    const targetPhone = (user?.phone || profileData.phone || '').trim();
+    const userId = user?.id || user?.auth_user_id;
 
-    getCustomerProfile(targetEmail).then((dbCustomer) => {
-      if (!isMounted) return;
-      if (dbCustomer) {
+    if (!targetEmail && !targetPhone && !userId) return;
+
+    const fetchCustomer = async () => {
+      try {
+        let dbCustomer = null;
+        if (targetEmail) {
+          dbCustomer = await getCustomerProfile(targetEmail);
+        }
+        if (!dbCustomer && targetPhone) {
+          dbCustomer = await getCustomerProfile(targetPhone);
+        }
+        if (!dbCustomer && userId) {
+          dbCustomer = await getCustomerProfile(userId);
+        }
+
+        if (!isMounted || !dbCustomer) return;
+
         setCustomerDbId(dbCustomer.id);
         if (typeof dbCustomer.points === 'number') {
           setUserPoints(dbCustomer.points);
         }
-        setProfileData((prev) => ({
-          ...prev,
-          name: dbCustomer.full_name || prev.name,
-          email: dbCustomer.email || prev.email,
-          phone: dbCustomer.phone || prev.phone,
-          city: dbCustomer.city || prev.city,
-          address: dbCustomer.address || prev.address,
-          dept: dbCustomer.depto || prev.dept,
-          notes: dbCustomer.delivery_reference || prev.notes,
-        }));
+
+        // Cargar cupones activos de fidelización desde Supabase
+        try {
+          const { data: dbCoupons } = await supabase
+            .from('points_redemptions')
+            .select('*')
+            .eq('customer_id', dbCustomer.id)
+            .eq('status', 'activo')
+            .order('created_at', { ascending: false });
+
+          if (Array.isArray(dbCoupons)) {
+            const mapped = dbCoupons.map((c) => {
+              let dAmount = 3000;
+              if (c.points_spent === 200) dAmount = 7000;
+              else if (c.points_spent === 350) dAmount = 14000;
+              else if (c.points_spent === 500) dAmount = 25000;
+              return {
+                id: c.id,
+                title: `Cupón $${dAmount.toLocaleString('es-CL')} CLP Dcto.`,
+                pointsCost: c.points_spent,
+                validity: 'Válido para 1 compra',
+                remainingUses: 1,
+                code: c.coupon_code,
+                discountAmount: dAmount,
+                date: new Date(c.created_at).toLocaleDateString('es-CL'),
+                status: 'activo',
+              };
+            });
+            setActiveCoupons(mapped);
+          }
+        } catch (couponErr) {
+          console.warn('Error loading active customer coupons:', couponErr);
+        }
+        setProfileData((prev) => {
+          const rawPhone = dbCustomer.phone || prev.phone || '';
+          const cleanPhone = (rawPhone === '+56 9 8456 1234' || rawPhone === '9 8456 1234') ? '' : rawPhone;
+          const rawAddr = dbCustomer.address || prev.address || '';
+          const cleanAddr = rawAddr === 'Av. Los Notros 1420' ? '' : rawAddr;
+          const rawDept = dbCustomer.depto || prev.dept || '';
+          const cleanDept = rawDept === 'Depto 402' ? '' : rawDept;
+
+          return {
+            ...prev,
+            name: dbCustomer.full_name || prev.name,
+            email: dbCustomer.email || prev.email,
+            phone: cleanPhone,
+            city: dbCustomer.city || prev.city || '',
+            address: cleanAddr,
+            dept: cleanDept,
+            notes: dbCustomer.delivery_reference || prev.notes || '',
+          };
+        });
+      } catch (err) {
+        console.warn('Error fetching customer profile in CustomerDashboardView:', err);
       }
-    });
+    };
+
+    fetchCustomer();
+
+    const handleCustomerSync = () => {
+      if (isMounted) fetchCustomer();
+    };
+
+    window.addEventListener('patitas_customers_updated', handleCustomerSync);
+    window.addEventListener('patitas_orders_updated', handleCustomerSync);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('patitas_customers_updated', handleCustomerSync);
+      window.removeEventListener('patitas_orders_updated', handleCustomerSync);
     };
-  }, [user?.email]);
+  }, [user?.email, user?.phone, user?.id]);
 
   // Sincronizar Mascotas y Bitácora de Salud desde Supabase
   useEffect(() => {
@@ -809,6 +1163,12 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             }));
           }
         }
+      } else {
+        // Si el cliente no tiene mascotas registradas en Supabase, iniciar en limpio
+        setPets([]);
+        setSelectedPetId(null);
+        setCuadernoActivePetId(null);
+        setHealthLogs({});
       }
     });
 
@@ -818,49 +1178,59 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   }, [customerDbId]);
 
   const currentUser = {
-    name: profileData.name || user?.name || 'Felipe Soto',
-    email: profileData.email || user?.email || 'felipe@tutor.cl',
-    phone: profileData.phone || user?.phone || '+56 9 8456 1234',
-    address: profileData.address || user?.address || 'Av. Los Notros 1420',
-    petName: user?.petName || 'Jack 🐱',
-    petType: user?.petType || 'gato',
+    name: profileData.name || user?.name || (user?.email ? user.email.split('@')[0] : 'Tutor'),
+    email: profileData.email || user?.email || '',
+    phone: profileData.phone || user?.phone || '',
+    address: profileData.address || user?.address || '',
+    petName: user?.petName || '',
+    petType: user?.petType || '',
     memberSince: profileData.memberSince || user?.memberSince || 'Octubre 2026',
   };
 
-  // State for user's registered pets
-  const [pets, setPets] = useState([
-    {
-      id: 'pet-1',
-      name: currentUser.petName || 'Kira 🐶',
-      type: 'perro',
-      weight: '8 kg',
-      foodName: 'Bravery Pollo Adulto Raza Mediana / Grande 12kg',
-      bagSize: '12 kg',
-      totalDaysDuration: 30,
-      daysRemaining: 12,
-      lastOrderDate: '05 de Agosto 2026',
-      estimatedDepletionDate: '29 de Agosto 2026',
-    },
-    {
-      id: 'pet-2',
-      name: 'Milo 🐱',
-      type: 'gato',
-      weight: '4 kg',
-      foodName: 'Bravery Salmón Adulto Cat 7kg',
-      bagSize: '7 kg',
-      totalDaysDuration: 45,
-      daysRemaining: 28,
-      lastOrderDate: '20 de Julio 2026',
-      estimatedDepletionDate: '15 de Septiembre 2026',
+  // State for user's registered pets: inicia completamente vacío para nuevas cuentas
+  const [pets, setPets] = useState(() => {
+    if (user?.email) {
+      try {
+        const saved = localStorage.getItem(`patitas_customer_pets_${user.email}`);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error loading pets from localStorage:', e);
+      }
     }
-  ]);
+    return [];
+  });
 
   // Mascota activa seleccionada desde las cápsulas superiores
-  const [selectedPetId, setSelectedPetId] = useState('pet-1');
-  const activeSelectedPet = pets.find(p => p.id === selectedPetId) || pets[0];
+  const [selectedPetId, setSelectedPetId] = useState(() => pets[0]?.id || null);
+  const activeSelectedPet = pets.find(p => p.id === selectedPetId) || pets[0] || null;
+
+  // Sincronizar selectedPetId si cambia el listado de mascotas
+  useEffect(() => {
+    if (pets.length > 0) {
+      if (!pets.some(p => p.id === selectedPetId)) {
+        setSelectedPetId(pets[0].id);
+        setCuadernoActivePetId(pets[0].id);
+      }
+    } else {
+      setSelectedPetId(null);
+      setCuadernoActivePetId(null);
+    }
+  }, [pets, selectedPetId]);
+
+  // Persistir mascotas en localStorage con clave por usuario
+  useEffect(() => {
+    if (user?.email) {
+      try {
+        localStorage.setItem(`patitas_customer_pets_${user.email}`, JSON.stringify(pets));
+      } catch (e) {
+        console.error('Error saving pets to localStorage:', e);
+      }
+    }
+  }, [pets, user?.email]);
 
   // Sincronizar automáticamente el filtro de tienda y cuaderno con la mascota activa
   const handleSelectPet = (pet) => {
+    if (!pet) return;
     setSelectedPetId(pet.id);
     setCuadernoActivePetId(pet.id);
     const targetSpecies = pet.type === 'gato' ? 'gato' : 'perro';
@@ -879,79 +1249,41 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   }, [activeSelectedPet]);
 
   // State for Health Logs (Bitácora Médica por Mascota con Recordatorios de Vacunas y Antiparasitarios)
-  const [healthLogs, setHealthLogs] = useState({
-    'pet-1': [
-      {
-        id: 'hl-1',
-        date: '10 de Agosto 2026',
-        category: 'vacunas',
-        title: 'Vacuna Séxtuple Canina (DHPPI+L)',
-        nextDueDate: '10 de Agosto 2027',
-        frequencyMonths: 12,
-        reminderEnabled: true,
-      },
-      {
-        id: 'hl-1b',
-        date: '15 de Mayo 2026',
-        category: 'vacunas',
-        title: 'Vacuna Antirrábica Canina',
-        nextDueDate: '15 de Mayo 2027',
-        frequencyMonths: 12,
-        reminderEnabled: true,
-      },
-      {
-        id: 'hl-2',
-        date: '15 de Julio 2026',
-        category: 'antiparasitario',
-        title: 'NexGard Spectra Perros 7.5 - 15kg (Masticable Mensual)',
-        productId: 'nexgard-spectra-dog',
-        price: 18990,
-        nextDueDate: '15 de Agosto 2026',
-        frequencyMonths: 1,
-        reminderEnabled: true,
-      },
-      {
-        id: 'hl-3',
-        date: '02 de Mayo 2026',
-        category: 'consulta',
-        title: 'Chequeo Preventivo & Evaluación Nutricional',
-        nextDueDate: '02 de Noviembre 2026',
-        frequencyMonths: 6,
-        reminderEnabled: true,
-        notes: 'Piel sana, pelaje denso. Mantener dieta super premium rica en salmón y omega-3.',
+  const [healthLogs, setHealthLogs] = useState(() => {
+    if (user?.email) {
+      try {
+        const saved = localStorage.getItem(`patitas_customer_hl_${user.email}`);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error loading healthLogs from localStorage:', e);
       }
-    ],
-    'pet-2': [
-      {
-        id: 'hl-5',
-        date: '10 de Junio 2026',
-        category: 'vacunas',
-        title: 'Vacuna Triple Felina (Trivalente)',
-        nextDueDate: '10 de Junio 2027',
-        frequencyMonths: 12,
-        reminderEnabled: true,
-        notes: 'Protección contra panleucopenia, rinotraqueítis y calicivirus felino.',
-      },
-      {
-        id: 'hl-4',
-        date: '01 de Agosto 2026',
-        category: 'antiparasitario',
-        title: 'Bravecto Plus Gatos (Pipeta Spot-on 12 Semanas)',
-        productId: 'bravecto-plus-cat',
-        price: 28990,
-        nextDueDate: '01 de Noviembre 2026',
-        frequencyMonths: 3,
-        reminderEnabled: true,
-        notes: 'Protección de 12 semanas contra pulgas, garrapatas y ácaros.',
-      }
-    ]
+    }
+    return {};
   });
+
+  // Persistir healthLogs en localStorage con clave por usuario
+  useEffect(() => {
+    if (user?.email) {
+      try {
+        localStorage.setItem(`patitas_customer_hl_${user.email}`, JSON.stringify(healthLogs));
+      } catch (e) {
+        console.error('Error saving healthLogs to localStorage:', e);
+      }
+    }
+  }, [healthLogs, user?.email]);
 
   const handleAddPetSubmit = async (e) => {
     e.preventDefault();
     if (!newPetName) return;
 
-    const finalFoodName = isCustomFood && customFoodName ? customFoodName : newPetFood;
+    const finalFoodName = isCustomFood && customFoodName
+      ? customFoodName
+      : (newPetFood || newPetFoodSearch || (newPetType === 'gato' ? 'Alimento Felino Nutrición Completa' : 'Alimento Canino Nutrición Completa'));
+    
+    // Extraer automáticamente el formato o peso si está disponible
+    const bagMatch = finalFoodName.match(/\(([^)]+)\)/);
+    const resolvedBagSize = bagMatch ? bagMatch[1] : (newPetSelectedProduct?.weights?.[0] || '12 kg');
+
     const tempId = `pet-${Date.now()}`;
     const createdPet = {
       id: tempId,
@@ -961,7 +1293,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       weight: newPetWeight ? `${newPetWeight} kg` : '6 kg',
       sterilized: newPetSterilized === 'si' ? 'Sí' : 'No',
       foodName: finalFoodName,
-      bagSize: '12 kg',
+      bagSize: resolvedBagSize,
       totalDaysDuration: parseInt(newPetDuration, 10) || 30,
       daysRemaining: parseInt(newPetDuration, 10) || 30,
       lastOrderDate: 'Hoy (Registrado)',
@@ -990,6 +1322,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setNewPetWeight('');
     setNewPetSterilized('si');
     setNewPetFoodSearch('');
+    setNewPetFood('');
+    setNewPetSelectedProduct(null);
     setIsCustomFood(false);
     setCustomFoodName('');
     setIsFoodDropdownOpen(false);
@@ -1007,7 +1341,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           weight: createdPet.weight,
           sterilized: createdPet.sterilized,
           foodName: finalFoodName,
-          bagSize: '12 kg',
+          bagSize: resolvedBagSize,
           totalDaysDuration: createdPet.totalDaysDuration,
           daysRemaining: createdPet.daysRemaining,
           notes: `Mascota registrada. Alimento: ${finalFoodName}`,
@@ -1415,7 +1749,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setPetStep(1);
     setActiveTab('mascotas');
     if (!activeSelectedPet && pets.length > 0) {
-      setActiveSelectedPet(pets[0]);
+      setSelectedPetId(pets[0].id);
     }
     navigate('/mi-cuenta?tab=mascotas', { replace: true });
     window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: 'mascotas' }));
@@ -1473,10 +1807,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 id: o.id,
                 date: o.created_at ? new Date(o.created_at).toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Reciente',
                 dateIso: o.delivery_date || (o.created_at ? o.created_at.split('T')[0] : '2026-08-17'),
+                deliveryDate: o.delivery_date || (o.created_at ? o.created_at.split('T')[0] : null),
                 product: itemDesc,
                 category,
                 total: `$${Number(o.total || 0).toLocaleString('es-CL')}`,
-                pointsEarned: o.points_earned || Math.round((o.total || 0) * 0.01),
+                pointsEarned: o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000),
                 status: statusText,
                 statusCode: o.status || 'en_preparacion',
                 statusColor,
@@ -1506,6 +1841,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       window.removeEventListener('patitas_orders_updated', loadCustomerOrders);
     };
   }, [customerDbId, profileData.email, user?.email]);
+
+  // Calcular puntos pendientes de compras cuyo pago aún está por confirmar
+  const pendingPoints = useMemo(() => {
+    return ordersList
+      .filter((o) => {
+        const isPaid = String(o.paymentStatus || '').toLowerCase() === 'pagado';
+        const isCancelled = String(o.statusCode || '').toLowerCase().includes('cancel');
+        return !isPaid && !isCancelled;
+      })
+      .reduce((sum, o) => sum + (Number(o.pointsEarned) || 0), 0);
+  }, [ordersList]);
 
   // Filtered Orders Calculation
   const filteredOrders = ordersList.filter((order) => {
@@ -1545,9 +1891,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [storeProteinFilter, setStoreProteinFilter] = useState('Todos');
   const [storeWeightFilter, setStoreWeightFilter] = useState('Todos');
   const [storeCategoryFilter, setStoreCategoryFilter] = useState('Todos');
-
-  // Base products filtered by pet type tab (connected to live Supabase catalog)
-  const activeCatalog = catalogProducts && catalogProducts.length > 0 ? catalogProducts : PRODUCTS;
 
   const baseStoreProducts = useMemo(() => {
     return activeCatalog.filter((p) => {
@@ -1622,13 +1965,15 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     });
   }, [baseStoreProducts, storeSelectedBrand, storeSearchQuery, storeProteinFilter, storeWeightFilter, storeCategoryFilter]);
 
-  // Productos ordenados para la tienda móvil adaptados a la mascota activa
+  // Productos ordenados para la tienda adaptados a la mascota activa o catálogo general
   const mobileStoreProducts = useMemo(() => {
     const isCat = activeSelectedPet?.type === 'gato';
-    const targetSpecies = isCat ? 'gatos' : 'perros';
+    const targetSpecies = activeSelectedPet ? (isCat ? 'gatos' : 'perros') : null;
 
-    // Base: productos para la especie de la mascota activa o ambos (desde catálogo en vivo)
-    const speciesProducts = activeCatalog.filter(p => p.petType === targetSpecies || p.petType === 'ambos');
+    // Base: productos para la especie de la mascota activa o catálogo general si aún no tiene mascotas
+    const speciesProducts = targetSpecies
+      ? activeCatalog.filter(p => p.petType === targetSpecies || p.petType === 'ambos')
+      : activeCatalog;
 
     // 1. Si hay texto en el buscador
     if (storeSearchQuery.trim()) {
@@ -1739,60 +2084,132 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   return (
     <div className="min-h-screen bg-[#FAF9F6] pt-4 pb-20 px-4 md:px-8">
       
-      {/* PERSISTENT FLOATING TOP PET SELECTOR BAR */}
-      <header className="sticky top-3 z-40 mb-6 w-full max-w-xl mx-auto px-2">
-        <div className="bg-white/95 backdrop-blur-2xl border border-slate-200/90 rounded-full p-1.5 shadow-lg shadow-slate-900/5 flex items-center justify-between gap-2 transition-all duration-300">
+      {/* PERSISTENT FLOATING TOP PET SELECTOR & NAVIGATION BAR */}
+      <header className="sticky top-3 z-40 mb-6 w-full max-w-xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl mx-auto px-2 sm:px-4">
+        <div className="bg-white/95 backdrop-blur-2xl border border-slate-200/90 rounded-2xl md:rounded-full p-2 md:p-1.5 shadow-lg shadow-slate-900/5 flex items-center justify-between gap-2 md:gap-4 transition-all duration-300">
           
-          {/* Pet Capsules / Circles */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 px-1 scrollbar-none">
-            {pets.map((pet) => {
-              const isSelected = pet.id === selectedPetId;
-              const isCat = pet.type === 'gato';
-              return (
-                <button
-                  key={pet.id}
-                  type="button"
-                  onClick={() => handleSelectPet(pet)}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
-                    isSelected
-                      ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white shadow-md shadow-[#0E8388]/25 ring-2 ring-[#0E8388] ring-offset-1'
-                      : 'bg-slate-100/90 text-slate-700 hover:bg-slate-200/80 hover:text-slate-900 border border-slate-200/60'
-                  }`}
-                  title={`Ver perfil y comprar para ${pet.name}`}
-                >
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-xs ${
-                    isSelected ? 'bg-white/20' : 'bg-white'
-                  }`}>
-                    {isCat ? '🐱' : '🐶'}
-                  </div>
-                  <span className={`text-xs tracking-tight ${isSelected ? 'font-black' : 'font-bold'}`}>
-                    {pet.name.split(' ')[0]}
-                  </span>
-                  {isSelected && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  )}
-                </button>
-              );
-            })}
+          {/* Left: Pet Capsules or Add Pet Button */}
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 px-1 scrollbar-none min-w-0 shrink-0">
+            {pets.length > 0 ? (
+              <>
+                {pets.map((pet) => {
+                  const isSelected = pet.id === selectedPetId;
+                  const isCat = pet.type === 'gato';
+                  return (
+                    <button
+                      key={pet.id}
+                      type="button"
+                      onClick={() => handleSelectPet(pet)}
+                      className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white shadow-md shadow-[#0E8388]/25 ring-2 ring-[#0E8388] ring-offset-1'
+                          : 'bg-slate-100/90 text-slate-700 hover:bg-slate-200/80 hover:text-slate-900 border border-slate-200/60'
+                      }`}
+                      title={`Ver perfil y comprar para ${pet.name}`}
+                    >
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-xs ${
+                        isSelected ? 'bg-white/20' : 'bg-white'
+                      }`}>
+                        {isCat ? '🐱' : '🐶'}
+                      </div>
+                      <span className={`text-xs tracking-tight ${isSelected ? 'font-black' : 'font-bold'}`}>
+                        {pet.name.split(' ')[0]}
+                      </span>
+                      {isSelected && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                      )}
+                    </button>
+                  );
+                })}
 
-            {/* Quick button to add another pet */}
-            <button
-              type="button"
-              onClick={() => {
-                setPetStep(1);
-                setIsAddPetModalOpen(true);
-              }}
-              className="w-7 h-7 rounded-full bg-slate-100/80 hover:bg-[#0E8388]/10 hover:text-[#0E8388] text-slate-400 border border-dashed border-slate-300 flex items-center justify-center text-xs font-bold transition-all shrink-0 cursor-pointer active:scale-95"
-              title="Agregar otra mascota"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+                {/* Quick button to add another pet */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPetStep(1);
+                    setIsAddPetModalOpen(true);
+                  }}
+                  className="w-7 h-7 rounded-full bg-slate-100/80 hover:bg-[#0E8388]/10 hover:text-[#0E8388] text-slate-400 border border-dashed border-slate-300 flex items-center justify-center text-xs font-bold transition-all shrink-0 cursor-pointer active:scale-95"
+                  title="Agregar otra mascota"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPetStep(1);
+                  setIsAddPetModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-[#0A3E40] border border-emerald-300 font-extrabold text-xs transition-all cursor-pointer shadow-2xs active:scale-95 group"
+                title="Registra a tu primera mascota"
+              >
+                <div className="w-5 h-5 rounded-full bg-[#0E8388] text-white flex items-center justify-center shadow-2xs group-hover:scale-105 transition-transform">
+                  <Plus className="w-3 h-3 stroke-[3]" />
+                </div>
+                <span>+ Registrar Mascota</span>
+              </button>
+            )}
           </div>
 
-          <div className="h-5 w-[1px] bg-slate-200 hidden sm:block mx-0.5" />
+          {/* Center (Desktop only): Navigation Tabs */}
+          <nav aria-label="Navegación Desktop" className="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-full border border-slate-200/80 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => handleSwitchTab('mascotas')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                activeTab === 'mascotas'
+                  ? 'bg-white text-[#0A3E40] font-black shadow-xs ring-1 ring-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
+              }`}
+            >
+              <Heart className={`w-3.5 h-3.5 ${activeTab === 'mascotas' ? 'text-[#0E8388] fill-[#0E8388]' : 'text-slate-500'}`} />
+              <span>Mis Mascotas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSwitchTab('tienda')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                activeTab === 'tienda'
+                  ? 'bg-white text-[#0A3E40] font-black shadow-xs ring-1 ring-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
+              }`}
+            >
+              <ShoppingBag className={`w-3.5 h-3.5 ${activeTab === 'tienda' ? 'text-[#0E8388]' : 'text-slate-500'}`} />
+              <span>Tienda</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSwitchTab('cuaderno')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                activeTab === 'cuaderno'
+                  ? 'bg-white text-[#0A3E40] font-black shadow-xs ring-1 ring-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
+              }`}
+            >
+              <Stethoscope className={`w-3.5 h-3.5 ${activeTab === 'cuaderno' ? 'text-[#0E8388]' : 'text-slate-500'}`} />
+              <span>Cuaderno Veterinario</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSwitchTab('compras')}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                activeTab === 'compras'
+                  ? 'bg-white text-[#0A3E40] font-black shadow-xs ring-1 ring-slate-200/60'
+                  : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-white/60'
+              }`}
+            >
+              <Award className={`w-3.5 h-3.5 ${activeTab === 'compras' ? 'text-amber-500' : 'text-slate-500'}`} />
+              <span>Pedidos & Puntos</span>
+            </button>
+          </nav>
 
           {/* Right: Mi Perfil & Logout Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0 pr-1">
+          <div className="flex items-center justify-end gap-1.5 shrink-0 pr-1">
             <button
               type="button"
               onClick={() => setIsProfileModalOpen(true)}
@@ -1823,12 +2240,172 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
         {/* TAB 1: PWA PRINCIPAL DEL CLIENTE: OPCIONES Y NUTRICIÓN DE LA MASCOTA */}
         {activeTab === 'mascotas' && (() => {
+          // Si el cliente no tiene mascotas registradas (cuenta recién creada)
+          if (pets.length === 0) {
+            return (
+              <div className="w-full max-w-5xl lg:max-w-6xl mx-auto space-y-6 animate-in fade-in duration-300">
+                
+                {/* 1. HERO ONBOARDING BIENVENIDA */}
+                <div className="rounded-3xl bg-gradient-to-br from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-6 sm:p-10 shadow-xl border border-teal-600/30 relative overflow-hidden">
+                  <div className="relative z-10 max-w-2xl space-y-4">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-black text-amber-300">
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <span>Bienvenido/a a tu Portal Patitas del Sur</span>
+                    </div>
+
+                    <h1 className="text-2xl sm:text-4xl font-black text-white leading-tight">
+                      ¡Hola, {currentUser.name ? currentUser.name.split(' ')[0] : 'Tutor/a'}! 🐾
+                    </h1>
+
+                    <p className="text-sm sm:text-base text-emerald-50 leading-relaxed font-medium">
+                      Este es tu espacio inteligente para cuidar la nutrición de tu regalón, programar avisos de reposición antes de que se termine su saco de comida y gestionar su salud veterinaria.
+                    </p>
+
+                    <div className="pt-2 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPetStep(1);
+                          setIsAddPetModalOpen(true);
+                        }}
+                        className="px-6 py-3.5 rounded-2xl bg-white text-[#0A3E40] hover:bg-emerald-50 font-black text-sm shadow-lg shadow-black/10 hover:shadow-xl transition-all flex items-center gap-2.5 active:scale-95 cursor-pointer group"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-[#0E8388] text-white flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                          <Plus className="w-4 h-4 stroke-[3]" />
+                        </div>
+                        <span>Registrar a mi primera mascota</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchTab('tienda')}
+                        className="px-5 py-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-sm backdrop-blur-md border border-white/30 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                      >
+                        <ShoppingBag className="w-4 h-4 text-emerald-300" />
+                        <span>Explorar Tienda</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Decorative illustration / badges */}
+                  <div className="absolute -bottom-8 -right-8 w-64 h-64 sm:w-80 sm:h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+                  <div className="hidden lg:flex absolute right-12 bottom-6 top-6 items-center justify-center pointer-events-none opacity-20">
+                    <span className="text-9xl select-none">🐾</span>
+                  </div>
+                </div>
+
+                {/* 2. BENEFICIOS CLAVE DEL PORTAL (3 MICRO-CARDS) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-2.5 hover:border-teal-400 transition-all">
+                    <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center font-bold text-lg">
+                      🍲
+                    </div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">
+                      Reposición Inteligente
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Calculamos automáticamente los días de duración del saco según el peso de tu mascota y te avisamos antes de que se acabe.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-2.5 hover:border-amber-400 transition-all">
+                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-lg">
+                      🩺
+                    </div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">
+                      Cuaderno Veterinario
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Lleva registro de vacunas, desparasitaciones y consultas con avisos periódicos de cuándo le corresponde su próxima dosis.
+                    </p>
+                  </div>
+
+                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-2.5 hover:border-emerald-400 transition-all">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold text-lg">
+                      🎁
+                    </div>
+                    <h3 className="font-extrabold text-slate-900 text-sm">
+                      Puntos & Envíos Gratis
+                    </h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Todas tus compras suman Puntos Patitas. Acumula puntos para canjear despachos gratuitos y cupones de descuento exclusivos.
+                    </p>
+                  </div>
+                </div>
+
+                {/* 3. FILA INFERIOR: PUNTOS + ACCESO A PERFIL & DATOS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Points Info Card */}
+                  <div
+                    onClick={() => setIsRedeemModalOpen(true)}
+                    className="p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-amber-50/60 border border-emerald-200/90 hover:border-emerald-400 shadow-2xs hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-amber-300 flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                          <Gift className="w-5 h-5 text-amber-300" />
+                        </div>
+                        <div>
+                          <span className="text-[11px] font-black uppercase tracking-wider text-emerald-800 block">
+                            Puntos Patitas
+                          </span>
+                          <span className="text-lg font-black text-slate-900">
+                            {userPoints.toLocaleString('es-CL')} Pts
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-black px-3 py-1 rounded-full bg-white text-[#0A3E40] border border-emerald-300 shadow-2xs group-hover:bg-[#0E8388] group-hover:text-white transition-colors flex items-center gap-1">
+                        <span>Ver Beneficios</span>
+                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      Empieza a acumular puntos desde tu primera compra en Puerto Varas y la cuenca del Lago Llanquihue.
+                    </p>
+                  </div>
+
+                  {/* Profile / Delivery info card */}
+                  <div
+                    onClick={() => setIsProfileModalOpen(true)}
+                    className="p-5 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 shadow-2xs hover:shadow-xs transition-all cursor-pointer group flex flex-col justify-between space-y-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center shadow-xs group-hover:scale-105 transition-transform">
+                          <User className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[11px] font-black uppercase tracking-wider text-teal-800 block">
+                            Datos de Tutor & Despacho
+                          </span>
+                          <span className="text-sm font-bold text-slate-900 truncate block">
+                            {currentUser.email || 'Configura tus datos'}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-black px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs group-hover:bg-[#0E8388] group-hover:text-white transition-colors flex items-center gap-1 shrink-0">
+                        <span>Gestionar</span>
+                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 truncate">
+                      {currentUser.address ? `Dirección: ${currentUser.address}` : 'Agrega tu dirección en Puerto Varas para despachos ágiles.'}
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            );
+          }
+
+          // Si el cliente tiene al menos una mascota registrada
           const pet = activeSelectedPet || pets[0];
           const { currentProduct } = getReplenishProducts(pet);
           const priceDisplay = currentProduct?.price ? `${formatCLP(currentProduct.price)} CLP` : '$68.990 CLP';
+          const isCurrentFoodOutOfStock = isProductOutOfStock(currentProduct);
 
           return (
-            <div className="space-y-2.5 max-w-xl mx-auto animate-in fade-in duration-200">
+            <div className="w-full max-w-5xl lg:max-w-6xl mx-auto space-y-4 animate-in fade-in duration-200">
 
               {/* Toast de confirmación si existe */}
               {orderToastMessage && (
@@ -1847,191 +2424,269 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 </div>
               )}
 
-              {/* BARRA DE PROGRESO DE PUNTOS ACUMULADOS POR COMPRAS (CLIC ABRE MODAL DE CANJE) */}
-              {(() => {
-                const nextGoal = userPoints < 1500 ? 1500 : userPoints < 2000 ? 2000 : 2500;
-                const nextGoalReward = userPoints < 1500 ? 'Envío Gratis 🚚' : userPoints < 2000 ? 'Cupón $20.000 🎁' : 'Premio VIP 👑';
-                const progressPercent = Math.min(100, Math.round((userPoints / nextGoal) * 100));
-                const pointsRemaining = Math.max(0, nextGoal - userPoints);
-
-                return (
-                  <div
-                    onClick={() => setIsRedeemModalOpen(true)}
-                    className="p-3 sm:p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-amber-50/60 border border-emerald-200/90 hover:border-emerald-400 shadow-2xs hover:shadow-xs transition-all cursor-pointer group active:scale-[0.99] space-y-2 select-none"
-                    title="Toca para ver y canjear tus puntos de fidelización"
-                  >
-                    {/* Fila Superior: Título + Saldo y Badge Canjear */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-amber-300 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-                          <Gift className="w-4 h-4 text-amber-300" />
-                        </div>
-                        <div className="min-w-0">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
-                            Puntos por Compras
-                          </span>
-                          <div className="flex items-baseline gap-1.5 truncate">
-                            <span className="text-xs sm:text-sm font-black text-slate-900">
-                              {userPoints.toLocaleString('es-CL')} Pts
+              {/* Layout responsivo: Móvil 1 columna / Desktop 2 columnas */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                
+                {/* Columna Izquierda (Desktop 7 cols): Alimento habitual & Carrusel */}
+                <div className="lg:col-span-7 space-y-4">
+                  {/* 1. PRIMERA CARD CON BORDE EN MOVIMIENTO VERDE A NEGRO */}
+                  <div className="animated-border-card">
+                    <div className="animated-border-card-inner p-4 sm:p-5 flex items-center gap-4">
+                      {/* Foto del Producto al Lado Izquierdo */}
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center relative overflow-hidden">
+                        <img
+                          src={currentProduct?.image || '/images/hero_dog.png'}
+                          alt={pet.foodName}
+                          className={`w-full h-full object-contain duration-300 ${isCurrentFoodOutOfStock ? 'grayscale-[35%] opacity-75' : ''}`}
+                        />
+                        {isCurrentFoodOutOfStock && (
+                          <div className="absolute inset-0 bg-slate-950/20 flex items-center justify-center">
+                            <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-wider">
+                              Sin Stock
                             </span>
-                            <span className="text-[10px] text-emerald-700 font-bold truncate">
-                              (${ (userPoints * 10).toLocaleString('es-CL') } CLP en canjes)
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Nombre, Valor y 2 Botones Minimalistas */}
+                      <div className="flex-1 min-w-0 space-y-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {isCurrentFoodOutOfStock ? (
+                            <span className="text-[10px] font-extrabold uppercase text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                              Sin Stock en Bodega
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-black uppercase text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                              Nutrición Habitual
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-500 font-bold">
+                            para {pet.name.split(' ')[0]}
+                          </span>
+                        </div>
+                        {(() => {
+                          const { brand: brandUpper, cleanName } = extractBrandAndCleanName({
+                            name: pet.foodName,
+                            brand: currentProduct?.brand,
+                          });
+                          return (
+                            <div>
+                              {brandUpper && (
+                                <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
+                                  {brandUpper}
+                                </span>
+                              )}
+                              <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight line-clamp-1" title={pet.foodName}>
+                                {cleanName}
+                              </h3>
+                            </div>
+                          );
+                        })()}
+                        <div className="text-sm font-black text-[#0A3E40]">
+                          {priceDisplay}
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1 flex-wrap">
+                          <button
+                            type="button"
+                            disabled={isCurrentFoodOutOfStock}
+                            onClick={() => {
+                              if (isCurrentFoodOutOfStock) {
+                                setIsAlternativeFoodModalOpen(true);
+                                return;
+                              }
+                              handleOpenReplenishModal(pet);
+                            }}
+                            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 ${
+                              isCurrentFoodOutOfStock
+                                ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none'
+                                : 'bg-[#0E8388] hover:bg-[#0A3E40] text-white active:scale-95 cursor-pointer'
+                            }`}
+                            title={isCurrentFoodOutOfStock ? 'Producto agotado en bodega. Haz clic en Buscar otras opciones para ver alternativas disponibles.' : 'Reponer alimento habitual'}
+                          >
+                            {isCurrentFoodOutOfStock ? 'Sin stock' : 'Reponer'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsAlternativeFoodModalOpen(true)}
+                            className={`px-3 py-1.5 rounded-xl text-xs transition-all border active:scale-95 cursor-pointer ${
+                              isCurrentFoodOutOfStock
+                                ? 'bg-[#0E8388] hover:bg-[#0A3E40] text-white border-[#0E8388] shadow-xs font-bold'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 font-semibold'
+                            }`}
+                          >
+                            {isCurrentFoodOutOfStock ? 'Ver alternativas con stock' : 'Buscar otras opciones'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARRUSEL AUTOMÁTICO DE PRODUCTOS DESTACADOS */}
+                  <FeaturedProductsCarousel
+                    pet={pet}
+                    currentProduct={currentProduct}
+                    catalogProducts={activeCatalog}
+                    onAddToCart={onAddToCart}
+                    onSelectProduct={onSelectProduct}
+                    setOrderToastMessage={setOrderToastMessage}
+                    formatCLP={formatCLP}
+                  />
+                </div>
+
+                {/* Columna Derecha (Desktop 5 cols): Puntos, Consultas, Antiparasitarios, Tienda */}
+                <div className="lg:col-span-5 space-y-3">
+                  
+                  {/* BARRA DE PROGRESO DE PUNTOS ACUMULADOS */}
+                  {(() => {
+                    const nextGoal = userPoints < 1500 ? 1500 : userPoints < 2000 ? 2000 : 2500;
+                    const nextGoalReward = userPoints < 1500 ? 'Envío Gratis 🚚' : userPoints < 2000 ? 'Cupón $20.000 🎁' : 'Premio VIP 👑';
+                    const progressPercent = Math.min(100, Math.round((userPoints / nextGoal) * 100));
+                    const pointsRemaining = Math.max(0, nextGoal - userPoints);
+
+                    return (
+                      <div
+                        onClick={() => setIsRedeemModalOpen(true)}
+                        className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-amber-50/60 border border-emerald-200/90 hover:border-emerald-400 shadow-2xs hover:shadow-xs transition-all cursor-pointer group active:scale-[0.99] space-y-2.5 select-none"
+                        title="Toca para ver y canjear tus puntos de fidelización"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-amber-300 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                              <Gift className="w-4 h-4 text-amber-300" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 block">
+                                Puntos por Compras
+                              </span>
+                              <div className="flex items-baseline gap-1.5 truncate">
+                                <span className="text-xs sm:text-sm font-black text-slate-900">
+                                  {userPoints.toLocaleString('es-CL')} Pts
+                                </span>
+                                <span className="text-[10px] text-emerald-700 font-bold truncate">
+                                  (${ (userPoints * 10).toLocaleString('es-CL') } CLP en canjes)
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10.5px] font-black px-2.5 py-1 rounded-full bg-white text-[#0A3E40] border border-emerald-300 shadow-2xs group-hover:bg-[#0E8388] group-hover:text-white transition-colors flex items-center gap-1">
+                              <span>Canjear</span>
+                              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
                             </span>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10.5px] font-black px-2.5 py-1 rounded-full bg-white text-[#0A3E40] border border-emerald-300 shadow-2xs group-hover:bg-[#0E8388] group-hover:text-white transition-colors flex items-center gap-1">
-                          <span>Canjear</span>
-                          <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                        </span>
+                        <div className="space-y-1">
+                          <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden p-0.5 border border-slate-100">
+                            <div
+                              className="bg-gradient-to-r from-[#0E8388] via-teal-500 to-amber-400 h-full rounded-full transition-all duration-500 shadow-xs"
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                          
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold px-0.5 pt-0.5">
+                            <span className="truncate">
+                              {pointsRemaining > 0 
+                                ? `Faltan ${pointsRemaining} Pts para ${nextGoalReward}`
+                                : `¡Meta alcanzada para ${nextGoalReward}!`}
+                            </span>
+                            <span className="text-[#0E8388] font-extrabold shrink-0 pl-2">{progressPercent}%</span>
+                          </div>
+                        </div>
                       </div>
+                    );
+                  })()}
+
+                  {/* 2. CARD DE UNA LÍNEA: PRÓXIMA CONSULTA VETERINARIA / INDICACIONES */}
+                  <div
+                    onClick={() => {
+                      setSelectedHealthPet(pet);
+                      setIsVetConsultationModalOpen(true);
+                    }}
+                    className="p-3.5 px-4 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center shrink-0">
+                        <Stethoscope className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        Próxima consulta veterinaria / Indicaciones
+                      </span>
                     </div>
-
-                    {/* Barra de Progreso */}
-                    <div className="space-y-1">
-                      <div className="w-full bg-slate-200/80 h-2 rounded-full overflow-hidden p-0.5 border border-slate-100">
-                        <div
-                          className="bg-gradient-to-r from-[#0E8388] via-teal-500 to-amber-400 h-full rounded-full transition-all duration-500 shadow-xs"
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold px-0.5 pt-0.5">
-                        <span className="truncate">
-                          {pointsRemaining > 0 
-                            ? `Faltan ${pointsRemaining} Pts para ${nextGoalReward}`
-                            : `¡Meta alcanzada para ${nextGoalReward}!`}
-                        </span>
-                        <span className="text-[#0E8388] font-extrabold shrink-0 pl-2">{progressPercent}%</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* 1. PRIMERA CARD CON BORDE EN MOVIMIENTO VERDE A NEGRO */}
-              <div className="animated-border-card">
-                <div className="animated-border-card-inner p-3 sm:p-3.5 flex items-center gap-3.5">
-                  {/* Foto del Producto al Lado Izquierdo */}
-                  <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center">
-                    <img
-                      src={currentProduct?.image || '/images/hero_dog.png'}
-                      alt={pet.foodName}
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-
-                  {/* Nombre, Valor y 2 Botones Minimalistas */}
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight line-clamp-1" title={pet.foodName}>
-                      {pet.foodName}
-                    </h3>
-                    <div className="text-xs font-black text-[#0A3E40]">
-                      {priceDisplay}
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenReplenishModal(pet)}
-                        className="px-3 py-1 rounded-xl bg-[#0E8388] hover:bg-[#0A3E40] text-white text-[11px] font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
-                      >
-                        Reponer
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsAlternativeFoodModalOpen(true)}
-                        className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-all border border-slate-200 active:scale-95 cursor-pointer"
-                      >
-                        Buscar otras opciones
-                      </button>
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-[#0E8388]">
+                      <span className="hidden sm:inline">Gestionar</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#0E8388] group-hover:translate-x-0.5 transition-all" />
                     </div>
                   </div>
-                </div>
-              </div>
 
-              {/* 2. CARD DE UNA LÍNEA: PRÓXIMA CONSULTA VETERINARIA / INDICACIONES */}
-              <div
-                onClick={() => {
-                  setSelectedHealthPet(pet);
-                  setIsVetConsultationModalOpen(true);
-                }}
-                className="p-3 px-4 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center shrink-0">
-                    <Stethoscope className="w-4 h-4" />
+                  {/* 3. CARD DE UNA LÍNEA: REGISTRAR ANTIPARASITARIO */}
+                  <div
+                    onClick={() => {
+                      setSelectedHealthPet(pet);
+                      setIsAntiparasiticModalOpen(true);
+                    }}
+                    className="p-3.5 px-4 rounded-2xl bg-white border border-slate-200 hover:border-amber-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                        <Pill className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        Registrar antiparasitario (interno o externo)
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-amber-600">
+                      <span className="hidden sm:inline">Registrar</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-slate-800 truncate">
-                    Próxima consulta veterinaria / Indicaciones
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-[#0E8388]">
-                  <span className="hidden sm:inline">Gestionar</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-[#0E8388] group-hover:translate-x-0.5 transition-all" />
-                </div>
-              </div>
 
-              {/* 3. CARD DE UNA LÍNEA: REGISTRAR ANTIPARASITARIO (INTERNO O EXTERNO) */}
-              <div
-                onClick={() => {
-                  setSelectedHealthPet(pet);
-                  setIsAntiparasiticModalOpen(true);
-                }}
-                className="p-3 px-4 rounded-2xl bg-white border border-slate-200 hover:border-amber-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                    <Pill className="w-4 h-4" />
+                  {/* 4. CARD DE UNA LÍNEA: VER TIENDA ONLINE */}
+                  <div
+                    onClick={() => {
+                      handleSelectPet(pet);
+                      setStoreMobileCategory('destacados');
+                      handleSwitchTab('tienda');
+                    }}
+                    className="p-3.5 px-4 rounded-2xl bg-white border border-slate-200 hover:border-emerald-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                        <ShoppingBag className="w-4 h-4" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-800 truncate">
+                        Ver tienda online
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-emerald-700">
+                      <span className="hidden sm:inline">Explorar</span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-0.5 transition-all" />
+                    </div>
                   </div>
-                  <span className="text-xs font-bold text-slate-800 truncate">
-                    Registrar antiparasitario (interno o externo)
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-amber-600">
-                  <span className="hidden sm:inline">Registrar</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-amber-600 group-hover:translate-x-0.5 transition-all" />
-                </div>
-              </div>
 
-              {/* 4. CARD DE UNA LÍNEA: VER TIENDA ONLINE */}
-              <div
-                onClick={() => {
-                  handleSelectPet(pet);
-                  setStoreMobileCategory('destacados');
-                  setActiveTab('tienda');
-                  navigate('/mi-cuenta?tab=tienda', { replace: true });
-                  window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: 'tienda' }));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                className="p-3 px-4 rounded-2xl bg-white border border-slate-200 hover:border-emerald-400 shadow-2xs hover:shadow-xs transition-all flex items-center justify-between gap-3 cursor-pointer group active:scale-[0.99]"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                    <ShoppingBag className="w-4 h-4" />
+                  {/* 5. FICHA RESUMEN RÁPIDO DE LA MASCOTA */}
+                  <div className="p-3.5 px-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 flex items-center justify-between text-xs text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{pet.type === 'gato' ? '🐱' : '🐶'}</span>
+                      <span className="font-bold text-slate-800">{pet.name}</span>
+                      <span className="text-slate-400">•</span>
+                      <span>{pet.weight || '6 kg'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchTab('cuaderno')}
+                      className="text-[#0E8388] font-bold hover:underline cursor-pointer"
+                    >
+                      Ver Ficha Completa
+                    </button>
                   </div>
-                  <span className="text-xs font-bold text-slate-800 truncate">
-                    Ver tienda online
-                  </span>
+
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-extrabold text-emerald-700">
-                  <span className="hidden sm:inline">Explorar</span>
-                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-700 group-hover:translate-x-0.5 transition-all" />
-                </div>
+
               </div>
-
-              {/* 5. CARRUSEL AUTOMÁTICO DE PRODUCTOS DESTACADOS CON MOTIONS DE ALTO NIVEL */}
-              <FeaturedProductsCarousel
-                pet={pet}
-                currentProduct={currentProduct}
-                onAddToCart={onAddToCart}
-                onSelectProduct={onSelectProduct}
-                setOrderToastMessage={setOrderToastMessage}
-                formatCLP={formatCLP}
-              />
-
             </div>
           );
         })()}
@@ -2104,6 +2759,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             <CustomerMembershipCard
               currentUser={currentUser}
               userPoints={userPoints}
+              pendingPoints={pendingPoints}
               activeCoupons={activeCoupons}
               onOpenRedeemModal={() => setIsRedeemModalOpen(true)}
             />
@@ -2128,12 +2784,13 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
         {/* TAB 3: TIENDA ONLINE ORDENADA PARA LA MASCOTA ACTIVA (MOBILE FIRST) */}
         {activeTab === 'tienda' && (() => {
-          const currentPet = activeSelectedPet || pets[0];
+          const currentPet = activeSelectedPet || pets[0] || null;
           const isCat = currentPet?.type === 'gato';
+          const petFirstName = currentPet ? currentPet.name.split(' ')[0] : 'tu regalón';
 
-          // Categorías rápidas para móvil
+          // Categorías rápidas para el catálogo
           const MOBILE_CATEGORIES = [
-            { id: 'destacados', label: `⭐ Destacados para ${currentPet.name.split(' ')[0]}` },
+            { id: 'destacados', label: currentPet ? `⭐ Destacados para ${petFirstName}` : '⭐ Productos Destacados' },
             { id: 'alimento', label: '🍲 Alimentos' },
             { id: 'antiparasitarios', label: '🛡️ Antiparasitarios' },
             { id: 'snacks', label: '🥩 Snacks & Premios' },
@@ -2141,22 +2798,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           ];
 
           return (
-            <div className="space-y-3.5 sm:space-y-4 max-w-xl mx-auto animate-in fade-in duration-200 pb-16 select-none">
+            <div className="space-y-4 w-full max-w-5xl lg:max-w-6xl mx-auto animate-in fade-in duration-200 pb-16 select-none">
               
               {/* 1. CABECERA PRINCIPAL: ESTÁS COMPRANDO PARA [NOMBRE DE LA MASCOTA] */}
-              <div className="rounded-3xl bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-4 sm:p-5 shadow-lg border border-teal-600/30 space-y-3.5 relative overflow-hidden">
+              <div className="rounded-3xl bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-4 sm:p-6 shadow-lg border border-teal-600/30 space-y-3.5 relative overflow-hidden">
                 
                 {/* Fila Superior: Botón Volver + Selector rápido de mascotas */}
                 <div className="flex items-center justify-between gap-2 relative z-10">
                   <button
                     type="button"
-                    onClick={() => {
-                      setActiveTab('mascotas');
-                      navigate('/mi-cuenta?tab=mascotas', { replace: true });
-                      window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: 'mascotas' }));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md border border-white/25 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                    onClick={() => handleSwitchTab('mascotas')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs font-bold backdrop-blur-md border border-white/25 transition-all cursor-pointer active:scale-95 shadow-2xs"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>Volver a Mis Mascotas</span>
@@ -2166,7 +2818,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   {pets.length > 1 && (
                     <div className="flex items-center gap-1 bg-black/20 p-1 rounded-full border border-white/20 backdrop-blur-md">
                       {pets.map((p) => {
-                        const isCurrent = p.id === currentPet.id;
+                        const isCurrent = p.id === currentPet?.id;
                         return (
                           <button
                             key={p.id}
@@ -2191,27 +2843,27 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 {/* Banner de Identidad: Estás comprando para [Nombre] */}
                 <div className="flex items-center gap-3.5 relative z-10 pt-1">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white/95 text-slate-800 shadow-md border-2 border-white flex items-center justify-center text-2xl sm:text-3xl shrink-0">
-                    {isCat ? '🐱' : '🐶'}
+                    {currentPet ? (isCat ? '🐱' : '🐶') : '🛍️'}
                   </div>
                   <div className="space-y-0.5 min-w-0">
                     <span className="text-[10px] sm:text-[11px] font-black tracking-widest text-emerald-200 uppercase block">
-                      Estás comprando para
+                      {currentPet ? 'Estás comprando para' : 'Explora nuestra'}
                     </span>
                     <h1 className="text-xl sm:text-2xl font-black text-white leading-tight truncate">
-                      {currentPet.name}
+                      {currentPet ? currentPet.name : 'Tienda Online Patitas del Sur'}
                     </h1>
                   </div>
                 </div>
 
-                {/* Buscador Limpio Integrado para Móvil */}
-                <div className="relative z-10 pt-1">
+                {/* Buscador Limpio Integrado */}
+                <div className="relative z-10 pt-1 max-w-xl">
                   <div className="relative">
                     <Search className="w-4 h-4 text-white/70 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
                       type="text"
                       value={storeSearchQuery}
                       onChange={(e) => setStoreSearchQuery(e.target.value)}
-                      placeholder={`Buscar productos para ${currentPet.name.split(' ')[0]}...`}
+                      placeholder={currentPet ? `Buscar productos para ${petFirstName}...` : 'Buscar alimento, snacks, antiparasitarios...'}
                       className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-white/15 border border-white/30 text-white placeholder-white/70 text-xs font-semibold backdrop-blur-md focus:outline-none focus:bg-white focus:text-slate-900 focus:placeholder-slate-400 transition-all shadow-inner"
                     />
                     {storeSearchQuery && (
@@ -2255,54 +2907,92 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
               </div>
 
               {/* 3. ALIMENTO HABITUAL DE LA MASCOTA (HERO QUICK RE-ORDER) */}
-              {(storeMobileCategory === 'destacados' || storeMobileCategory === 'alimento') && !storeSearchQuery && currentPetFoodProduct && (
-                <div className="animated-border-card">
-                  <div className="animated-border-card-inner p-3 sm:p-3.5 flex items-center gap-3.5">
-                    {/* Foto del Producto */}
-                    <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center">
-                      <img
-                        src={currentPetFoodProduct.image || '/images/hero_dog.png'}
-                        alt={currentPet.foodName}
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
+              {(storeMobileCategory === 'destacados' || storeMobileCategory === 'alimento') && !storeSearchQuery && currentPetFoodProduct && (() => {
+                const isCurrentFoodOutOfStock = isProductOutOfStock(currentPetFoodProduct, currentPet.bagSize);
 
-                    {/* Info y Reponer */}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[9px] font-black uppercase text-emerald-800 bg-emerald-100/90 px-1.5 py-0.2 rounded-md">
-                          ⭐ Alimento Habitual de {currentPet.name.split(' ')[0]}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-bold">
-                          {currentPet.bagSize || '12 kg'}
-                        </span>
-                      </div>
-                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight line-clamp-1" title={currentPet.foodName}>
-                        {currentPet.foodName}
-                      </h3>
-                      <div className="text-xs font-black text-[#0A3E40]">
-                        {formatCLP(currentPetFoodProduct.price)} CLP
+                return (
+                  <div className="animated-border-card">
+                    <div className="animated-border-card-inner p-3 sm:p-3.5 flex items-center gap-3.5">
+                      {/* Foto del Producto */}
+                      <div className="w-16 h-16 sm:w-18 sm:h-18 rounded-xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center relative overflow-hidden">
+                        <img
+                          src={currentPetFoodProduct.image || '/images/hero_dog.png'}
+                          alt={currentPet.foodName}
+                          className={`w-full h-full object-contain ${isCurrentFoodOutOfStock ? 'opacity-40 grayscale' : ''}`}
+                        />
+                        {isCurrentFoodOutOfStock && (
+                          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[1px] flex items-center justify-center">
+                            <span className="text-[8px] font-black uppercase text-white bg-rose-600/90 px-1 py-0.5 rounded">
+                              Sin Stock
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const weight = currentPet.bagSize || currentPetFoodProduct.weights?.[0] || '12 kg';
-                            onAddToCart(currentPetFoodProduct, weight, 1);
-                            setOrderToastMessage(`✓ Alimento de ${currentPet.name.split(' ')[0]} agregado al carrito`);
-                            setTimeout(() => setOrderToastMessage(null), 3500);
-                          }}
-                          className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-teal-600 text-white font-extrabold text-[11px] transition-all active:scale-95 shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <ShoppingBag className="w-3 h-3 text-emerald-300" />
-                          <span>Reponer alimento en 1 clic</span>
-                        </button>
+                      {/* Info y Reponer */}
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-black uppercase text-emerald-800 bg-emerald-100/90 px-1.5 py-0.2 rounded-md">
+                            ⭐ Alimento Habitual de {currentPet.name.split(' ')[0]}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-bold">
+                            {currentPet.bagSize || '12 kg'}
+                          </span>
+                          {isCurrentFoodOutOfStock && (
+                            <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded-md flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                              Sin Stock en Bodega
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight line-clamp-1" title={currentPet.foodName}>
+                          {currentPet.foodName}
+                        </h3>
+                        <div className="text-xs font-black text-[#0A3E40]">
+                          {formatCLP(currentPetFoodProduct.price)} CLP
+                        </div>
+
+                        <div className="pt-0.5 flex items-center gap-2 flex-wrap">
+                          {isCurrentFoodOutOfStock ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled
+                                className="px-3 py-1.5 rounded-xl bg-slate-200 text-slate-400 font-extrabold text-[11px] flex items-center gap-1.5 cursor-not-allowed"
+                              >
+                                <ShoppingBag className="w-3 h-3 text-slate-400" />
+                                <span>Agotado</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsAlternativeFoodModalOpen(true)}
+                                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold text-[11px] shadow-2xs hover:shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer transition-all"
+                              >
+                                <Sparkles className="w-3 h-3 text-emerald-200" />
+                                <span>Ver alternativas con stock</span>
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const weight = currentPet.bagSize || currentPetFoodProduct.weights?.[0] || '12 kg';
+                                onAddToCart(currentPetFoodProduct, weight, 1);
+                                setOrderToastMessage(`✓ Alimento de ${currentPet.name.split(' ')[0]} agregado al carrito`);
+                                setTimeout(() => setOrderToastMessage(null), 3500);
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-teal-600 text-white font-extrabold text-[11px] transition-all active:scale-95 shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <ShoppingBag className="w-3 h-3 text-emerald-300" />
+                              <span>Reponer alimento en 1 clic</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* 4. ENCABEZADO DE SECCIÓN CON CONTADOR */}
               <div className="flex items-center justify-between px-1 pt-1">
@@ -2310,14 +3000,14 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   <Sparkles className="w-3.5 h-3.5 text-[#0E8388]" />
                   <span className="text-xs font-black text-slate-800">
                     {storeMobileCategory === 'destacados'
-                      ? `Productos Destacados para ${currentPet.name.split(' ')[0]}`
+                      ? `Productos Destacados para ${petFirstName}`
                       : storeMobileCategory === 'alimento'
-                      ? `Alimentos para ${currentPet.name.split(' ')[0]}`
+                      ? `Alimentos para ${petFirstName}`
                       : storeMobileCategory === 'antiparasitarios'
-                      ? `Antiparasitarios para ${currentPet.name.split(' ')[0]}`
+                      ? `Antiparasitarios para ${petFirstName}`
                       : storeMobileCategory === 'snacks'
-                      ? `Snacks & Premios para ${currentPet.name.split(' ')[0]}`
-                      : `Catálogo completo para ${currentPet.name.split(' ')[0]}`}
+                      ? `Snacks & Premios para ${petFirstName}`
+                      : `Catálogo completo para ${petFirstName}`}
                   </span>
                 </div>
                 <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -2325,28 +3015,33 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 </span>
               </div>
 
-              {/* 5. GRILLA MÓVIL DE PRODUCTOS EN 2 COLUMNAS ORDENADAS */}
+              {/* 5. GRILLA RESPONSIVA DE PRODUCTOS (2 MÓVIL / 3-4 DESKTOP) */}
               {mobileStoreProducts.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2.5 sm:gap-3.5">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
                   {mobileStoreProducts.map((product) => {
                     const isHabitual = product.id === currentPetFoodProduct?.id;
                     const weightOption = product.weights?.[0] || '1 unidad';
+                    const isProdOutOfStock = isProductOutOfStock(product, weightOption);
 
                     return (
                       <div
                         key={product.id}
-                        className="bg-white rounded-2xl border border-slate-200/90 hover:border-emerald-400 p-2.5 sm:p-3 flex flex-col justify-between shadow-2xs hover:shadow-md transition-all group relative"
+                        className={`bg-white rounded-2xl border p-2.5 sm:p-3 flex flex-col justify-between shadow-2xs hover:shadow-md transition-all group relative ${
+                          isProdOutOfStock ? 'border-slate-200/60 opacity-85' : 'border-slate-200/90 hover:border-emerald-400'
+                        }`}
                       >
                         {/* Insignia Superior */}
                         <div className="flex items-center justify-between gap-1 mb-1">
                           <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md truncate max-w-[85%] ${
-                            isHabitual
+                            isProdOutOfStock
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : isHabitual
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                               : 'bg-teal-50 text-[#0E8388]'
                           }`}>
-                            {isHabitual ? '⭐ Habitual' : (product.badge || product.brand || 'Patitas del Sur')}
+                            {isProdOutOfStock ? '🔴 Agotado' : isHabitual ? '⭐ Habitual' : (product.badge || product.brand || 'Patitas del Sur')}
                           </span>
-                          {isHabitual && (
+                          {!isProdOutOfStock && isHabitual && (
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
                           )}
                         </div>
@@ -2354,14 +3049,23 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                         {/* Imagen del Producto */}
                         <div
                           onClick={() => onSelectProduct && onSelectProduct(product)}
-                          className="w-full h-24 sm:h-28 rounded-xl bg-slate-50/70 p-1.5 flex items-center justify-center my-1 cursor-pointer overflow-hidden"
+                          className="w-full h-24 sm:h-28 rounded-xl bg-slate-50/70 p-1.5 flex items-center justify-center my-1 cursor-pointer overflow-hidden relative"
                         >
                           <img
                             src={product.image || '/images/hero_dog.png'}
                             alt={product.name}
-                            className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300"
+                            className={`max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300 ${
+                              isProdOutOfStock ? 'opacity-40 grayscale' : ''
+                            }`}
                             loading="lazy"
                           />
+                          {isProdOutOfStock && (
+                            <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
+                              <span className="text-[9px] font-black uppercase text-white bg-rose-600/90 px-1.5 py-0.5 rounded-md shadow-xs">
+                                Sin Stock
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Información del Producto */}
@@ -2391,17 +3095,29 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
                           <button
                             type="button"
+                            disabled={isProdOutOfStock}
                             onClick={(e) => {
+                              if (isProdOutOfStock) return;
                               e.stopPropagation();
                               onAddToCart(product, weightOption, 1);
                               setOrderToastMessage(`✓ ${product.name.split(' ')[0]} agregado para ${currentPet.name.split(' ')[0]}`);
                               setTimeout(() => setOrderToastMessage(null), 3500);
                             }}
-                            className="h-8 px-2.5 sm:px-3 rounded-xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-teal-600 text-white text-[11px] font-black flex items-center gap-1 shadow-2xs hover:shadow-xs active:scale-90 transition-all cursor-pointer shrink-0"
-                            title="Añadir al pedido"
+                            className={`h-8 px-2.5 sm:px-3 rounded-xl text-[11px] font-black flex items-center gap-1 shadow-2xs transition-all shrink-0 ${
+                              isProdOutOfStock
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-teal-600 text-white hover:shadow-xs active:scale-90 cursor-pointer'
+                            }`}
+                            title={isProdOutOfStock ? "Sin stock en bodega" : "Añadir al pedido"}
                           >
-                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                            <span className="hidden sm:inline">Añadir</span>
+                            {isProdOutOfStock ? (
+                              <span className="text-[10px]">Agotado</span>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                                <span className="hidden sm:inline">Añadir</span>
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -2459,6 +3175,39 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
         {/* TAB 4: CUADERNO VETERINARIO - RESUMEN EJECUTIVO Y ORDENADO (MOBILE FIRST) */}
         {activeTab === 'cuaderno' && (() => {
+          if (pets.length === 0) {
+            return (
+              <div className="w-full max-w-4xl mx-auto py-12 px-4 text-center">
+                <div className="bg-white rounded-3xl border border-slate-200/80 p-8 sm:p-12 shadow-sm space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-teal-50 text-[#0E8388] flex items-center justify-center mx-auto shadow-inner">
+                    <Stethoscope className="w-8 h-8 stroke-[2.2]" />
+                  </div>
+                  <div className="space-y-2 max-w-md mx-auto">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+                      Tu Cuaderno Veterinario Digital
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-600 font-medium">
+                      Lleva el control de vacunas, antiparasitarios mensuales y próximas citas veterinarias. Para comenzar, registra a tu primera mascota.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPetStep(1);
+                        setIsAddPetModalOpen(true);
+                      }}
+                      className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-teal-600 text-white font-extrabold text-sm shadow-md shadow-[#0E8388]/25 transition-all cursor-pointer active:scale-95"
+                    >
+                      <Plus className="w-4 h-4 stroke-[3]" />
+                      <span>Registrar Mascota</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           const activePet = activeSelectedPet || pets.find(p => p.id === cuadernoActivePetId) || pets[0];
           const isCat = activePet?.type === 'gato';
           const activeLogs = healthLogs[activePet.id] || [];
@@ -2487,7 +3236,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           });
 
           return (
-            <div className="space-y-3.5 sm:space-y-4 max-w-xl mx-auto animate-in fade-in duration-200 pb-16 select-none">
+            <div className="space-y-4 w-full max-w-5xl lg:max-w-6xl mx-auto animate-in fade-in duration-200 pb-16 select-none">
 
               {/* 1. CABECERA RESUMEN DE LA MASCOTA */}
               <div className="rounded-3xl bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-4 sm:p-5 shadow-lg border border-teal-600/30 space-y-3 relative overflow-hidden">
@@ -2925,7 +3674,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       {/* MODAL 1: REGISTRAR NUEVA MASCOTA (MULTI-STEP WIZARD) */}
       {isAddPetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="max-w-md w-full bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-slate-200 space-y-6 relative animate-in zoom-in-95 duration-200">
+          <div className="max-w-lg w-full bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-slate-200 space-y-6 relative animate-in zoom-in-95 duration-200">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
@@ -2934,11 +3683,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 <p className="text-xs text-slate-500 font-medium">Asistente de registro en 3 pasos</p>
               </div>
               <button
-                onClick={() => {
-                  setPetStep(1);
-                  setIsAddPetModalOpen(false);
-                }}
-                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center font-bold transition-all"
+                onClick={resetPetModalForm}
+                className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center font-bold transition-all cursor-pointer"
               >
                 ✕
               </button>
@@ -2970,6 +3716,13 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     <button
                       type="button"
                       onClick={() => {
+                        if (newPetType !== 'perro') {
+                          setNewPetFood('');
+                          setNewPetFoodSearch('');
+                          setCustomFoodName('');
+                          setIsCustomFood(false);
+                          setNewPetSelectedProduct(null);
+                        }
                         setNewPetType('perro');
                         setPetStep(2);
                       }}
@@ -2995,6 +3748,13 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     <button
                       type="button"
                       onClick={() => {
+                        if (newPetType !== 'gato') {
+                          setNewPetFood('');
+                          setNewPetFoodSearch('');
+                          setCustomFoodName('');
+                          setIsCustomFood(false);
+                          setNewPetSelectedProduct(null);
+                        }
                         setNewPetType('gato');
                         setPetStep(2);
                       }}
@@ -3051,10 +3811,13 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     />
                   </div>
 
-                  {/* Fecha de Nacimiento, Edad & Peso (Bi-directional calculation) */}
-                  <div className="grid grid-cols-3 gap-2.5">
+                  {/* Fila 1: Fecha de Nacimiento (con amplio espacio) & Edad Calculada (Años y Meses) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="font-black text-slate-700 uppercase text-[10px]">Fecha Nacimiento</label>
+                      <label className="font-black text-slate-700 uppercase text-[10px] flex items-center justify-between">
+                        <span>Fecha Nacimiento</span>
+                        <span className="text-[9px] text-[#0E8388] font-bold">Calendario</span>
+                      </label>
                       <CustomDatePicker
                         value={newPetBirthdate}
                         onChange={handleBirthdateChange}
@@ -3063,60 +3826,76 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     </div>
 
                     <div className="space-y-1">
-                      <label className="font-black text-slate-700 uppercase text-[10px]">Edad (Años)</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Ej. 3"
-                        value={newPetAge}
-                        onChange={handleAgeChange}
-                        className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold focus:outline-hidden focus:border-[#0E8388] focus:bg-white text-slate-900"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="font-black text-slate-700 uppercase text-[10px]">Peso (KG Entero)</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Ej. 12"
-                        value={newPetWeight}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, '');
-                          setNewPetWeight(val);
-                        }}
-                        className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold focus:outline-hidden focus:border-[#0E8388] focus:bg-white text-slate-900"
-                      />
+                      <label className="font-black text-slate-700 uppercase text-[10px] flex items-center justify-between">
+                        <span>Edad (Automática)</span>
+                        <span className="text-[9px] text-emerald-700 font-bold">Años y meses</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Ej. 2 años y 4 meses"
+                          value={newPetAge}
+                          onChange={handleAgeChange}
+                          className="w-full pl-3.5 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-900 focus:outline-hidden focus:border-[#0E8388] focus:bg-white"
+                        />
+                        {newPetAge && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs">
+                            🐾
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* ¿Está Esterilizado? */}
-                  <div className="space-y-2 pt-1">
-                    <label className="font-black text-slate-700 uppercase text-[11px] block">¿Está esterilizado / capado?</label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setNewPetSterilized('si')}
-                        className={`py-2.5 px-4 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                          newPetSterilized === 'si'
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <span>✂️ Sí, esterilizado/a</span>
-                      </button>
+                  {/* Fila 2: Peso & Esterilización */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="font-black text-slate-700 uppercase text-[10px]">Peso (KG Entero)</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Ej. 12"
+                          value={newPetWeight}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^0-9]/g, '');
+                            setNewPetWeight(val);
+                          }}
+                          className="w-full pl-3.5 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black focus:outline-hidden focus:border-[#0E8388] focus:bg-white text-slate-900"
+                        />
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-extrabold text-slate-400">
+                          KG
+                        </span>
+                      </div>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setNewPetSterilized('no')}
-                        className={`py-2.5 px-4 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                          newPetSterilized === 'no'
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <span>🐾 No esterilizado/a</span>
-                      </button>
+                    <div className="space-y-1">
+                      <label className="font-black text-slate-700 uppercase text-[10px]">¿Está esterilizado / capado?</label>
+                      <div className="grid grid-cols-2 gap-2 h-[46px]">
+                        <button
+                          type="button"
+                          onClick={() => setNewPetSterilized('si')}
+                          className={`rounded-2xl border text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                            newPetSterilized === 'si'
+                              ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>✂️ Sí</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setNewPetSterilized('no')}
+                          className={`rounded-2xl border text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                            newPetSterilized === 'no'
+                              ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>🐾 No</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -3166,7 +3945,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                       <button
                         type="button"
                         onClick={() => {
-                          setIsCustomFood(!isCustomFood);
+                          const nextCustom = !isCustomFood;
+                          setIsCustomFood(nextCustom);
+                          if (nextCustom && newPetFoodSearch && !customFoodName) {
+                            setCustomFoodName(newPetFoodSearch);
+                          }
                           setIsFoodDropdownOpen(false);
                         }}
                         className="text-[11px] font-bold text-[#0E8388] underline hover:text-[#0A3E40] cursor-pointer"
@@ -3176,17 +3959,19 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     </div>
 
                     {!isCustomFood ? (
-                      <div className="relative">
+                      <div ref={foodDropdownRef} className="relative">
                         {/* Live Search Input */}
                         <div className="relative">
                           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
                           <input
                             type="text"
-                            placeholder="Empieza a escribir (ej. Bravery, Salmón, Cordero)..."
+                            placeholder={newPetType === 'perro' ? "Buscar alimento para perro (ej. Acana, Fit, Nomade)..." : "Buscar alimento para gato (ej. Fit Gato)..."}
                             value={newPetFoodSearch}
                             onFocus={() => setIsFoodDropdownOpen(true)}
+                            onClick={() => setIsFoodDropdownOpen(true)}
                             onChange={(e) => {
                               setNewPetFoodSearch(e.target.value);
+                              setNewPetFood(e.target.value);
                               setIsFoodDropdownOpen(true);
                             }}
                             className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-hidden focus:border-[#0E8388] focus:bg-white text-slate-900 shadow-xs"
@@ -3196,6 +3981,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                               type="button"
                               onClick={() => {
                                 setNewPetFoodSearch('');
+                                setNewPetFood('');
+                                setNewPetSelectedProduct(null);
                                 setIsFoodDropdownOpen(true);
                               }}
                               className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 font-bold text-xs"
@@ -3207,59 +3994,76 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
                         {/* Floating Live Suggestions Panel */}
                         {isFoodDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl p-2 shadow-2xl border border-slate-200 max-h-56 overflow-y-auto space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                            {PRODUCTS
-                              .filter(p => {
-                                if (!newPetType) return true;
-                                const pt = (p.petType || p.type || '').toLowerCase();
-                                const target = newPetType === 'perro' ? 'perro' : 'gato';
-                                return pt.includes(target) || pt.includes('todos') || !pt;
-                              })
-                              .filter(p => {
-                                if (!newPetFoodSearch) return true;
-                                const q = newPetFoodSearch.toLowerCase();
-                                const nameStr = (p.name || '').toLowerCase();
-                                const tagStr = (p.tagline || p.description || '').toLowerCase();
-                                const brandStr = (p.brand || '').toLowerCase();
-                                return nameStr.includes(q) || tagStr.includes(q) || brandStr.includes(q);
-                              })
-                              .map(product => {
-                                const selectedName = `${product.name} (${product.weights ? product.weights[0] : (product.weight || '12 kg')})`;
+                          <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl p-2 shadow-2xl border border-slate-200 max-h-60 overflow-y-auto space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                            {/* Cabecera descriptiva de especie y conteo */}
+                            <div className="px-2 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1">
+                              <span>
+                                {newPetType === 'perro' ? '🐶 Alimentos Caninos' : '🐱 Alimentos Felinos'}
+                              </span>
+                              <span>
+                                {availablePetFoods.length} {availablePetFoods.length === 1 ? 'disponible' : 'disponibles'}
+                              </span>
+                            </div>
+
+                            {availablePetFoods.length > 0 ? (
+                              availablePetFoods.map((product) => {
+                                const weightStr = Array.isArray(product.weights) && product.weights.length > 0
+                                  ? product.weights[0]
+                                  : (product.weight || product.format || '');
+                                const displayName = product.name;
+                                const fullSelectionName = weightStr && !displayName.toLowerCase().includes(weightStr.toLowerCase())
+                                  ? `${displayName} (${weightStr})`
+                                  : displayName;
+
                                 return (
                                   <button
                                     key={product.id}
                                     type="button"
                                     onClick={() => {
-                                      setNewPetFood(selectedName);
-                                      setNewPetFoodSearch(selectedName);
+                                      setNewPetFood(fullSelectionName);
+                                      setNewPetFoodSearch(fullSelectionName);
+                                      setNewPetSelectedProduct(product);
                                       setIsFoodDropdownOpen(false);
                                     }}
-                                    className="w-full p-2.5 rounded-xl hover:bg-[#E6F4F1] transition-all text-left flex items-center justify-between group cursor-pointer"
+                                    className="w-full p-2.5 rounded-xl hover:bg-[#E6F4F1] transition-all text-left flex items-center justify-between group cursor-pointer border border-transparent hover:border-[#0E8388]/20"
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-base">{newPetType === 'perro' ? '🐶' : '🐱'}</span>
-                                      <div>
-                                        <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#0E8388]">
+                                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                      <span className="text-base shrink-0">{newPetType === 'perro' ? '🐶' : '🐱'}</span>
+                                      <div className="min-w-0">
+                                        <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#0E8388] truncate">
                                           {product.name}
                                         </div>
-                                        <div className="text-[10px] text-slate-500 font-medium">
-                                          {product.brand} • {product.category || 'Alimento Seco'}
+                                        <div className="text-[10px] text-slate-500 font-medium truncate">
+                                          <span className="font-bold text-slate-700">{product.brand}</span> • {product.category || 'Alimento'}
                                         </div>
                                       </div>
                                     </div>
-                                    <span className="px-2 py-0.5 rounded-md bg-slate-100 group-hover:bg-[#0E8388] group-hover:text-white text-[10px] font-black text-slate-700">
-                                      {product.weights ? product.weights[0] : (product.weight || '12 kg')}
-                                    </span>
+                                    {weightStr && (
+                                      <span className="px-2 py-0.5 rounded-md bg-slate-100 group-hover:bg-[#0E8388] group-hover:text-white text-[10px] font-black text-slate-700 shrink-0">
+                                        {weightStr}
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })
-                            }
+                            ) : (
+                              <div className="p-3 text-center text-xs text-slate-500 font-medium bg-slate-50 rounded-xl border border-slate-100">
+                                {newPetFoodSearch ? (
+                                  <>No encontramos alimentos que coincidan con <strong>"{newPetFoodSearch}"</strong> para {newPetType === 'perro' ? 'perros' : 'gatos'}.</>
+                                ) : (
+                                  <>No hay alimentos cargados en el sistema para esta especie.</>
+                                )}
+                              </div>
+                            )}
 
                             {/* Option for unlisted foods */}
                             <button
                               type="button"
                               onClick={() => {
                                 setIsCustomFood(true);
+                                if (newPetFoodSearch && !customFoodName) {
+                                  setCustomFoodName(newPetFoodSearch);
+                                }
                                 setIsFoodDropdownOpen(false);
                               }}
                               className="w-full p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-all text-left flex items-center gap-2 text-amber-900 cursor-pointer mt-1"
@@ -3844,11 +4648,12 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                               const StatusIcon = status.Icon;
 
                               // Match with store product
-                              const matchedProduct = PRODUCTS.find(p => 
+                              const catalogPool = activeCatalog && activeCatalog.length > 0 ? activeCatalog : PRODUCTS;
+                              const matchedProduct = catalogPool.find(p => 
                                 (log.productId && p.id === log.productId) ||
                                 p.name.toLowerCase().includes(log.title.toLowerCase().split(' ')[0]) ||
                                 log.title.toLowerCase().includes(p.brand.toLowerCase())
-                              ) || PRODUCTS.find(p => p.category === 'Antiparasitarios');
+                              ) || catalogPool.find(p => p.category === 'Antiparasitarios');
 
                               return (
                                 <div
@@ -3918,42 +4723,61 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                                       </div>
 
                                       {/* DIRECT STORE LINK & REPO REORDER ACTION */}
-                                      {matchedProduct && (
-                                        <div className="p-3 bg-gradient-to-r from-white to-amber-50/60 rounded-2xl border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
-                                          <div className="flex items-center gap-3">
-                                            <img
-                                              src={matchedProduct.image}
-                                              alt={matchedProduct.name}
-                                              className="w-12 h-12 object-contain rounded-xl bg-white p-1 border border-slate-200 shadow-xs shrink-0"
-                                            />
-                                            <div>
-                                              <div className="flex items-center gap-1.5">
-                                                <span className="text-[10px] font-black text-[#0E8388] uppercase tracking-wider">
-                                                  🛒 Disponible en Tienda Online
-                                                </span>
-                                                <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
-                                                  En Stock
-                                                </span>
-                                              </div>
-                                              <h5 className="font-bold text-slate-900 text-xs line-clamp-1">{matchedProduct.name}</h5>
-                                              <p className="text-xs font-black text-[#0A3E40] mt-0.5">
-                                                {formatCLP(matchedProduct.price)}
-                                              </p>
-                                            </div>
-                                          </div>
+                                      {matchedProduct && (() => {
+                                        const isMatchedOutOfStock = isProductOutOfStock(matchedProduct, matchedProduct.weights?.[0]);
 
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              onAddToCart(matchedProduct, matchedProduct.weights?.[0] || '1 Dosis', 1);
-                                            }}
-                                            className="px-4 py-2.5 rounded-xl bg-[#0A3E40] hover:bg-[#0E8388] text-white font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-                                          >
-                                            <ShoppingBag className="w-4 h-4 text-emerald-400" />
-                                            <span>Comprar Reposición</span>
-                                          </button>
-                                        </div>
-                                      )}
+                                        return (
+                                          <div className="p-3 bg-gradient-to-r from-white to-amber-50/60 rounded-2xl border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                                            <div className="flex items-center gap-3">
+                                              <div className="w-12 h-12 rounded-xl bg-white p-1 border border-slate-200 shadow-xs shrink-0 relative overflow-hidden flex items-center justify-center">
+                                                <img
+                                                  src={matchedProduct.image}
+                                                  alt={matchedProduct.name}
+                                                  className={`w-full h-full object-contain ${isMatchedOutOfStock ? 'opacity-40 grayscale' : ''}`}
+                                                />
+                                              </div>
+                                              <div>
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="text-[10px] font-black text-[#0E8388] uppercase tracking-wider">
+                                                    🛒 Disponible en Tienda Online
+                                                  </span>
+                                                  {isMatchedOutOfStock ? (
+                                                    <span className="text-[9px] font-extrabold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                                      Sin Stock
+                                                    </span>
+                                                  ) : (
+                                                    <span className="text-[9px] font-extrabold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-md">
+                                                      En Stock
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                <h5 className="font-bold text-slate-900 text-xs line-clamp-1">{matchedProduct.name}</h5>
+                                                <p className="text-xs font-black text-[#0A3E40] mt-0.5">
+                                                  {formatCLP(matchedProduct.price)}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            <button
+                                              type="button"
+                                              disabled={isMatchedOutOfStock}
+                                              onClick={() => {
+                                                if (isMatchedOutOfStock) return;
+                                                onAddToCart(matchedProduct, matchedProduct.weights?.[0] || '1 Dosis', 1);
+                                              }}
+                                              className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 shrink-0 ${
+                                                isMatchedOutOfStock
+                                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                                                  : 'bg-[#0A3E40] hover:bg-[#0E8388] text-white cursor-pointer active:scale-95'
+                                              }`}
+                                            >
+                                              <ShoppingBag className={`w-4 h-4 ${isMatchedOutOfStock ? 'text-slate-400' : 'text-emerald-400'}`} />
+                                              <span>{isMatchedOutOfStock ? 'Sin Stock en Bodega' : 'Comprar Reposición'}</span>
+                                            </button>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
                                   )}
                                 </div>
@@ -4056,6 +4880,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       {selectedReplenishPet && (() => {
         const { currentProduct, similarProducts } = getReplenishProducts(selectedReplenishPet);
         const mainFlavor = currentProduct ? getFlavorBadge(currentProduct) : null;
+        const isMainProductOutOfStock = isProductOutOfStock(currentProduct, replenishWeight);
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
@@ -4097,19 +4922,47 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                         <Sparkles className="w-3 h-3 text-emerald-600" />
                         <span>Alimento Habitual de {selectedReplenishPet.name}</span>
                       </span>
-                      <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                        🟢 En Stock Inmediato
-                      </span>
+                      {isMainProductOutOfStock ? (
+                        <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                          🔴 Sin Stock en Bodega (Agotado)
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          🟢 En Stock Inmediato
+                        </span>
+                      )}
                     </div>
+
+                    {isMainProductOutOfStock && (
+                      <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 shadow-2xs">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="font-black">Este alimento habitual no cuenta con existencias en bodega en este momento.</p>
+                          <p className="text-[11px] text-amber-800">
+                            No es posible despacharlo ni programar reposición de este producto hoy. Te sugerimos revisar las opciones de variedad de sabor o alternativas disponibles más abajo.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
                       {/* Product Image */}
-                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-white p-2 border border-slate-200 shadow-sm flex items-center justify-center shrink-0">
+                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-white p-2 border border-slate-200 shadow-sm flex items-center justify-center shrink-0 relative overflow-hidden">
                         <img
                           src={currentProduct.image}
                           alt={currentProduct.name}
-                          className="w-full h-full object-contain hover:scale-105 transition-transform"
+                          className={`w-full h-full object-contain hover:scale-105 transition-transform ${
+                            isMainProductOutOfStock ? 'opacity-40 grayscale' : ''
+                          }`}
                         />
+                        {isMainProductOutOfStock && (
+                          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
+                            <span className="text-[9px] font-black uppercase text-white bg-rose-600/90 px-1.5 py-0.5 rounded-md shadow-xs">
+                              Sin Stock
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Product Details */}
@@ -4352,33 +5205,46 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                       <div className="flex items-center gap-2 w-full sm:w-auto">
                         <button
                           type="button"
+                          disabled={isMainProductOutOfStock}
                           onClick={() => {
+                            if (isMainProductOutOfStock) return;
                             onAddToCart(currentProduct, replenishWeight || currentProduct.weights?.[0] || '12 kg', replenishQuantity);
                             setReplenishAddedSuccess(true);
                             setTimeout(() => setReplenishAddedSuccess(false), 2500);
                           }}
-                          className="px-4 py-3 rounded-2xl font-black text-xs transition-all border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                          title="Solo agregar al carrito estándar"
+                          className={`px-4 py-3 rounded-2xl font-black text-xs transition-all border flex items-center justify-center gap-1.5 ${
+                            isMainProductOutOfStock
+                              ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
+                              : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 cursor-pointer active:scale-95'
+                          }`}
+                          title={isMainProductOutOfStock ? "Producto sin stock en bodega" : "Solo agregar al carrito estándar"}
                         >
                           <ShoppingBag className="w-4 h-4 text-slate-500" />
-                          <span>Al Carrito</span>
+                          <span>{isMainProductOutOfStock ? 'Sin Stock' : 'Al Carrito'}</span>
                         </button>
 
                         <button
                           type="button"
+                          disabled={isMainProductOutOfStock}
                           onClick={() => {
-                            const newOrderId = `PTS-${Math.floor(1000 + Math.random() * 9000)}`;
-                            const dayLabel = schedDeliveryDay === 'hoy' ? 'Hoy Mismo' : (schedDeliveryDay === 'manana' ? 'Mañana 19 Ago' : schedCustomDate);
+                            if (isMainProductOutOfStock) return;
+                            const today = new Date();
+                            const tomorrow = new Date();
+                            tomorrow.setDate(today.getDate() + 1);
+                            const tomorrowFormatted = tomorrow.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
+                            const dayLabel = schedDeliveryDay === 'hoy' ? 'Hoy Mismo' : (schedDeliveryDay === 'manana' ? `Mañana ${tomorrowFormatted}` : schedCustomDate);
                             const timeLabel = schedTimeSlot === 'manana' ? '09:00 - 13:00 hrs' : '14:00 - 19:00 hrs';
+                            const orderTotalNum = currentProduct.price * replenishQuantity;
+                            const newOrderId = `PTS-${Math.floor(1000 + Math.random() * 9000)}`;
 
                             const newOrder = {
                               id: newOrderId,
-                              date: '18 Ago 2026',
-                              dateIso: '2026-08-18',
+                              date: today.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' }),
+                              dateIso: today.toISOString().split('T')[0],
                               product: `${currentProduct.name} (${replenishWeight || currentProduct.weights?.[0] || '12 kg'})`,
                               category: 'Alimento Seco',
-                              total: formatCLP(currentProduct.price * replenishQuantity),
-                              pointsEarned: Math.round(currentProduct.price * replenishQuantity * 0.01),
+                              total: formatCLP(orderTotalNum),
+                              pointsEarned: Math.floor(orderTotalNum / 1000),
                               status: 'En Preparación ⏳',
                               statusCode: 'en_preparacion',
                               statusColor: 'bg-amber-100 text-amber-800 border-amber-300',
@@ -4397,7 +5263,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                                   ? {
                                       ...p,
                                       daysRemaining: p.totalDaysDuration,
-                                      lastOrderDate: '18 de Agosto 2026',
+                                      lastOrderDate: today.toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' }),
                                     }
                                   : p
                               )
@@ -4405,13 +5271,44 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
                             setSelectedReplenishPet(null);
                             setActiveTab('compras');
-                            setOrderToastMessage(`🎉 ¡Pedido ${newOrderId} programado con éxito! Entrega: ${dayLabel} (${timeLabel}) · Pago: ${schedPaymentMethod}.`);
+                            setOrderToastMessage(`🎉 ¡Pedido programado con éxito! Entrega: ${dayLabel} (${timeLabel}) · Pago: ${schedPaymentMethod}.`);
                             setTimeout(() => setOrderToastMessage(null), 8000);
+
+                            // Sincronizar orden en Supabase
+                            createOrderInSupabase({
+                              customerName: profileData.name || user?.name || 'Cliente Patitas',
+                              customerEmail: profileData.email || user?.email || '',
+                              customerPhone: profileData.phone || user?.phone || '',
+                              channel: 'web',
+                              paymentMethod: schedPaymentMethod,
+                              paymentStatus: schedPaymentMethod === 'Web' || schedPaymentMethod === 'Tarjeta' ? 'pagado' : 'pendiente',
+                              status: 'en_preparacion',
+                              subtotal: orderTotalNum,
+                              shippingCost: 0,
+                              total: orderTotalNum,
+                              address: schedAddress,
+                              deliveryDayText: dayLabel,
+                              deliverySlot: timeLabel,
+                            }, [
+                              {
+                                id: currentProduct.id,
+                                name: currentProduct.name,
+                                weight: replenishWeight || currentProduct.weights?.[0] || '12 kg',
+                                quantity: replenishQuantity,
+                                price: currentProduct.price,
+                              }
+                            ]).then(() => {
+                              window.dispatchEvent(new CustomEvent('patitas_orders_updated'));
+                            }).catch((err) => console.warn('Replenish sync order:', err));
                           }}
-                          className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white hover:shadow-lg active:scale-95"
+                          className={`flex-1 sm:flex-initial px-5 py-3 rounded-2xl font-black text-xs transition-all shadow-md flex items-center justify-center gap-2 ${
+                            isMainProductOutOfStock
+                              ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300 shadow-none'
+                              : 'cursor-pointer bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white hover:shadow-lg active:scale-95'
+                          }`}
                         >
-                          <Truck className="w-4 h-4 text-emerald-300" />
-                          <span>Programar Entrega & Confirmar</span>
+                          <Truck className={`w-4 h-4 ${isMainProductOutOfStock ? 'text-slate-400' : 'text-emerald-300'}`} />
+                          <span>{isMainProductOutOfStock ? 'Producto Sin Stock en Bodega' : 'Programar Entrega & Confirmar'}</span>
                         </button>
                       </div>
                     </div>
@@ -4461,26 +5358,45 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                       {similarProducts.map((prod) => {
                         const flavor = getFlavorBadge(prod);
                         const weightChoice = selectedSimilarWeight[prod.id] || prod.weights?.[prod.weights.length - 1] || '12 kg';
+                        const isSimilarOutOfStock = isProductOutOfStock(prod, weightChoice);
 
                         return (
                           <div
                             key={prod.id}
-                            className="min-w-[270px] sm:min-w-[290px] max-w-[290px] p-4 rounded-2xl bg-white border border-slate-200/90 hover:border-[#0E8388]/60 hover:shadow-md transition-all flex flex-col justify-between gap-3 group shrink-0 snap-start"
+                            className={`min-w-[270px] sm:min-w-[290px] max-w-[290px] p-4 rounded-2xl bg-white border transition-all flex flex-col justify-between gap-3 group shrink-0 snap-start ${
+                              isSimilarOutOfStock ? 'border-slate-200/60 opacity-85' : 'border-slate-200/90 hover:border-[#0E8388]/60 hover:shadow-md'
+                            }`}
                           >
                             <div className="flex items-start gap-3">
-                              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-50 p-1 border border-slate-100 shrink-0 flex items-center justify-center">
+                              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl bg-slate-50 p-1 border border-slate-100 shrink-0 flex items-center justify-center relative overflow-hidden">
                                 <img
                                   src={prod.image}
                                   alt={prod.name}
-                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                                  className={`w-full h-full object-contain group-hover:scale-105 transition-transform ${
+                                    isSimilarOutOfStock ? 'opacity-40 grayscale' : ''
+                                  }`}
                                 />
+                                {isSimilarOutOfStock && (
+                                  <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
+                                    <span className="text-[8px] font-black uppercase text-white bg-rose-600/90 px-1 py-0.5 rounded">
+                                      Sin Stock
+                                    </span>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="space-y-1 min-w-0 flex-1">
-                                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${flavor.bg}`}>
-                                  <span>{flavor.emoji}</span>
-                                  <span>{flavor.label}</span>
-                                </span>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${flavor.bg}`}>
+                                    <span>{flavor.emoji}</span>
+                                    <span>{flavor.label}</span>
+                                  </span>
+                                  {isSimilarOutOfStock && (
+                                    <span className="text-[8px] font-black uppercase text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                      Agotado
+                                    </span>
+                                  )}
+                                </div>
                                 <h5 className="text-xs font-black text-slate-900 line-clamp-2 leading-tight">
                                   {prod.name}
                                 </h5>
@@ -4513,13 +5429,25 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
                               <button
                                 type="button"
+                                disabled={isSimilarOutOfStock}
                                 onClick={() => {
+                                  if (isSimilarOutOfStock) return;
                                   onAddToCart(prod, weightChoice, 1);
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-[#0E8388]/10 hover:bg-[#0E8388] text-[#0E8388] hover:text-white font-black text-[11px] transition-all flex items-center gap-1 cursor-pointer active:scale-95 ml-auto"
+                                className={`px-3 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ml-auto ${
+                                  isSimilarOutOfStock
+                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                    : 'bg-[#0E8388]/10 hover:bg-[#0E8388] text-[#0E8388] hover:text-white cursor-pointer active:scale-95'
+                                }`}
                               >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Agregar</span>
+                                {isSimilarOutOfStock ? (
+                                  <span>Agotado</span>
+                                ) : (
+                                  <>
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Agregar</span>
+                                  </>
+                                )}
                               </button>
                             </div>
                           </div>
@@ -4753,19 +5681,31 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   {similarProducts.map((prod) => {
                     const flavor = getFlavorBadge(prod);
                     const defaultWeight = prod.weights?.[0] || '12 kg';
+                    const isProdOutOfStock = isProductOutOfStock(prod, defaultWeight);
 
                     return (
                       <div
                         key={prod.id}
-                        className="p-4 rounded-2xl bg-slate-50 hover:bg-white border border-slate-200 hover:border-[#0E8388]/60 transition-all flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 shadow-2xs hover:shadow-md"
+                        className={`p-4 rounded-2xl bg-slate-50 border transition-all flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 shadow-2xs ${
+                          isProdOutOfStock
+                            ? 'border-slate-200/60 opacity-85'
+                            : 'hover:bg-white border-slate-200 hover:border-[#0E8388]/60 hover:shadow-md'
+                        }`}
                       >
                         <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                          <div className="w-20 h-20 rounded-xl bg-white p-2 border border-slate-200 shrink-0 flex items-center justify-center">
+                          <div className="w-20 h-20 rounded-xl bg-white p-2 border border-slate-200 shrink-0 flex items-center justify-center relative overflow-hidden">
                             <img
                               src={prod.image}
                               alt={prod.name}
-                              className="w-full h-full object-contain"
+                              className={`w-full h-full object-contain ${isProdOutOfStock ? 'opacity-40 grayscale' : ''}`}
                             />
+                            {isProdOutOfStock && (
+                              <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
+                                <span className="text-[8px] font-black uppercase text-white bg-rose-600/90 px-1 py-0.5 rounded">
+                                  Sin Stock
+                                </span>
+                              </div>
+                            )}
                           </div>
 
                           <div className="space-y-1 min-w-0">
@@ -4776,6 +5716,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                               {flavor && (
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${flavor.bg}`}>
                                   {flavor.emoji} {flavor.label}
+                                </span>
+                              )}
+                              {isProdOutOfStock && (
+                                <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
+                                  Agotado en Bodega
                                 </span>
                               )}
                             </div>
@@ -4791,16 +5736,22 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                         <div className="flex sm:flex-col items-center gap-2 shrink-0 w-full sm:w-auto">
                           <button
                             type="button"
+                            disabled={isProdOutOfStock}
                             onClick={() => {
+                              if (isProdOutOfStock) return;
                               onAddToCart(prod, defaultWeight, 1);
                               setOrderToastMessage(`✓ Añadido al pedido: ${prod.name} (${defaultWeight})`);
                               setTimeout(() => setOrderToastMessage(null), 4000);
                               setIsAlternativeFoodModalOpen(false);
                             }}
-                            className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-black text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95"
+                            className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl font-black text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                              isProdOutOfStock
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white cursor-pointer'
+                            }`}
                           >
                             <ShoppingBag className="w-3.5 h-3.5" />
-                            <span>Añadir a mi pedido</span>
+                            <span>{isProdOutOfStock ? 'Sin stock' : 'Añadir a mi pedido'}</span>
                           </button>
 
                           <button
@@ -4846,8 +5797,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       <VeterinaryConsultationModal
         isOpen={isVetConsultationModalOpen}
         onClose={handleCloseVetModal}
-        pet={selectedHealthPet || activeSelectedPet || pets[0]}
-        existingConsultations={(healthLogs[selectedHealthPet?.id || activeSelectedPet?.id || pets[0]?.id] || []).filter(l => l.category === 'consulta')}
+        pet={selectedHealthPet || activeSelectedPet || pets[0] || null}
+        existingConsultations={((selectedHealthPet || activeSelectedPet || pets[0]) ? (healthLogs[selectedHealthPet?.id || activeSelectedPet?.id || pets[0]?.id] || []) : []).filter(l => l.category === 'consulta')}
         onSaveAppointment={handleSaveVetAppointment}
         onSaveHealthLog={handleSaveVetHealthLog}
       />
@@ -4856,7 +5807,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       <AntiparasiticModal
         isOpen={isAntiparasiticModalOpen}
         onClose={returnToMascotasDashboard}
-        pet={selectedHealthPet || activeSelectedPet || pets[0]}
+        pet={selectedHealthPet || activeSelectedPet || pets[0] || null}
         orders={ordersList}
         storeProducts={catalogProducts}
         onSaveAntiparasitic={handleSaveAntiparasiticLog}

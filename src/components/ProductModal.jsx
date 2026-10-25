@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Star, Check, ShieldCheck, Heart, ShoppingBag, Truck } from 'lucide-react';
+import { getFlavorSwatchStyle } from '../utils/productVariants';
 
 export default function ProductModal({ product, onClose, onAddToCart }) {
   const [selectedWeight, setSelectedWeight] = useState(
@@ -18,9 +19,28 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
   };
 
   const isDog = product.petType === 'perros';
+  const variants = product?.variants || [];
+  const activeVariant = variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) || variants[0];
+  const activeStock = activeVariant && typeof activeVariant.stock === 'number'
+    ? activeVariant.stock
+    : (typeof product.stock === 'number' ? product.stock : 10);
+  const isOutOfStock = activeStock <= 0 || Boolean(activeVariant?.isPaused || product?.isPaused);
 
   const handleAdd = () => {
-    onAddToCart(product, selectedWeight, quantity);
+    if (isOutOfStock) return;
+    const variantName = activeVariant && activeVariant.format && activeVariant.format !== product.name
+      ? `${product.name} (${activeVariant.format})`
+      : product.name;
+    const itemToAdd = {
+      ...product,
+      id: activeVariant?.id || product.id,
+      name: variantName,
+      price: activeVariant ? activeVariant.price : product.price,
+      selectedWeight: selectedWeight,
+      weight: selectedWeight,
+      stock: activeStock,
+    };
+    onAddToCart(itemToAdd, selectedWeight, quantity);
     onClose();
   };
 
@@ -62,7 +82,7 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
             <span className="text-[10px] font-black uppercase tracking-wider text-[#0E8388]">
               {product.category}
             </span>
-            <h3 className="font-molen font-bold text-base text-slate-900 leading-snug truncate">
+            <h3 className="font-heading font-extrabold text-base text-slate-900 leading-snug truncate">
               {product.name}
             </h3>
             <div className="text-lg font-black text-slate-900 mt-0.5">
@@ -85,7 +105,7 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
               </div>
             </div>
 
-            <h2 className="hidden md:block font-molen font-bold text-2xl sm:text-3xl text-slate-900 mb-2 leading-tight tracking-tight">
+            <h2 className="hidden md:block font-heading font-extrabold text-xl sm:text-2xl text-slate-900 mb-2 leading-tight tracking-tight">
               {product.name}
             </h2>
 
@@ -97,28 +117,58 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
               {formatCLP(product.price * quantity)}
             </div>
 
-            {/* Weights Selector */}
+            {/* Weights / Flavors Selector */}
             {product.weights && (
               <div className="mb-4 md:mb-6">
-                <label className="block text-[11px] md:text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Formato / Peso:
+                <label className="flex items-center justify-between text-[11px] md:text-xs font-bold text-slate-700 tracking-tight mb-2">
+                  <span>
+                    {product.hasFlavorVariants ? 'Sabor:' : 'Formato:'}{' '}
+                    <strong className="text-slate-900 font-extrabold">{selectedWeight}</strong>
+                  </span>
+                  {product.hasFlavorVariants && (
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      {product.weights.length} variedades
+                    </span>
+                  )}
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {product.weights.map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => setSelectedWeight(w)}
-                      className={`px-3.5 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold transition-all border cursor-pointer active:scale-95 ${
-                        selectedWeight === w
-                          ? isDog
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm'
-                            : 'bg-[#C86D39] text-white border-[#C86D39] shadow-sm'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {w}
-                    </button>
-                  ))}
+                  {product.weights.map((w) => {
+                    const swatch = product.hasFlavorVariants ? getFlavorSwatchStyle(w) : null;
+                    const isSelected = selectedWeight === w;
+
+                    return (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setSelectedWeight(w)}
+                        className={`flex items-center gap-2 px-3.5 py-2 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold transition-all border cursor-pointer active:scale-95 ${
+                          isSelected
+                            ? isDog
+                              ? 'bg-emerald-50 text-slate-900 border-[#0E8388] shadow-xs ring-2 ring-[#0E8388]/20'
+                              : 'bg-amber-50 text-slate-900 border-[#C86D39] shadow-xs ring-2 ring-[#C86D39]/20'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {swatch && (
+                          <span
+                            className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 bg-white"
+                            style={{
+                              border: `1.5px solid ${swatch.primaryColor}`,
+                              padding: isSelected ? '2px' : '0px',
+                            }}
+                          >
+                            {isSelected && (
+                              <span
+                                className="w-full h-full rounded-full block animate-in zoom-in-50 duration-150"
+                                style={{ backgroundColor: swatch.primaryColor }}
+                              />
+                            )}
+                          </span>
+                        )}
+                        <span>{w}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -142,18 +192,22 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
           {/* Actions & Quantity */}
           <div className="pt-3 md:pt-4 border-t border-slate-100 space-y-3 md:space-y-4">
             <div className="flex items-center gap-3">
-              <div className="flex items-center border border-slate-200 rounded-2xl bg-slate-50 p-0.5">
+              <div className={`flex items-center border rounded-2xl p-0.5 ${
+                isOutOfStock ? 'bg-slate-100 border-slate-200 opacity-60' : 'border-slate-200 bg-slate-50'
+              }`}>
                 <button
+                  disabled={isOutOfStock || quantity <= 1}
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-9 h-9 flex items-center justify-center text-slate-700 font-bold hover:bg-slate-200 rounded-xl active:scale-95 cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center text-slate-700 font-bold hover:bg-slate-200 rounded-xl active:scale-95 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   aria-label="Disminuir cantidad"
                 >
                   -
                 </button>
-                <span className="w-8 text-center text-sm font-black text-slate-900">{quantity}</span>
+                <span className="w-8 text-center text-sm font-black text-slate-900">{isOutOfStock ? 0 : quantity}</span>
                 <button
+                  disabled={isOutOfStock || quantity >= activeStock}
                   onClick={() => setQuantity(quantity + 1)}
-                  className="w-9 h-9 flex items-center justify-center text-slate-700 font-bold hover:bg-slate-200 rounded-xl active:scale-95 cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center text-slate-700 font-bold hover:bg-slate-200 rounded-xl active:scale-95 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   aria-label="Aumentar cantidad"
                 >
                   +
@@ -161,15 +215,27 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
               </div>
 
               <button
+                disabled={isOutOfStock}
                 onClick={handleAdd}
-                className={`flex-1 py-3.5 px-5 rounded-2xl text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer ${
-                  isDog
-                    ? 'bg-[#0E8388] hover:bg-[#10B981] shadow-[#0E8388]/30'
-                    : 'bg-[#C86D39] hover:bg-[#D97706] shadow-[#C86D39]/30'
+                className={`flex-1 py-3.5 px-5 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                  isOutOfStock
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200 shadow-none cursor-not-allowed'
+                    : isDog
+                    ? 'bg-[#0E8388] hover:bg-[#10B981] text-white shadow-lg shadow-[#0E8388]/30 cursor-pointer'
+                    : 'bg-[#C86D39] hover:bg-[#D97706] text-white shadow-lg shadow-[#C86D39]/30 cursor-pointer'
                 }`}
               >
-                <ShoppingBag className="w-4 h-4" />
-                <span>Agregar al Carrito</span>
+                {isOutOfStock ? (
+                  <>
+                    <X className="w-4 h-4 text-rose-500" />
+                    <span>Agotado en Bodega</span>
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>Agregar al Carrito</span>
+                  </>
+                )}
               </button>
             </div>
 

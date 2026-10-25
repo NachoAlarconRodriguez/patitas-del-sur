@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Cake, Clock } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, ChevronDown, Check, Cake, Clock } from 'lucide-react';
 
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -80,6 +80,12 @@ export default function CustomDatePicker({
 
   const [viewYear, setViewYear] = useState(currentDateObj.getFullYear());
   const [viewMonth, setViewMonth] = useState(currentDateObj.getMonth());
+  const [isYearOpen, setIsYearOpen] = useState(false);
+  const [isMonthOpen, setIsMonthOpen] = useState(false);
+  const yearDropdownRef = useRef(null);
+  const monthDropdownRef = useRef(null);
+  const selectedYearRef = useRef(null);
+  const selectedMonthRef = useRef(null);
 
   // Keep view year & month synced when value changes
   useEffect(() => {
@@ -90,11 +96,44 @@ export default function CustomDatePicker({
     }
   }, [value]);
 
-  // Close calendar on click outside
+  // Scroll into view of the selected year
+  useEffect(() => {
+    if (isYearOpen && selectedYearRef.current) {
+      selectedYearRef.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [isYearOpen]);
+
+  // Scroll into view of the selected month
+  useEffect(() => {
+    if (isMonthOpen && selectedMonthRef.current) {
+      selectedMonthRef.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [isMonthOpen]);
+
+  // Reset dropdowns when calendar closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsYearOpen(false);
+      setIsMonthOpen(false);
+    }
+  }, [isOpen]);
+
+  // Close calendar or dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setIsOpen(false);
+        setIsYearOpen(false);
+        setIsMonthOpen(false);
+      } else {
+        if (yearDropdownRef.current && !yearDropdownRef.current.contains(event.target)) {
+          const isTrigger = event.target.closest && event.target.closest('[data-year-trigger]');
+          if (!isTrigger) setIsYearOpen(false);
+        }
+        if (monthDropdownRef.current && !monthDropdownRef.current.contains(event.target)) {
+          const isTrigger = event.target.closest && event.target.closest('[data-month-trigger]');
+          if (!isTrigger) setIsMonthOpen(false);
+        }
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -104,14 +143,18 @@ export default function CustomDatePicker({
   // Handle escape key
   useEffect(() => {
     function handleKeyDown(event) {
-      if (!isOpen) return;
       if (event.key === 'Escape') {
-        setIsOpen(false);
+        if (isYearOpen || isMonthOpen) {
+          setIsYearOpen(false);
+          setIsMonthOpen(false);
+        } else if (isOpen) {
+          setIsOpen(false);
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, isYearOpen, isMonthOpen]);
 
   const daysInMonth = (month, year) => new Date(year, month + 1, 0).getDate();
   const firstDayOfWeek = (month, year) => new Date(year, month, 1).getDay();
@@ -188,17 +231,17 @@ export default function CustomDatePicker({
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
-        className={`w-full px-3.5 py-3 rounded-2xl bg-white border text-left flex items-center justify-between gap-2 transition-all duration-200 cursor-pointer shadow-xs ${
+        className={`w-full pl-3.5 pr-2.5 py-3 rounded-2xl bg-white border text-left flex items-center justify-between gap-2 transition-all duration-200 cursor-pointer shadow-xs ${
           isOpen
             ? 'border-[#0E8388] ring-4 ring-[#0E8388]/10 bg-white shadow-md'
             : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
         }`}
       >
-        <span className="text-xs font-bold text-slate-800 truncate block">
+        <span className="text-xs font-black text-slate-800 truncate block">
           {getDisplayText()}
         </span>
 
-        <div className={`w-5 h-5 rounded-md flex items-center justify-center transition-all ${isOpen ? 'bg-[#0E8388]/10 text-[#0E8388]' : 'text-slate-400'}`}>
+        <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-all ${isOpen ? 'bg-[#0E8388]/10 text-[#0E8388]' : 'text-slate-400'}`}>
           <Calendar className="w-3.5 h-3.5" />
         </div>
       </button>
@@ -218,17 +261,110 @@ export default function CustomDatePicker({
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-1.5 font-black text-slate-900 text-xs sm:text-sm">
-              <span>{MONTH_NAMES[viewMonth]}</span>
-              <select
-                value={viewYear}
-                onChange={(e) => setViewYear(parseInt(e.target.value, 10))}
-                className="bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-lg text-xs font-black text-[#0E8388] border-none focus:outline-hidden cursor-pointer"
-              >
-                {years.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+            <div className="relative flex items-center gap-1.5">
+              {/* Selector Personalizado de Mes */}
+              <div className="relative">
+                <button
+                  type="button"
+                  data-month-trigger="true"
+                  onClick={() => {
+                    setIsMonthOpen(!isMonthOpen);
+                    setIsYearOpen(false);
+                  }}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 transition-all cursor-pointer ${
+                    isMonthOpen
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                  }`}
+                  title="Cambiar mes"
+                >
+                  <span>{MONTH_NAMES[viewMonth]}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isMonthOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+                </button>
+
+                {/* Dropdown flotante de Meses */}
+                {isMonthOpen && (
+                  <div
+                    ref={monthDropdownRef}
+                    className="absolute top-full left-0 mt-1.5 z-60 w-36 max-h-52 overflow-y-auto rounded-2xl bg-white border border-slate-200 shadow-2xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150"
+                  >
+                    {MONTH_NAMES.map((m, idx) => {
+                      const isSelected = idx === viewMonth;
+                      return (
+                        <button
+                          key={m}
+                          ref={isSelected ? selectedMonthRef : null}
+                          type="button"
+                          onClick={() => {
+                            setViewMonth(idx);
+                            setIsMonthOpen(false);
+                          }}
+                          className={`w-full py-1.5 px-2.5 rounded-xl text-xs font-bold text-left transition-all flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white font-black shadow-xs'
+                              : 'hover:bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          <span>{m}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Selector Personalizado de Año (Diseño Custom, sin select nativo) */}
+              <div className="relative">
+                <button
+                  type="button"
+                  data-year-trigger="true"
+                  onClick={() => {
+                    setIsYearOpen(!isYearOpen);
+                    setIsMonthOpen(false);
+                  }}
+                  className={`px-2.5 py-1 rounded-xl text-xs font-black flex items-center gap-1 transition-all cursor-pointer ${
+                    isYearOpen
+                      ? 'bg-[#0E8388] text-white shadow-xs'
+                      : 'bg-[#0E8388]/10 hover:bg-[#0E8388]/20 text-[#0E8388]'
+                  }`}
+                  title="Cambiar año"
+                >
+                  <span className="font-mono">{viewYear}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${isYearOpen ? 'rotate-180 text-white' : 'text-[#0E8388]'}`} />
+                </button>
+
+                {/* Dropdown flotante de Años */}
+                {isYearOpen && (
+                  <div
+                    ref={yearDropdownRef}
+                    className="absolute top-full right-0 mt-1.5 z-60 w-32 max-h-56 overflow-y-auto rounded-2xl bg-white border border-slate-200 shadow-2xl p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150"
+                  >
+                    {years.map((y) => {
+                      const isSelected = y === viewYear;
+                      return (
+                        <button
+                          key={y}
+                          ref={isSelected ? selectedYearRef : null}
+                          type="button"
+                          onClick={() => {
+                            setViewYear(y);
+                            setIsYearOpen(false);
+                          }}
+                          className={`w-full py-1.5 px-2.5 rounded-xl text-xs font-bold text-center transition-all flex items-center justify-between cursor-pointer ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white font-black shadow-xs'
+                              : 'hover:bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          <span className="font-mono">{y}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <button

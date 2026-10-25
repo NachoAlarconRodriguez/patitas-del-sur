@@ -3,6 +3,7 @@ import { Search, X, Sparkles, ArrowRight } from 'lucide-react';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
+import { groupProductsForStore } from '../utils/productVariants';
 
 export default function FloatingSearch({ onSelectProduct }) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -45,7 +46,7 @@ export default function FloatingSearch({ onSelectProduct }) {
           (p.ingredients && Array.isArray(p.ingredients) && p.ingredients.some((ing) => ing.toLowerCase().includes(q)))
         );
       });
-      setResults(filtered);
+      setResults(groupProductsForStore(filtered));
     } else {
       setResults([]);
     }

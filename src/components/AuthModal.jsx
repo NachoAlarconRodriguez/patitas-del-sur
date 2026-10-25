@@ -38,7 +38,7 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
         fullName: authUser.user_metadata?.full_name || fullName || authUser.email.split('@')[0],
         email: authUser.email,
         role: authUser.user_metadata?.role || 'cliente',
-        city: 'Puerto Varas',
+        city: '',
       });
       profile = newCust?.data || {
         id: authUser.id,
@@ -54,9 +54,9 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
       name: profile.full_name || authUser.user_metadata?.full_name || 'Tutor Patitas',
       email: profile.email || authUser.email,
       role: profile.role || 'cliente',
-      petName: authUser.user_metadata?.pet_name || petName || 'Mi Mascota 🐾',
-      petType: authUser.user_metadata?.pet_type || petType || 'perro',
-      city: profile.city || 'Puerto Varas',
+      petName: authUser.user_metadata?.pet_name || petName || null,
+      petType: authUser.user_metadata?.pet_type || petType || null,
+      city: profile.city || '',
       address: profile.address || '',
       phone: profile.phone || '',
       points: profile.points || 0,
@@ -108,8 +108,8 @@ export default function AuthModal({ isOpen, onClose, onLoginSuccess }) {
             data: {
               full_name: fullName.trim() || cleanEmail.split('@')[0],
               role: 'cliente',
-              pet_name: petName.trim() || 'Mi Mascota 🐾',
-              pet_type: petType,
+              pet_name: petName.trim() || null,
+              pet_type: petName.trim() ? petType : null,
             },
           },
         });

@@ -16,10 +16,30 @@ export default function LoginView({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState(null);
+  const [isResending, setIsResending] = useState(false);
 
   const showNotification = (msg) => {
     setNotice(msg);
-    setTimeout(() => setNotice(null), 5000);
+    setTimeout(() => setNotice(null), 6000);
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!unconfirmedEmail) return;
+    setIsResending(true);
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: unconfirmedEmail,
+      });
+      if (error) throw error;
+      showNotification(`Hemos reenviado el enlace a ${unconfirmedEmail}. Por favor revisa tu bandeja de entrada y la carpeta de Spam.`);
+    } catch (err) {
+      console.error('Error resending confirmation:', err);
+      showNotification('No pudimos reenviar el correo en este momento. Revisa en unos minutos.');
+    } finally {
+      setIsResending(false);
+    }
   };
 
   const buildUserSession = async (authUser) => {
@@ -45,7 +65,7 @@ export default function LoginView({ onLoginSuccess }) {
         fullName: authUser.user_metadata?.full_name || fullName || authUser.email.split('@')[0],
         email: authUser.email,
         role: authUser.user_metadata?.role || 'cliente',
-        city: 'Puerto Varas',
+        city: '',
       });
       profile = newCust?.data || {
         id: authUser.id,
@@ -61,9 +81,9 @@ export default function LoginView({ onLoginSuccess }) {
       name: profile.full_name || authUser.user_metadata?.full_name || 'Tutor Patitas',
       email: profile.email || authUser.email,
       role: profile.role || 'cliente',
-      petName: authUser.user_metadata?.pet_name || 'Mi Mascota 🐾',
-      petType: authUser.user_metadata?.pet_type || 'perro',
-      city: profile.city || 'Puerto Varas',
+      petName: authUser.user_metadata?.pet_name || null,
+      petType: authUser.user_metadata?.pet_type || null,
+      city: profile.city || '',
       address: profile.address || '',
       phone: profile.phone || '',
       points: profile.points || 0,
@@ -89,14 +109,18 @@ export default function LoginView({ onLoginSuccess }) {
 
       if (error) {
         if (error.message.includes('Invalid login credentials')) {
+          setUnconfirmedEmail(null);
           throw new Error('Credenciales incorrectas. Verifica tu correo y contraseña.');
         } else if (error.message.includes('Email not confirmed')) {
-          throw new Error('Por favor confirma tu correo electrónico antes de ingresar.');
+          setUnconfirmedEmail(cleanEmail);
+          throw new Error('Tu cuenta está registrada en el sistema, pero requiere confirmar el correo electrónico antes de ingresar.');
         } else {
+          setUnconfirmedEmail(null);
           throw error;
         }
       }
 
+      setUnconfirmedEmail(null);
       const userSession = await buildUserSession(data.user);
       onLoginSuccess(userSession);
 
@@ -136,8 +160,6 @@ export default function LoginView({ onLoginSuccess }) {
           data: {
             full_name: cleanName,
             role: 'cliente',
-            pet_name: 'Mi Mascota 🐾',
-            pet_type: 'perro',
           },
         },
       });
@@ -151,6 +173,12 @@ export default function LoginView({ onLoginSuccess }) {
       }
 
       if (data?.user) {
+        if (!data.session) {
+          setUnconfirmedEmail(cleanEmail);
+          showNotification('¡Cuenta registrada! Te hemos enviado un enlace de confirmación por correo (revisa tu bandeja de entrada o Spam).');
+          setViewMode('login');
+          return;
+        }
         const userSession = await buildUserSession(data.user);
         showNotification('¡Cuenta creada exitosamente! Bienvenido a Patitas del Sur.');
         onLoginSuccess(userSession);
@@ -216,9 +244,26 @@ export default function LoginView({ onLoginSuccess }) {
 
         {/* Mensaje de Error */}
         {errorMsg && (
-          <div className="w-full p-3.5 rounded-2xl bg-rose-500/20 border border-rose-400/30 text-rose-100 text-xs font-semibold flex items-center gap-2.5 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-300" />
-            <span className="flex-1">{errorMsg}</span>
+          <div className="w-full p-4 rounded-2xl bg-rose-500/20 border border-rose-400/30 text-rose-100 text-xs font-semibold space-y-2.5 animate-in fade-in">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-300" />
+              <span className="flex-1 leading-relaxed">{errorMsg}</span>
+            </div>
+            {unconfirmedEmail && (
+              <div className="pt-2.5 border-t border-rose-400/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <span className="text-[11px] text-rose-200">
+                  ¿No recibiste el correo? Revisa en tu carpeta de <strong>Spam</strong>.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResendConfirmation}
+                  disabled={isResending}
+                  className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0 self-start sm:self-auto"
+                >
+                  {isResending ? 'Reenviando...' : 'Reenviar confirmación'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

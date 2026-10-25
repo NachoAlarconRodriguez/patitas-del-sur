@@ -1,15 +1,22 @@
 import React from 'react';
-import { Gift, X, Sparkles, Check, ChevronRight, AlertCircle } from 'lucide-react';
+import { Gift, X, Sparkles, Check, AlertCircle } from 'lucide-react';
 
 export default function RedeemPointsModal({
   isOpen,
   onClose,
-  userPoints,
+  userPoints = 0,
   rewards = [],
   onRedeem,
   activeCoupons = [],
 }) {
   if (!isOpen) return null;
+
+  // Calcular valor canjeable actual según el tramo máximo alcanzable
+  let currentRedeemableAmount = 0;
+  if (userPoints >= 500) currentRedeemableAmount = 25000;
+  else if (userPoints >= 350) currentRedeemableAmount = 14000;
+  else if (userPoints >= 200) currentRedeemableAmount = 7000;
+  else if (userPoints >= 100) currentRedeemableAmount = 3000;
 
   return (
     <div
@@ -31,7 +38,7 @@ export default function RedeemPointsModal({
                 Club Patitas del Sur
               </span>
               <h3 className="text-sm sm:text-base font-black text-slate-800 leading-tight">
-                Canjear Puntos
+                Canjear Puntos por Descuentos
               </h3>
             </div>
           </div>
@@ -46,7 +53,7 @@ export default function RedeemPointsModal({
           </button>
         </div>
 
-        {/* SALDO ACTUAL (CÁPSULA MINIMALISTA) */}
+        {/* SALDO ACTUAL */}
         <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50/90 via-teal-50/70 to-white border border-emerald-200/80 flex items-center justify-between gap-2 shadow-2xs shrink-0">
           <div>
             <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
@@ -57,14 +64,16 @@ export default function RedeemPointsModal({
                 {userPoints.toLocaleString('es-CL')} PTS
               </span>
               <span className="text-[11px] text-emerald-700 font-bold">
-                (${ (userPoints * 10).toLocaleString('es-CL') } CLP)
+                {currentRedeemableAmount > 0
+                  ? `(Canjeable: $${currentRedeemableAmount.toLocaleString('es-CL')} CLP)`
+                  : '(Acumula para tu primer cupón)'}
               </span>
             </div>
           </div>
 
           <div className="px-2.5 py-1 rounded-xl bg-white border border-emerald-200 shadow-2xs text-right shrink-0">
-            <span className="text-[10px] font-black text-amber-600 block">Socio VIP Oro 🥇</span>
-            <span className="text-[9.5px] font-bold text-slate-400">10 Pts = $100 CLP</span>
+            <span className="text-[10px] font-black text-amber-600 block">Socio Club 🐾</span>
+            <span className="text-[9.5px] font-bold text-slate-500">1 Pt x cada $1.000</span>
           </div>
         </div>
 
@@ -72,7 +81,7 @@ export default function RedeemPointsModal({
         <div className="space-y-2 overflow-y-auto flex-1 pr-0.5 -mr-0.5">
           <div className="flex items-center justify-between px-1 pt-0.5">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Recompensas Disponibles
+              Descuentos en Dinero Disponibles
             </span>
             <span className="text-[10px] font-bold text-slate-400">
               {rewards.length} opciones
@@ -88,13 +97,13 @@ export default function RedeemPointsModal({
                   key={reward.id}
                   className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-2.5 ${
                     canAfford
-                      ? 'bg-white border-slate-200/90 hover:border-[#0E8388] shadow-2xs hover:shadow-xs'
-                      : 'bg-slate-50/60 border-slate-100 opacity-60'
+                      ? 'bg-white border-emerald-300 hover:border-[#0E8388] shadow-2xs hover:shadow-xs'
+                      : 'bg-slate-50/60 border-slate-100 opacity-65'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-lg shrink-0">
-                      {reward.icon}
+                      {reward.icon || '💵'}
                     </div>
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -102,11 +111,11 @@ export default function RedeemPointsModal({
                           {reward.title.replace('Cupón ', '')}
                         </h4>
                         <span className="text-[9px] font-black text-[#0E8388] bg-teal-50 px-1.5 py-0.2 rounded border border-teal-100 shrink-0">
-                          {reward.validity.replace('Válido para ', '').replace('Válido en tus ', '')}
+                          {reward.validity?.replace('Válido para ', '') || '1 compra'}
                         </span>
                       </div>
-                      <p className="text-[10.5px] text-slate-400 font-medium truncate">
-                        {reward.description}
+                      <p className="text-[10.5px] text-slate-500 font-medium truncate">
+                        {reward.description || `Descuento directo en tu pedido.`}
                       </p>
                     </div>
                   </div>
@@ -149,22 +158,18 @@ export default function RedeemPointsModal({
               {activeCoupons.map((coupon) => (
                 <div
                   key={coupon.id}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200/90 text-emerald-800 text-[10px] font-bold shrink-0 shadow-2xs"
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 shrink-0 shadow-2xs text-[11px]"
                 >
-                  <span className="text-xs">🎟️</span>
-                  <span className="truncate max-w-[150px]">{coupon.title}</span>
-                  <span className="text-[9px] text-emerald-600 font-black">({coupon.code})</span>
+                  <span className="font-mono font-black text-emerald-800">{coupon.code}</span>
+                  <span className="text-slate-600 font-bold truncate max-w-[120px]">{coupon.title}</span>
+                  <span className="text-[9px] font-black bg-emerald-600 text-white px-1.5 py-0.2 rounded-full">
+                    Listo
+                  </span>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        {/* PIE MINIMALISTA DE REGLA */}
-        <div className="pt-1 text-[10px] text-slate-400 text-center font-medium shrink-0">
-          💡 Los puntos se descuentan al canjear y el beneficio queda activo para tus compras.
-        </div>
-
       </div>
     </div>
   );

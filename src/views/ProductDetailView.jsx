@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase } from '../services/productsService';
+import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
+import AppleNutritionSpecs from '../components/AppleNutritionSpecs';
 import SEOHead from '../components/SEOHead';
 import { getProductSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
 import {
@@ -260,6 +262,33 @@ function VetStatusMetric({ isVeterinary = false }) {
 function getProteinBadge(mainProteinStr, productNameStr) {
   const text = ((mainProteinStr || '') + ' ' + (productNameStr || '')).toLowerCase();
 
+  if (text.includes('vacuno') || text.includes('res') || text.includes('carne') || text.includes('beef') || text.includes('buey')) {
+    return {
+      icon: Beef,
+      label: 'Vacuno',
+      iconColor: 'text-red-600',
+      bgColor: 'bg-red-50 border-red-200/90 text-red-900',
+    };
+  }
+
+  if (text.includes('conejo') || text.includes('rabbit')) {
+    return {
+      icon: Drumstick,
+      label: 'Conejo',
+      iconColor: 'text-amber-600',
+      bgColor: 'bg-amber-50 border-amber-200/90 text-amber-900',
+    };
+  }
+
+  if (text.includes('pato') || text.includes('duck')) {
+    return {
+      icon: Drumstick,
+      label: 'Pato',
+      iconColor: 'text-emerald-700',
+      bgColor: 'bg-emerald-50 border-emerald-200 text-emerald-900',
+    };
+  }
+
   if (text.includes('multi') || text.includes('combo') || (text.includes('pollo') && text.includes('res'))) {
     return {
       icon: Sparkles,
@@ -305,15 +334,6 @@ function getProteinBadge(mainProteinStr, productNameStr) {
     };
   }
 
-  if (text.includes('res') || text.includes('carne') || text.includes('beef')) {
-    return {
-      icon: Beef,
-      label: 'Res',
-      iconColor: 'text-red-600',
-      bgColor: 'bg-red-50 border-red-200/90 text-red-900',
-    };
-  }
-
   return {
     icon: Beef,
     label: 'Proteína',
@@ -344,13 +364,25 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     };
   }, []);
 
-  // Find product by URL param or default to first product
-  const product = allProducts.find((p) => p.id === id) || allProducts[0] || FALLBACK_PRODUCTS[0];
+  // Find product by URL param or default to first product, resolving grouped variants
+  const product = useMemo(() => {
+    if (!allProducts || allProducts.length === 0) return FALLBACK_PRODUCTS[0];
+    const grouped = groupProductsForStore(allProducts);
+    let found = grouped.find((p) => p.id === id);
+    if (found) return found;
+    found = grouped.find((p) => p.variants && p.variants.some((v) => v.id === id || v.sku === id));
+    if (found) return found;
+    return allProducts.find((p) => p.id === id) || grouped[0] || FALLBACK_PRODUCTS[0];
+  }, [allProducts, id]);
+
   const isDog = product?.petType === 'perros';
 
-  const [selectedWeight, setSelectedWeight] = useState(
-    product?.weights ? product.weights[0] : 'Estándar'
-  );
+  const [selectedWeight, setSelectedWeight] = useState(() => {
+    if (!product) return 'Estándar';
+    const matchV = product.variants?.find((v) => v.id === id || v.sku === id);
+    if (matchV) return matchV.format || matchV.weight;
+    return product.weights ? product.weights[0] : 'Estándar';
+  });
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState('ingredientes');
   const [addedSuccess, setAddedSuccess] = useState(false);
@@ -390,7 +422,12 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (product?.weights && product.weights.length > 0) {
-      setSelectedWeight(product.weights[0]);
+      const matchV = product.variants?.find((v) => v.id === id || v.sku === id);
+      if (matchV) {
+        setSelectedWeight(matchV.format || matchV.weight);
+      } else {
+        setSelectedWeight(product.weights[0]);
+      }
     }
   }, [id, product]);
 
@@ -463,50 +500,57 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     (row) => currentWeightNum >= row.min && currentWeightNum <= row.max
   ) || feedingGuide[0];
 
-  // Calculate dynamic price based on weight selection (multiplier preview)
-  const getCalculatedPrice = () => {
-    let price = product.price;
-    if (selectedWeight.includes('5 kg') || selectedWeight.includes('3.5 kg')) {
-      price = Math.round(product.price * 1.35);
-    } else if (selectedWeight.includes('12 kg') || selectedWeight.includes('15 kg') || selectedWeight.includes('7 kg')) {
-      price = Math.round(product.price * 2.5);
-    }
-    return price;
-  };
+  // Variantes y cálculo de precio real por formato seleccionado
+  const variants = product?.variants || [];
+  const activeVariant = variants.length > 0
+    ? (variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) || variants[0])
+    : null;
 
-  const currentPrice = getCalculatedPrice();
+  const currentPrice = activeVariant ? activeVariant.price : (product?.price || 0);
+  const currentStock = activeVariant
+    ? (typeof activeVariant.stock === 'number' ? activeVariant.stock : 10)
+    : (typeof product?.stock === 'number' ? product.stock : 10);
+  const isOutOfStock = currentStock <= 0;
 
   const formatCLP = (price) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
       currency: 'CLP',
       maximumFractionDigits: 0,
-    }).format(price);
+    }).format(price || 0);
   };
 
   const handleAddToCart = () => {
+    if (isOutOfStock) return;
+    const variantName = activeVariant && activeVariant.format && activeVariant.format !== product.name
+      ? `${product.name} (${activeVariant.format})`
+      : product.name;
+    const activeVariantStock = activeVariant && typeof activeVariant.stock === 'number'
+      ? activeVariant.stock
+      : (typeof product.stock === 'number' ? product.stock : 10);
+
     const itemToAdd = {
       ...product,
+      id: activeVariant?.id || product.id,
+      name: variantName,
+      sku: activeVariant?.sku || product.sku,
       price: currentPrice,
+      unitCostNeto: activeVariant?.unitCostNeto || product.unitCostNeto,
       selectedWeight: selectedWeight,
+      weight: selectedWeight,
+      stock: activeVariantStock,
     };
-    for (let i = 0; i < quantity; i++) {
-      onAddToCart(itemToAdd);
-    }
+    onAddToCart(itemToAdd, selectedWeight, quantity);
     setAddedSuccess(true);
     setTimeout(() => setAddedSuccess(false), 2500);
   };
 
-  // Related products
-  const relatedProducts = allProducts.filter(
-    (p) =>
-      p.petType === product.petType &&
-      p.id !== product.id &&
-      !p.isPaused &&
-      !p.is_paused &&
-      p.isActive !== false &&
-      p.is_active !== false
-  ).slice(0, 4);
+  // Related products grouped
+  const relatedProducts = allProducts && allProducts.length > 0 && product
+    ? groupProductsForStore(allProducts)
+        .filter((p) => p.petType === product.petType && p.id !== product.id && !p.isPaused && !p.isOutOfStock && (typeof p.stock !== 'number' || p.stock > 0))
+        .slice(0, 4)
+    : [];
 
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
@@ -664,6 +708,12 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                       <span>{product.targetStageLabel}</span>
                     </span>
                   )}
+                  {Boolean(product.isVeterinary) && (
+                    <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1.5 shadow-xs">
+                      <Stethoscope className="w-3.5 h-3.5 text-purple-600" />
+                      <span>Receta Veterinaria</span>
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 text-amber-500 font-black text-sm">
                   <Star className="w-4 h-4 fill-amber-400" />
@@ -673,7 +723,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               </div>
 
               {/* Product Name */}
-              <h1 className="font-molen font-bold text-3xl sm:text-4xl md:text-5xl text-slate-900 tracking-tight leading-[1.08]">
+              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-slate-900 tracking-tight leading-tight">
                 {product.name}
               </h1>
 
@@ -685,27 +735,60 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
             {/* Weight / Format Selector */}
             {product.weights && product.weights.length > 0 && (
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <label className="flex items-center justify-between text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                  <span>Seleccionar Formato (Peso):</span>
-                  <span className="text-[#0E8388]">{selectedWeight}</span>
+              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                <label className="flex items-center justify-between text-xs font-bold tracking-tight text-slate-700">
+                  <span className="text-slate-500 font-medium">
+                    {product.hasFlavorVariants ? 'Sabor:' : 'Formato:'}{' '}
+                    <strong className="text-slate-900 font-extrabold">{selectedWeight}</strong>
+                  </span>
+                  <span className="text-[11px] font-bold text-[#0E8388]">
+                    {product.weights.length} variedades
+                  </span>
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  {product.weights.map((w) => (
-                    <button
-                      key={w}
-                      onClick={() => setSelectedWeight(w)}
-                      className={`px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all border ${
-                        selectedWeight === w
-                          ? isDog
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md scale-105'
-                            : 'bg-[#C86D39] text-white border-[#C86D39] shadow-md scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {w}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap gap-2.5">
+                  {product.weights.map((w) => {
+                    const matchV = variants.find((v) => v.format === w || v.weight === w);
+                    const isVOutOfStock = matchV && matchV.stock <= 0;
+                    const isSelected = selectedWeight === w;
+                    const swatch = product.hasFlavorVariants ? getFlavorSwatchStyle(w) : null;
+
+                    return (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setSelectedWeight(w)}
+                        disabled={isVOutOfStock}
+                        className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
+                          isSelected
+                            ? isDog
+                              ? 'bg-emerald-50 text-slate-900 border-[#0E8388] shadow-xs ring-2 ring-[#0E8388]/30 scale-102'
+                              : 'bg-amber-50 text-slate-900 border-[#C86D39] shadow-xs ring-2 ring-[#C86D39]/30 scale-102'
+                            : isVOutOfStock
+                            ? 'bg-slate-100 text-slate-300 border-slate-200 line-through cursor-not-allowed opacity-60'
+                            : 'bg-white text-slate-700 border-slate-200/80 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {swatch && (
+                          <span
+                            className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-white"
+                            style={{
+                              border: `1.5px solid ${swatch.primaryColor}`,
+                              padding: isSelected ? '2px' : '0px',
+                            }}
+                          >
+                            {isSelected && (
+                              <span
+                                className="w-full h-full rounded-full block animate-in zoom-in-50 duration-150"
+                                style={{ backgroundColor: swatch.primaryColor }}
+                              />
+                            )}
+                          </span>
+                        )}
+                        <span>{w}</span>
+                        {isVOutOfStock && <span className="text-[10px] ml-1 opacity-75">(Agotado)</span>}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -713,20 +796,32 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
             {/* Pricing Section */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
               <div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">Precio Total:</div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  {activeVariant ? `Precio Formato ${activeVariant.format}:` : 'Precio Total:'}
+                </div>
                 <div className="text-3xl md:text-4xl font-black text-slate-900">
                   {formatCLP(currentPrice)}
                 </div>
-                {product.originalPrice && (
+                {currentOriginalPrice && (
                   <div className="text-xs text-slate-400 line-through font-semibold">
-                    {formatCLP(Math.round(product.originalPrice * (currentPrice / product.price)))}
+                    {formatCLP(currentOriginalPrice)}
                   </div>
                 )}
               </div>
 
-              <span className="px-3.5 py-1.5 rounded-xl bg-[#10B981]/15 text-[#10B981] font-black text-xs">
-                Ahorro Especial Incluido
-              </span>
+              {isOutOfStock ? (
+                <span className="px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-black text-xs">
+                  Agotado en {selectedWeight}
+                </span>
+              ) : currentStock === 1 ? (
+                <span className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-black text-xs">
+                  ⚡ ¡Última unidad en bodega!
+                </span>
+              ) : (
+                <span className="px-3.5 py-1.5 rounded-xl bg-[#10B981]/15 text-[#10B981] font-black text-xs">
+                  ✓ {currentStock} unidades disponibles
+                </span>
+              )}
             </div>
 
             {/* Quantity Spinner & Add to Cart Action */}
@@ -735,15 +830,17 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               {/* Quantity Spinner */}
               <div className="flex items-center border border-slate-200 rounded-2xl bg-slate-50 p-1">
                 <button
+                  disabled={isOutOfStock}
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs"
+                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs disabled:opacity-50"
                 >
                   -
                 </button>
                 <span className="w-12 text-center text-sm font-black text-slate-900">{quantity}</span>
                 <button
+                  disabled={isOutOfStock}
                   onClick={() => setQuantity(quantity + 1)}
-                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs"
+                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs disabled:opacity-50"
                 >
                   +
                 </button>
@@ -751,16 +848,21 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
               {/* CTA Button */}
               <button
+                disabled={isOutOfStock}
                 onClick={handleAddToCart}
-                className={`flex-1 py-4 px-8 rounded-2xl font-black text-sm text-white transition-all shadow-xl flex items-center justify-center gap-2 active:scale-95 ${
-                  addedSuccess
+                className={`flex-1 py-4 px-8 rounded-2xl font-black text-sm text-white transition-all shadow-xl flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
+                  isOutOfStock
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                    : addedSuccess
                     ? 'bg-[#10B981] shadow-[#10B981]/30'
                     : isDog
                     ? 'bg-[#0E8388] hover:bg-[#10B981] shadow-[#0E8388]/30'
                     : 'bg-[#C86D39] hover:bg-[#D97706] shadow-[#C86D39]/30'
                 }`}
               >
-                {addedSuccess ? (
+                {isOutOfStock ? (
+                  <span>Agotado en {selectedWeight}</span>
+                ) : addedSuccess ? (
                   <>
                     <CheckCircle2 className="w-5 h-5" />
                     <span>¡AGREGADO AL CARRITO!</span>
@@ -768,45 +870,19 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 ) : (
                   <>
                     <ShoppingBag className="w-5 h-5" />
-                    <span>AGREGAR AL CARRITO</span>
+                    <span>AGREGAR AL CARRITO ({formatCLP(currentPrice * quantity)})</span>
                   </>
                 )}
               </button>
 
             </div>
 
-            {/* Metrics Row (Mismo formato exacto que la Tarjeta de Catálogo en Imagen 2, incorporando el Indicador Veterinario) */}
-            <div className="p-4 rounded-3xl bg-[#E6F4F1]/40 border border-[#0E8388]/20 flex items-center justify-around gap-2 flex-wrap">
-              {/* Elemento 1: % Proteína (Círculo Ring Chart) */}
-              <MiniCircleMetric
-                value={`${product.proteinValue || 30}%`}
-                label="Proteína"
-                color="#0E8388"
-              />
-
-              {/* Elemento 2: Ícono Proteína Principal (Tarjeta rounded-2xl) */}
-              <ProteinIconBadge
-                icon={getProteinBadge(product.mainProtein, product.name).icon}
-                label={getProteinBadge(product.mainProtein, product.name).label}
-                iconColor={getProteinBadge(product.mainProtein, product.name).iconColor}
-                bgColor={getProteinBadge(product.mainProtein, product.name).bgColor}
-              />
-
-              {/* Elemento 3: Ícono Trigo / Estado Grano (Tarjeta rounded-2xl Libre/Bajo/Con Grano) */}
-              <GrainIconBadge
-                isGrainFree={
-                  product.badge?.toLowerCase().includes('grain') ||
-                  product.tagline?.toLowerCase().includes('grain') ||
-                  product.brand?.toLowerCase().includes('bravery') ||
-                  product.brand?.toLowerCase().includes('patagonia')
-                }
-                grainLevelProp={product.grainLevel}
-                tagline={product.tagline || ''}
-              />
-
-              {/* Elemento 4: Indicador Veterinario (EN GRIS SI NO ES VETERINARIO, CON COLOR SI ES VETERINARIO) */}
-              <VetStatusMetric isVeterinary={product.isVeterinary} />
-            </div>
+            {/* Apple Style Nutrition Rings & Spec Visualizer */}
+            <AppleNutritionSpecs
+              product={product}
+              activeFlavor={selectedWeight || ''}
+              className="p-3.5 my-3 shadow-xs"
+            />
 
           </div>
 

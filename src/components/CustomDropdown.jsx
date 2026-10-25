@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, Check } from 'lucide-react';
 
 export default function CustomDropdown({
+  id,
   label,
   icon: Icon,
   value,
@@ -143,7 +144,14 @@ export default function CustomDropdown({
                 : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-semibold'
             }`}
           >
-            <span className="truncate block">{optLabel}</span>
+            <div className="min-w-0 flex-1">
+              <span className="truncate block font-bold text-slate-800">{optLabel}</span>
+              {typeof option === 'object' && option.desc && (
+                <span className="text-[10px] text-slate-400 font-medium block truncate mt-0.5">
+                  {option.desc}
+                </span>
+              )}
+            </div>
             {isSelected && (
               <Check className="w-3.5 h-3.5 text-[#0E8388] stroke-[2.5] shrink-0 ml-2" />
             )}
@@ -154,7 +162,7 @@ export default function CustomDropdown({
   );
 
   return (
-    <div className={`relative select-none ${className}`} ref={dropdownRef}>
+    <div id={id} className={`relative select-none ${className}`} ref={dropdownRef}>
       {/* Label and optional right action */}
       {(label || rightAction) && (
         <div className="flex items-center justify-between mb-1 px-0.5">
@@ -192,7 +200,7 @@ export default function CustomDropdown({
               }`
         }`}
       >
-        <span className="truncate block font-bold">
+        <span className={`truncate block ${!value ? 'text-slate-400 font-semibold text-xs' : 'text-slate-900 font-bold text-xs'}`}>
           {getLabel(selectedOption)}
         </span>
 

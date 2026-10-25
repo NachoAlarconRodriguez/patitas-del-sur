@@ -43,12 +43,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // CRITICAL: NEVER intercept or cache live database or auth requests (Supabase, API routes)
+  // Bypass dev server requests (Vite HMR, module scripts, localhost dev)
   if (
+    url.hostname === 'localhost' ||
+    url.hostname === '127.0.0.1' ||
     url.hostname.includes('supabase.co') ||
     url.pathname.includes('/rest/v1/') ||
     url.pathname.includes('/auth/v1/') ||
-    url.pathname.startsWith('/api/')
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.includes('node_modules')
   ) {
     return;
   }
@@ -71,14 +76,20 @@ self.addEventListener('fetch', (event) => {
           }
           return networkResponse;
         })
-        .catch(() => {
+        .catch(async () => {
           // Offline fallback
           if (cachedResponse) {
             return cachedResponse;
           }
           if (event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('/index.html');
+            const htmlCache = await caches.match('/index.html');
+            if (htmlCache) return htmlCache;
           }
+          return new Response('Network error occurred', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/plain' },
+          });
         });
 
       return cachedResponse || fetchPromise;

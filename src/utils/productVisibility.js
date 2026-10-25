@@ -21,7 +21,13 @@ export function getHiddenProductIdentifiers() {
  */
 export function isProductHidden(product, hiddenList) {
   if (!product) return false;
-  // Si el producto viene marcado como pausado o inactivo desde Supabase
+
+  // 1. Supabase es la fuente de verdad definitiva: Si el producto está explícitamente activo y no pausado en Supabase, nunca se oculta por residuos locales
+  if (product.isActive === true && product.is_active !== false && !product.isPaused && !product.is_paused) {
+    return false;
+  }
+
+  // 2. Si el producto viene explícitamente marcado como pausado o inactivo desde Supabase
   if (product.isPaused || product.is_paused || product.isActive === false || product.is_active === false) {
     return true;
   }
@@ -35,21 +41,14 @@ export function isProductHidden(product, hiddenList) {
     const term = String(item).toLowerCase().trim();
     if (!term) return false;
 
-    // 1. Coincidencia exacta por ID
+    // Coincidencia exacta por ID
     if (product.id && product.id.toLowerCase() === term) return true;
 
-    // 2. Coincidencia exacta por SKU
+    // Coincidencia exacta por SKU
     if (product.sku && product.sku.toLowerCase() === term) return true;
 
-    // 3. Coincidencia por Nombre
-    if (product.name) {
-      const pName = product.name.toLowerCase();
-      if (pName === term || pName.includes(term) || term.includes(pName)) return true;
-
-      // Coincidencia por palabras clave representativas (ej: 'bravery salmon')
-      const words = term.split(/[\s/•-]+/).filter((w) => w.length > 3);
-      if (words.length >= 2 && words.every((w) => pName.includes(w))) return true;
-    }
+    // Coincidencia exacta por Nombre completo (nunca subcadenas parciales para evitar falsos positivos con palabras comunes como 'vacuno')
+    if (product.name && product.name.toLowerCase().trim() === term) return true;
 
     return false;
   });

@@ -55,6 +55,13 @@ if (typeof window !== 'undefined' && !localStorage.getItem('patitas_system_zero_
   localStorage.setItem('patitas_system_zero_v1', 'true');
 }
 
+// Limpieza para garantizar que Supabase sea la única fuente de verdad sin bloqueos locales
+if (typeof window !== 'undefined' && !localStorage.getItem('patitas_clean_visibility_v2')) {
+  localStorage.removeItem('patitas_paused_products');
+  localStorage.removeItem('patitas_deleted_products');
+  localStorage.setItem('patitas_clean_visibility_v2', 'true');
+}
+
 export default function App() {
   const location = useLocation();
 
@@ -111,9 +118,9 @@ export default function App() {
               name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
               email: profile.email || session.user.email,
               role: profile.role || 'cliente',
-              petName: session.user.user_metadata?.pet_name || 'Mi Mascota 🐾',
-              petType: session.user.user_metadata?.pet_type || 'perro',
-              city: profile.city || 'Puerto Varas',
+              petName: session.user.user_metadata?.pet_name || null,
+              petType: session.user.user_metadata?.pet_type || null,
+              city: profile.city || '',
               address: profile.address || '',
               phone: profile.phone || '',
               points: profile.points || 0,
@@ -143,9 +150,9 @@ export default function App() {
             name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
             email: profile.email || session.user.email,
             role: profile.role || 'cliente',
-            petName: session.user.user_metadata?.pet_name || 'Mi Mascota 🐾',
-            petType: session.user.user_metadata?.pet_type || 'perro',
-            city: profile.city || 'Puerto Varas',
+            petName: session.user.user_metadata?.pet_name || null,
+            petType: session.user.user_metadata?.pet_type || null,
+            city: profile.city || '',
             address: profile.address || '',
             phone: profile.phone || '',
             points: profile.points || 0,
@@ -207,6 +214,17 @@ export default function App() {
       (product.weights && product.weights[0]) ||
       'Formato Estándar';
 
+    // Validación defensiva de stock: Priorizar stock específico de la variante sobre el total del grupo
+    const variants = product?.variants || [];
+    const activeVariant = variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) || (variants.length > 0 ? variants[0] : null);
+    const availableStock = activeVariant && typeof activeVariant.stock === 'number'
+      ? activeVariant.stock
+      : (typeof product.stock === 'number' ? product.stock : 10);
+
+    if (availableStock <= 0 || product.isOutOfStock || product.isPaused || activeVariant?.isPaused) {
+      return;
+    }
+
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
 
     setCartItems((prevItems) => {
@@ -216,9 +234,12 @@ export default function App() {
 
       if (existingIndex > -1) {
         const updated = [...prevItems];
+        const currentQty = updated[existingIndex].quantity;
+        const newQty = Math.min(availableStock, currentQty + qtyToAdd);
         updated[existingIndex] = {
           ...updated[existingIndex],
-          quantity: updated[existingIndex].quantity + qtyToAdd,
+          quantity: newQty,
+          stock: availableStock,
         };
         return updated;
       } else {
@@ -228,7 +249,8 @@ export default function App() {
             ...product,
             weight: selectedWeight,
             selectedWeight: selectedWeight,
-            quantity: qtyToAdd,
+            quantity: Math.min(availableStock, qtyToAdd),
+            stock: availableStock,
           },
         ];
       }
@@ -242,9 +264,14 @@ export default function App() {
       if (newQuantity <= 0) {
         return prevItems.filter((_, idx) => idx !== index);
       }
-      return prevItems.map((item, idx) =>
-        idx === index ? { ...item, quantity: newQuantity } : item
-      );
+      return prevItems.map((item, idx) => {
+        if (idx !== index) return item;
+        const maxStock = typeof item.stock === 'number' ? Math.max(1, item.stock) : 99;
+        return {
+          ...item,
+          quantity: Math.min(maxStock, newQuantity),
+        };
+      });
     });
   };
 
@@ -379,6 +406,7 @@ export default function App() {
         onRemoveItem={handleRemoveItem}
         user={user}
         onClearCart={() => setCartItems([])}
+        onAddToCart={handleAddToCart}
       />
 
       {/* Quick View Product Modal */}

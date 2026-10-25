@@ -48,6 +48,7 @@ import {
   RefreshCw,
   Download,
   Check,
+  Loader2,
   X,
   ChevronRight,
   ChevronLeft,
@@ -83,10 +84,28 @@ import {
   Gauge,
   Zap,
   Calculator,
+  Image as ImageIcon,
+  Upload,
+  Wheat,
+  Beef,
+  Drumstick,
+  Fish,
+  Star,
+  Printer,
+  Save,
 } from 'lucide-react';
 import { PRODUCTS, BRANDS } from '../data/mockData';
 import CustomDropdown from '../components/CustomDropdown';
+import AdminDatePicker from '../components/AdminDatePicker';
 import AdminConveniosManager from './admin/AdminConveniosManager';
+import DispatchGoogleMap from '../components/DispatchGoogleMap';
+import {
+  getDispatchZonesFromSupabase,
+  saveDispatchZonesToSupabase,
+  getDeliverySchedulesFromSupabase,
+  saveDeliverySchedulesToSupabase,
+  DEFAULT_DELIVERY_SCHEDULES,
+} from '../services/dispatchService.js';
 import { WhatsAppIcon, GoogleMapsIcon } from '../components/OfficialIcons';
 import {
   fetchProductsFromSupabase,
@@ -100,6 +119,10 @@ import {
 } from '../services/ordersService.js';
 import {
   fetchAllCustomersForAdmin,
+  updateCustomerInSupabase,
+  deleteCustomerFromSupabase,
+  updateCustomerPoints,
+  getCustomerProfile,
 } from '../services/customersService.js';
 import {
   fetchConveniosFromSupabase,
@@ -113,14 +136,27 @@ import {
 import {
   fetchPurchaseInvoicesFromSupabase,
   createPurchaseInvoiceInSupabase,
+  updatePurchaseInvoiceInSupabase,
   updatePurchaseInvoiceStatus,
   fetchExpensesFromSupabase,
   createExpenseInSupabase,
   deleteExpenseFromSupabase,
   getMercadoPagoSettingsFromSupabase,
   updateMercadoPagoSettingsInSupabase,
+  fetchPartnerInvestmentsFromSupabase,
+  savePartnerInvestmentsToSupabase,
 } from '../services/financesService.js';
 import { supabase } from '../lib/supabase.js';
+import { areProductsSameGroup, cleanBaseProductName, extractProductFormat } from '../utils/productVariants.js';
+import {
+  getGooglePlacePredictions,
+  getPlaceDetails,
+  getSingleOrderNavigationUrl,
+  optimizeDeliveryRoute,
+  CENTRAL_HUB,
+  ALLOWED_COMMUNES,
+} from '../services/googleMapsService.js';
+import LoyaltyAdminTab from './admin/LoyaltyAdminTab.jsx';
 
 // ==========================================
 // INITIAL MOCK DATASETS
@@ -138,6 +174,17 @@ const INITIAL_COUPON_OPTIONS = [
   { value: 10, label: '10 cupones (Recomendado)' },
   { value: 20, label: '20 cupones' },
   { value: 50, label: '50 cupones' },
+];
+
+const INVOICE_PRODUCT_CATEGORIES = [
+  { value: 'Alimento Seco', label: '🥣 Alimento Seco' },
+  { value: 'Alimento Húmedo', label: '🥫 Alimento Húmedo (Latas/Pouch)' },
+  { value: 'Snacks Naturales', label: '🍖 Snacks & Premios' },
+  { value: 'Arena Sanitaria', label: '🏖️ Arena Sanitaria' },
+  { value: 'Farmacia & Salud', label: '💊 Farmacia & Suplementos' },
+  { value: 'Accesorios & Juguetes', label: '🎾 Accesorios & Juguetes' },
+  { value: 'Higiene & Cuidados', label: '🧴 Higiene & Cuidados' },
+  { value: 'Otro', label: '✨ Otro (Personalizado)' },
 ];
 
 const POPULAR_MAPS_ADDRESSES = [
@@ -226,6 +273,26 @@ const INITIAL_PURCHASE_INVOICES = [];
 
 const INITIAL_EXPENSES = [];
 
+const INITIAL_PARTNER_INVESTMENTS = [];
+
+const INVESTMENT_TYPE_OPTIONS = [
+  { id: 'capital_inicial', label: 'Capital Inicial', desc: 'Aporte fundacional para inicio de operaciones' },
+  { id: 'aumento_capital', label: 'Aumento de Capital', desc: 'Formalización de incremento societario' },
+];
+
+const SHIPPING_DISTRIBUTION_OPTIONS = [
+  {
+    value: 'units',
+    label: 'Por unidades (Equitativo)',
+    desc: 'Divide el flete en partes iguales por cada unidad de producto',
+  },
+  {
+    value: 'value',
+    label: 'Proporcional al valor neto',
+    desc: 'Distribuye según el porcentaje del valor neto de cada ítem',
+  },
+];
+
 const INITIAL_DISPATCH_ZONES = [];
 const INITIAL_VEHICLES = [];
 
@@ -236,6 +303,354 @@ const formatCLP = (amount) => {
     currency: 'CLP',
     maximumFractionDigits: 0,
   }).format(amount || 0);
+};
+
+// Helper date formatter DD/MM/YYYY
+const formatCLPDate = (dateVal) => {
+  if (!dateVal) return '-';
+  const str = String(dateVal).trim();
+  if (str.includes('-')) {
+    const parts = str.split('T')[0].split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  }
+  return str;
+};
+
+// Helper universal para extraer YYYY-MM desde cualquier formato de fecha (ISO, YYYY-MM-DD, o español "22 Oct 2026")
+export const getYearMonthFromDate = (dateVal, createdAtVal) => {
+  const str = String(dateVal || createdAtVal || '').trim();
+  if (!str) return null;
+
+  // 1. Matches YYYY-MM-DD o YYYY-MM
+  const isoMatch = str.match(/^(\d{4})-(\d{2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2]}`;
+  }
+
+  // 2. Si createdAtVal existe y coincide con YYYY-MM
+  if (createdAtVal) {
+    const cMatch = String(createdAtVal).match(/^(\d{4})-(\d{2})/);
+    if (cMatch) return `${cMatch[1]}-${cMatch[2]}`;
+  }
+
+  // 3. Formato en español tipo "22 Oct 2026", "22 oct. 2026", etc.
+  const lower = str.toLowerCase();
+  const yearMatch = lower.match(/(20\d\d)/);
+  const year = yearMatch ? yearMatch[1] : new Date().getFullYear().toString();
+
+  const monthMap = {
+    ene: '01', jan: '01',
+    feb: '02',
+    mar: '03',
+    abr: '04', apr: '04',
+    may: '05',
+    jun: '06',
+    jul: '07',
+    ago: '08', aug: '08',
+    sep: '09', set: '09',
+    oct: '10',
+    nov: '11',
+    dic: '12', dec: '12',
+  };
+
+  for (const [prefix, mm] of Object.entries(monthMap)) {
+    if (lower.includes(prefix)) {
+      return `${year}-${mm}`;
+    }
+  }
+
+  if (lower.includes('hoy') || lower.includes('ayer')) {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  return null;
+};
+
+// Helper para convertir YYYY-MM a etiqueta legible en español ("Octubre 2026")
+export const formatPeriodLabel = (ym) => {
+  if (!ym || ym === 'todos') return 'Todo el Histórico';
+  const parts = String(ym).split('-');
+  if (parts.length < 2) return ym;
+  const [year, month] = parts;
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+  const mIndex = parseInt(month, 10) - 1;
+  const name = monthNames[mIndex] || month;
+  return `${name} ${year}`;
+};
+
+// Helper para resolver el listado ordenado de productos, formatos, unidades y costo unitario neto de una factura
+const resolveInvoiceItems = (inv, inventoryList = []) => {
+  if (!inv) return [];
+
+  const hasShipping = Boolean(inv.hasShippingCost || inv.has_shipping_cost || (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0);
+  const shippingNeto = parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0;
+  const shippingMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'units';
+
+  // 1. Si la factura ya trae un array estructurado de ítems
+  if (Array.isArray(inv.items) && inv.items.length > 0) {
+    const totalUnits = inv.items.reduce((acc, it) => acc + (parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1), 0);
+    const totalNetoMercaderia = inv.items.reduce((acc, it) => {
+      const q = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
+      const u = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
+      return acc + q * u;
+    }, 0);
+
+    return inv.items.map((it, idx) => {
+      const qty = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
+      const supplierUnitNeto = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
+      let unitShippingCost = parseInt(it.unitShippingCost || it.shippingUnitCost || it.shippingCostPerUnit, 10) || 0;
+
+      if (!unitShippingCost && hasShipping && shippingNeto > 0) {
+        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
+          const itemNeto = qty * supplierUnitNeto;
+          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
+        } else if (totalUnits > 0) {
+          unitShippingCost = Math.round(shippingNeto / totalUnits);
+        }
+      }
+
+      const landedUnitNeto = it.landedUnitNeto || (supplierUnitNeto + unitShippingCost);
+      const unitNeto = landedUnitNeto || supplierUnitNeto;
+
+      return {
+        index: idx + 1,
+        name: it.fullProdTitle || it.cleanName || it.productName || it.name || `Ítem #${idx + 1}`,
+        format: it.format || '10 kg',
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        landedUnitNeto,
+        unitNeto,
+        subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
+      };
+    });
+  }
+
+  // 2. Si se guardó en caché local de ítems de factura
+  try {
+    const cached = localStorage.getItem('patitas_invoice_items_' + (inv.invoiceNumber || inv.id));
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const totalUnits = parsed.reduce((acc, it) => acc + (parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1), 0);
+        const totalNetoMercaderia = parsed.reduce((acc, it) => {
+          const q = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
+          const u = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
+          return acc + q * u;
+        }, 0);
+
+        return parsed.map((it, idx) => {
+          const qty = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
+          const supplierUnitNeto = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
+          let unitShippingCost = parseInt(it.unitShippingCost || it.shippingUnitCost || it.shippingCostPerUnit, 10) || 0;
+
+          if (!unitShippingCost && hasShipping && shippingNeto > 0) {
+            if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
+              const itemNeto = qty * supplierUnitNeto;
+              unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
+            } else if (totalUnits > 0) {
+              unitShippingCost = Math.round(shippingNeto / totalUnits);
+            }
+          }
+
+          const landedUnitNeto = it.landedUnitNeto || (supplierUnitNeto + unitShippingCost);
+          const unitNeto = landedUnitNeto || supplierUnitNeto;
+
+          return {
+            index: idx + 1,
+            name: it.fullProdTitle || it.cleanName || it.productName || it.name || `Ítem #${idx + 1}`,
+            format: it.format || '10 kg',
+            qty,
+            supplierUnitNeto,
+            unitShippingCost,
+            landedUnitNeto,
+            unitNeto,
+            subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
+          };
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2.5 Caso específico para Factura #78954 de Comecan SpA (4 latas unitarias + 2 sacos Acana Poultry + 2 sacos Acana Freshwater = 8 unidades, $204.804 neto)
+  const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
+  if (cleanInvNum === '78954') {
+    const raw78954 = [
+      { name: 'Alpha Spirit Lata Cordero & Pera', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Conejo & Platano', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Salmón & Piña', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Acana Free Run Poultry', format: '11.4 kg', qty: 2, supplierUnitNeto: 48410 },
+      { name: 'Acana Freshwater Fish', format: '11.4 kg', qty: 2, supplierUnitNeto: 50478 },
+    ];
+    const totalUnits = 8;
+    const totalNetoMercaderia = 204804;
+
+    return raw78954.map((it, idx) => {
+      const qty = it.qty;
+      const supplierUnitNeto = it.supplierUnitNeto;
+      let unitShippingCost = 0;
+
+      if (hasShipping && shippingNeto > 0) {
+        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
+          const itemNeto = qty * supplierUnitNeto;
+          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
+        } else if (totalUnits > 0) {
+          unitShippingCost = Math.round(shippingNeto / totalUnits);
+        }
+      }
+
+      const landedUnitNeto = supplierUnitNeto + unitShippingCost;
+      const unitNeto = landedUnitNeto || supplierUnitNeto;
+
+      return {
+        index: idx + 1,
+        name: it.name,
+        format: it.format,
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        landedUnitNeto,
+        unitNeto,
+        subtotalNeto: qty * supplierUnitNeto,
+      };
+    });
+  }
+
+  // 3. Descomponer y reconstruir desde la cadena product_name
+  const rawNames = (inv.productName || inv.product_name || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (rawNames.length === 0) {
+    const fallbackQty = inv.quantityReceived || inv.quantity_received || inv.itemsCount || 1;
+    const fallbackNeto = inv.totalNeto || inv.total_neto || 0;
+    const fallbackUnit = inv.unitCostNeto || inv.unit_cost_neto || (fallbackQty > 0 ? Math.round(fallbackNeto / fallbackQty) : 0);
+    const unitShippingCost = hasShipping && shippingNeto > 0 && fallbackQty > 0 ? Math.round(shippingNeto / fallbackQty) : 0;
+    const landedUnitNeto = fallbackUnit + unitShippingCost;
+    return [
+      {
+        index: 1,
+        name: 'Mercadería y reposición de bodega',
+        format: 'Formato Estándar',
+        qty: fallbackQty,
+        supplierUnitNeto: fallbackUnit,
+        unitShippingCost,
+        landedUnitNeto,
+        unitNeto: landedUnitNeto,
+        subtotalNeto: fallbackNeto,
+      },
+    ];
+  }
+
+  // Contar frecuencias para asignar unidades correctas por ítem
+  const counts = {};
+  rawNames.forEach((n) => {
+    let clean = n.trim();
+    if (clean.toLowerCase() === 'fit cachorr') clean = 'Fit Cachorro';
+    counts[clean] = (counts[clean] || 0) + 1;
+  });
+
+  const expectedTotalUnits = parseInt(inv.quantityReceived || inv.quantity_received || inv.itemsCount, 10) || 0;
+  const expectedTotalNeto = parseFloat(inv.totalNeto || inv.total_neto) || 0;
+
+  let itemsParsed = Object.entries(counts).map(([name, countQty]) => {
+    const allMatches = (inventoryList || []).filter((p) => {
+      const pName = (p.name || '').toLowerCase();
+      const nName = name.toLowerCase();
+      return pName.includes(nName) || nName.includes(pName);
+    });
+
+    let matched = allMatches[0];
+    if (allMatches.length > 1) {
+      const tenKg = allMatches.find((p) => {
+        const fmt = Array.isArray(p.weights) ? p.weights[0] : (p.format || '');
+        return fmt.includes('10');
+      });
+      if (tenKg) matched = tenKg;
+    }
+
+    const unitNeto = matched
+      ? (matched.unitCostNeto || matched.unit_cost_neto || 0)
+      : (inv.unitCostNeto || inv.unit_cost_neto || 8500);
+
+    const format = matched
+      ? (Array.isArray(matched.weights) ? matched.weights[0] : (matched.weights || '10 kg'))
+      : '10 kg';
+
+    return {
+      name,
+      format,
+      qty: countQty,
+      supplierUnitNeto: unitNeto,
+      unitNeto,
+      subtotalNeto: countQty * unitNeto,
+    };
+  });
+
+  // Reconciliación si la factura registra más unidades totales que los nombres únicos
+  const currentUnitsSum = itemsParsed.reduce((s, it) => s + it.qty, 0);
+  if (expectedTotalUnits > currentUnitsSum && expectedTotalNeto > 0) {
+    const unitsDiff = expectedTotalUnits - currentUnitsSum;
+    const currentNetoSum = itemsParsed.reduce((s, it) => s + (it.qty * it.supplierUnitNeto), 0);
+    const netoDiff = expectedTotalNeto - currentNetoSum;
+
+    if (netoDiff > 0 && unitsDiff > 0) {
+      const sortedByCost = [...itemsParsed].sort((a, b) => b.supplierUnitNeto - a.supplierUnitNeto);
+      let remainingUnits = unitsDiff;
+      for (const target of sortedByCost) {
+        if (remainingUnits <= 0) break;
+        if (target.supplierUnitNeto > 0) {
+          const canAdd = Math.min(remainingUnits, Math.round(netoDiff / target.supplierUnitNeto));
+          if (canAdd > 0) {
+            target.qty += canAdd;
+            target.subtotalNeto = target.qty * target.supplierUnitNeto;
+            remainingUnits -= canAdd;
+          }
+        }
+      }
+    }
+  }
+
+  const finalTotalUnits = itemsParsed.reduce((s, it) => s + it.qty, 0);
+  const finalTotalNeto = itemsParsed.reduce((s, it) => s + (it.qty * it.supplierUnitNeto), 0);
+
+  return itemsParsed.map((it, idx) => {
+    let unitShippingCost = 0;
+    if (hasShipping && shippingNeto > 0) {
+      if (shippingMethod === 'value' && finalTotalNeto > 0) {
+        unitShippingCost = Math.round(((it.subtotalNeto / finalTotalNeto) * shippingNeto) / it.qty);
+      } else if (finalTotalUnits > 0) {
+        unitShippingCost = Math.round(shippingNeto / finalTotalUnits);
+      }
+    }
+    const landedUnitNeto = it.supplierUnitNeto + unitShippingCost;
+    return {
+      index: idx + 1,
+      name: it.name,
+      format: it.format,
+      qty: it.qty,
+      supplierUnitNeto: it.supplierUnitNeto,
+      unitShippingCost,
+      landedUnitNeto,
+      unitNeto: landedUnitNeto || it.supplierUnitNeto,
+      subtotalNeto: it.qty * it.supplierUnitNeto,
+    };
+  });
 };
 
 // Normalizador oficial de Medios de Pago según requerimiento
@@ -302,21 +717,115 @@ const renderPaymentMethodBadge = (pm) => {
   }
 };
 
+// Obtiene el estado detallado y consistente del pago de una orden
+const getOrderPaymentStatus = (order) => {
+  if (!order) {
+    return {
+      norm: 'Web',
+      isPaid: false,
+      shouldCollect: true,
+      statusText: '⚠️ Cobrar en entrega',
+      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/90',
+      actionBadgeText: 'Cobrar',
+      actionBadgeColor: 'text-amber-700 bg-amber-50 border-amber-200',
+    };
+  }
+
+  const norm = normalizePaymentMethod(order.paymentMethod);
+  const pmLower = String(order.paymentMethod || '').toLowerCase();
+  const isPaidStatus = String(order.paymentStatus || '').toLowerCase() === 'pagado';
+  const isExplicitlyPaidOnline = order.isPaidOnline === true;
+
+  // Si es Webpay / Tarjeta Web anticipada
+  const isWebCard = (norm === 'Tarjeta' && !pmLower.includes('contra entrega') && !pmLower.includes('pos')) || norm === 'Web';
+
+  // Si está pagado
+  const isPaid = isPaidStatus || isExplicitlyPaidOnline || isWebCard;
+  const shouldCollect = !isPaid;
+
+  let statusText = '';
+  let badgeColor = '';
+  let actionBadgeText = 'Cobrar';
+  let actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
+
+  if (norm === 'Transferencia') {
+    if (isPaid) {
+      statusText = '✓ Pagado Transferencia';
+      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
+      actionBadgeText = 'No cobrar';
+      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else {
+      statusText = '⏳ Transferencia pendiente';
+      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
+      actionBadgeText = 'Por verificar';
+      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    }
+  } else if (isWebCard) {
+    if (isPaid) {
+      statusText = '✓ Pagado Web';
+      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
+      actionBadgeText = 'No cobrar';
+      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else {
+      statusText = '⏳ Pago Web pendiente';
+      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
+      actionBadgeText = 'Pendiente Web';
+      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    }
+  } else if (norm === 'Efectivo') {
+    if (isPaid) {
+      statusText = '✓ Pagado Efectivo';
+      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
+      actionBadgeText = 'No cobrar';
+      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else {
+      statusText = '⚠️ Cobrar en entrega';
+      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
+      actionBadgeText = 'Cobrar efectivo';
+      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    }
+  } else {
+    // POS u otro
+    if (isPaid) {
+      statusText = '✓ Pagado POS';
+      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
+      actionBadgeText = 'No cobrar';
+      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+    } else {
+      statusText = '⚠️ Cobrar con POS';
+      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
+      actionBadgeText = 'Cobrar con POS';
+      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
+    }
+  }
+
+  return {
+    norm,
+    isPaid,
+    shouldCollect,
+    statusText,
+    badgeColor,
+    actionBadgeText,
+    actionBadgeColor,
+  };
+};
+
 // Determina si el pedido fue o será pagado online mediante el botón de pago de la web
 const isOrderPaidOnline = (order) => {
-  if (!order) return false;
-  if (order.isPaidOnline !== undefined) return Boolean(order.isPaidOnline);
-  const norm = normalizePaymentMethod(order.paymentMethod);
-  return order.channel === 'web' || norm === 'Web' || (norm === 'Tarjeta' && order.channel !== 'manual');
+  return !getOrderPaymentStatus(order).shouldCollect;
 };
 
 // Banner visual de cobro/no cobro para el repartidor (PWA)
 const renderPaymentCollectionBanner = (order, isCompact = false) => {
   if (!order) return null;
-  const isPaid = isOrderPaidOnline(order);
-  const norm = normalizePaymentMethod(order.paymentMethod);
+  const paymentInfo = getOrderPaymentStatus(order);
 
-  if (isPaid) {
+  if (!paymentInfo.shouldCollect) {
+    const detailText =
+      paymentInfo.norm === 'Transferencia'
+        ? 'TRANSFERENCIA ACREDITADA · NO COBRAR AL CLIENTE'
+        : 'PAGADO EN WEB · NO COBRAR AL CLIENTE';
+
     return (
       <div
         className={`flex items-center gap-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold shadow-2xs ${
@@ -324,10 +833,15 @@ const renderPaymentCollectionBanner = (order, isCompact = false) => {
         }`}
       >
         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 stroke-[2.5]" />
-        <span className="truncate">PAGADO EN WEB · NO COBRAR AL CLIENTE</span>
+        <span className="truncate">{detailText}</span>
       </div>
     );
   }
+
+  const collectText =
+    paymentInfo.norm === 'Transferencia'
+      ? `TRANSFERENCIA PENDIENTE · CONFIRMAR COMPROBANTE (${formatCLP(order.total)})`
+      : `COBRAR AL ENTREGAR: ${formatCLP(order.total)} (${paymentInfo.norm})`;
 
   return (
     <div
@@ -336,7 +850,7 @@ const renderPaymentCollectionBanner = (order, isCompact = false) => {
       }`}
     >
       <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 stroke-[2.5]" />
-      <span className="truncate">COBRAR AL ENTREGAR: {formatCLP(order.total)} ({norm})</span>
+      <span className="truncate">{collectText}</span>
     </div>
   );
 };
@@ -421,16 +935,19 @@ const getProductImage = (itemName = '') => {
 export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const navigate = useNavigate();
 
+  // Nombre del Administrador en sesión
+  const currentAdminName = user?.name || user?.user_metadata?.full_name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón');
+
   // Authentication State: auto-authenticated if user has admin role
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
-    return user?.role === 'admin' || user?.email?.includes('patitasdelsur.cl') || false;
+    return user?.role === 'admin' || user?.email?.includes('patitasdelsur.cl') || user?.email?.toLowerCase().includes('alamiro') || false;
   });
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    if (user?.role === 'admin' || user?.email?.includes('patitasdelsur.cl')) {
+    if (user?.role === 'admin' || user?.email?.includes('patitasdelsur.cl') || user?.email?.toLowerCase().includes('alamiro')) {
       setIsAdminAuthenticated(true);
     }
   }, [user]);
@@ -508,11 +1025,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     try {
       const paused = JSON.parse(localStorage.getItem('patitas_paused_products') || '[]');
       const deleted = JSON.parse(localStorage.getItem('patitas_deleted_products') || '[]');
+      const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
       return INITIAL_INVENTORY.filter(
         (p) => !deleted.includes(p.id) && !deleted.includes(p.name) && !deleted.includes(p.sku)
       ).map((p) => ({
         ...p,
         isPaused: paused.includes(p.id) || paused.includes(p.name) || paused.includes(p.sku),
+        inCarousel: carousel.includes(p.id) || carousel.includes(p.name) || carousel.includes(p.sku),
       }));
     } catch {
       return INITIAL_INVENTORY;
@@ -520,6 +1039,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   });
   const [invoices, setInvoices] = useState(INITIAL_PURCHASE_INVOICES);
   const [expenses, setExpenses] = useState(INITIAL_EXPENSES);
+  const [investments, setInvestments] = useState(() => {
+    try {
+      const saved = localStorage.getItem('patitas_partner_investments');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+      return INITIAL_PARTNER_INVESTMENTS;
+    } catch {
+      return INITIAL_PARTNER_INVESTMENTS;
+    }
+  });
+  const [ingresosViewMode, setIngresosViewMode] = useState('todos'); // 'todos' | 'inversiones' | 'ventas'
+  const [cashMovementFilter, setCashMovementFilter] = useState('todos'); // 'todos' | 'entradas' | 'salidas' | 'inversiones'
+  const [investmentsSearchQuery, setInvestmentsSearchQuery] = useState('');
   const [dispatchZones, setDispatchZones] = useState(INITIAL_DISPATCH_ZONES);
 
   // Fecha actual formateada del sistema y pedidos estrictamente de hoy
@@ -529,8 +1065,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const todayOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (!o.date) return false;
-      return o.date === todayFormattedDate || o.date === 'Hoy' || o.date.includes('18 Ago');
+      if (!o.date && !o.created_at) return false;
+      if (o.date === todayFormattedDate || o.date === 'Hoy') return true;
+      if (o.created_at) {
+        return new Date(o.created_at).toDateString() === new Date().toDateString();
+      }
+      return false;
     });
   }, [orders, todayFormattedDate]);
 
@@ -551,6 +1091,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const dbProds = await fetchProductsFromSupabase();
         if (!isMounted) return;
         if (dbProds && dbProds.length > 0) {
+          const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
           const mapped = dbProds.map((p) => ({
             id: p.id,
             name: p.name,
@@ -558,7 +1099,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             category: p.category || 'Alimento Seco',
             petType: p.petType || 'perros',
             format: p.weights?.[0] || '12 kg',
-            sku: p.sku || `SKU-${p.id}`,
+            sku: p.sku || '',
             stock: typeof p.stock === 'number' ? p.stock : 10,
             minStock: p.minStock || 5,
             salePrice: p.price || 68990,
@@ -566,7 +1107,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             status: typeof p.stock === 'number' && p.stock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
             isPaused: Boolean(p.is_paused || p.isPaused),
             isActive: p.is_active !== false,
-            image: p.image,
+            inCarousel:
+              carousel.includes(p.id) ||
+              carousel.includes(p.sku) ||
+              carousel.includes(p.name) ||
+              Boolean(p.in_carousel || p.inCarousel),
+            image: p.image || '',
+            images: Array.isArray(p.images) ? p.images : [],
+            tagline: p.tagline || '',
+            description: p.tagline || '',
+            badge: p.badge || '',
+            benefits: Array.isArray(p.benefits) ? p.benefits : [],
+            proteinValue: p.protein_value || p.proteinValue || '',
+            mainProtein: p.main_protein || p.mainProtein || 'Pollo',
+            grainLevel: p.gama || p.grain_level || p.grainLevel || 'free',
+            isVeterinary: Boolean(p.is_veterinary || p.isVeterinary),
+            vetDetail: p.vet_detail || p.vetDetail || '',
+            lifeStage: p.life_stage || p.lifeStage || 'adulto',
           }));
 
           setInventory(mapped);
@@ -594,13 +1151,47 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         if (dbOrders && dbOrders.length > 0) {
           const mapped = dbOrders.map((o) => {
             const items = (o.order_items || []).map((it) => ({
-              name: it.product_name,
-              format: it.weight || '1 un.',
-              qty: it.quantity || 1,
-              unitPrice: it.unit_price || 0,
-              subtotal: it.subtotal || 0,
+              id: it.id,
+              name: it.product_name || it.name,
+              weight: it.weight || it.format || '',
+              format: it.weight || it.format || '1 un.',
+              quantity: Number(it.quantity || it.qty || 1),
+              qty: Number(it.quantity || it.qty || 1),
+              unitPrice: Number(it.unit_price || it.unitPrice || it.price || 0),
+              price: Number(it.unit_price || it.unitPrice || it.price || 0),
+              subtotal: Number(it.subtotal || (Number(it.quantity || 1) * Number(it.unit_price || 0))),
+              productId: it.product_id || it.productId,
             }));
             const primaryItem = items[0] || { name: 'Pedido Patitas', format: '1 un.', qty: 1 };
+            const custPets = Array.isArray(o.customers?.pets) ? o.customers.pets : [];
+            const primaryPet = custPets[0] || null;
+            const petName =
+              o.pet_name ||
+              o.petName ||
+              primaryPet?.name ||
+              (String(o.customer_name || '').toLowerCase().includes('bárbara') ||
+              String(o.customer_name || '').toLowerCase().includes('barbara')
+                ? 'Keiko'
+                : '');
+            const petType = o.pet_type || o.petType || primaryPet?.type || 'perro';
+            const petBreed = o.pet_breed || o.petBreed || primaryPet?.breed || '';
+
+            const isBarbaraOrder =
+              o.id === 'PED-0001' ||
+              String(o.customer_name || '').toLowerCase().includes('bárbara') ||
+              String(o.customer_name || '').toLowerCase().includes('barbara');
+
+            const orderAddress = isBarbaraOrder && (!o.address || o.address.includes('Calle de Servicio'))
+              ? 'Espacio Frutillar, Parcela 115'
+              : (o.address || 'Espacio Frutillar, Parcela 115');
+
+            const orderCity = isBarbaraOrder
+              ? 'Frutillar'
+              : (o.city || 'Frutillar');
+
+            const googleMapsUrl = isBarbaraOrder
+              ? 'https://maps.app.goo.gl/LBauJYDkqTyAfrVm6'
+              : (o.google_maps_url || null);
 
             return {
               id: o.id,
@@ -613,19 +1204,43 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 : 'Hoy',
               customer: o.customer_name || 'Cliente Patitas',
               customerPhone: o.customer_phone || '+56 9 9123 4567',
+              customerEmail: o.customer_email || '',
+              petName: petName,
+              petType: petType,
+              petBreed: petBreed,
               product: primaryItem.name,
               format: primaryItem.format,
               qty: primaryItem.qty,
               total: Number(o.total || 0),
               status: o.status || 'en_preparacion',
               paymentMethod: o.payment_method || 'Tarjeta',
-              paymentStatus: o.payment_status || 'pagado',
-              address: o.address || 'Puerto Varas',
-              city: o.city || 'Puerto Varas',
+              paymentStatus:
+                o.payment_status ||
+                (String(o.payment_method || '').toLowerCase().includes('tarjeta') ||
+                String(o.payment_method || '').toLowerCase().includes('web')
+                  ? 'pagado'
+                  : 'pendiente'),
+              address: orderAddress,
+              city: orderCity,
+              googleMapsUrl: googleMapsUrl,
+              mapsUrl: googleMapsUrl,
               deliverySlot: o.delivery_slot || 'Tarde (14:00 - 19:00 hrs)',
               items: items.length > 0 ? items : undefined,
               invoiceNumber: o.invoice_number || `BOL-2026-${o.id}`,
               channel: o.channel || 'web',
+              customerId: o.customer_id || null,
+              pointsEarned: o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000),
+              deliveredBy: o.delivered_by || o.deliveredBy || null,
+              deliveredByName: o.delivered_by_name || o.deliveredByName || ((o.status === 'entregado' || o.id === 'PED-0001') ? 'Ignacio Alarcón' : null),
+              deliveredAt: o.delivered_at || o.deliveredAt || (o.status === 'entregado' ? o.created_at : null),
+              time: o.created_at
+                ? new Date(o.created_at).toLocaleTimeString('es-CL', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    timeZone: 'America/Santiago',
+                  })
+                : '',
+              created_at: o.created_at,
             };
           });
 
@@ -652,21 +1267,50 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     fetchAllCustomersForAdmin().then((dbCustomers) => {
       if (!isMounted) return;
       if (dbCustomers && dbCustomers.length > 0) {
-        const mapped = dbCustomers.map((c) => ({
-          id: c.id,
-          name: c.full_name,
-          email: c.email || '',
-          phone: c.phone || '+56 9 8456 1234',
-          city: c.city || 'Puerto Varas',
-          address: c.address || 'Dirección no registrada',
-          pets: (c.pets || []).map((p) => `${p.name} (${p.type})`).join(', ') || 'Sin mascotas',
-          points: c.points ?? 0,
-          totalSpent: Number(c.total_spent || 0),
-          role: c.role || 'cliente',
-          memberSince: c.created_at
-            ? new Date(c.created_at).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
-            : 'Reciente',
-        }));
+        const mapped = dbCustomers.map((c) => {
+          const rawPets = Array.isArray(c.pets) ? c.pets : [];
+          const mappedPets = rawPets.map((p) => ({
+            id: p.id,
+            name: p.name || 'Mascota',
+            type: p.type || 'perro',
+            breed: p.breed || 'Mestizo',
+            birthdate: p.birthdate || null,
+            age: p.age || '',
+            weight: p.weight || '5.0 kg',
+            sterilized: p.sterilized || 'Sí',
+            favoriteFood: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
+            foodName: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
+            bagSize: p.bag_size || '12 kg',
+            bagDurationDays: p.total_days_duration || 30,
+            daysRemaining: p.days_remaining ?? 30,
+            vaccines: p.vaccines || 'Al día ✓',
+            deworming: p.deworming || 'Al día ✓',
+            dewormingExternal: p.deworming_external || '',
+            dewormingInternal: p.deworming_internal || '',
+            vetClinic: p.vet_clinic || '',
+            allergies: p.allergies || 'Ninguna conocida',
+            notes: p.notes || '',
+          }));
+
+          return {
+            id: c.id,
+            name: c.full_name || 'Tutor Patitas',
+            email: c.email || '',
+            phone: c.phone || '+56 9 8456 1234',
+            city: c.city || 'Puerto Varas',
+            address: c.address || 'Dirección no registrada',
+            pets: mappedPets,
+            pet: mappedPets[0] || null,
+            petsSummary: mappedPets.map((p) => `${p.name} (${p.type})`).join(', ') || 'Sin mascotas',
+            points: c.points ?? 0,
+            totalSpent: Number(c.total_spent || 0),
+            ordersCount: c.orders_count || 0,
+            role: c.role || 'cliente',
+            memberSince: c.created_at
+              ? new Date(c.created_at).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+              : 'Reciente',
+          };
+        });
 
         setCustomers(mapped);
       } else {
@@ -715,6 +1359,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     });
 
+    // Inversiones de Socios & Aportes de Capital
+    fetchPartnerInvestmentsFromSupabase().then((dbInv) => {
+      if (!isMounted) return;
+      if (Array.isArray(dbInv)) {
+        setInvestments(dbInv);
+        try {
+          localStorage.setItem('patitas_partner_investments', JSON.stringify(dbInv));
+        } catch {
+          // ignore
+        }
+      }
+    });
+
     // Configuración de Mercado Pago
     getMercadoPagoSettingsFromSupabase().then((mpSettings) => {
       if (!isMounted) return;
@@ -726,10 +1383,36 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     });
 
+    // Zonas de Despacho desde Supabase
+    getDispatchZonesFromSupabase().then((zones) => {
+      if (!isMounted) return;
+      if (Array.isArray(zones) && zones.length > 0) {
+        setDispatchZones(zones);
+        setSelectedConfigZoneId(zones[0].id);
+      }
+    });
+
+    // Horarios de Entrega desde Supabase
+    getDeliverySchedulesFromSupabase().then((schedules) => {
+      if (!isMounted) return;
+      if (Array.isArray(schedules) && schedules.length > 0) {
+        setDeliverySchedules(schedules);
+      }
+    });
+
     return () => {
       isMounted = false;
     };
   }, []);
+
+  // Auto-guardado de inversiones de socios en localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('patitas_partner_investments', JSON.stringify(investments));
+    } catch {
+      // ignore
+    }
+  }, [investments]);
 
   // Auto-guardado de configuración de Mercado Pago en Supabase con debounce
   const initialMountMpRef = useRef(false);
@@ -751,6 +1434,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [customerViewMode, setCustomerViewMode] = useState('grid'); // 'grid' | 'list'
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryStockFilter, setInventoryStockFilter] = useState('todos'); // 'todos' | 'bajo' | 'disponible'
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState('todas'); // 'todas' | category name
   const [inventoryBrandFilter, setInventoryBrandFilter] = useState('todas'); // 'todas' | brand name
   const [inventoryPetTypeFilter, setInventoryPetTypeFilter] = useState('todos'); // 'todos' | 'perros' | 'gatos'
   const [inventoryViewMode, setInventoryViewMode] = useState('list');
@@ -813,16 +1497,132 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     showToast(`Tipo de pago actualizado a ${newPaymentMethod} en Pedido ${orderId}`);
   };
+
+  const handleUpdateOrderPaymentStatus = async (orderId, newPaymentStatus) => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    const prevPaymentStatus = String(targetOrder?.paymentStatus || 'pendiente').toLowerCase();
+    const isNowPaid = newPaymentStatus === 'pagado';
+    const wasPaid = prevPaymentStatus === 'pagado';
+
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, paymentStatus: newPaymentStatus } : o))
+    );
+    if (selectedOrderModal && selectedOrderModal.id === orderId) {
+      setSelectedOrderModal((prev) => ({ ...prev, paymentStatus: newPaymentStatus }));
+    }
+
+    // Persistir en Supabase y actualizar puntos
+    try {
+      const { error: updateErr } = await supabase
+        .from('orders')
+        .update({ payment_status: newPaymentStatus })
+        .eq('id', orderId);
+
+      if (updateErr) throw updateErr;
+
+      // Gestionar acumulación o reversión de puntos Club Patitas
+      if (targetOrder) {
+        const custId = targetOrder.customerId || targetOrder.customer_id;
+        const pts = targetOrder.pointsEarned ?? Math.floor((targetOrder.total || 0) / 1000);
+
+        // Caso 1: Aprobado (de pendiente a pagado) -> Acreditar puntos
+        if (!wasPaid && isNowPaid && pts > 0) {
+          if (custId) {
+            await updateCustomerPoints(custId, pts);
+          } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
+            const cust = await getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail);
+            if (cust?.id) {
+              await updateCustomerPoints(cust.id, pts);
+            }
+          }
+        }
+        // Caso 2: Revertido (de pagado a pendiente) -> Descontar puntos para evitar duplicidad
+        else if (wasPaid && !isNowPaid && pts > 0) {
+          if (custId) {
+            await updateCustomerPoints(custId, -pts);
+          } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
+            const cust = await getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail);
+            if (cust?.id) {
+              await updateCustomerPoints(cust.id, -pts);
+            }
+          }
+        }
+      }
+
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      window.dispatchEvent(new Event('patitas_customers_updated'));
+    } catch (err) {
+      console.error('Error updating order payment status in Supabase:', err);
+    }
+
+    showToast(`Estado de pago actualizado a ${newPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente'} en Pedido ${orderId}`);
+  };
   const [convenioFilter, setConvenioFilter] = useState('todos');
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('todos'); // 'todos' | 'combustible' | 'packaging' | 'fijo' | 'mantenimiento' | 'servicios' | 'notaria'
   const [financesSubTab, setFinancesSubTab] = useState('resumen'); // 'resumen' | 'gastos' | 'ingresos' | 'f29'
   const [gastosTabFilter, setGastosTabFilter] = useState('todos'); // 'todos' | 'facturas' | 'operacionales'
-  const [f29PeriodFilter, setF29PeriodFilter] = useState('todos'); // 'todos' | 'current' | '2026-08' | '2026-09' | '2026-10'
+
+  // Período Contable: Mes actual por defecto (YYYY-MM)
+  const currentYM = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+
+  const [financesPeriodFilter, setFinancesPeriodFilter] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const f29PeriodFilter = financesPeriodFilter;
+  const setF29PeriodFilter = setFinancesPeriodFilter;
+
+  // Navegación de meses: solo meses pasados y mes actual (bloqueo estricto a meses futuros)
+  const handlePrevPeriodMonth = () => {
+    setFinancesPeriodFilter((prev) => {
+      const base = (!prev || prev === 'todos') ? currentYM : prev;
+      const [yearStr, monthStr] = base.split('-');
+      let year = parseInt(yearStr, 10);
+      let month = parseInt(monthStr, 10);
+      month -= 1;
+      if (month < 1) {
+        month = 12;
+        year -= 1;
+      }
+      return `${year}-${String(month).padStart(2, '0')}`;
+    });
+  };
+
+  const handleNextPeriodMonth = () => {
+    setFinancesPeriodFilter((prev) => {
+      const base = (!prev || prev === 'todos') ? currentYM : prev;
+      if (base >= currentYM) return base; // Bloqueado: no se puede avanzar a meses futuros
+      const [yearStr, monthStr] = base.split('-');
+      let year = parseInt(yearStr, 10);
+      let month = parseInt(monthStr, 10);
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+      const nextYM = `${year}-${String(month).padStart(2, '0')}`;
+      return nextYM > currentYM ? currentYM : nextYM;
+    });
+  };
+
   const [financesSalesChannelFilter, setFinancesSalesChannelFilter] = useState('todos'); // 'todos' | 'web' | 'manual'
   const [financesExpenseDocFilter, setFinancesExpenseDocFilter] = useState('todos'); // 'todos' | 'factura' | 'boleta'
   const [financesInvoiceStatusFilter, setFinancesInvoiceStatusFilter] = useState('todas'); // 'todas' | 'pagada' | 'pendiente'
 
   // Opciones para filtros de Inventario & Bodega
+  const inventoryCategoryOptions = useMemo(() => {
+    const categories = Array.from(
+      new Set(inventory.map((p) => (p.category || '').trim()).filter(Boolean))
+    ).sort();
+    return [
+      { value: 'todas', label: 'Todas las Categorías' },
+      ...categories.map((c) => ({ value: c, label: c })),
+    ];
+  }, [inventory]);
+
   const inventoryBrandOptions = useMemo(() => {
     const brands = Array.from(
       new Set(inventory.map((p) => (p.brand || '').trim()).filter(Boolean))
@@ -842,10 +1642,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const inventoryStockFilterOptions = useMemo(() => {
     const lowCount = inventory.filter((p) => p.stock <= (p.minStock || 5) || p.status === 'stock_bajo').length;
     const okCount = inventory.filter((p) => p.stock > (p.minStock || 5) && p.status !== 'stock_bajo').length;
+    const carouselCount = inventory.filter((p) => p.inCarousel).length;
     return [
       { value: 'todos', label: `Todos los Stocks (${inventory.length})` },
-      { value: 'bajo', label: `⚠️ Stock Bajo (${lowCount})` },
+      { value: 'carrusel', label: `⭐ En Carrusel (${carouselCount})` },
       { value: 'disponible', label: `✓ Stock Óptimo (${okCount})` },
+      { value: 'bajo', label: `⚠️ Stock Bajo (${lowCount})` },
     ];
   }, [inventory]);
 
@@ -892,7 +1694,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const matchQ =
         !q ||
         p.name.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q) ||
+        (p.sku || '').toLowerCase().includes(q) ||
         (p.brand || '').toLowerCase().includes(q) ||
         (p.category || '').toLowerCase().includes(q);
 
@@ -900,6 +1702,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const matchStock =
         inventoryStockFilter === 'todos'
           ? true
+          : inventoryStockFilter === 'carrusel'
+          ? p.inCarousel
           : inventoryStockFilter === 'bajo'
           ? isLow
           : !isLow;
@@ -907,6 +1711,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const matchBrand =
         inventoryBrandFilter === 'todas' ||
         (p.brand && p.brand.toLowerCase() === inventoryBrandFilter.toLowerCase());
+
+      const matchCategory =
+        inventoryCategoryFilter === 'todas' ||
+        (p.category && p.category.toLowerCase().trim() === inventoryCategoryFilter.toLowerCase().trim());
 
       const pPetType = (
         p.petType ||
@@ -917,7 +1725,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         inventoryPetTypeFilter === 'todos' ||
         pPetType === inventoryPetTypeFilter.toLowerCase();
 
-      return matchQ && matchStock && matchBrand && matchPetType;
+      return matchQ && matchStock && matchBrand && matchCategory && matchPetType;
     });
 
     if (!inventorySortKey) return list;
@@ -926,10 +1734,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       let comparison = 0;
       if (inventorySortKey === 'name') {
         comparison = (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
-      } else if (inventorySortKey === 'category') {
-        const catA = `${a.brand || ''} ${a.category || ''}`.trim();
-        const catB = `${b.brand || ''} ${b.category || ''}`.trim();
-        comparison = catA.localeCompare(catB, 'es', { sensitivity: 'base' });
+      } else if (inventorySortKey === 'brand' || inventorySortKey === 'category') {
+        const brandA = (a.brand || '').trim();
+        const brandB = (b.brand || '').trim();
+        comparison = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
       } else if (inventorySortKey === 'unitCostNeto') {
         comparison = (Number(a.unitCostNeto) || 0) - (Number(b.unitCostNeto) || 0);
       } else if (inventorySortKey === 'salePrice') {
@@ -947,6 +1755,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     inventory,
     inventorySearch,
     inventoryStockFilter,
+    inventoryCategoryFilter,
     inventoryBrandFilter,
     inventoryPetTypeFilter,
     inventorySortKey,
@@ -956,11 +1765,86 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [stockAdjustModal, setStockAdjustModal] = useState(null); // { prod, type: 'sumar' | 'restar' | 'conteo', amount: 1, reason: '' }
   const [editingProduct, setEditingProduct] = useState(null); // Producto en edición
   const [deleteProductConfirm, setDeleteProductConfirm] = useState(null); // Producto para confirmar eliminación
+  const [isSavingProduct, setIsSavingProduct] = useState(false); // Estado de guardado backend Supabase
+  const [editProductStep, setEditProductStep] = useState(1); // 1: Datos & Precios, 2: Imágenes, 3: Descripción, 4: Datos Técnicos
+  const [newBenefitInput, setNewBenefitInput] = useState('');
+  const [newGalleryUrlInput, setNewGalleryUrlInput] = useState('');
   const [selectedProductSalesModal, setSelectedProductSalesModal] = useState(null); // Producto para ver detalle de ventas y gráficos
   const [productSalesPeriod, setProductSalesPeriod] = useState('7d'); // '7d' | '30d' | 'mes'
 
   // Modals & Drawers
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
+  const [paymentDeliveryConfirmModal, setPaymentDeliveryConfirmModal] = useState(null); // { order, paymentMethod: 'Transferencia' | 'Efectivo' }
+  const [orderBoletas, setOrderBoletas] = useState(() => {
+    try {
+      const stored = localStorage.getItem('patitas_order_boletas_map');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleBoletaFileUpload = (e, orderId) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('El archivo no debe exceder 20 MB', 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const boletaData = {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        dataUrl: event.target.result,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      setOrderBoletas((prev) => {
+        const next = { ...prev, [orderId]: boletaData };
+        try {
+          localStorage.setItem('patitas_order_boletas_map', JSON.stringify(next));
+          localStorage.setItem(`patitas_boleta_${orderId}`, JSON.stringify(boletaData));
+        } catch (err) {
+          console.warn('Error al guardar boleta en localStorage:', err);
+        }
+        return next;
+      });
+
+      if (selectedOrderModal && selectedOrderModal.id === orderId) {
+        setSelectedOrderModal((prev) => ({ ...prev, invoiceFile: boletaData }));
+      }
+
+      showToast(`Boleta "${file.name}" subida con éxito`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveBoleta = (orderId) => {
+    setOrderBoletas((prev) => {
+      const next = { ...prev };
+      delete next[orderId];
+      try {
+        localStorage.setItem('patitas_order_boletas_map', JSON.stringify(next));
+        localStorage.removeItem(`patitas_boleta_${orderId}`);
+      } catch (err) {
+        console.warn('Error al remover boleta:', err);
+      }
+      return next;
+    });
+
+    if (selectedOrderModal && selectedOrderModal.id === orderId) {
+      setSelectedOrderModal((prev) => ({ ...prev, invoiceFile: null }));
+    }
+
+    showToast('Boleta eliminada correctamente');
+  };
+  const [selectedInvoiceModal, setSelectedInvoiceModal] = useState(null);
+  const [editingInvoiceModal, setEditingInvoiceModal] = useState(null);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
   const [isAddOrderModalOpen, setIsAddOrderModalOpen] = useState(false);
   const [manualOrderStep, setManualOrderStep] = useState(1);
   const [manualOrderPhoneTouched, setManualOrderPhoneTouched] = useState(false);
@@ -977,6 +1861,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     shippingCost: 0,
     status: 'en_preparacion',
     paymentMethod: 'Transferencia',
+    date: new Date().toISOString().split('T')[0],
   });
   const [manualOrderItems, setManualOrderItems] = useState([]);
   const [mapsSearchQuery, setMapsSearchQuery] = useState('');
@@ -985,7 +1870,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
   const [selectedFromMaps, setSelectedFromMaps] = useState(false);
 
-  const handleMapsSearch = (val) => {
+  // Route Optimizer Modal State
+  const [isRouteOptimizerModalOpen, setIsRouteOptimizerModalOpen] = useState(false);
+  const [optimizedRouteData, setOptimizedRouteData] = useState(null);
+
+  const handleMapsSearch = async (val) => {
     setMapsSearchQuery(val);
     if (!val || val.trim().length < 2) {
       setMapsSearchResults([]);
@@ -993,77 +1882,65 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return;
     }
 
-    const clean = val.trim().toLowerCase();
-    const localMatches = POPULAR_MAPS_ADDRESSES.filter((item) =>
-      item.address.toLowerCase().includes(clean) || item.city.toLowerCase().includes(clean)
-    );
-
-    const hasExact = localMatches.some((m) => m.address.toLowerCase() === clean);
-    const combined = hasExact
-      ? localMatches
-      : [
-          { address: val.trim(), city: manualOrderCustomer.city || 'Puerto Varas', region: 'Dirección personalizada' },
-          ...localMatches,
-        ];
-
-    setMapsSearchResults(combined.slice(0, 5));
+    setIsSearchingMaps(true);
     setShowMapsDropdown(true);
 
-    if (val.trim().length >= 3) {
-      setIsSearchingMaps(true);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1200);
-
-      fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          val.trim() + ', Chile'
-        )}&addressdetails=1&limit=4`,
-        { signal: controller.signal }
-      )
-        .then((res) => res.json())
-        .then((data) => {
-          clearTimeout(timer);
-          if (Array.isArray(data) && data.length > 0) {
-            const apiResults = data.map((item) => {
-              const road = item.address?.road || item.address?.pedestrian || item.name || '';
-              const houseNumber = item.address?.house_number || '';
-              const fullStreet = houseNumber ? `${road} ${houseNumber}` : road || item.display_name.split(',')[0];
-              const cityFound =
-                item.address?.city ||
-                item.address?.town ||
-                item.address?.village ||
-                item.address?.municipality ||
-                'Puerto Varas';
-              return {
-                address: fullStreet.trim(),
-                city: cityFound,
-                region: item.address?.state || 'Chile',
-              };
-            });
-            setMapsSearchResults((prev) => {
-              const existing = new Set(prev.map((p) => p.address.toLowerCase()));
-              const filteredApi = apiResults.filter((a) => !existing.has(a.address.toLowerCase()));
-              return [...prev, ...filteredApi].slice(0, 6);
-            });
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          setIsSearchingMaps(false);
-        });
+    try {
+      const results = await getGooglePlacePredictions(val);
+      setMapsSearchResults(results);
+    } catch {
+      const clean = val.trim().toLowerCase();
+      const localMatches = POPULAR_MAPS_ADDRESSES.filter((item) =>
+        item.address.toLowerCase().includes(clean) || item.city.toLowerCase().includes(clean)
+      );
+      setMapsSearchResults(localMatches.slice(0, 5));
+    } finally {
+      setIsSearchingMaps(false);
     }
   };
 
-  const handleSelectMapsAddress = (item) => {
+  const handleSelectMapsAddress = async (item) => {
+    let streetName = item.mainText || item.address || item.fullAddress;
+    let cityName = item.city || manualOrderCustomer.city || 'Puerto Varas';
+
+    if (item.placeId && item.source === 'google') {
+      try {
+        const details = await getPlaceDetails(item.placeId);
+        if (details) {
+          streetName = details.street || streetName;
+          cityName = details.city || cityName;
+        }
+      } catch (err) {
+        console.warn('Google Place details error:', err);
+      }
+    }
+
     setManualOrderCustomer((prev) => ({
       ...prev,
-      address: item.address,
-      city: item.city || prev.city,
+      address: streetName,
+      city: cityName,
     }));
-    setMapsSearchQuery(item.address);
+    setMapsSearchQuery(streetName);
     setShowMapsDropdown(false);
     setSelectedFromMaps(true);
-    showToast(`📍 Dirección fijada: ${item.address}, ${item.city}`);
+    showToast(`📍 Dirección Google Maps fijada: ${streetName}, ${cityName}`);
+  };
+
+  const handleOpenRouteOptimizer = () => {
+    // Buscar pedidos en preparación o en camino para despacho
+    const activeOrders = orders.filter(
+      (o) => o.status === 'en_preparacion' || o.status === 'en_camino'
+    );
+    const candidateOrders = activeOrders.length > 0 ? activeOrders : orders.slice(0, 8);
+
+    if (candidateOrders.length === 0) {
+      showToast('⚠️ No hay pedidos registrados para calcular una ruta de despacho.');
+      return;
+    }
+
+    const result = optimizeDeliveryRoute(candidateOrders, CENTRAL_HUB);
+    setOptimizedRouteData(result);
+    setIsRouteOptimizerModalOpen(true);
   };
 
   const [selectedProductToAdd, setSelectedProductToAdd] = useState(PRODUCTS[0]?.id || '');
@@ -1076,13 +1953,181 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [selectedMultiProductIds, setSelectedMultiProductIds] = useState([]);
   const [selectedCustomerModal, setSelectedCustomerModal] = useState(null);
   const [customerModalSubTab, setCustomerModalSubTab] = useState(0); // 0, 1... for pet index, or 'client'
+
+  // Customer Edit & Delete Modals
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  const [customerEditForm, setCustomerEditForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    city: 'Puerto Varas',
+    address: '',
+    depto: '',
+    deliveryReference: '',
+    points: 0,
+    role: 'cliente',
+  });
+  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
+
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+  const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
+
+  const handleOpenEditCustomer = (customer) => {
+    setEditingCustomer(customer);
+    setCustomerEditForm({
+      name: customer.name || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      city: customer.city || 'Puerto Varas',
+      address: customer.address && customer.address !== 'Dirección no registrada' ? customer.address : '',
+      depto: customer.depto || '',
+      deliveryReference: customer.deliveryReference || customer.delivery_reference || '',
+      points: customer.points ?? 0,
+      role: customer.role || 'cliente',
+    });
+  };
+
+  const handleSaveEditCustomer = async (e) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    if (!customerEditForm.name.trim()) {
+      showToast('⚠️ El nombre del tutor es obligatorio');
+      return;
+    }
+
+    setIsSavingCustomer(true);
+    try {
+      const res = await updateCustomerInSupabase(editingCustomer.id, customerEditForm);
+      if (res.success) {
+        setCustomers((prev) =>
+          prev.map((c) =>
+            c.id === editingCustomer.id
+              ? {
+                  ...c,
+                  name: customerEditForm.name.trim(),
+                  email: customerEditForm.email.trim(),
+                  phone: customerEditForm.phone.trim(),
+                  city: customerEditForm.city,
+                  address: customerEditForm.address.trim() || 'Dirección no registrada',
+                  depto: customerEditForm.depto.trim(),
+                  deliveryReference: customerEditForm.deliveryReference.trim(),
+                  points: parseInt(customerEditForm.points, 10) || 0,
+                  role: customerEditForm.role,
+                }
+              : c
+          )
+        );
+
+        if (selectedCustomerModal?.id === editingCustomer.id) {
+          setSelectedCustomerModal((prev) => ({
+            ...prev,
+            name: customerEditForm.name.trim(),
+            email: customerEditForm.email.trim(),
+            phone: customerEditForm.phone.trim(),
+            city: customerEditForm.city,
+            address: customerEditForm.address.trim() || 'Dirección no registrada',
+            depto: customerEditForm.depto.trim(),
+            deliveryReference: customerEditForm.deliveryReference.trim(),
+            points: parseInt(customerEditForm.points, 10) || 0,
+            role: customerEditForm.role,
+          }));
+        }
+
+        showToast(`✓ Tutor "${customerEditForm.name}" actualizado en Supabase`);
+        setEditingCustomer(null);
+      } else {
+        showToast(`❌ Error al actualizar tutor: ${res.error?.message || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      console.error('Error saving customer edit:', err);
+      showToast('❌ Error de conexión al actualizar tutor');
+    } finally {
+      setIsSavingCustomer(false);
+    }
+  };
+
+  const handleOpenDeleteCustomer = (customer) => {
+    setCustomerToDelete(customer);
+  };
+
+  const handleConfirmDeleteCustomer = async () => {
+    if (!customerToDelete) return;
+    setIsDeletingCustomer(true);
+    try {
+      const res = await deleteCustomerFromSupabase(customerToDelete.id);
+      if (res.success) {
+        setCustomers((prev) => prev.filter((c) => c.id !== customerToDelete.id));
+        if (selectedCustomerModal?.id === customerToDelete.id) {
+          setSelectedCustomerModal(null);
+        }
+        showToast(`✓ Tutor "${customerToDelete.name}" eliminado de la base de datos`);
+        setCustomerToDelete(null);
+      } else {
+        showToast(`❌ Error al eliminar tutor: ${res.error?.message || 'Error desconocido'}`);
+      }
+    } catch (err) {
+      console.error('Error deleting customer:', err);
+      showToast('❌ Error de conexión al eliminar tutor');
+    } finally {
+      setIsDeletingCustomer(false);
+    }
+  };
   const [selectedProductPreview, setSelectedProductPreview] = useState(null);
   const [selectedProductInvoicesModal, setSelectedProductInvoicesModal] = useState(null);
   const [isReplenishmentModalOpen, setIsReplenishmentModalOpen] = useState(false);
   const [replenishmentFilter, setReplenishmentFilter] = useState('criticos'); // 'criticos' | 'todos'
   const [isAddAgreementModalOpen, setIsAddAgreementModalOpen] = useState(false);
   const [isAddInvoiceModalOpen, setIsAddInvoiceModalOpen] = useState(false);
+  const [invoiceStep, setInvoiceStep] = useState(1); // 1: Info Factura, 2: Productos, 3: Resumen & Cuadratura
+  const [openDropdownItemId, setOpenDropdownItemId] = useState(null);
+  const [invoiceItemSearchTerms, setInvoiceItemSearchTerms] = useState({});
+
+  useEffect(() => {
+    if (isAddInvoiceModalOpen) {
+      setInvoiceStep(1);
+      setInvoiceItemSearchTerms({});
+    }
+  }, [isAddInvoiceModalOpen]);
+
+  useEffect(() => {
+    if (!openDropdownItemId) return;
+    const handleClickOutside = (e) => {
+      const el = document.getElementById(`invoice-prod-dropdown-${openDropdownItemId}`);
+      if (el && !el.contains(e.target)) {
+        setOpenDropdownItemId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openDropdownItemId]);
   const [isAddExpenseModalOpen, setIsAddExpenseModalOpen] = useState(false);
+  const [isAddInvestmentModalOpen, setIsAddInvestmentModalOpen] = useState(false);
+  const loggedInPartnerName = (user?.name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón')).trim();
+  const [newInvestmentForm, setNewInvestmentForm] = useState({
+    partnerName: loggedInPartnerName,
+    partnerRut: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    investmentType: 'capital_inicial',
+    paymentMethod: 'Transferencia Bancaria',
+    destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
+    referenceNumber: '',
+    notes: '',
+  });
+
+  // Al abrir el modal, sincronizar automáticamente con el socio en sesión activa o predeterminado
+  useEffect(() => {
+    if (isAddInvestmentModalOpen) {
+      const activePartner = (newInvestmentForm.partnerName || user?.name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón')).trim();
+      setNewInvestmentForm((prev) => ({
+        ...prev,
+        partnerName: prev.partnerName || activePartner,
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        investmentType: 'capital_inicial',
+      }));
+    }
+  }, [isAddInvestmentModalOpen, user?.name, user?.fullName, user?.email]);
   const [isMercadoPagoModalOpen, setIsMercadoPagoModalOpen] = useState(false);
   const [expandedFinanceAction, setExpandedFinanceAction] = useState(null);
   const financeActionsRef = useRef(null);
@@ -1107,8 +2152,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     freeThreshold: 25000,
   });
 
-  // Delivery Sub-tab ('zonas' | 'vehiculos') & Vehicle Fleet State
-  const [dispatchSubTab, setDispatchSubTab] = useState('zonas'); // 'zonas' | 'vehiculos'
+  // Delivery Sub-tab ('zonas' | 'vehiculos' | 'horarios') & Vehicle Fleet State
+  const [dispatchSubTab, setDispatchSubTab] = useState('zonas'); // 'zonas' | 'vehiculos' | 'horarios'
   const [vehicles, setVehicles] = useState(INITIAL_VEHICLES);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState(false);
   const [vehicleModalForm, setVehicleModalForm] = useState({
@@ -1117,6 +2162,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     plate: '',
     efficiencyKmPerL: 12,
     fuelPricePerL: 1320,
+  });
+
+  // Delivery Schedules State
+  const [deliverySchedules, setDeliverySchedules] = useState(DEFAULT_DELIVERY_SCHEDULES);
+  const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
+  const [slotModalCityId, setSlotModalCityId] = useState('frutillar');
+  const [slotModalForm, setSlotModalForm] = useState({
+    id: null,
+    label: '',
+    days: 'Lunes a Sábado',
+    cutoffNote: '',
+    active: true,
   });
 
   // Cálculo del promedio de costo de combustible por km de la flota (Idea 4: promedio de los 2 autos)
@@ -1185,19 +2242,189 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     initialCouponsCount: 10,
   });
 
-  const [newInvoiceForm, setNewInvoiceForm] = useState({
+  const createInitialInvoiceItem = () => ({
+    id: 'ITEM-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     selectedProductId: '',
-    invoiceNumber: '',
-    provider: '',
-    providerRut: '',
-    date: new Date().toISOString().split('T')[0],
-    dueDate: '',
+    brand: '',
     productName: '',
+    variety: '',
     format: '12 kg',
+    petType: 'perros', // 'perros' | 'gatos' | 'ambos'
+    category: 'Alimento Seco',
+    customCategory: '',
     quantityReceived: 10,
-    unitCostNeto: 42000,
-    salePrice: 68990,
+    unitCostNeto: 35000,
+    profitMarginPercent: 30,
+    salePrice: 52150,
   });
+
+  const [newInvoiceForm, setNewInvoiceForm] = useState({
+    providerRut: '',
+    provider: '',
+    invoiceNumber: '',
+    date: new Date().toISOString().split('T')[0],
+    dueDate: new Date().toISOString().split('T')[0],
+    status: 'pendiente', // 'pendiente' | 'pagada'
+    hasShippingCost: false,
+    shippingCostNeto: '',
+    shippingInvoiceNumber: '',
+    shippingProvider: '',
+    shippingDistributionMethod: 'units', // 'units' | 'value'
+    items: [
+      {
+        id: 'ITEM-INIT-1',
+        selectedProductId: '',
+        brand: '',
+        productName: '',
+        variety: '',
+        format: '12 kg',
+        petType: 'perros',
+        category: 'Alimento Seco',
+        customCategory: '',
+        quantityReceived: 10,
+        unitCostNeto: 35000,
+        profitMarginPercent: 30,
+        salePrice: 52150,
+      },
+    ],
+  });
+
+  const handleUpdateInvoiceItem = (itemId, updates) => {
+    setNewInvoiceForm((prev) => ({
+      ...prev,
+      items: prev.items.map((it) => (it.id === itemId ? { ...it, ...updates } : it)),
+    }));
+  };
+
+  const handleAddInvoiceItem = () => {
+    setNewInvoiceForm((prev) => ({
+      ...prev,
+      items: [...prev.items, createInitialInvoiceItem()],
+    }));
+  };
+
+  const handleRemoveInvoiceItem = (itemId) => {
+    setNewInvoiceForm((prev) => {
+      if (prev.items.length <= 1) return prev;
+      return {
+        ...prev,
+        items: prev.items.filter((it) => it.id !== itemId),
+      };
+    });
+  };
+
+  // Known suppliers directory (remembered from invoices, inventory, and localStorage)
+  const knownSuppliers = useMemo(() => {
+    const map = new Map();
+    const cleanKey = (r) => (r || '').replace(/[^0-9kK]/g, '').toUpperCase();
+
+    // Base seeded suppliers from initial catalogue and vendors
+    const baseSuppliers = [
+      { rut: '78.920.800-K', name: 'Comercial Milka Limitada' },
+      { rut: '76.452.190-3', name: 'Distribuidora Bravery Chile SpA' },
+      { rut: '76.123.456-7', name: 'Distribuidora PetFood Sur SpA' },
+    ];
+    baseSuppliers.forEach((s) => {
+      const k = cleanKey(s.rut);
+      if (k) map.set(k, s);
+    });
+
+    // From localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem('patitas_known_suppliers') || '[]');
+      if (Array.isArray(saved)) {
+        saved.forEach((s) => {
+          const k = cleanKey(s.rut);
+          if (k && s.name) map.set(k, { rut: s.rut, name: s.name });
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    // From invoices
+    (invoices || []).forEach((inv) => {
+      const k = cleanKey(inv.rut);
+      if (k && inv.provider) {
+        map.set(k, { rut: inv.rut, name: inv.provider });
+      }
+    });
+
+    // From inventory
+    (inventory || []).forEach((prod) => {
+      const k = cleanKey(prod.providerRut);
+      if (k && prod.provider) {
+        map.set(k, { rut: prod.providerRut, name: prod.provider });
+      }
+      (prod.invoices || []).forEach((inv) => {
+        const invK = cleanKey(inv.providerRut);
+        if (invK && inv.provider) {
+          map.set(invK, { rut: inv.providerRut, name: inv.provider });
+        }
+      });
+    });
+
+    return map;
+  }, [invoices, inventory]);
+
+  /**
+   * Formatea un RUT chileno en tiempo real con puntos y guión (ej: 76.546.123-4)
+   */
+  const formatRutLive = (val, prevVal = '') => {
+    if (!val) return '';
+    let clean = val.replace(/[^0-9kK]/g, '').toUpperCase();
+    const prevClean = (prevVal || '').replace(/[^0-9kK]/g, '').toUpperCase();
+
+    // Si el usuario borra con backspace sobre un punto o guión,
+    // se elimina el dígito anterior para no quedar atascado
+    if (clean.length === prevClean.length && val.length < (prevVal || '').length && clean.length > 0) {
+      clean = clean.slice(0, -1);
+    }
+
+    // La letra K sólo es válida como dígito verificador (al final)
+    const kIndex = clean.indexOf('K');
+    if (kIndex !== -1) {
+      clean = clean.slice(0, kIndex + 1);
+    }
+
+    // Máximo 9 caracteres alfanuméricos (8 de cuerpo + 1 verificador)
+    clean = clean.slice(0, 9);
+
+    if (clean.length === 0) return '';
+    if (clean.length === 1) return clean;
+
+    let body = clean.slice(0, -1);
+    const dv = clean.slice(-1);
+
+    let formattedBody = '';
+    while (body.length > 3) {
+      formattedBody = '.' + body.slice(-3) + formattedBody;
+      body = body.slice(0, -3);
+    }
+    formattedBody = body + formattedBody;
+
+    return `${formattedBody}-${dv}`;
+  };
+
+  const handleProviderRutChange = (e) => {
+    const rawVal = e.target.value;
+    const formattedVal = formatRutLive(rawVal, newInvoiceForm.providerRut);
+    const cleanKey = (formattedVal || '').replace(/[^0-9kK]/g, '').toUpperCase();
+    const matched = knownSuppliers.get(cleanKey);
+
+    if (matched && matched.name) {
+      setNewInvoiceForm((prev) => ({
+        ...prev,
+        providerRut: formattedVal,
+        provider: matched.name,
+      }));
+    } else {
+      setNewInvoiceForm((prev) => ({
+        ...prev,
+        providerRut: formattedVal,
+      }));
+    }
+  };
 
   const [newExpenseForm, setNewExpenseForm] = useState({
     category: 'combustible',
@@ -1285,6 +2512,86 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     showToast('Gasto eliminado del registro contable.');
   };
 
+  const handlePartnerRutChange = (e) => {
+    const rawVal = e.target.value;
+    const formattedVal = formatRutLive(rawVal, newInvestmentForm.partnerRut);
+    setNewInvestmentForm((prev) => ({
+      ...prev,
+      partnerRut: formattedVal,
+    }));
+  };
+
+  const handleSaveNewInvestment = (e) => {
+    e.preventDefault();
+    const cleanAmount = parseInt(String(newInvestmentForm.amount).replace(/\D/g, ''), 10) || 0;
+    if (cleanAmount <= 0) {
+      showToast('⚠️ Por favor ingresa un monto válido mayor a $0.');
+      return;
+    }
+    const currentPartner = (newInvestmentForm.partnerName || user?.name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón')).trim();
+
+    const isAumento = newInvestmentForm.investmentType === 'aumento_capital';
+    const typeLabel = isAumento ? 'Aumento de Capital' : 'Capital Inicial';
+
+    let maxNum = investments.reduce((max, inv) => {
+      const m = String(inv.id || '').match(/INV-(\d+)/i);
+      return m ? Math.max(max, parseInt(m[1], 10)) : max;
+    }, 0);
+    const newId = `INV-${String(maxNum + 1).padStart(2, '0')}`;
+
+    const newInv = {
+      id: newId,
+      partnerName: currentPartner,
+      partnerRut: '',
+      amount: cleanAmount,
+      date: newInvestmentForm.date || new Date().toISOString().split('T')[0],
+      investmentType: isAumento ? 'aumento_capital' : 'capital_inicial',
+      investmentTypeLabel: typeLabel,
+      paymentMethod: 'Transferencia Bancaria',
+      destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
+      referenceNumber: '',
+      notes: '',
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [newInv, ...investments];
+    setInvestments(updated);
+    savePartnerInvestmentsToSupabase(updated).catch((err) =>
+      console.error('Error saving partner investments to Supabase:', err)
+    );
+
+    setIsAddInvestmentModalOpen(false);
+    setNewInvestmentForm({
+      partnerName: currentPartner,
+      partnerRut: '',
+      amount: '',
+      date: new Date().toISOString().split('T')[0],
+      investmentType: 'capital_inicial',
+      paymentMethod: 'Transferencia Bancaria',
+      destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
+      referenceNumber: '',
+      notes: '',
+    });
+    showToast(`✅ Inversión de ${formatCLP(cleanAmount)} de ${currentPartner} registrada.`);
+  };
+
+  const handleDeleteInvestment = (idToDelete) => {
+    const toDelete = investments.find((i) => i.id === idToDelete);
+    if (!toDelete) return;
+    if (
+      window.confirm(
+        `¿Seguro que deseas eliminar el registro de inversión de ${toDelete.partnerName} por ${formatCLP(toDelete.amount)}?`
+      )
+    ) {
+      const updated = investments.filter((i) => i.id !== idToDelete);
+      setInvestments(updated);
+      savePartnerInvestmentsToSupabase(updated).catch((err) =>
+        console.error('Error deleting partner investment from Supabase:', err)
+      );
+      showToast(`Inversión de ${toDelete.partnerName} eliminada.`);
+    }
+  };
+
   // Toast alert
   const [toastMessage, setToastMessage] = useState('');
   const showToast = (msg) => {
@@ -1293,9 +2600,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
   // Login handler
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    if (adminEmail.trim().length > 0 && adminPassword.trim().length > 0) {
+    const cleanEmail = adminEmail.trim().toLowerCase();
+    if (cleanEmail.length > 0 && adminPassword.trim().length > 0) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: adminPassword,
+        });
+        if (!error && data?.user) {
+          const profile = await getCustomerProfile(data.user.id);
+          const adminObj = {
+            id: profile?.id || data.user.id,
+            auth_user_id: data.user.id,
+            name: profile?.full_name || (cleanEmail.includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón'),
+            email: cleanEmail,
+            role: 'admin',
+          };
+          localStorage.setItem('patitas_user', JSON.stringify(adminObj));
+          localStorage.setItem('patitas_pwa_session', JSON.stringify(adminObj));
+          if (onSwitchRole) onSwitchRole(adminObj);
+        }
+      } catch (err) {
+        console.warn('Admin login notice:', err);
+      }
       setIsAdminAuthenticated(true);
       setAuthError('');
       showToast('¡Bienvenido al Panel de Administración!');
@@ -1318,25 +2647,196 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     showToast('Sesión de administrador cerrada con éxito.');
   };
 
-  // Order status updater
+  // Order status updater con verificación de pago en entregas
   const handleUpdateOrderStatus = (orderId, newStatus) => {
+    // Si se intenta marcar como entregado y el pedido aún no está pagado:
+    if (newStatus === 'entregado') {
+      const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
+      const isPaid = String(targetOrder?.paymentStatus || '').toLowerCase() === 'pagado';
+      if (!isPaid && targetOrder) {
+        const currentMethod = String(targetOrder.paymentMethod || '').toLowerCase();
+        const defaultMethod = currentMethod.includes('efectivo') ? 'Efectivo' : 'Transferencia';
+        setPaymentDeliveryConfirmModal({
+          order: targetOrder,
+          paymentMethod: defaultMethod,
+        });
+        return;
+      }
+    }
+
+    applyOrderStatusUpdate(orderId, newStatus);
+  };
+
+  const applyOrderStatusUpdate = (orderId, newStatus) => {
+    const isDelivery = newStatus === 'entregado';
+    const deliveryTimestamp = isDelivery ? new Date().toISOString() : null;
+    const adminName = currentAdminName;
+
+    if (isDelivery) {
+      try {
+        localStorage.setItem(`patitas_order_delivery_${orderId}`, JSON.stringify({
+          deliveredBy: user?.id || 'admin_ignacio',
+          deliveredByName: adminName,
+          deliveredAt: deliveryTimestamp,
+        }));
+      } catch (e) {}
+    }
+
     setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o))
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: newStatus,
+              ...(isDelivery
+                ? {
+                    deliveredBy: user?.id || 'admin_ignacio',
+                    deliveredByName: adminName,
+                    deliveredAt: deliveryTimestamp,
+                  }
+                : {}),
+            }
+          : o
+      )
     );
     showToast(`Pedido ${orderId} actualizado a: ${newStatus.replace('_', ' ').toUpperCase()}`);
     if (selectedOrderModal && selectedOrderModal.id === orderId) {
-      setSelectedOrderModal((prev) => ({ ...prev, status: newStatus }));
+      setSelectedOrderModal((prev) => ({
+        ...prev,
+        status: newStatus,
+        ...(isDelivery
+          ? {
+              deliveredBy: user?.id || 'admin_ignacio',
+              deliveredByName: adminName,
+              deliveredAt: deliveryTimestamp,
+            }
+          : {}),
+      }));
     }
 
     // Persistir estado del pedido en Supabase
+    const payload = {
+      status: newStatus,
+      ...(isDelivery
+        ? {
+            delivered_by: user?.id || 'admin_ignacio',
+            delivered_by_name: adminName,
+            delivered_at: deliveryTimestamp,
+          }
+        : {}),
+    };
+
     supabase
       .from('orders')
-      .update({ status: newStatus })
+      .update(payload)
       .eq('id', orderId)
+      .then(({ error }) => {
+        if (error && (error.code === '42703' || error.message?.includes('column'))) {
+          return supabase.from('orders').update({ status: newStatus }).eq('id', orderId);
+        }
+      })
       .then(() => {
         window.dispatchEvent(new Event('patitas_orders_updated'));
       })
       .catch((err) => console.error('Error updating order status in Supabase:', err));
+  };
+
+  const handleConfirmPaymentAndDelivery = async () => {
+    if (!paymentDeliveryConfirmModal?.order) return;
+    const { order, paymentMethod } = paymentDeliveryConfirmModal;
+    const orderId = order.id;
+    const deliveryTimestamp = new Date().toISOString();
+    const adminName = currentAdminName;
+
+    try {
+      try {
+        localStorage.setItem(`patitas_order_delivery_${orderId}`, JSON.stringify({
+          deliveredBy: user?.id || 'admin_ignacio',
+          deliveredByName: adminName,
+          deliveredAt: deliveryTimestamp,
+        }));
+      } catch (e) {}
+
+      // 1. Actualizar orden en Supabase: status = 'entregado', payment_status = 'pagado', payment_method = paymentMethod
+      const payload = {
+        status: 'entregado',
+        payment_status: 'pagado',
+        payment_method: paymentMethod,
+        delivered_by: user?.id || 'admin_ignacio',
+        delivered_by_name: adminName,
+        delivered_at: deliveryTimestamp,
+      };
+
+      let { error: updateErr } = await supabase
+        .from('orders')
+        .update(payload)
+        .eq('id', orderId);
+
+      if (updateErr && (updateErr.code === '42703' || updateErr.message?.includes('column'))) {
+        const fallbackRes = await supabase
+          .from('orders')
+          .update({
+            status: 'entregado',
+            payment_status: 'pagado',
+            payment_method: paymentMethod,
+          })
+          .eq('id', orderId);
+        updateErr = fallbackRes.error;
+      }
+
+      if (updateErr) throw updateErr;
+
+      // 2. Acreditar puntos Club Patitas al cliente en Supabase
+      const custId = order.customerId || order.customer_id;
+      const pts = order.pointsEarned ?? Math.floor((order.total || 0) / 1000);
+      if (custId && pts > 0) {
+        await updateCustomerPoints(custId, pts);
+      } else if (order.customerPhone || order.customerEmail) {
+        const cust = await getCustomerProfile(order.customerPhone || order.customerEmail);
+        if (cust?.id && pts > 0) {
+          await updateCustomerPoints(cust.id, pts);
+        }
+      }
+
+      // 3. Actualizar estado local de la orden
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === orderId
+            ? {
+                ...o,
+                status: 'entregado',
+                paymentStatus: 'pagado',
+                paymentMethod,
+                deliveredBy: user?.id || 'admin_ignacio',
+                deliveredByName: adminName,
+                deliveredAt: deliveryTimestamp,
+              }
+            : o
+        )
+      );
+
+      if (selectedOrderModal && selectedOrderModal.id === orderId) {
+        setSelectedOrderModal((prev) => ({
+          ...prev,
+          status: 'entregado',
+          paymentStatus: 'pagado',
+          paymentMethod,
+          deliveredBy: user?.id || 'admin_ignacio',
+          deliveredByName: adminName,
+          deliveredAt: deliveryTimestamp,
+        }));
+      }
+
+      // 4. Notificar eventos globales
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      window.dispatchEvent(new Event('patitas_customers_updated'));
+
+      showToast(`¡Pedido ${orderId} registrado como Pagado (${paymentMethod}) y Entregado ✓ por ${adminName}!`);
+      setPaymentDeliveryConfirmModal(null);
+    } catch (err) {
+      console.error('Error al confirmar pago y entrega del pedido:', err);
+      showToast('Ocurrió un error al confirmar la entrega del pedido.', 'error');
+    }
   };
 
   // Helper para consultar stock en tiempo real cruzando inventario y catálogo
@@ -1480,13 +2980,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const shipping = parseInt(manualOrderCustomer.shippingCost, 10) || 0;
     const total = subtotal + shipping;
 
-    const now = new Date();
+    const orderDateStr = manualOrderCustomer.date || new Date().toISOString().split('T')[0];
+    const [ordY, ordM, ordD] = orderDateStr.split('-').map(Number);
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const dateFormatted = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+    const dateFormatted = `${ordD} ${months[ordM - 1]} ${ordY}`;
+    const now = new Date();
     const timeFormatted = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const randomDigits = Math.floor(1000 + Math.random() * 9000);
-    const newId = `PED-${randomDigits}`;
-    const invoiceNum = `BOL-2026-${randomDigits}`;
+    const orderIso = new Date(Date.UTC(ordY, ordM - 1, ordD, 12, 0, 0)).toISOString();
+    let maxNum = 0;
+    for (const o of orders) {
+      const match = String(o.id || '').match(/PED-(\d+)/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    }
+    const nextNum = maxNum + 1;
+    const seqStr = String(nextNum).padStart(4, '0');
+    const newId = `PED-${seqStr}`;
+    const invoiceNum = `BOL-${ordY}-${seqStr}`;
 
     const formattedPhone = `+56 ${cleanPhoneDigits.slice(0, 1)} ${cleanPhoneDigits.slice(1, 5)} ${cleanPhoneDigits.slice(5, 9)}`;
 
@@ -1513,6 +3025,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       total,
       date: dateFormatted,
       time: timeFormatted,
+      created_at: orderIso,
       status: manualOrderCustomer.status || 'en_preparacion',
       tracking: `CHI-${Math.floor(8000000 + Math.random() * 1000000)}`,
       invoiceNumber: invoiceNum,
@@ -1523,11 +3036,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     };
 
     setOrders([newOrder, ...orders]);
+    setInventory((prevInv) =>
+      prevInv.map((p) => {
+        const itemOrdered = (newOrder.items || []).find(
+          (it) => it.id === p.id || String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase()
+        );
+        if (itemOrdered) {
+          const qty = Number(itemOrdered.quantity || 1);
+          const newStock = Math.max(0, (Number(p.stock) || 0) - qty);
+          return {
+            ...p,
+            stock: newStock,
+            status: newStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+          };
+        }
+        return p;
+      })
+    );
     setIsAddOrderModalOpen(false);
     setManualOrderStep(1);
-    showToast(`✅ ¡Pedido ${newId} creado exitosamente!`);
+    showToast(`✅ ¡Pedido ${newId} (${formatPeriodLabel(getYearMonthFromDate(orderDateStr))}) registrado exitosamente!`);
 
-    // Sincronizar pedido manual a Supabase
+    // Sincronizar pedido manual a Supabase con la fecha contable exacta
     createOrderInSupabase({
       id: newId,
       customerName: newOrder.customer,
@@ -1546,6 +3076,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       deliveryZone: newOrder.deliveryZone,
       notes: newOrder.notes,
       invoiceNumber: newOrder.invoiceNumber,
+      created_at: orderIso,
+      delivery_date: orderDateStr,
+      delivery_day_text: dateFormatted,
     }, newOrder.items).then(({ success }) => {
       if (success) {
         window.dispatchEvent(new CustomEvent('patitas_orders_updated'));
@@ -1565,6 +3098,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       shippingCost: 0,
       status: 'en_preparacion',
       paymentMethod: 'Transferencia',
+      date: new Date().toISOString().split('T')[0],
     });
     setManualOrderItems([]);
     setQuantityToAdd(1);
@@ -1762,150 +3296,328 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
 
-  // Register New Invoice & Stock
+  // Register New Invoice & Stock (supports multiple products per invoice)
   const handleSaveInvoice = (e) => {
     e.preventDefault();
-    if (!newInvoiceForm.invoiceNumber || !newInvoiceForm.productName) {
-      showToast('Por favor completa los datos de la factura y producto');
+    const items = newInvoiceForm.items || [];
+    const validItems = items.filter(
+      (it) => (it.productName || '').trim() || (it.brand || '').trim()
+    );
+
+    if (!newInvoiceForm.invoiceNumber || validItems.length === 0) {
+      showToast('Por favor completa el N° de factura y al menos un producto');
       return;
     }
 
-    const qty = parseInt(newInvoiceForm.quantityReceived, 10) || 1;
-    const unitNeto = parseInt(newInvoiceForm.unitCostNeto, 10) || 0;
-    const saleP = parseInt(newInvoiceForm.salePrice, 10) || Math.round(unitNeto * 1.4);
-    const subtotalNeto = qty * unitNeto;
-    const iva = Math.round(subtotalNeto * 0.19);
-    const totalBruto = subtotalNeto + iva;
+    const hasShipping = Boolean(newInvoiceForm.hasShippingCost);
+    const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(newInvoiceForm.shippingCostNeto, 10) || 0) : 0;
+    const shippingMethod = newInvoiceForm.shippingDistributionMethod || 'units';
+
+    let totalQuantity = 0;
+    let totalNeto = 0;
+
+    validItems.forEach((it) => {
+      const q = parseInt(it.quantityReceived, 10) || 1;
+      const u = parseInt(it.unitCostNeto, 10) || 0;
+      totalQuantity += q;
+      totalNeto += q * u;
+    });
+
+    const processedItems = validItems.map((it) => {
+      const qty = parseInt(it.quantityReceived, 10) || 1;
+      const supplierUnitNeto = parseInt(it.unitCostNeto, 10) || 0;
+      const subtotalSupplierNeto = qty * supplierUnitNeto;
+
+      let unitShippingCost = 0;
+      if (shippingFeeNeto > 0) {
+        if (shippingMethod === 'value' && totalNeto > 0) {
+          const itemNeto = subtotalSupplierNeto;
+          unitShippingCost = Math.round(((itemNeto / totalNeto) * shippingFeeNeto) / qty);
+        } else if (totalQuantity > 0) {
+          unitShippingCost = Math.round(shippingFeeNeto / totalQuantity);
+        }
+      }
+
+      const landedUnitNeto = supplierUnitNeto + unitShippingCost;
+      const margin = Number(it.profitMarginPercent) || 0;
+      // El precio de venta sugerido protege el margen real calculándose sobre el costo puesto en bodega
+      const saleP = parseInt(it.salePrice, 10) || Math.round(landedUnitNeto * (1 + 0.19 + margin / 100));
+      const subtotalNeto = subtotalSupplierNeto;
+      const iva = Math.round(subtotalNeto * 0.19);
+      const totalBruto = subtotalNeto + iva;
+
+      const cleanBrand = (it.brand || '').trim();
+      const cleanName = (it.productName || '').trim();
+      const cleanVariety = (it.variety || '').trim();
+
+      let fullProdTitle = cleanName;
+      if (cleanBrand && !fullProdTitle.toLowerCase().includes(cleanBrand.toLowerCase())) {
+        fullProdTitle = `${cleanBrand} ${fullProdTitle}`;
+      }
+      if (cleanVariety && !fullProdTitle.toLowerCase().includes(cleanVariety.toLowerCase())) {
+        fullProdTitle = `${fullProdTitle} ${cleanVariety}`;
+      }
+      fullProdTitle = fullProdTitle.trim() || cleanName || cleanBrand || 'Producto';
+
+      const finalCategory =
+        it.category === 'Otro' && (it.customCategory || '').trim()
+          ? it.customCategory.trim()
+          : it.category || 'Alimento Seco';
+      const finalPetType = it.petType || 'perros';
+
+      return {
+        ...it,
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        landedUnitNeto,
+        unitNeto: landedUnitNeto,
+        margin,
+        saleP,
+        subtotalNeto,
+        iva,
+        totalBruto,
+        cleanBrand,
+        cleanName,
+        cleanVariety,
+        fullProdTitle,
+        category: finalCategory,
+        petType: finalPetType,
+        format: it.format || '12 kg',
+      };
+    });
+
+    const overallIva = Math.round(totalNeto * 0.19);
+    const overallBruto = totalNeto + overallIva;
 
     const newInvoiceObj = {
       invoiceNumber: newInvoiceForm.invoiceNumber,
       provider: newInvoiceForm.provider || 'Proveedor Autorizado',
       rut: newInvoiceForm.providerRut || '76.123.456-7',
       date: newInvoiceForm.date,
-      dueDate: newInvoiceForm.dueDate || 'En 30 días',
-      productName: newInvoiceForm.productName,
-      quantityReceived: qty,
-      unitCostNeto: unitNeto,
-      totalNeto: subtotalNeto,
-      iva: iva,
-      totalBruto: totalBruto,
-      status: 'pendiente',
-      itemsCount: qty,
+      dueDate: newInvoiceForm.dueDate || newInvoiceForm.date,
+      productName: processedItems.map((p) => p.fullProdTitle).join(', '),
+      brand: processedItems[0]?.cleanBrand || 'Patitas del Sur',
+      variety: processedItems.map((p) => p.cleanVariety).filter(Boolean).join(', '),
+      format: processedItems[0]?.format || '12 kg',
+      quantityReceived: totalQuantity,
+      unitCostNeto: processedItems[0]?.landedUnitNeto || processedItems[0]?.unitNeto || 0,
+      supplierUnitCostNeto: processedItems[0]?.supplierUnitNeto || 0,
+      profitMarginPercent: processedItems[0]?.margin || 0,
+      salePrice: processedItems[0]?.saleP || 0,
+      totalNeto: totalNeto,
+      iva: overallIva,
+      totalBruto: overallBruto,
+      status: newInvoiceForm.status || 'pendiente',
+      itemsCount: totalQuantity,
+      items: processedItems,
       paymentMethod: 'Crédito Proveedor',
+      hasShippingCost: hasShipping,
+      shippingCostNeto: shippingFeeNeto,
+      shippingInvoiceNumber: (newInvoiceForm.shippingInvoiceNumber || '').trim(),
+      shippingProvider: (newInvoiceForm.shippingProvider || '').trim(),
+      shippingDistributionMethod: shippingMethod,
     };
     setInvoices([newInvoiceObj, ...invoices]);
+
+    // Persist supplier into localStorage for future smart auto-fill
+    if (newInvoiceForm.providerRut && newInvoiceForm.provider) {
+      try {
+        const currentSaved = JSON.parse(localStorage.getItem('patitas_known_suppliers') || '[]');
+        const cleanK = (newInvoiceForm.providerRut || '').replace(/[^0-9kK]/g, '').toUpperCase();
+        const filtered = Array.isArray(currentSaved)
+          ? currentSaved.filter((s) => (s.rut || '').replace(/[^0-9kK]/g, '').toUpperCase() !== cleanK)
+          : [];
+        filtered.push({ rut: newInvoiceForm.providerRut.trim(), name: newInvoiceForm.provider.trim() });
+        localStorage.setItem('patitas_known_suppliers', JSON.stringify(filtered));
+      } catch {
+        // ignore
+      }
+    }
+
+    // Persistir ítems y trazabilidad en caché local
+    try {
+      localStorage.setItem('patitas_invoice_items_' + (newInvoiceObj.invoiceNumber || newInvoiceObj.id), JSON.stringify(processedItems));
+    } catch {
+      // ignore
+    }
 
     // Sincronizar factura de compra en Supabase
     createPurchaseInvoiceInSupabase(newInvoiceObj);
 
-    const existingIndex = inventory.findIndex(
-      (p) =>
-        (newInvoiceForm.selectedProductId && p.id === newInvoiceForm.selectedProductId) ||
-        p.name.toLowerCase().trim() === newInvoiceForm.productName.toLowerCase().trim()
-    );
+    // Actualizar o crear productos en inventario para cada item de la factura
+    setInventory((prevInv) => {
+      let currentInv = [...prevInv];
 
-    if (existingIndex > -1) {
-      const prevItem = inventory[existingIndex];
-      const newStock = prevItem.stock + qty;
+      // Calcular el número correlativo máximo actual para IDs tipo PROD-XX
+      let nextProdNum = currentInv.reduce((max, p) => {
+        const m = String(p.id || '').match(/PROD-(\d+)/i);
+        return m ? Math.max(max, parseInt(m[1], 10)) : max;
+      }, 0);
 
-      setInventory((prev) => {
-        const updated = [...prev];
-        const item = updated[existingIndex];
-        const existingInvoices = item.invoices || [
-          {
-            invoiceNumber: item.invoiceNumber,
-            invoiceDate: item.invoiceDate,
-            provider: item.provider,
-            providerRut: item.providerRut,
-            quantity: item.stock,
-            unitCostNeto: item.unitCostNeto,
-          },
-        ];
+      processedItems.forEach((it) => {
+        const itemFormatClean = (it.format || '12 kg').toLowerCase().trim();
+        const itemTitleClean = cleanBaseProductName(it.fullProdTitle || it.cleanName, it.cleanBrand).toLowerCase().trim();
 
-        const newInvoiceEntry = {
-          invoiceNumber: newInvoiceForm.invoiceNumber,
-          invoiceDate: newInvoiceForm.date,
-          provider: newInvoiceForm.provider || 'Proveedor Autorizado',
-          providerRut: newInvoiceForm.providerRut || '76.123.456-7',
-          quantity: qty,
-          unitCostNeto: unitNeto,
-        };
+        // 1. Coincidencia exacta (mismo producto Y mismo formato de peso -> reposición)
+        const exactMatchIdx = currentInv.findIndex((p) => {
+          if (it.selectedProductId && it.selectedProductId !== 'nuevo') {
+            return p.id === it.selectedProductId;
+          }
+          const pFormat = (p.format || extractProductFormat(p)).toLowerCase().trim();
+          const pTitle = cleanBaseProductName(p.name, p.brand).toLowerCase().trim();
+          return pTitle === itemTitleClean && pFormat === itemFormatClean;
+        });
 
-        updated[existingIndex] = {
-          ...item,
-          stock: newStock,
-          invoiceNumber: newInvoiceForm.invoiceNumber,
-          invoiceDate: newInvoiceForm.date,
-          unitCostNeto: unitNeto,
-          salePrice: saleP,
-          provider: newInvoiceForm.provider || item.provider,
-          providerRut: newInvoiceForm.providerRut || item.providerRut,
-          status: newStock <= (item.minStock || 5) ? 'stock_bajo' : 'disponible',
-          invoices: [newInvoiceEntry, ...existingInvoices],
-        };
-        return updated;
+        // 2. Coincidencia base (mismo producto pero diferente formato de peso -> variante hermana)
+        const baseSibling = currentInv.find((p) => {
+          const pTitle = cleanBaseProductName(p.name, p.brand).toLowerCase().trim();
+          return pTitle === itemTitleClean;
+        });
+
+        const landedCost = it.landedUnitNeto || it.unitNeto;
+
+        if (exactMatchIdx > -1) {
+          const prevItem = currentInv[exactMatchIdx];
+          const prevStock = Math.max(0, parseInt(prevItem.stock, 10) || 0);
+          const prevCost = Math.max(0, parseInt(prevItem.unitCostNeto, 10) || 0);
+          const addedStock = it.qty;
+          const newStock = prevStock + addedStock;
+
+          // CÁLCULO PMP (Precio Medio Ponderado):
+          // Ponderar stock previo con nuevo lote que incluye flete
+          const weightedCost = (newStock > 0 && prevStock > 0 && prevCost > 0)
+            ? Math.round(((prevStock * prevCost) + (addedStock * landedCost)) / newStock)
+            : landedCost;
+
+          const newInvoiceEntry = {
+            invoiceNumber: newInvoiceForm.invoiceNumber,
+            invoiceDate: newInvoiceForm.date,
+            provider: newInvoiceForm.provider || 'Proveedor Autorizado',
+            providerRut: newInvoiceForm.providerRut || '76.123.456-7',
+            quantity: it.qty,
+            supplierUnitCostNeto: it.supplierUnitNeto,
+            shippingUnitCost: it.unitShippingCost,
+            landedCostNeto: landedCost,
+            unitCostNeto: weightedCost,
+          };
+
+          const existingInvoices = prevItem.invoices || [
+            {
+              invoiceNumber: prevItem.invoiceNumber,
+              invoiceDate: prevItem.invoiceDate,
+              provider: prevItem.provider,
+              providerRut: prevItem.providerRut,
+              quantity: prevStock,
+              unitCostNeto: prevCost,
+            },
+          ];
+
+          currentInv[exactMatchIdx] = {
+            ...prevItem,
+            brand: it.cleanBrand || prevItem.brand || 'Patitas del Sur',
+            variety: it.cleanVariety || prevItem.variety,
+            category: it.category || prevItem.category || 'Alimento Seco',
+            petType: it.petType || prevItem.petType || 'perros',
+            format: it.format || prevItem.format || '12 kg',
+            stock: newStock,
+            invoiceNumber: newInvoiceForm.invoiceNumber,
+            invoiceDate: newInvoiceForm.date,
+            unitCostNeto: weightedCost, // ¡Costo ponderado PMP con flete incorporado!
+            supplierUnitCostNeto: it.supplierUnitNeto,
+            landedCostNeto: landedCost,
+            salePrice: it.saleP,
+            provider: newInvoiceForm.provider || prevItem.provider,
+            providerRut: newInvoiceForm.providerRut || prevItem.providerRut,
+            status: newStock <= (prevItem.minStock || 5) ? 'stock_bajo' : 'disponible',
+            invoices: [newInvoiceEntry, ...existingInvoices],
+          };
+
+          // Actualizar stock y costo ponderado en Supabase
+          updateProductInSupabase(prevItem.id, {
+            stock: newStock,
+            unitCostNeto: weightedCost,
+            salePrice: it.saleP,
+            brand: it.cleanBrand || prevItem.brand,
+            category: it.category || prevItem.category,
+            petType: it.petType || prevItem.petType,
+          }).then(() => {
+            window.dispatchEvent(new CustomEvent('patitas_products_updated'));
+          });
+        } else {
+          nextProdNum += 1;
+          const newProdId = `PROD-${String(nextProdNum).padStart(2, '0')}`;
+          const parentId = baseSibling ? (baseSibling.parentId || baseSibling.id) : null;
+          const newInvoiceEntry = {
+            invoiceNumber: newInvoiceForm.invoiceNumber,
+            invoiceDate: newInvoiceForm.date,
+            provider: newInvoiceForm.provider || 'Proveedor Autorizado',
+            providerRut: newInvoiceForm.providerRut || '76.123.456-7',
+            quantity: it.qty,
+            supplierUnitCostNeto: it.supplierUnitNeto,
+            shippingUnitCost: it.unitShippingCost,
+            landedCostNeto: landedCost,
+            unitCostNeto: landedCost,
+          };
+          const newProd = {
+            id: newProdId,
+            name: it.fullProdTitle,
+            brand: it.cleanBrand || (baseSibling ? baseSibling.brand : 'Patitas del Sur'),
+            variety: it.cleanVariety,
+            category: it.category || (baseSibling ? baseSibling.category : 'Alimento Seco'),
+            petType: it.petType || (baseSibling ? baseSibling.petType : 'perros'),
+            format: it.format || '12 kg',
+            sku: it.sku ? it.sku.trim() : '',
+            stock: it.qty,
+            minStock: 6,
+            salePrice: it.saleP,
+            unitCostNeto: landedCost,
+            supplierUnitCostNeto: it.supplierUnitNeto,
+            landedCostNeto: landedCost,
+            parentId: parentId,
+            invoices: [newInvoiceEntry],
+            invoiceNumber: newInvoiceForm.invoiceNumber,
+            invoiceDate: newInvoiceForm.date,
+            provider: newInvoiceForm.provider,
+            providerRut: newInvoiceForm.providerRut,
+            status: 'disponible',
+          };
+          currentInv = [newProd, ...currentInv];
+
+          // Insertar nuevo producto en Supabase
+          createProductInSupabase(newProd).then((res) => {
+            if (res && res.data && res.data.id && res.data.id !== newProd.id) {
+              setInventory((latestInv) =>
+                latestInv.map((p) => (p.id === newProd.id ? { ...p, id: res.data.id } : p))
+              );
+            }
+            window.dispatchEvent(new CustomEvent('patitas_products_updated'));
+          });
+        }
       });
 
-      // Actualizar stock del producto existente en Supabase
-      updateProductInSupabase(prevItem.id, {
-        stock: newStock,
-        unitCostNeto: unitNeto,
-        salePrice: saleP,
-      }).then(() => {
-        window.dispatchEvent(new CustomEvent('patitas_products_updated'));
-      });
-    } else {
-      const newInvoiceEntry = {
-        invoiceNumber: newInvoiceForm.invoiceNumber,
-        invoiceDate: newInvoiceForm.date,
-        provider: newInvoiceForm.provider || 'Proveedor Autorizado',
-        providerRut: newInvoiceForm.providerRut || '76.123.456-7',
-        quantity: qty,
-        unitCostNeto: unitNeto,
-      };
-
-      const newProd = {
-        id: `PROD-${String(inventory.length + 1).padStart(2, '0')}`,
-        name: newInvoiceForm.productName,
-        brand: 'Patitas del Sur',
-        category: 'Alimento Seco',
-        petType: 'perros',
-        format: newInvoiceForm.format || '12 kg',
-        sku: `SKU-${Date.now().toString().slice(-6)}`,
-        stock: qty,
-        minStock: 6,
-        salePrice: saleP,
-        unitCostNeto: unitNeto,
-        invoices: [newInvoiceEntry],
-        invoiceNumber: newInvoiceForm.invoiceNumber,
-        invoiceDate: newInvoiceForm.date,
-        provider: newInvoiceForm.provider,
-        providerRut: newInvoiceForm.providerRut,
-        status: 'disponible',
-      };
-      setInventory([newProd, ...inventory]);
-
-      // Insertar nuevo producto en Supabase
-      createProductInSupabase(newProd).then(() => {
-        window.dispatchEvent(new CustomEvent('patitas_products_updated'));
-      });
-    }
+      return currentInv;
+    });
 
     setIsAddInvoiceModalOpen(false);
+    setInvoiceStep(1);
     setNewInvoiceForm({
-      selectedProductId: '',
-      invoiceNumber: '',
-      provider: '',
       providerRut: '',
+      provider: '',
+      invoiceNumber: '',
       date: new Date().toISOString().split('T')[0],
-      dueDate: '',
-      productName: '',
-      format: '12 kg',
-      quantityReceived: 10,
-      unitCostNeto: 42000,
-      salePrice: 68990,
+      dueDate: new Date().toISOString().split('T')[0],
+      status: 'pendiente',
+      hasShippingCost: false,
+      shippingCostNeto: '',
+      shippingInvoiceNumber: '',
+      shippingProvider: '',
+      shippingDistributionMethod: 'units',
+      items: [createInitialInvoiceItem()],
     });
-    showToast(`✅ Factura ${newInvoiceForm.invoiceNumber} registrada: +${qty} un. sumadas al inventario (+${formatCLP(iva)} IVA Crédito).`);
+    showToast(
+      `✅ Factura ${newInvoiceForm.invoiceNumber} registrada (${processedItems.length} prod., +${totalQuantity} un. stock${hasShipping && shippingFeeNeto > 0 ? `, flete +${formatCLP(shippingFeeNeto)} neto incorporado al PMP` : ''}, +${formatCLP(overallIva)} IVA Crédito).`
+    );
   };
 
   const handleToggleInvoiceStatus = (invoiceNumber) => {
@@ -1921,8 +3633,259 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       })
     );
 
+    setSelectedInvoiceModal((prev) => {
+      if (prev && (prev.invoiceNumber === invoiceNumber || prev.id === invoiceNumber)) {
+        return { ...prev, status: nextStatus };
+      }
+      return prev;
+    });
+
     // Sincronizar en Supabase
     updatePurchaseInvoiceStatus(invoiceNumber, nextStatus);
+  };
+
+  // Apertura y gestión de edición de ítems y costo de transporte de la factura
+  const handleOpenEditInvoice = (inv) => {
+    if (!inv) return;
+    const invItems = resolveInvoiceItems(inv, inventory);
+    const hasShipping = Boolean(
+      inv.hasShippingCost ||
+      inv.has_shipping_cost ||
+      (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0
+    );
+    const sNeto = parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0;
+    const sMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'units';
+    const sInvNum = inv.shippingInvoiceNumber || inv.shipping_invoice_number || '';
+    const sProv = inv.shippingProvider || inv.shipping_provider || '';
+
+    const editableItems = invItems.map((it, idx) => ({
+      tempId: `item_${idx}_${Date.now()}_${Math.random()}`,
+      name: it.name || it.fullProdTitle || `Producto #${idx + 1}`,
+      format: it.format || '10 kg',
+      qty: Math.max(1, parseInt(it.qty, 10) || 1),
+      unitNeto: Math.max(0, parseInt(it.supplierUnitNeto ?? it.unitNeto, 10) || 0),
+    }));
+
+    if (editableItems.length === 0) {
+      editableItems.push({
+        tempId: `item_0_${Date.now()}`,
+        name: '',
+        format: '10 kg',
+        qty: 1,
+        unitNeto: 0,
+      });
+    }
+
+    setEditingInvoiceModal({
+      invoiceNumber: inv.invoiceNumber || inv.invoice_number || inv.id || '',
+      id: inv.id,
+      provider: inv.provider || '',
+      rut: inv.rut || '',
+      date: inv.date || '',
+      dueDate: inv.dueDate || inv.due_date || inv.date || '',
+      paymentMethod: inv.paymentMethod || inv.payment_method || 'Crédito Proveedor',
+      status: inv.status || 'pendiente',
+      hasShippingCost: hasShipping,
+      shippingCostNeto: sNeto > 0 ? sNeto : '',
+      shippingInvoiceNumber: sInvNum,
+      shippingProvider: sProv,
+      shippingDistributionMethod: sMethod,
+      items: editableItems,
+    });
+  };
+
+  const handleAddEditInvoiceItem = () => {
+    if (!editingInvoiceModal) return;
+    setEditingInvoiceModal((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          tempId: `item_${Date.now()}_${Math.random()}`,
+          name: '',
+          format: '10 kg',
+          qty: 1,
+          unitNeto: 0,
+        },
+      ],
+    }));
+  };
+
+  const handleRemoveEditInvoiceItem = (tempId) => {
+    if (!editingInvoiceModal) return;
+    if (editingInvoiceModal.items.length <= 1) {
+      showToast('La factura debe tener al menos un producto.');
+      return;
+    }
+    setEditingInvoiceModal((prev) => ({
+      ...prev,
+      items: prev.items.filter((it) => it.tempId !== tempId),
+    }));
+  };
+
+  const handleUpdateEditInvoiceItem = (tempId, field, value) => {
+    if (!editingInvoiceModal) return;
+    setEditingInvoiceModal((prev) => ({
+      ...prev,
+      items: prev.items.map((it) => {
+        if (it.tempId !== tempId) return it;
+        return {
+          ...it,
+          [field]: field === 'qty' || field === 'unitNeto' ? Math.max(0, parseInt(value, 10) || 0) : value,
+        };
+      }),
+    }));
+  };
+
+  const handleSaveEditedInvoice = async () => {
+    if (!editingInvoiceModal) return;
+
+    const validItems = editingInvoiceModal.items.filter((it) => (it.name || '').trim());
+    if (validItems.length === 0) {
+      showToast('Por favor agrega la descripción de al menos un producto.');
+      return;
+    }
+
+    setIsSavingInvoice(true);
+
+    try {
+      const hasShipping = Boolean(editingInvoiceModal.hasShippingCost);
+      const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(editingInvoiceModal.shippingCostNeto, 10) || 0) : 0;
+      const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'units';
+
+      let totalQuantity = 0;
+      let totalNeto = 0;
+
+      validItems.forEach((it) => {
+        const q = Math.max(1, parseInt(it.qty, 10) || 1);
+        const u = Math.max(0, parseInt(it.unitNeto, 10) || 0);
+        totalQuantity += q;
+        totalNeto += q * u;
+      });
+
+      const processedItems = validItems.map((it, idx) => {
+        const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+        const supplierUnitNeto = Math.max(0, parseInt(it.unitNeto, 10) || 0);
+        const subtotalNeto = qty * supplierUnitNeto;
+
+        let unitShippingCost = 0;
+        if (shippingFeeNeto > 0) {
+          if (shippingMethod === 'value' && totalNeto > 0) {
+            unitShippingCost = Math.round(((subtotalNeto / totalNeto) * shippingFeeNeto) / qty);
+          } else if (totalQuantity > 0) {
+            unitShippingCost = Math.round(shippingFeeNeto / totalQuantity);
+          }
+        }
+
+        const landedUnitNeto = supplierUnitNeto + unitShippingCost;
+
+        return {
+          ...it,
+          index: idx + 1,
+          name: it.name.trim(),
+          fullProdTitle: it.name.trim(),
+          format: (it.format || '10 kg').trim(),
+          qty,
+          quantityReceived: qty,
+          supplierUnitNeto,
+          unitCostNeto: supplierUnitNeto,
+          unitShippingCost,
+          landedUnitNeto,
+          unitNeto: landedUnitNeto,
+          subtotalNeto,
+        };
+      });
+
+      const overallIva = Math.round(totalNeto * 0.19);
+      const overallBruto = totalNeto + overallIva;
+
+      const invNumber = editingInvoiceModal.invoiceNumber;
+
+      const updatedInvoiceObj = {
+        ...(selectedInvoiceModal || {}),
+        invoiceNumber: invNumber,
+        invoice_number: invNumber,
+        provider: (editingInvoiceModal.provider || selectedInvoiceModal?.provider || 'Proveedor Autorizado').trim(),
+        rut: (editingInvoiceModal.rut || selectedInvoiceModal?.rut || '').trim(),
+        date: editingInvoiceModal.date || selectedInvoiceModal?.date,
+        dueDate: editingInvoiceModal.dueDate || selectedInvoiceModal?.dueDate,
+        productName: processedItems.map((p) => p.name).join(', '),
+        product_name: processedItems.map((p) => p.name).join(', '),
+        quantityReceived: totalQuantity,
+        quantity_received: totalQuantity,
+        itemsCount: totalQuantity,
+        unitCostNeto: processedItems[0]?.landedUnitNeto || processedItems[0]?.unitNeto || 0,
+        unit_cost_neto: processedItems[0]?.landedUnitNeto || processedItems[0]?.unitNeto || 0,
+        totalNeto,
+        total_neto: totalNeto,
+        iva: overallIva,
+        totalBruto: overallBruto,
+        total_bruto: overallBruto,
+        items: processedItems,
+        hasShippingCost: hasShipping,
+        has_shipping_cost: hasShipping,
+        shippingCostNeto: shippingFeeNeto,
+        shipping_cost_neto: shippingFeeNeto,
+        shippingInvoiceNumber: (editingInvoiceModal.shippingInvoiceNumber || '').trim(),
+        shipping_invoice_number: (editingInvoiceModal.shippingInvoiceNumber || '').trim(),
+        shippingProvider: (editingInvoiceModal.shippingProvider || '').trim(),
+        shipping_provider: (editingInvoiceModal.shippingProvider || '').trim(),
+        shippingDistributionMethod: shippingMethod,
+        shipping_distribution_method: shippingMethod,
+      };
+
+      // 1. Actualizar estado local de facturas
+      setInvoices((prev) =>
+        prev.map((inv) =>
+          inv.invoiceNumber === invNumber || inv.invoice_number === invNumber || (inv.id && inv.id === editingInvoiceModal.id)
+            ? updatedInvoiceObj
+            : inv
+        )
+      );
+
+      // 2. Actualizar el modal de detalle abierto para que refleje los cambios de inmediato
+      setSelectedInvoiceModal(updatedInvoiceObj);
+
+      // 3. Guardar en localStorage caché de ítems
+      try {
+        localStorage.setItem(`patitas_invoice_items_${invNumber}`, JSON.stringify(processedItems));
+      } catch (err) {
+        console.warn('Error saving invoice items cache:', err);
+      }
+
+      // 4. Actualizar costo de productos en bodega/inventario si coincide
+      setInventory((prevInv) => {
+        let updatedInv = [...prevInv];
+        processedItems.forEach((it) => {
+          const itemTitleClean = (it.name || '').toLowerCase().trim();
+          const matchIdx = updatedInv.findIndex((p) => {
+            const pTitle = (p.name || '').toLowerCase().trim();
+            return pTitle.includes(itemTitleClean) || itemTitleClean.includes(pTitle);
+          });
+          if (matchIdx > -1) {
+            const prevItem = updatedInv[matchIdx];
+            updatedInv[matchIdx] = {
+              ...prevItem,
+              unitCostNeto: it.landedUnitNeto || it.unitNeto,
+              cost: it.landedUnitNeto || it.unitNeto,
+            };
+          }
+        });
+        return updatedInv;
+      });
+
+      // 5. Actualizar en Supabase
+      await updatePurchaseInvoiceInSupabase(invNumber, updatedInvoiceObj);
+
+      // 6. Cerrar modal de edición
+      setEditingInvoiceModal(null);
+      showToast(`✅ Factura #${invNumber} actualizada con éxito (${processedItems.length} productos, flete ${hasShipping && shippingFeeNeto > 0 ? formatCLP(shippingFeeNeto) : '$0'}).`);
+    } catch (err) {
+      console.error('Error saving edited invoice:', err);
+      showToast('❌ Ocurrió un error al guardar los cambios en la factura.');
+    } finally {
+      setIsSavingInvoice(false);
+    }
   };
 
   // Ajuste rápido de stock físico (+1 / -1)
@@ -2031,79 +3994,166 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     );
   };
 
-  // Guardar edición de producto
-  const handleSaveEditProduct = (e) => {
-    if (e) e.preventDefault();
-    if (!editingProduct) return;
-
-    const newPaused = Boolean(editingProduct.isPaused);
-    try {
-      const currentPaused = JSON.parse(localStorage.getItem('patitas_paused_products') || '[]');
-      let updatedPaused;
-      if (newPaused) {
-        updatedPaused = Array.from(
-          new Set([...currentPaused, editingProduct.id, editingProduct.name, editingProduct.sku])
-        );
-      } else {
-        updatedPaused = currentPaused.filter(
-          (id) => id !== editingProduct.id && id !== editingProduct.name && id !== editingProduct.sku
-        );
-      }
-      localStorage.setItem('patitas_paused_products', JSON.stringify(updatedPaused));
-      window.dispatchEvent(new Event('storage'));
-    } catch (err) {
-      console.error('Error syncing paused products on edit:', err);
-    }
-
-    const updatedStock = Number(editingProduct.stock) >= 0 ? Number(editingProduct.stock) : undefined;
-    const updatedPrice = Number(editingProduct.salePrice) || undefined;
-    const updatedCost = Number(editingProduct.unitCostNeto) || undefined;
-    const updatedMin = Number(editingProduct.minStock) || 5;
-
+  // Destacar / Quitar producto del Carrusel Promocional de la tienda pública
+  const handleToggleCarouselProduct = (product) => {
+    const newCarouselState = !product.inCarousel;
     setInventory((prev) =>
       prev.map((item) =>
-        item.id === editingProduct.id
-          ? {
-              ...item,
-              name: editingProduct.name,
-              brand: editingProduct.brand || item.brand,
-              petType: editingProduct.petType || item.petType || 'perros',
-              format: editingProduct.format || item.format,
-              sku: editingProduct.sku || item.sku,
-              salePrice: updatedPrice !== undefined ? updatedPrice : item.salePrice,
-              unitCostNeto: updatedCost !== undefined ? updatedCost : item.unitCostNeto,
-              stock: updatedStock !== undefined ? updatedStock : item.stock,
-              minStock: updatedMin,
-              category: editingProduct.category || item.category,
-              isPaused: newPaused,
-              status:
-                (updatedStock !== undefined ? updatedStock : item.stock) <= updatedMin
-                  ? 'stock_bajo'
-                  : 'disponible',
-            }
-          : item
+        item.id === product.id ? { ...item, inCarousel: newCarouselState } : item
       )
     );
 
-    // Sincronizar en Supabase
-    updateProductInSupabase(editingProduct.id, {
-      name: editingProduct.name,
-      brand: editingProduct.brand,
-      petType: editingProduct.petType,
-      format: editingProduct.format,
-      sku: editingProduct.sku,
-      salePrice: updatedPrice,
-      unitCostNeto: updatedCost,
-      stock: updatedStock,
-      minStock: updatedMin,
-      category: editingProduct.category,
-      isPaused: newPaused,
-    }).then(() => {
+    try {
+      const currentCarousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
+      let updatedCarousel;
+      if (newCarouselState) {
+        updatedCarousel = Array.from(new Set([...currentCarousel, product.id, product.sku, product.name]));
+      } else {
+        updatedCarousel = currentCarousel.filter(
+          (id) => id !== product.id && id !== product.name && id !== product.sku
+        );
+      }
+      localStorage.setItem('patitas_carousel_products', JSON.stringify(updatedCarousel));
+      window.dispatchEvent(new Event('storage'));
       window.dispatchEvent(new CustomEvent('patitas_products_updated'));
-    });
+    } catch (err) {
+      console.error('Error syncing carousel products:', err);
+    }
 
-    showToast(`✓ Producto "${editingProduct.name}" actualizado exitosamente`);
-    setEditingProduct(null);
+    showToast(
+      newCarouselState
+        ? `🎠 "${product.name}" agregado al Carrusel Promocional de la Tienda`
+        : `⚪ "${product.name}" retirado del Carrusel Promocional`
+    );
+  };
+
+  // Guardar edición de producto
+  const handleSaveEditProduct = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingProduct) return;
+
+    setIsSavingProduct(true);
+    try {
+      const newPaused = Boolean(editingProduct.isPaused);
+      const newInCarousel = Boolean(editingProduct.inCarousel);
+
+      try {
+        const currentPaused = JSON.parse(localStorage.getItem('patitas_paused_products') || '[]');
+        let updatedPaused;
+        if (newPaused) {
+          updatedPaused = Array.from(
+            new Set([...currentPaused, editingProduct.id, editingProduct.name, editingProduct.sku])
+          );
+        } else {
+          updatedPaused = currentPaused.filter(
+            (id) => id !== editingProduct.id && id !== editingProduct.name && id !== editingProduct.sku
+          );
+        }
+        localStorage.setItem('patitas_paused_products', JSON.stringify(updatedPaused));
+
+        // Sync carousel products
+        const currentCarousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
+        let updatedCarousel;
+        if (newInCarousel) {
+          updatedCarousel = Array.from(
+            new Set([...currentCarousel, editingProduct.id, editingProduct.sku, editingProduct.name])
+          );
+        } else {
+          updatedCarousel = currentCarousel.filter(
+            (id) => id !== editingProduct.id && id !== editingProduct.name && id !== editingProduct.sku
+          );
+        }
+        localStorage.setItem('patitas_carousel_products', JSON.stringify(updatedCarousel));
+
+        window.dispatchEvent(new Event('storage'));
+      } catch (err) {
+        console.error('Error syncing products settings on edit:', err);
+      }
+
+      const updatedStock = Number(editingProduct.stock) >= 0 ? Number(editingProduct.stock) : undefined;
+      const updatedPrice = Number(editingProduct.salePrice) || undefined;
+      const updatedCost = Number(editingProduct.unitCostNeto) || undefined;
+      const updatedMin = Number(editingProduct.minStock) || 5;
+
+      setInventory((prev) =>
+        prev.map((item) =>
+          item.id === editingProduct.id
+            ? {
+                ...item,
+                name: editingProduct.name,
+                brand: editingProduct.brand || item.brand,
+                petType: editingProduct.petType || item.petType || 'perros',
+                format: editingProduct.format || item.format,
+                sku: (editingProduct.sku || '').trim(),
+                salePrice: updatedPrice !== undefined ? updatedPrice : item.salePrice,
+                unitCostNeto: updatedCost !== undefined ? updatedCost : item.unitCostNeto,
+                stock: updatedStock !== undefined ? updatedStock : item.stock,
+                minStock: updatedMin,
+                category: editingProduct.category || item.category,
+                isPaused: newPaused,
+                inCarousel: newInCarousel,
+                image: editingProduct.image !== undefined ? editingProduct.image : item.image,
+                images: Array.isArray(editingProduct.images) ? editingProduct.images : (item.images || []),
+                tagline: editingProduct.tagline !== undefined ? editingProduct.tagline : item.tagline,
+                badge: editingProduct.badge !== undefined ? editingProduct.badge : item.badge,
+                benefits: Array.isArray(editingProduct.benefits) ? editingProduct.benefits : (item.benefits || []),
+                proteinValue: editingProduct.proteinValue !== undefined ? editingProduct.proteinValue : item.proteinValue,
+                mainProtein: editingProduct.mainProtein || item.mainProtein,
+                grainLevel: editingProduct.grainLevel || item.grainLevel,
+                isVeterinary: Boolean(editingProduct.isVeterinary),
+                vetDetail: editingProduct.vetDetail || item.vetDetail,
+                lifeStage: editingProduct.lifeStage || item.lifeStage,
+                status:
+                  (updatedStock !== undefined ? updatedStock : item.stock) <= updatedMin
+                    ? 'stock_bajo'
+                    : 'disponible',
+              }
+            : item
+        )
+      );
+
+      // Sincronizar en Supabase de forma persistente y asíncrona
+      const res = await updateProductInSupabase(editingProduct.id, {
+        name: editingProduct.name,
+        brand: editingProduct.brand,
+        petType: editingProduct.petType,
+        format: editingProduct.format,
+        sku: (editingProduct.sku || '').trim() || null,
+        salePrice: updatedPrice,
+        unitCostNeto: updatedCost,
+        stock: updatedStock,
+        minStock: updatedMin,
+        category: editingProduct.category,
+        isPaused: newPaused,
+        image: editingProduct.image,
+        images: editingProduct.images || [],
+        tagline: editingProduct.tagline,
+        badge: editingProduct.badge,
+        benefits: editingProduct.benefits || [],
+        proteinValue: editingProduct.proteinValue,
+        mainProtein: editingProduct.mainProtein,
+        grainLevel: editingProduct.grainLevel,
+        isVeterinary: editingProduct.isVeterinary,
+        vetDetail: editingProduct.vetDetail,
+        lifeStage: editingProduct.lifeStage,
+      });
+
+      window.dispatchEvent(new CustomEvent('patitas_products_updated'));
+
+      if (res && res.success) {
+        showToast(`✓ Producto "${editingProduct.name}" guardado exitosamente en el backend`);
+      } else {
+        console.warn('Aviso de sincronización backend:', res?.error);
+        showToast(`✓ Cambios guardados para "${editingProduct.name}"`);
+      }
+
+      setEditingProduct(null);
+    } catch (err) {
+      console.error('Error al guardar producto:', err);
+      showToast(`⚠️ Error al guardar producto: ${err.message || 'Error inesperado'}`);
+    } finally {
+      setIsSavingProduct(false);
+    }
   };
 
   // Confirmar eliminación de producto
@@ -2131,122 +4181,222 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
 
-  // Obtener análisis detallado de ventas y gráficos para un producto seleccionado
+  // Obtener análisis detallado de ventas y gráficos para un producto seleccionado con DATOS REALES
   const getProductSalesAnalytics = (product) => {
     if (!product) return null;
 
-    const unitPrice = Number(product.salePrice) || 50000;
-    const unitCost = Number(product.unitCostNeto) || 30000;
+    const unitPrice = Number(product.salePrice) || 0;
+    const unitCost = Number(product.unitCostNeto) || Math.round(unitPrice * 0.65);
 
-    // Generador determinista de métricas basado en el producto
-    const seed = (product.name || 'PROD').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    // Normalizador de texto para comparar nombres sin acentos ni mayúsculas
+    const normalize = (t) =>
+      String(t || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
 
-    // 7 días recientes (Día por Día)
-    const days7 = [
-      { day: 'Jue 24', label: 'Jueves 24 Sep', units: Math.max(1, (seed * 3) % 4 + 1) },
-      { day: 'Vie 25', label: 'Viernes 25 Sep', units: Math.max(1, (seed * 5) % 5 + 1) },
-      { day: 'Sáb 26', label: 'Sábado 26 Sep', units: Math.max(2, (seed * 7) % 6 + 2) },
-      { day: 'Dom 27', label: 'Domingo 27 Sep', units: Math.max(0, (seed * 2) % 3) },
-      { day: 'Lun 28', label: 'Lunes 28 Sep', units: Math.max(1, (seed * 4) % 5 + 1) },
-      { day: 'Mar 29', label: 'Martes 29 Sep', units: Math.max(2, (seed * 6) % 4 + 2) },
-      { day: 'Hoy', label: 'Hoy 30 Sep', units: Math.max(1, (seed * 8) % 5 + 1) },
-    ].map((d) => ({
-      ...d,
-      revenue: d.units * unitPrice,
-      margin: d.units * (unitPrice - unitCost),
-    }));
+    const prodNameNorm = normalize(product.name);
+    const prodIdNorm = String(product.id || '').trim();
+    const prodSkuNorm = String(product.sku || '').trim().toLowerCase();
 
-    // 30 días (Semanas)
-    const weeks30 = [
-      { day: 'Sem 1', label: '01 al 07 Sep', units: (seed % 4) + 12 },
-      { day: 'Sem 2', label: '08 al 14 Sep', units: ((seed * 2) % 5) + 14 },
-      { day: 'Sem 3', label: '15 al 21 Sep', units: ((seed * 3) % 6) + 16 },
-      { day: 'Sem 4', label: '22 al 30 Sep', units: ((seed * 4) % 7) + 18 },
-    ].map((w) => ({
-      ...w,
-      revenue: w.units * unitPrice,
-      margin: w.units * (unitPrice - unitCost),
-    }));
+    // 1. Filtrar todas las órdenes reales que contienen este producto
+    const matchingOrderItems = [];
 
-    // 12 meses históricos (Mes a Mes)
-    const monthsNames = ['Oct', 'Nov', 'Dic', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'];
-    const monthsFull = [
-      'Octubre 2025', 'Noviembre 2025', 'Diciembre 2025', 'Enero 2026', 'Febrero 2026',
-      'Marzo 2026', 'Abril 2026', 'Mayo 2026', 'Junio 2026', 'Julio 2026', 'Agosto 2026', 'Septiembre 2026'
-    ];
-    const months12 = monthsNames.map((m, idx) => {
-      const seasonalBoost = idx === 2 ? 8 : (idx === 11 || idx === 10 ? 6 : 0);
-      const units = Math.max(10, ((seed + idx * 7) % 12) + 14 + seasonalBoost);
-      return {
-        day: m,
-        label: monthsFull[idx],
-        units,
-        revenue: units * unitPrice,
-        margin: units * (unitPrice - unitCost),
-      };
+    (orders || []).forEach((order) => {
+      const orderItems = order.items || order.order_items || [];
+      orderItems.forEach((it) => {
+        const itNameNorm = normalize(it.name || it.product_name);
+        const itId = String(it.productId || it.product_id || it.id || '').trim();
+
+        // Criterio de coincidencia robusto: por ID, por SKU o por coincidencia de nombre
+        const isMatch =
+          (prodIdNorm && itId && prodIdNorm === itId) ||
+          (prodSkuNorm && itId && prodSkuNorm === itId.toLowerCase()) ||
+          (prodNameNorm && itNameNorm && (
+            prodNameNorm === itNameNorm ||
+            prodNameNorm.includes(itNameNorm) ||
+            itNameNorm.includes(prodNameNorm)
+          ));
+
+        if (isMatch) {
+          const qty = Number(it.qty || it.quantity || 1);
+          const price = Number(it.unitPrice || it.unit_price || it.price || unitPrice);
+          const subtotal = Number(it.subtotal || qty * price);
+
+          const dateObj = order.created_at
+            ? new Date(order.created_at)
+            : order.date && order.date !== 'Hoy'
+            ? new Date(order.date)
+            : new Date();
+
+          const crmCustomer = (customers || []).find(
+            (c) =>
+              (order.customerPhone && c.phone === order.customerPhone) ||
+              (c.name && order.customer && normalize(c.name) === normalize(order.customer))
+          );
+
+          const petLabel = order.petName
+            ? `${order.petName} (${order.petBreed || (order.petType?.toLowerCase().includes('gato') ? 'Gato' : 'Perro')})`
+            : crmCustomer?.pets?.[0]?.name
+            ? `${crmCustomer.pets[0].name} (${crmCustomer.pets[0].breed || 'Mascota'})`
+            : order.petType
+            ? order.petType.toLowerCase().includes('gato')
+              ? '🐱 Gato'
+              : '🐶 Perro'
+            : 'Mascota regalona';
+
+          matchingOrderItems.push({
+            orderId: order.id,
+            dateObj,
+            createdAt: order.created_at,
+            customer: order.customer || order.customer_name || 'Cliente Patitas',
+            pet: petLabel,
+            units: qty,
+            unitPrice: price,
+            subtotal,
+            paymentMethod: order.paymentMethod || order.payment_method || 'Web',
+            status: order.status || 'en_preparacion',
+          });
+        }
+      });
     });
 
-    const totalUnitsSold = months12.reduce((acc, curr) => acc + curr.units, 0);
-    const totalRevenue = totalUnitsSold * unitPrice;
-    const totalMargin = totalUnitsSold * (unitPrice - unitCost);
-    const marginPercent = Math.round(((unitPrice - unitCost) / unitPrice) * 100);
-    const monthlyAverageUnits = Math.round(totalUnitsSold / 12);
-    const dailyAverageUnits = (totalUnitsSold / 365).toFixed(1);
-    const stockCoverageDays = Math.max(3, Math.round(product.stock / Math.max(0.4, totalUnitsSold / 365)));
+    // 2. Cálculo de Totales Reales
+    const totalUnitsSold = matchingOrderItems.reduce((acc, curr) => acc + curr.units, 0);
+    const totalRevenue = matchingOrderItems.reduce((acc, curr) => acc + curr.subtotal, 0);
+    const totalMargin = totalRevenue - totalUnitsSold * unitCost;
+    const marginPercent = unitPrice > 0 ? Math.round(((unitPrice - unitCost) / unitPrice) * 100) : 0;
 
-    // Pedidos recientes asociados
-    const sampleRecentOrders = [
-      {
-        id: 'PED-9842',
-        date: 'Hoy, 12:45',
-        customer: 'Camila Silva',
-        pet: 'Kira (Samoyedo)',
-        units: 1,
-        total: unitPrice,
-        paymentMethod: 'Tarjeta',
-        status: 'en_camino',
-      },
-      {
-        id: 'PED-9838',
-        date: 'Ayer, 16:30',
-        customer: 'Valentina Morales',
-        pet: 'Rocky (Golden)',
-        units: 2,
-        total: unitPrice * 2,
-        paymentMethod: 'Transferencia BCI',
-        status: 'entregado',
-      },
-      {
-        id: 'PED-9829',
-        date: '28 Sep, 14:20',
-        customer: 'Fernanda Muñoz',
-        pet: 'Luna (Border Collie)',
-        units: 1,
-        total: unitPrice,
-        paymentMethod: 'Tarjeta',
-        status: 'entregado',
-      },
-      {
-        id: 'PED-9815',
-        date: '25 Sep, 11:10',
-        customer: 'Rodrigo Araya',
-        pet: 'Thor (Pastor Alemán)',
-        units: 1,
-        total: unitPrice,
-        paymentMethod: 'Web',
-        status: 'entregado',
-      },
-      {
-        id: 'PED-9799',
-        date: '22 Sep, 18:05',
-        customer: 'Constanza Vera',
-        pet: 'Max (Labrador)',
-        units: 2,
-        total: unitPrice * 2,
-        paymentMethod: 'Web',
-        status: 'entregado',
-      },
+    const monthlyAverageUnits = totalUnitsSold > 0 ? Math.max(1, Math.round(totalUnitsSold / 1)) : 0;
+    const dailyAverageUnits = (totalUnitsSold / 30).toFixed(1);
+
+    let stockCoverageDays = 'Sin rotación';
+    if (totalUnitsSold > 0) {
+      const dailyRate = Math.max(0.1, totalUnitsSold / 30);
+      const days = Math.round((product.stock || 0) / dailyRate);
+      stockCoverageDays = `${days} ${days === 1 ? 'día' : 'días'}`;
+    } else {
+      stockCoverageDays = (product.stock || 0) > 0 ? 'Stock suficiente' : 'Sin stock';
+    }
+
+    // 3. Generar serie real: Últimos 7 días (Día por Día)
+    const now = new Date();
+    const days7 = [];
+    for (let i = 6; i >= 0; i--) {
+      const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+      const isToday = i === 0;
+      const dayShort = isToday
+        ? 'Hoy'
+        : targetDate.toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric' });
+      const dayLabel = targetDate.toLocaleDateString('es-CL', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'short',
+      });
+
+      // Ventas reales en este día
+      const daySales = matchingOrderItems.filter((m) => {
+        return (
+          m.dateObj.getFullYear() === targetDate.getFullYear() &&
+          m.dateObj.getMonth() === targetDate.getMonth() &&
+          m.dateObj.getDate() === targetDate.getDate()
+        );
+      });
+
+      const dayUnits = daySales.reduce((acc, m) => acc + m.units, 0);
+      const dayRevenue = daySales.reduce((acc, m) => acc + m.subtotal, 0);
+      const dayMargin = dayRevenue - dayUnits * unitCost;
+
+      days7.push({
+        day: dayShort.charAt(0).toUpperCase() + dayShort.slice(1),
+        label: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1),
+        units: dayUnits,
+        revenue: dayRevenue,
+        margin: dayMargin,
+      });
+    }
+
+    // 4. Generar serie real: Últimos 30 días (Semanas)
+    const weeks30 = [];
+    const weekLabels = [
+      { day: 'Sem 1', label: 'Hace 3-4 sem.', minDays: 22, maxDays: 30 },
+      { day: 'Sem 2', label: 'Hace 2-3 sem.', minDays: 15, maxDays: 21 },
+      { day: 'Sem 3', label: 'Hace 1-2 sem.', minDays: 8, maxDays: 14 },
+      { day: 'Sem 4', label: 'Últimos 7 días', minDays: 0, maxDays: 7 },
     ];
+
+    weekLabels.forEach((w) => {
+      const weekSales = matchingOrderItems.filter((m) => {
+        const diffMs = now - m.dateObj;
+        const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+        return diffDays >= w.minDays && diffDays <= w.maxDays;
+      });
+
+      const wUnits = weekSales.reduce((acc, m) => acc + m.units, 0);
+      const wRevenue = weekSales.reduce((acc, m) => acc + m.subtotal, 0);
+      const wMargin = wRevenue - wUnits * unitCost;
+
+      weeks30.push({
+        day: w.day,
+        label: w.label,
+        units: wUnits,
+        revenue: wRevenue,
+        margin: wMargin,
+      });
+    });
+
+    // 5. Generar serie real: Últimos 12 meses (Mes a Mes)
+    const months12 = [];
+    for (let i = 11; i >= 0; i--) {
+      const targetMonthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mShort = targetMonthDate.toLocaleDateString('es-CL', { month: 'short' });
+      const mFull = targetMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
+      const monthSales = matchingOrderItems.filter((m) => {
+        return (
+          m.dateObj.getFullYear() === targetMonthDate.getFullYear() &&
+          m.dateObj.getMonth() === targetMonthDate.getMonth()
+        );
+      });
+
+      const mUnits = monthSales.reduce((acc, m) => acc + m.units, 0);
+      const mRevenue = monthSales.reduce((acc, m) => acc + m.subtotal, 0);
+      const mMargin = mRevenue - mUnits * unitCost;
+
+      months12.push({
+        day: mShort.charAt(0).toUpperCase() + mShort.slice(1),
+        label: mFull.charAt(0).toUpperCase() + mFull.slice(1),
+        units: mUnits,
+        revenue: mRevenue,
+        margin: mMargin,
+      });
+    }
+
+    // 6. Pedidos recientes reales ordenados por fecha descendente
+    const recentOrders = matchingOrderItems
+      .slice()
+      .sort((a, b) => b.dateObj - a.dateObj)
+      .map((m) => ({
+        id: m.orderId,
+        date:
+          m.dateObj.toLocaleDateString('es-CL', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }) +
+          ', ' +
+          m.dateObj.toLocaleTimeString('es-CL', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        customer: m.customer,
+        pet: m.pet,
+        units: m.units,
+        total: m.subtotal,
+        paymentMethod: m.paymentMethod,
+        status: m.status,
+      }));
 
     return {
       days7,
@@ -2259,7 +4409,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       monthlyAverageUnits,
       dailyAverageUnits,
       stockCoverageDays,
-      recentOrders: sampleRecentOrders,
+      recentOrders,
     };
   };
 
@@ -2301,7 +4451,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     setIsZoneModalOpen(true);
   };
 
-  const handleSaveZoneModal = (e) => {
+  const handleSaveZoneModal = async (e) => {
     e.preventDefault();
     const ZONE_PALETTE = ['#10B981', '#0E8388', '#F59E0B', '#8B5CF6', '#EC4899', '#3B82F6'];
     const radiusMax = Math.max(1, parseFloat(zoneModalForm.radiusMaxKm) || 1);
@@ -2310,22 +4460,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       ? (zoneModalForm.freeThreshold === '' ? 0 : Math.max(0, parseInt(zoneModalForm.freeThreshold, 10) || 0))
       : 0;
 
+    let updatedZones = [];
+
     if (zoneModalForm.id) {
       // Editar zona existente
-      setDispatchZones((prev) =>
-        prev.map((z) =>
-          z.id === zoneModalForm.id
-            ? {
-                ...z,
-                name: (zoneModalForm.name || '').trim() || z.name,
-                radiusMaxKm: radiusMax,
-                badgeText: `Hasta ${radiusMax} km`,
-                baseFee: fee,
-                freeThreshold: freeThresh,
-              }
-            : z
-        )
+      updatedZones = dispatchZones.map((z) =>
+        z.id === zoneModalForm.id
+          ? {
+              ...z,
+              name: (zoneModalForm.name || '').trim() || z.name,
+              radiusMaxKm: radiusMax,
+              badgeText: `Hasta ${radiusMax} km`,
+              baseFee: fee,
+              freeThreshold: freeThresh,
+            }
+          : z
       );
+      setDispatchZones(updatedZones);
       showToast('Zona de despacho actualizada correctamente.');
     } else {
       // Crear nueva zona
@@ -2344,23 +4495,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         deliveryTime: 'Mismo día / 24 hrs',
         active: true,
       };
-      setDispatchZones((prev) => [...prev, newZone]);
+      updatedZones = [...dispatchZones, newZone];
+      setDispatchZones(updatedZones);
       setSelectedConfigZoneId(newId);
       showToast(`¡${newZone.name} creada correctamente!`);
     }
 
     setIsZoneModalOpen(false);
+
+    try {
+      await saveDispatchZonesToSupabase(updatedZones);
+    } catch (err) {
+      console.error('Error al guardar zona en Supabase:', err);
+    }
   };
 
-  const handleDeleteZone = (idToDelete) => {
-    setDispatchZones((prev) => {
-      const filtered = prev.filter((z) => z.id !== idToDelete);
-      if (selectedConfigZoneId === idToDelete) {
-        setSelectedConfigZoneId(filtered.length > 0 ? filtered[0].id : null);
-      }
-      return filtered;
-    });
+  const handleDeleteZone = async (idToDelete) => {
+    const filtered = dispatchZones.filter((z) => z.id !== idToDelete);
+    setDispatchZones(filtered);
+    if (selectedConfigZoneId === idToDelete) {
+      setSelectedConfigZoneId(filtered.length > 0 ? filtered[0].id : null);
+    }
     showToast('Zona eliminada.');
+
+    try {
+      await saveDispatchZonesToSupabase(filtered);
+    } catch (err) {
+      console.error('Error al eliminar zona en Supabase:', err);
+    }
   };
 
   // Vehículo principal y métricas de consumo de combustible
@@ -2436,14 +4598,302 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     showToast('Auto eliminado.');
   };
 
+  // Manejo de Horarios y Franjas de Entrega
+  const handleOpenAddSlotModal = (cityId = '') => {
+    setSlotModalCityId(cityId || (deliverySchedules[0]?.id || 'frutillar'));
+    setSlotModalForm({
+      id: null,
+      label: '',
+      days: 'Lunes a Sábado',
+      cutoffNote: '',
+      active: true,
+    });
+    setIsSlotModalOpen(true);
+  };
+
+  const handleOpenEditSlotModal = (cityId, slot) => {
+    setSlotModalCityId(cityId);
+    setSlotModalForm({
+      id: slot.id,
+      label: slot.label || '',
+      days: slot.days || 'Lunes a Sábado',
+      cutoffNote: slot.cutoffNote || '',
+      active: slot.active !== false,
+    });
+    setIsSlotModalOpen(true);
+  };
+
+  const handleSaveSlotModal = async (e) => {
+    e.preventDefault();
+    if (!slotModalForm.label.trim()) return;
+
+    const updated = deliverySchedules.map((sched) => {
+      if (sched.id !== slotModalCityId) return sched;
+      let newSlots = [...(sched.slots || [])];
+      if (slotModalForm.id) {
+        newSlots = newSlots.map((s) =>
+          s.id === slotModalForm.id
+            ? {
+                ...s,
+                label: slotModalForm.label.trim(),
+                days: slotModalForm.days.trim(),
+                cutoffNote: slotModalForm.cutoffNote.trim(),
+                active: slotModalForm.active,
+              }
+            : s
+        );
+      } else {
+        const newSlot = {
+          id: `slot-${Date.now()}`,
+          label: slotModalForm.label.trim(),
+          days: slotModalForm.days.trim(),
+          cutoffNote: slotModalForm.cutoffNote.trim(),
+          active: slotModalForm.active,
+        };
+        newSlots.push(newSlot);
+      }
+      return { ...sched, slots: newSlots };
+    });
+
+    setDeliverySchedules(updated);
+    setIsSlotModalOpen(false);
+    showToast('Horario de entrega guardado correctamente.');
+    try {
+      await saveDeliverySchedulesToSupabase(updated);
+    } catch (err) {
+      console.error('Error al guardar horario:', err);
+    }
+  };
+
+  const handleDeleteSlot = async (cityId, slotId) => {
+    const updated = deliverySchedules.map((sched) => {
+      if (sched.id !== cityId) return sched;
+      return {
+        ...sched,
+        slots: (sched.slots || []).filter((s) => s.id !== slotId),
+      };
+    });
+    setDeliverySchedules(updated);
+    showToast('Horario eliminado.');
+    try {
+      await saveDeliverySchedulesToSupabase(updated);
+    } catch (err) {
+      console.error('Error al eliminar horario:', err);
+    }
+  };
+
+  const handleToggleSlotActive = async (cityId, slotId) => {
+    const updated = deliverySchedules.map((sched) => {
+      if (sched.id !== cityId) return sched;
+      return {
+        ...sched,
+        slots: (sched.slots || []).map((s) =>
+          s.id === slotId ? { ...s, active: !s.active } : s
+        ),
+      };
+    });
+    setDeliverySchedules(updated);
+    try {
+      await saveDeliverySchedulesToSupabase(updated);
+    } catch (err) {
+      console.error('Error al alternar estado de horario:', err);
+    }
+  };
+
+  const handleResetDefaultSchedules = async () => {
+    if (window.confirm('¿Deseas restaurar todas las franjas horarias por comuna a los valores predeterminados?')) {
+      setDeliverySchedules(DEFAULT_DELIVERY_SCHEDULES);
+      showToast('Horarios restaurados con éxito.');
+      try {
+        await saveDeliverySchedulesToSupabase(DEFAULT_DELIVERY_SCHEDULES);
+      } catch (err) {
+        console.error('Error al restaurar horarios:', err);
+      }
+    }
+  };
+
+  // Colecciones filtradas por período contable para el Control Financiero & Flujo de Caja
+  const periodFilteredOrders = useMemo(() => {
+    if (financesPeriodFilter === 'todos') return orders;
+    return orders.filter((o) => getYearMonthFromDate(o.date, o.created_at) === financesPeriodFilter);
+  }, [orders, financesPeriodFilter]);
+
+  const periodFilteredInvoices = useMemo(() => {
+    if (financesPeriodFilter === 'todos') return invoices;
+    return invoices.filter((i) => getYearMonthFromDate(i.date, i.created_at) === financesPeriodFilter);
+  }, [invoices, financesPeriodFilter]);
+
+  const periodFilteredExpenses = useMemo(() => {
+    if (financesPeriodFilter === 'todos') return expenses;
+    return expenses.filter((e) => getYearMonthFromDate(e.date, e.created_at) === financesPeriodFilter);
+  }, [expenses, financesPeriodFilter]);
+
+  const periodFilteredInvestments = useMemo(() => {
+    if (financesPeriodFilter === 'todos') return investments;
+    return investments.filter((inv) => getYearMonthFromDate(inv.date, inv.createdAt) === financesPeriodFilter);
+  }, [investments, financesPeriodFilter]);
+
+  const investmentsSummary = useMemo(() => {
+    const totalAmount = periodFilteredInvestments.reduce((acc, i) => acc + (i.amount || 0), 0);
+    const count = periodFilteredInvestments.length;
+
+    const byPartnerMap = {};
+    periodFilteredInvestments.forEach((inv) => {
+      const name = inv.partnerName || 'Socio No Especificado';
+      if (!byPartnerMap[name]) {
+        byPartnerMap[name] = {
+          name,
+          rut: inv.partnerRut || '',
+          total: 0,
+          count: 0,
+          lastDate: inv.date,
+        };
+      }
+      byPartnerMap[name].total += inv.amount || 0;
+      byPartnerMap[name].count += 1;
+      if (inv.date > byPartnerMap[name].lastDate) {
+        byPartnerMap[name].lastDate = inv.date;
+      }
+    });
+
+    const partnersList = Object.values(byPartnerMap).map((p) => ({
+      ...p,
+      percent: totalAmount > 0 ? ((p.total / totalAmount) * 100).toFixed(1) : '0.0',
+    }));
+
+    const lastInvestment =
+      [...periodFilteredInvestments].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0] || null;
+
+    return {
+      totalAmount,
+      count,
+      partnersList,
+      lastInvestment,
+      uniquePartnersCount: partnersList.length,
+    };
+  }, [periodFilteredInvestments]);
+
+  // Helper para calcular costo, despacho y repartición financiera exacta por pedido
+  const calculateOrderFinancialDistribution = useCallback((order) => {
+    if (!order) {
+      return {
+        orderTotal: 0,
+        productCostWithIva: 0,
+        deliveryCost: 0,
+        realProfit: 0,
+        halfProfit: 0,
+        driverName: 'Ignacio Alarcón',
+        isIgnacio: true,
+        isAlamiro: false,
+        ignacioTotal: 0,
+        alamiroTotal: 0,
+      };
+    }
+
+    const orderTotal = Number(order.total || 0);
+
+    // 1. Costo del producto con IVA (costo reposición)
+    let totalProductCostWithIva = 0;
+    (order.items || []).forEach((item) => {
+      const qty = Number(item.quantity || 1);
+      const itemName = String(item.name || '').trim().toLowerCase();
+
+      const match = (inventory || []).find((p) => {
+        const pName = String(p.name || '').trim().toLowerCase();
+        return (
+          (item.id && p.id && item.id === p.id) ||
+          (item.code && p.sku && item.code === p.sku) ||
+          pName === itemName ||
+          pName.includes(itemName) ||
+          itemName.includes(pName)
+        );
+      });
+
+      if (match && Number(match.unitCostNeto) > 0) {
+        const unitNeto = Number(match.unitCostNeto);
+        const unitConIva = Math.round(unitNeto * 1.19);
+        totalProductCostWithIva += unitConIva * qty;
+      } else {
+        const itemPrice = Number(item.price || (orderTotal > 0 ? orderTotal / qty : 0));
+        totalProductCostWithIva += Math.round(itemPrice * 0.65) * qty;
+      }
+    });
+
+    // 2. Costo del despacho según zona
+    const loc = `${order.city || ''} ${order.address || ''} ${order.deliveryZone || ''}`.toLowerCase();
+    let kmRoundTrip = 14;
+    let baseFixed = 0;
+
+    if (loc.includes('espacio frutillar') || order.id === 'PED-0001') {
+      kmRoundTrip = 1;
+      baseFixed = 0;
+    } else if (loc.includes('frutillar')) {
+      kmRoundTrip = 14;
+      baseFixed = 0;
+    } else if (loc.includes('casma')) {
+      kmRoundTrip = 26;
+      baseFixed = 500;
+    } else if (loc.includes('llanquihue')) {
+      kmRoundTrip = 36;
+      baseFixed = 800;
+    } else if (loc.includes('puerto varas') || loc.includes('ptovaras')) {
+      kmRoundTrip = 52;
+      baseFixed = 1000;
+    } else if (loc.includes('puerto octay')) {
+      kmRoundTrip = 48;
+      baseFixed = 800;
+    } else if (loc.includes('fresia') || loc.includes('totoral')) {
+      kmRoundTrip = 56;
+      baseFixed = 1000;
+    } else if (loc.includes('alerce')) {
+      kmRoundTrip = 68;
+      baseFixed = 1200;
+    } else if (loc.includes('puerto montt') || loc.includes('ptomontt')) {
+      kmRoundTrip = 88;
+      baseFixed = 1500;
+    } else {
+      kmRoundTrip = 14;
+      baseFixed = 0;
+    }
+
+    const avgFuelPerKm = fleetFuelStats?.avgCostPerKm || 110;
+    const fuelCost = Math.round(kmRoundTrip * avgFuelPerKm);
+    const deliveryCalculatedCost = fuelCost + baseFixed;
+
+    // 3. Ganancia Real Neta
+    const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost;
+    const halfProfit = Math.round(realProfit / 2);
+
+    // 4. Identificar Repartidor
+    const driverName = String(order.deliveredByName || order.delivered_by_name || (order.id === 'PED-0001' ? 'Ignacio Alarcón' : '')).trim();
+    const isAlamiro = driverName.toLowerCase().includes('alamiro');
+    const isIgnacio = !isAlamiro;
+
+    const ignacioTotal = isIgnacio ? halfProfit + deliveryCalculatedCost : halfProfit;
+    const alamiroTotal = isAlamiro ? halfProfit + deliveryCalculatedCost : halfProfit;
+
+    return {
+      orderTotal,
+      productCostWithIva: totalProductCostWithIva,
+      deliveryCost: deliveryCalculatedCost,
+      realProfit,
+      halfProfit,
+      driverName: isAlamiro ? 'Alamiro Huerto' : 'Ignacio Alarcón',
+      isIgnacio,
+      isAlamiro,
+      ignacioTotal,
+      alamiroTotal,
+    };
+  }, [inventory, fleetFuelStats]);
+
   // Calculations for Financial Dashboard
   const financialMetrics = useMemo(() => {
-    const liveSalesFromOrders = orders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const liveSalesFromOrders = periodFilteredOrders.reduce((acc, o) => acc + (o.total || 0), 0);
     const totalSales = liveSalesFromOrders;
 
     // 1. Desglose de Ventas por Canal (Web vs Manual)
-    const webOrders = orders.filter((o) => (o.channel || 'web') === 'web');
-    const manualOrders = orders.filter((o) => o.channel === 'manual');
+    const webOrders = periodFilteredOrders.filter((o) => (o.channel || 'web') === 'web');
+    const manualOrders = periodFilteredOrders.filter((o) => o.channel === 'manual');
 
     const webSales = webOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const manualSales = manualOrders.reduce((sum, o) => sum + (o.total || 0), 0);
@@ -2461,7 +4911,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const mpSales = Math.round(totalSales * 0.72); // 72% de ventas con Mercado Pago / Tarjetas
     const transferSales = Math.round(totalSales * 0.22); // 22% por Transferencia Bancaria Directa
     const cashSales = totalSales - mpSales - transferSales; // 6% Efectivo
-    const mpTxCount = mpSales > 0 ? Math.max(1, Math.round(mpSales / 42000)) : 0; // ~83 transacciones
+    const mpTxCount = mpSales > 0 ? Math.max(1, Math.round(mpSales / 42000)) : 0;
 
     // Costo de Mercadería Vendida (COGS - 58% promedio según facturas)
     const estimatedCOGS = Math.round(totalSales * 0.58);
@@ -2478,47 +4928,47 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const mpNetRevenueReceived = mpSales - mpTotalCostWithIva;
 
     // 2. Facturas de Proveedores (Mercadería / Stock) & IVA Crédito Fiscal
-    const invoicesNeto = invoices.reduce((sum, inv) => sum + (inv.totalNeto || 0), 0);
-    const invoicesIvaCredito = invoices.reduce(
+    const invoicesNeto = periodFilteredInvoices.reduce((sum, inv) => sum + (inv.totalNeto || 0), 0);
+    const invoicesIvaCredito = periodFilteredInvoices.reduce(
       (sum, inv) => sum + (inv.iva || Math.round((inv.totalNeto || 0) * 0.19)),
       0
     );
-    const invoicesTotalBruto = invoices.reduce(
+    const invoicesTotalBruto = periodFilteredInvoices.reduce(
       (sum, inv) => sum + (inv.totalBruto || (inv.totalNeto || 0) + (inv.iva || 0)),
       0
     );
-    const invoicesCount = invoices.length;
-    const invoicesTotalUnits = invoices.reduce(
+    const invoicesCount = periodFilteredInvoices.length;
+    const invoicesTotalUnits = periodFilteredInvoices.reduce(
       (sum, inv) => sum + (inv.itemsCount || inv.quantityReceived || 0),
       0
     );
 
     // 3. Desglose de Gastos Operacionales Registrados
-    const notariaExpenses = expenses
+    const notariaExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'notaria' || e.category === 'legal')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const combustibleExpenses = expenses
+    const combustibleExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'combustible')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const packagingExpenses = expenses
+    const packagingExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'packaging')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const fixedExpenses = expenses
+    const fixedExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'fijo')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const maintenanceExpenses = expenses
+    const maintenanceExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'mantenimiento')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const servicesExpenses = expenses
+    const servicesExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'servicios')
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const otherExpenses = expenses
+    const otherExpenses = periodFilteredExpenses
       .filter(
         (e) =>
           !['combustible', 'packaging', 'fijo', 'mantenimiento', 'servicios', 'notaria', 'legal'].includes(
@@ -2527,10 +4977,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       )
       .reduce((acc, e) => acc + e.amount, 0);
 
-    const totalRegisteredExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
+    const totalRegisteredExpenses = periodFilteredExpenses.reduce((acc, e) => acc + e.amount, 0);
 
     // Gastos que tienen factura y generan IVA Crédito Fiscal
-    const expensesIvaCredito = expenses.reduce((sum, e) => {
+    const expensesIvaCredito = periodFilteredExpenses.reduce((sum, e) => {
       if (
         e.hasIvaCredit ||
         e.documentType === 'factura' ||
@@ -2542,7 +4992,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return sum;
     }, 0);
 
-    const expensesNetoWithFactura = expenses.reduce((sum, e) => {
+    const expensesNetoWithFactura = periodFilteredExpenses.reduce((sum, e) => {
       if (
         e.hasIvaCredit ||
         e.documentType === 'factura' ||
@@ -2630,95 +5080,172 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       netProfitPercent,
       totalInventoryCost,
       totalInventoryPVP,
+      totalInvested: investmentsSummary.totalAmount,
+      totalRegisteredOutflows: invoicesTotalBruto + totalRegisteredExpenses,
+      totalCashInflows: totalSales + investmentsSummary.totalAmount,
+      netCashBalance: (totalSales + investmentsSummary.totalAmount) - (invoicesTotalBruto + totalRegisteredExpenses),
+      investmentsSummary,
+      partnerDistribution: (() => {
+        let ignacioTotalEarnings = 0;
+        let ignacioProductProfit = 0;
+        let ignacioDeliveryFees = 0;
+        let ignacioDeliveryCount = 0;
+
+        let alamiroTotalEarnings = 0;
+        let alamiroProductProfit = 0;
+        let alamiroDeliveryFees = 0;
+        let alamiroDeliveryCount = 0;
+
+        periodFilteredOrders.forEach((ord) => {
+          const dist = calculateOrderFinancialDistribution(ord);
+          if (dist.isIgnacio) {
+            ignacioDeliveryFees += dist.deliveryCost;
+            ignacioDeliveryCount += 1;
+          } else if (dist.isAlamiro) {
+            alamiroDeliveryFees += dist.deliveryCost;
+            alamiroDeliveryCount += 1;
+          }
+          ignacioProductProfit += dist.halfProfit;
+          alamiroProductProfit += dist.halfProfit;
+
+          ignacioTotalEarnings += dist.ignacioTotal;
+          alamiroTotalEarnings += dist.alamiroTotal;
+        });
+
+        return {
+          ignacio: {
+            total: ignacioTotalEarnings,
+            productProfit: ignacioProductProfit,
+            deliveryFees: ignacioDeliveryFees,
+            deliveryCount: ignacioDeliveryCount,
+          },
+          alamiro: {
+            total: alamiroTotalEarnings,
+            productProfit: alamiroProductProfit,
+            deliveryFees: alamiroDeliveryFees,
+            deliveryCount: alamiroDeliveryCount,
+          },
+        };
+      })(),
     };
-  }, [orders, inventory, expenses, invoices, mercadoPagoConfig]);
+  }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution]);
+
+  // Mes actual dinámico en español
+  const currentMonthName = useMemo(() => {
+    const m = new Intl.DateTimeFormat('es-CL', { month: 'long' }).format(new Date());
+    return m.charAt(0).toUpperCase() + m.slice(1);
+  }, []);
+
+  // Pedidos de los últimos 7 días
+  const weekOrders = useMemo(() => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return orders.filter((o) => {
+      if (o.created_at) {
+        return new Date(o.created_at) >= sevenDaysAgo;
+      }
+      if (o.date === todayFormattedDate || o.date === 'Hoy') return true;
+      return false;
+    });
+  }, [orders, todayFormattedDate]);
 
   // Dynamic values depending on selected period: 'dia' | 'semana' | 'mes'
   const salesPeriodData = useMemo(() => {
-    const todayOrdersTotal = todayOrders.reduce((acc, o) => acc + o.total, 0) || 150460;
-
-    const todayAmount = todayOrdersTotal;
-    const weekAmount = 2875000;
-    const monthAmount = financialMetrics.totalSales > 1000000 ? financialMetrics.totalSales : 4850000;
+    const todayOrdersTotal = todayOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const weekOrdersTotal = weekOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const monthOrdersTotal = orders.reduce((acc, o) => acc + (o.total || 0), 0);
 
     return {
       dia: {
         title: 'Ventas de Hoy',
-        amount: todayAmount,
-        growth: '+14.2% vs ayer',
+        amount: todayOrdersTotal,
+        growth: todayOrdersTotal > 0 ? '+0% vs ayer' : '0% vs ayer',
         detail: `${todayOrders.length} ${todayOrders.length === 1 ? 'pedido hoy' : 'pedidos hoy'}`,
         periodLabel: 'Día',
       },
       semana: {
         title: 'Ventas de la Semana',
-        amount: weekAmount,
-        growth: '+15.8% vs sem. anterior',
-        detail: '38 pedidos (7 días)',
+        amount: weekOrdersTotal,
+        growth: weekOrdersTotal > 0 ? '+0% vs sem. ant.' : '0% vs sem. ant.',
+        detail: `${weekOrders.length} ${weekOrders.length === 1 ? 'pedido (7 días)' : 'pedidos (7 días)'}`,
         periodLabel: 'Semana',
       },
       mes: {
         title: 'Ventas del Mes Actual',
-        amount: monthAmount,
-        growth: '+18.4% vs mes anterior',
-        detail: 'Mes en curso',
+        amount: monthOrdersTotal,
+        growth: monthOrdersTotal > 0 ? '+0% vs mes ant.' : '0% vs mes ant.',
+        detail: `${orders.length} ${orders.length === 1 ? 'pedido este mes' : 'pedidos este mes'}`,
         periodLabel: 'Mes Actual',
       },
     };
-  }, [todayOrders, financialMetrics]);
+  }, [todayOrders, weekOrders, orders]);
 
   // Dynamic values depending on selected period for orders: 'dia' | 'semana' | 'mes'
   const ordersPeriodData = useMemo(() => {
     const enCaminoCount = todayOrders.filter((o) => o.status === 'en_camino').length;
     const enPrepCount = todayOrders.filter((o) => o.status === 'en_preparacion').length;
-    const statusText = `${enPrepCount} en prep. • ${enCaminoCount} en camino`;
+    const todayStatusText = `${enPrepCount} en prep. • ${enCaminoCount} en camino`;
+
+    const weekDelivered = weekOrders.filter((o) => o.status === 'entregado').length;
+    const weekPending = weekOrders.length - weekDelivered;
+    const weekStatusText = `${weekDelivered} entregados • ${weekPending} en ruta`;
+
+    const monthDelivered = orders.filter((o) => o.status === 'entregado').length;
+    const monthPending = orders.length - monthDelivered;
+    const monthStatusText = `${monthDelivered} completados • ${monthPending} en proc.`;
 
     return {
       dia: {
         title: 'Pedidos de Hoy',
         count: `${todayOrders.length} ${todayOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
-        statusText,
+        statusText: todayStatusText,
         detail: 'Despachos del día',
         periodLabel: 'Día',
       },
       semana: {
         title: 'Pedidos de la Semana',
-        count: '38 Pedidos',
-        statusText: '34 entregados • 4 en ruta',
-        detail: '+12.5% vs sem. ant.',
+        count: `${weekOrders.length} ${weekOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        statusText: weekStatusText,
+        detail: 'Últimos 7 días',
         periodLabel: 'Semana',
       },
       mes: {
         title: 'Pedidos del Mes Actual',
-        count: '72 Pedidos',
-        statusText: '68 completados • 4 en proc.',
+        count: `${orders.length} ${orders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        statusText: monthStatusText,
         detail: 'Mes en curso',
         periodLabel: 'Mes Actual',
       },
     };
-  }, [todayOrders]);
+  }, [todayOrders, weekOrders, orders]);
 
   // Dynamic values depending on selected period for customers: 'dia' | 'semana' | 'mes'
   const customersPeriodData = useMemo(() => {
+    const totalPets = customers.reduce(
+      (acc, c) => acc + (Array.isArray(c.pets) ? c.pets.length : c.pet ? 1 : 0),
+      0
+    );
+
     return {
       dia: {
         title: 'Clientes de Hoy',
-        count: '2 Nuevos',
-        statusText: '2 Mascotas inscritas 🐾',
-        detail: '100% perfil completo',
+        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
+        statusText: `${totalPets} ${totalPets === 1 ? 'Mascota inscrita' : 'Mascotas inscritas'} 🐾`,
+        detail: customers.length > 0 ? 'Base activa' : 'Sin tutores registrados',
         periodLabel: 'Día',
       },
       semana: {
         title: 'Clientes de la Semana',
-        count: '14 Nuevos',
-        statusText: '14 Mascotas activas 🐾',
-        detail: '+22.5% vs sem. ant.',
+        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
+        statusText: `${totalPets} ${totalPets === 1 ? 'Mascota activa' : 'Mascotas activas'} 🐾`,
+        detail: 'Últimos 7 días',
         periodLabel: 'Semana',
       },
       mes: {
         title: 'Clientes del Mes Actual',
-        count: `${customers.length > 5 ? customers.length : 48} Tutores`,
-        statusText: `${customers.length} con ficha activa 🐾`,
-        detail: '+31.4% en Agosto',
+        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
+        statusText: `${totalPets} con ficha activa 🐾`,
+        detail: 'Mes en curso',
         periodLabel: 'Mes Actual',
       },
     };
@@ -2726,74 +5253,214 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Chart, KPIs and Pet breakdown synced with global filter: 'dia' | 'semana' | 'mes'
   const dashboardAnalyticsData = useMemo(() => {
+    const activeOrders =
+      globalTimeFilter === 'dia'
+        ? todayOrders
+        : globalTimeFilter === 'semana'
+        ? weekOrders
+        : orders;
+
+    const periodSales = activeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const periodOrdersCount = activeOrders.length;
+    const avgTicket = periodOrdersCount > 0 ? Math.round(periodSales / periodOrdersCount) : 0;
+
+    let dogSales = 0;
+    let catSales = 0;
+    activeOrders.forEach((o) => {
+      const isCat =
+        (o.petType && o.petType.toLowerCase().includes('gato')) ||
+        (o.product && (o.product.toLowerCase().includes('felin') || o.product.toLowerCase().includes('gato')));
+      if (isCat) {
+        catSales += o.total || 0;
+      } else {
+        dogSales += o.total || 0;
+      }
+    });
+
+    const totalDogCat = dogSales + catSales;
+    const perrosPercent = totalDogCat > 0 ? Math.round((dogSales / totalDogCat) * 100) : 0;
+    const gatosPercent = totalDogCat > 0 ? 100 - perrosPercent : 0;
+
+    const totalRedemptions = convenios.reduce((acc, c) => acc + (c.redemptionsCount || 0), 0);
+
     if (globalTimeFilter === 'dia') {
+      const hours = ['09:00', '11:00', '13:00', '15:00', '17:00', '19:00', '21:00'];
+      const maxVal = periodSales > 0 ? Math.max(...activeOrders.map((o) => o.total || 0), 1) : 1;
+      const bars = hours.map((hour) => {
+        const matchingOrders = activeOrders.filter((o) => (o.time || '').startsWith(hour.slice(0, 2)));
+        const amount = matchingOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+        return {
+          day: hour,
+          val: periodSales > 0 ? Math.round((amount / maxVal) * 100) : 0,
+          amount: formatCLP(amount),
+        };
+      });
+
       return {
         chartTitle: 'Ventas de Hoy',
         chartSubtitle: 'Ingresos y pedidos registrados en la jornada',
-        chartBadge: 'Total Hoy: $620.000 (5 pedidos)',
-        bars: [
-          { day: '09:00', val: 40, amount: '$45.000' },
-          { day: '11:00', val: 75, amount: '$125.000' },
-          { day: '13:00', val: 100, amount: '$180.000' },
-          { day: '15:00', val: 55, amount: '$90.000' },
-          { day: '17:00', val: 70, amount: '$110.000' },
-          { day: '19:00', val: 45, amount: '$70.000' },
-          { day: '21:00', val: 20, amount: '$0' },
-        ],
-        footerTicket: '$62.000',
-        footerOnTime: '100% puntual',
-        footerRedemptions: '12 canjes hoy',
-        perrosPercent: 68,
-        perrosAmount: '$421.600',
-        gatosPercent: 32,
-        gatosAmount: '$198.400',
+        chartBadge: periodSales > 0 ? `Total Hoy: ${formatCLP(periodSales)} (${periodOrdersCount} pedidos)` : 'Total Hoy: $0 (0 pedidos)',
+        bars,
+        footerTicket: formatCLP(avgTicket),
+        footerOnTime: periodOrdersCount > 0 ? '100% puntual' : 'Sin despachos',
+        footerRedemptions: `${totalRedemptions} canjes`,
+        perrosPercent,
+        perrosAmount: formatCLP(dogSales),
+        gatosPercent,
+        gatosAmount: formatCLP(catSales),
       };
     }
 
     if (globalTimeFilter === 'semana') {
+      const days = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5', 'Día 6', 'Hoy'];
+      const maxVal = periodSales > 0 ? Math.max(...activeOrders.map((o) => o.total || 0), 1) : 1;
+      const bars = days.map((d, idx) => {
+        const isToday = idx === 6;
+        const matchingOrders = isToday ? todayOrders : [];
+        const amount = matchingOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+        return {
+          day: d,
+          val: periodSales > 0 && maxVal > 0 ? Math.round((amount / maxVal) * 100) : 0,
+          amount: formatCLP(amount),
+        };
+      });
+
       return {
         chartTitle: 'Ventas Semanales',
         chartSubtitle: 'Ingresos diarios acumulados de los últimos 7 días',
-        chartBadge: 'Promedio: $485.000 / día',
-        bars: [
-          { day: 'Mié 12', val: 65, amount: '$315.000' },
-          { day: 'Jue 13', val: 80, amount: '$420.000' },
-          { day: 'Vie 14', val: 95, amount: '$590.000' },
-          { day: 'Sáb 15', val: 70, amount: '$380.000' },
-          { day: 'Dom 16', val: 45, amount: '$240.000' },
-          { day: 'Lun 17', val: 85, amount: '$510.000' },
-          { day: 'Hoy 18', val: 100, amount: '$620.000' },
-        ],
-        footerTicket: '$63.280',
-        footerOnTime: '98.5% a tiempo',
-        footerRedemptions: '70 canjes',
-        perrosPercent: 65,
-        perrosAmount: '$1.868.750',
-        gatosPercent: 35,
-        gatosAmount: '$1.006.250',
+        chartBadge: periodSales > 0 ? `Promedio: ${formatCLP(Math.round(periodSales / 7))} / día` : 'Promedio: $0 / día',
+        bars,
+        footerTicket: formatCLP(avgTicket),
+        footerOnTime: periodOrdersCount > 0 ? '100% a tiempo' : 'Sin despachos',
+        footerRedemptions: `${totalRedemptions} canjes`,
+        perrosPercent,
+        perrosAmount: formatCLP(dogSales),
+        gatosPercent,
+        gatosAmount: formatCLP(catSales),
       };
     }
 
     // Default: 'mes'
+    const weeks = ['Sem 1 (1-7)', 'Sem 2 (8-14)', 'Sem 3 (15-21)', 'Sem 4 (22+)'];
+    const bars = weeks.map((w) => ({
+      day: w,
+      val: 0,
+      amount: formatCLP(0),
+    }));
+
     return {
       chartTitle: 'Ventas Mensuales',
       chartSubtitle: 'Ingresos consolidados por semana del mes en curso',
-      chartBadge: 'Total Mes: $4.850.000',
-      bars: [
-        { day: 'Sem 1 (1-7)', val: 60, amount: '$950.000' },
-        { day: 'Sem 2 (8-14)', val: 80, amount: '$1.250.000' },
-        { day: 'Sem 3 (15-21)', val: 100, amount: '$1.550.000' },
-        { day: 'Sem 4 (Proy.)', val: 70, amount: '$1.100.000' },
-      ],
-      footerTicket: '$67.360',
-      footerOnTime: '99.1% cumplimiento',
-      footerRedemptions: '142 canjes',
-      perrosPercent: 65,
-      perrosAmount: '$3.150.000',
-      gatosPercent: 35,
-      gatosAmount: '$1.700.000',
+      chartBadge: periodSales > 0 ? `Total Mes: ${formatCLP(periodSales)}` : 'Total Mes: $0',
+      bars,
+      footerTicket: formatCLP(avgTicket),
+      footerOnTime: periodOrdersCount > 0 ? '100% cumplimiento' : 'Sin despachos',
+      footerRedemptions: `${totalRedemptions} canjes`,
+      perrosPercent,
+      perrosAmount: formatCLP(dogSales),
+      gatosPercent,
+      gatosAmount: formatCLP(catSales),
     };
-  }, [globalTimeFilter]);
+  }, [globalTimeFilter, todayOrders, weekOrders, orders, convenios]);
+
+  // Geografía calculada de pedidos
+  const cityDistribution = useMemo(() => {
+    if (orders.length === 0) return [];
+    const map = {};
+    orders.forEach((o) => {
+      const city = o.city || 'Puerto Varas';
+      if (!map[city]) map[city] = { city, count: 0, total: 0 };
+      map[city].count += 1;
+      map[city].total += o.total || 0;
+    });
+    const colors = [
+      'from-[#0E8388] to-[#10B981]',
+      'from-blue-600 to-cyan-500',
+      'from-purple-600 to-indigo-500',
+      'from-amber-500 to-orange-400',
+      'from-rose-500 to-pink-500',
+    ];
+    return Object.values(map)
+      .sort((a, b) => b.count - a.count)
+      .map((item, idx) => ({
+        ...item,
+        percent: Math.round((item.count / orders.length) * 100),
+        countText: `${item.count} ${item.count === 1 ? 'pedido' : 'pedidos'}`,
+        totalText: formatCLP(item.total),
+        color: colors[idx % colors.length],
+      }));
+  }, [orders]);
+
+  // Modalidades de entrega calculadas de pedidos
+  const deliveryMethodStats = useMemo(() => {
+    if (orders.length === 0) {
+      return {
+        hasOrders: false,
+        domicilioPct: 0,
+        domicilioCount: 0,
+        retiroPct: 0,
+        retiroCount: 0,
+        courierPct: 0,
+        courierCount: 0,
+      };
+    }
+    const domicilio = orders.filter((o) => !o.deliveryType || o.deliveryType === 'domicilio' || (!o.deliverySlot?.includes('Retiro') && !o.channel?.includes('courier'))).length;
+    const retiro = orders.filter((o) => o.deliveryType === 'retiro' || o.deliverySlot?.includes('Retiro')).length;
+    const courier = orders.length - domicilio - retiro;
+    const domPct = Math.round((domicilio / orders.length) * 100);
+    const retPct = Math.round((retiro / orders.length) * 100);
+    return {
+      hasOrders: true,
+      domicilioPct: domPct,
+      domicilioCount: domicilio,
+      retiroPct: retPct,
+      retiroCount: retiro,
+      courierPct: Math.max(0, 100 - domPct - retPct),
+      courierCount: Math.max(0, courier),
+    };
+  }, [orders]);
+
+  // Ranking Top 5 productos vendidos calculado de pedidos
+  const topSellingProducts = useMemo(() => {
+    if (orders.length === 0) return [];
+    const map = {};
+    orders.forEach((o) => {
+      const items = o.items || [{ name: o.product, format: o.format, qty: o.qty || 1, subtotal: o.total }];
+      items.forEach((it) => {
+        const key = `${it.name} - ${it.format || ''}`;
+        if (!map[key]) {
+          map[key] = {
+            name: it.name,
+            format: it.format || '1 un.',
+            units: 0,
+            total: 0,
+          };
+        }
+        map[key].units += it.qty || 1;
+        map[key].total += it.subtotal || (it.unitPrice ? it.unitPrice * (it.qty || 1) : 0);
+      });
+    });
+    const list = Object.values(map).sort((a, b) => b.units - a.units).slice(0, 5);
+    const maxUnits = list[0]?.units || 1;
+    const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+    return list.map((item, idx) => ({
+      ...item,
+      rank: medals[idx] || `${idx + 1}`,
+      percent: Math.round((item.units / maxUnits) * 100),
+      total: formatCLP(item.total),
+    }));
+  }, [orders]);
+
+  // Tutores con reposición crítica real
+  const criticalReplenishmentCustomers = useMemo(() => {
+    return customers.filter((cust) => {
+      const pets = Array.isArray(cust.pets) && cust.pets.length > 0 ? cust.pets : cust.pet ? [cust.pet] : [];
+      return pets.some((p) => {
+        const days = p.daysRemaining ?? p.days_remaining;
+        return typeof days === 'number' && days <= 5;
+      });
+    });
+  }, [customers]);
 
   // Zona de despacho calculada dinámicamente en base a KM
   const simulatedZoneResult = useMemo(() => {
@@ -3029,6 +5696,26 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </span>
             </button>
 
+            {/* 4.5 Club Patitas & Puntos */}
+            <button
+              onClick={() => setActiveTab('fidelizacion')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
+                activeTab === 'fidelizacion'
+                  ? 'bg-gradient-to-r from-[#0E8388] to-[#10B981] text-white shadow-md shadow-[#0E8388]/25'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Award className="w-4 h-4 text-amber-400" />
+                <span>Club Patitas & Puntos</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                activeTab === 'fidelizacion' ? 'bg-black/20 text-white' : 'bg-amber-100 text-amber-800'
+              }`}>
+                Puntos
+              </span>
+            </button>
+
             {/* 5. Inventario */}
             <button
               onClick={() => setActiveTab('inventario')}
@@ -3042,11 +5729,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <Package className="w-4 h-4" />
                 <span>Inventario & Bodega</span>
               </div>
-              {lowStockCount > 0 && (
+              {/* Alerta roja desactivada temporalmente por inicio de operaciones (pocas unidades iniciales) */}
+              {/* {lowStockCount > 0 && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
                   {lowStockCount} bajo
                 </span>
-              )}
+              )} */}
             </button>
 
             {/* 6. Finanzas */}
@@ -3105,10 +5793,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           <div className="flex items-center justify-between px-2 pt-1">
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-full bg-[#0E8388]/15 border border-[#0E8388]/30 flex items-center justify-center text-[#0E8388] font-bold text-xs">
-                A
+                {currentAdminName.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <div className="text-xs font-bold text-slate-800 truncate">Admin Patitas</div>
+                <div className="text-xs font-bold text-slate-800 truncate" title={currentAdminName}>
+                  {currentAdminName}
+                </div>
                 <div className="text-[10px] text-emerald-600 flex items-center gap-1 font-bold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                   <span>En línea</span>
@@ -3180,6 +5870,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </>
             )}
 
+            {activeTab === 'fidelizacion' && (
+              <>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Club Patitas & Fidelización</span>
+                  <span className="text-xl">🏆</span>
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">
+                  Configuración de descuentos en dinero, regla de acumulación y auditoría de cupones canjeados.
+                </p>
+              </>
+            )}
+
             {activeTab === 'inventario' && (
               <>
                 <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
@@ -3212,8 +5914,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 font-medium truncate">
                   {dispatchSubTab === 'zonas'
-                    ? 'Ajusta precios y distancias de entrega desde la Bodega Central en Puerto Varas.'
-                    : 'Administra vehículos de reparto, rendimiento (km/L) y costo real de combustible.'}
+                    ? `Ajusta precios y distancias de entrega desde la ${CENTRAL_HUB.name} en ${CENTRAL_HUB.city}.`
+                    : dispatchSubTab === 'vehiculos'
+                    ? 'Administra vehículos de reparto, rendimiento (km/L) y costo real de combustible.'
+                    : 'Personaliza los horarios y franjas de entrega desplegables por ciudad o comuna.'}
                 </p>
               </>
             )}
@@ -3510,17 +6214,72 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </button>
                   );
                 })()}
+
+                {/* Button 5: Registrar Inversión Socio */}
+                {(() => {
+                  const isExp = expandedFinanceAction === 'investment';
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isExp) {
+                          setIsAddInvestmentModalOpen(true);
+                          setExpandedFinanceAction(null);
+                        } else {
+                          setExpandedFinanceAction('investment');
+                        }
+                      }}
+                      className={`group relative flex items-center h-9.5 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm shadow-emerald-600/20 hover:shadow-md transition-all duration-300 ease-out cursor-pointer shrink-0 ${
+                        isExp ? 'px-3 pr-2 gap-2' : 'w-9.5 justify-center hover:scale-105 active:scale-95'
+                      }`}
+                      title="Registrar Inversión / Aporte de Socio"
+                    >
+                      <Landmark className="w-4 h-4 shrink-0" />
+                      {isExp && (
+                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-200">
+                          <span className="text-xs font-black whitespace-nowrap">
+                            + Inversión Socio
+                          </span>
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/20 hover:bg-white/30 flex items-center gap-0.5 shrink-0">
+                            Abrir <ArrowUpRight className="w-3 h-3" />
+                          </span>
+                          <span
+                            role="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedFinanceAction(null);
+                            }}
+                            className="p-0.5 rounded-full hover:bg-white/20 transition-colors text-white/80 hover:text-white shrink-0 cursor-pointer"
+                            title="Cerrar"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  );
+                })()}
               </div>
             )}
 
             {activeTab === 'despachos' && (
-              <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenRouteOptimizer}
+                  className="px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200/90 text-xs font-black shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  title="Optimizar ruta de despacho inteligente con Google Maps"
+                >
+                  <GoogleMapsIcon className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">Ruta Óptima Google Maps</span>
+                  <span className="sm:hidden">Ruta Óptima</span>
+                </button>
                 {dispatchSubTab === 'zonas' ? (
                   <span className="text-xs font-bold px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center gap-1.5 shadow-xs">
                     <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Puerto Varas</span>
+                    <span>{CENTRAL_HUB.city}</span>
                   </span>
-                ) : (
+                ) : dispatchSubTab === 'vehiculos' ? (
                   <button
                     type="button"
                     onClick={handleOpenCreateVehicleModal}
@@ -3529,8 +6288,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                     <span>Nuevo Vehículo</span>
                   </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddSlotModal()}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] text-white text-xs font-extrabold shadow-sm hover:shadow-md transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                  >
+                    <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Nueva Franja</span>
+                  </button>
                 )}
-              </>
+              </div>
             )}
           </div>
         </header>
@@ -3611,13 +6379,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </button>
               </div>
 
+              {/* Saldo en Caja / Banco (Capital & Liquidez Real) */}
+              <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-white p-3.5 rounded-2xl border border-emerald-200/90 shadow-xs flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">
+                    Saldo en Caja & Banco
+                  </span>
+                  <div className="text-xl font-black text-emerald-950 font-mono">
+                    {formatCLP(financialMetrics.netCashBalance)}
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-semibold block">
+                    Capital de Socios: +{formatCLP(financialMetrics.totalInvested)}
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  <Landmark className="w-5 h-5" />
+                </div>
+              </div>
+
               {/* 2. Cuadrícula 2x2 de Métricas Esenciales del Día */}
               <div className="grid grid-cols-2 gap-2.5">
                 {/* Ventas Hoy */}
                 <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Ventas Hoy</span>
-                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200">+14%</span>
+                    <span className="text-[9px] font-black text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-200">{salesPeriodData.dia.growth}</span>
                   </div>
                   <div className="text-lg font-black text-slate-900 tracking-tight leading-tight">
                     {formatCLP(salesPeriodData.dia.amount)}
@@ -3657,7 +6443,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             o.paymentMethod?.toLowerCase().includes('efectivo') ||
                             o.paymentMethod?.toLowerCase().includes('transferencia')
                         )
-                        .reduce((acc, o) => acc + o.total, 0) || 45000
+                        .reduce((acc, o) => acc + (o.total || 0), 0)
                     )}
                   </div>
                   <span className="text-[10px] text-slate-400 font-semibold">Efectivo / Chofer</span>
@@ -3675,7 +6461,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {formatCLP(
                       todayOrders.length > 0
                         ? Math.round(salesPeriodData.dia.amount / todayOrders.length)
-                        : 22500
+                        : 0
                     )}
                   </div>
                   <span className="text-[10px] text-slate-400 font-semibold">Promedio por orden</span>
@@ -3710,15 +6496,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <span>{nextOrder.customer}</span>
                         <div className="text-right">
                           <span className="text-xs font-bold text-slate-600 font-mono">{formatCLP(nextOrder.total)}</span>
-                          {isOrderPaidOnline(nextOrder) ? (
-                            <span className="block text-[10px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5">
-                              ✓ Pagado Web · $0
-                            </span>
-                          ) : (
-                            <span className="block text-[10px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5">
-                              ⚠️ Cobrar en entrega
-                            </span>
-                          )}
+                          <span className={`block text-[10px] font-black px-1.5 py-0.5 rounded border mt-0.5 ${getOrderPaymentStatus(nextOrder).badgeColor}`}>
+                            {getOrderPaymentStatus(nextOrder).statusText}
+                          </span>
                         </div>
                       </div>
 
@@ -3806,11 +6586,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                     <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-200/60">
                       <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(nextOrder.address + ', ' + (nextOrder.city || 'Puerto Varas'))}`}
+                        href={getSingleOrderNavigationUrl(nextOrder)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="py-2 px-1 sm:px-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-slate-800 border border-blue-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-2xs"
-                        title="Abrir en Google Maps"
+                        title="Abrir ruta en Google Maps"
                       >
                         <GoogleMapsIcon className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">Google Maps</span>
@@ -3840,8 +6620,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 );
               })()}
 
-              {/* 4. Alerta y Listado Desplegable de Stock Crítico (Solo productos con alerta) */}
-              {lowStockCount > 0 && (
+              {/* 4. Alerta y Listado Desplegable de Stock Crítico (Desactivado temporalmente por inicio de operaciones) */}
+              {false && lowStockCount > 0 && (
                 <div className="w-full rounded-2xl bg-rose-50/90 border border-rose-200/90 shadow-2xs overflow-hidden transition-all duration-300">
                   <button
                     type="button"
@@ -3961,7 +6741,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 {[
                   { id: 'dia', label: 'Hoy (Día)', icon: Clock },
                   { id: 'semana', label: 'Últimos 7 Días', icon: BarChart3 },
-                  { id: 'mes', label: 'Mes Actual (Agosto)', icon: Calendar },
+                  { id: 'mes', label: `Mes Actual (${currentMonthName})`, icon: Calendar },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -3984,8 +6764,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             </div>
 
             {/* KPI Cards Row (Driven by Global Filter) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
-              {/* Card 1: Ventas */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 sm:gap-5">
+              {/* Card 1: Saldo en Caja & Capital */}
+              <div
+                onClick={() => {
+                  setActiveTab('finanzas');
+                  setFinancesSubTab('resumen');
+                }}
+                className="bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 rounded-2xl p-5 border border-emerald-200/90 shadow-[0_1px_3px_rgba(0,0,0,0.03),0_4px_12px_rgba(0,0,0,0.02)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.05)] hover:border-emerald-300 transition-all duration-200 flex flex-col justify-between space-y-3.5 group cursor-pointer"
+                title="Ver detalles de caja y balance financiero"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Caja & Banco Disponible
+                  </span>
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600/10 text-emerald-700 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
+                    <Landmark className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl lg:text-[28px] font-bold text-emerald-950 font-mono tracking-tight leading-none">
+                  {formatCLP(financialMetrics.netCashBalance)}
+                </div>
+                <div className="flex items-center justify-between text-xs pt-0.5">
+                  <div className="inline-flex items-center gap-1 font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md text-[11px]">
+                    <span>Capital: +{formatCLP(financialMetrics.totalInvested)}</span>
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-medium truncate">
+                    Egresos: -{formatCLP(financialMetrics.totalRegisteredOutflows)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 2: Ventas */}
               <div className="bg-white rounded-2xl p-5 border border-slate-200/70 shadow-[0_1px_3px_rgba(0,0,0,0.03),0_4px_12px_rgba(0,0,0,0.02)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.05)] hover:border-slate-300/80 transition-all duration-200 flex flex-col justify-between space-y-3.5 group">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -4068,7 +6878,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
                 <div className="flex items-center justify-between text-xs pt-0.5">
                   <span className="text-[11px] font-medium text-slate-600">
-                    18 SKUs valorizados
+                    {inventory.filter((p) => (p.stock || 0) > 0).length} SKUs valorizados
                   </span>
                   <span className="text-[11px] text-slate-400 font-medium">
                     Bodega Central
@@ -4215,28 +7025,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="pt-2 grid grid-flow-col auto-cols-fr gap-3 items-end h-44 border-b border-slate-100 pb-3">
                       {(globalTimeFilter === 'dia'
                         ? [
-                            { label: '09:00', count: 1, height: 50 },
-                            { label: '11:00', count: 1, height: 50 },
-                            { label: '13:00', count: 2, height: 100 },
-                            { label: '15:00', count: 0, height: 10 },
-                            { label: '17:00', count: 1, height: 50 },
-                            { label: '19:00', count: 0, height: 10 },
+                            { label: '09:00', count: 0, height: 0 },
+                            { label: '11:00', count: 0, height: 0 },
+                            { label: '13:00', count: 0, height: 0 },
+                            { label: '15:00', count: 0, height: 0 },
+                            { label: '17:00', count: 0, height: 0 },
+                            { label: '19:00', count: 0, height: 0 },
                           ]
                         : globalTimeFilter === 'semana'
                         ? [
-                            { label: 'Mié 12', count: 4, height: 50 },
-                            { label: 'Jue 13', count: 6, height: 75 },
-                            { label: 'Vie 14', count: 8, height: 100 },
-                            { label: 'Sáb 15', count: 5, height: 62 },
-                            { label: 'Dom 16', count: 3, height: 37 },
-                            { label: 'Lun 17', count: 7, height: 87 },
-                            { label: 'Hoy 18', count: 5, height: 62 },
+                            { label: 'Día 1', count: 0, height: 0 },
+                            { label: 'Día 2', count: 0, height: 0 },
+                            { label: 'Día 3', count: 0, height: 0 },
+                            { label: 'Día 4', count: 0, height: 0 },
+                            { label: 'Día 5', count: 0, height: 0 },
+                            { label: 'Día 6', count: 0, height: 0 },
+                            { label: 'Hoy', count: todayOrders.length, height: todayOrders.length > 0 ? 100 : 0 },
                           ]
                         : [
-                            { label: 'Sem 1 (1-7)', count: 15, height: 65 },
-                            { label: 'Sem 2 (8-14)', count: 19, height: 82 },
-                            { label: 'Sem 3 (15-21)', count: 23, height: 100 },
-                            { label: 'Sem 4 (22-31)', count: 15, height: 65 },
+                            { label: 'Sem 1 (1-7)', count: 0, height: 0 },
+                            { label: 'Sem 2 (8-14)', count: 0, height: 0 },
+                            { label: 'Sem 3 (15-21)', count: 0, height: 0 },
+                            { label: 'Sem 4 (22+)', count: orders.length, height: orders.length > 0 ? 100 : 0 },
                           ]
                       ).map((col, idx) => (
                         <div key={idx} className="flex flex-col items-center gap-2 group/col">
@@ -4257,15 +7067,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="grid grid-cols-3 gap-4 pt-1 text-center text-xs">
                       <div>
                         <span className="text-slate-400 block font-semibold">Entregados</span>
-                        <span className="text-sm font-black text-emerald-600">94.4% (68)</span>
+                        <span className="text-sm font-black text-emerald-600">
+                          {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'entregado').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'entregado').length})` : '0% (0)'}
+                        </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block font-semibold">En Ruta 🚚</span>
-                        <span className="text-sm font-black text-blue-600">4.1% (3)</span>
+                        <span className="text-sm font-black text-blue-600">
+                          {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'en_camino').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'en_camino').length})` : '0% (0)'}
+                        </span>
                       </div>
                       <div>
                         <span className="text-slate-400 block font-semibold">En Preparación</span>
-                        <span className="text-sm font-black text-amber-600">1.5% (1)</span>
+                        <span className="text-sm font-black text-amber-600">
+                          {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'en_preparacion').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'en_preparacion').length})` : '0% (0)'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -4273,155 +7089,167 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                 {/* SLIDE 2: DISTRIBUCIÓN GEOGRÁFICA POR COMUNA */}
                 {currentChartSlide === 2 && (
-                  <div className="space-y-3 pt-1 animate-in fade-in duration-300">
-                    {[
-                      { city: 'Puerto Varas (Radio Urbano Central)', percent: 42, count: '30 pedidos', total: '$2.037.000', color: 'from-[#0E8388] to-[#10B981]' },
-                      { city: 'Puerto Montt & Alerce', percent: 28, count: '20 pedidos', total: '$1.358.000', color: 'from-blue-600 to-cyan-500' },
-                      { city: 'Llanquihue & Frutillar', percent: 18, count: '13 pedidos', total: '$873.000', color: 'from-purple-600 to-indigo-500' },
-                      { city: 'Ensenada & Zonas Rurales', percent: 7, count: '5 pedidos', total: '$339.500', color: 'from-amber-500 to-orange-400' },
-                      { city: 'Envíos Regionales (Courier Express)', percent: 5, count: '4 pedidos', total: '$242.500', color: 'from-rose-500 to-pink-500' },
-                    ].map((zone, idx) => (
-                      <div key={idx} className="space-y-1 text-xs">
-                        <div className="flex items-center justify-between font-bold">
-                          <span className="text-slate-800 flex items-center gap-1.5">
-                            <MapPin className="w-3 h-3 text-[#0E8388]" />
-                            <span>{zone.city}</span>
-                          </span>
-                          <span className="text-slate-900 font-black">
-                            {zone.percent}% <span className="text-slate-400 font-normal">({zone.count} • {zone.total})</span>
-                          </span>
+                  cityDistribution.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-1.5">
+                      <MapPin className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-600">Sin despachos por comuna registrados</p>
+                      <p className="text-[11px] text-slate-400">Se generará la distribución geográfica a medida que ingreses pedidos al sistema.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-1 animate-in fade-in duration-300">
+                      {cityDistribution.map((zone, idx) => (
+                        <div key={idx} className="space-y-1 text-xs">
+                          <div className="flex items-center justify-between font-bold">
+                            <span className="text-slate-800 flex items-center gap-1.5">
+                              <MapPin className="w-3 h-3 text-[#0E8388]" />
+                              <span>{zone.city}</span>
+                            </span>
+                            <span className="text-slate-900 font-black">
+                              {zone.percent}% <span className="text-slate-400 font-normal">({zone.countText} • {zone.totalText})</span>
+                            </span>
+                          </div>
+                          <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                            <div
+                              className={`h-full bg-gradient-to-r ${zone.color} rounded-full transition-all duration-700`}
+                              style={{ width: `${zone.percent}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full h-2.5 rounded-full bg-slate-100 overflow-hidden">
-                          <div
-                            className={`h-full bg-gradient-to-r ${zone.color} rounded-full transition-all duration-700`}
-                            style={{ width: `${zone.percent}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      ))}
 
-                    <div className="grid grid-cols-3 gap-4 pt-3 border-t border-slate-100 text-center text-xs">
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Comuna Líder</span>
-                        <span className="text-sm font-black text-slate-900">Puerto Varas</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Cobertura Activa</span>
-                        <span className="text-sm font-black text-emerald-600">5 Zonas</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Despacho Promedio</span>
-                        <span className="text-sm font-black text-[#0E8388]">24 Horas</span>
+                      <div className="grid grid-cols-3 gap-4 pt-3 border-t border-slate-100 text-center text-xs">
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Comuna Líder</span>
+                          <span className="text-sm font-black text-slate-900">{cityDistribution[0]?.city || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Cobertura Activa</span>
+                          <span className="text-sm font-black text-emerald-600">{dispatchZones.length} {dispatchZones.length === 1 ? 'Zona' : 'Zonas'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Despacho Promedio</span>
+                          <span className="text-sm font-black text-[#0E8388]">24 Horas</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )
                 )}
 
                 {/* SLIDE 3: MODALIDAD DE ENTREGA (DOMICILIO VS RETIRO EN CONVENIOS) */}
                 {currentChartSlide === 3 && (
-                  <div className="space-y-4 pt-1 animate-in fade-in duration-300">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-emerald-800">Despacho a Domicilio</span>
-                          <Truck className="w-4 h-4 text-emerald-600" />
+                  !deliveryMethodStats.hasOrders ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-1.5">
+                      <Truck className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-600">Sin despachos registrados</p>
+                      <p className="text-[11px] text-slate-400">Se calculará el desglose de flota propia vs. retiro con los nuevos pedidos.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 pt-1 animate-in fade-in duration-300">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-emerald-800">Despacho a Domicilio</span>
+                            <Truck className="w-4 h-4 text-emerald-600" />
+                          </div>
+                          <div className="text-2xl font-black text-emerald-900">{deliveryMethodStats.domicilioPct}%</div>
+                          <p className="text-[11px] text-emerald-700 font-medium">{deliveryMethodStats.domicilioCount} pedidos con flota propia</p>
                         </div>
-                        <div className="text-2xl font-black text-emerald-900">64%</div>
-                        <p className="text-[11px] text-emerald-700 font-medium">46 pedidos entregados con flota propia</p>
+
+                        <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-200/80 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-purple-800">Puntos de Retiro / Convenio</span>
+                            <Building2 className="w-4 h-4 text-purple-600" />
+                          </div>
+                          <div className="text-2xl font-black text-purple-900">{deliveryMethodStats.retiroPct}%</div>
+                          <p className="text-[11px] text-purple-700 font-medium">{deliveryMethodStats.retiroCount} retiros en Aliados</p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-blue-800">Courier Regional</span>
+                            <Package className="w-4 h-4 text-blue-600" />
+                          </div>
+                          <div className="text-2xl font-black text-blue-900">{deliveryMethodStats.courierPct}%</div>
+                          <p className="text-[11px] text-blue-700 font-medium">{deliveryMethodStats.courierCount} envíos por Courier</p>
+                        </div>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-200/80 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-purple-800">Puntos de Retiro / Convenio</span>
-                          <Building2 className="w-4 h-4 text-purple-600" />
+                      <div className="space-y-2 pt-1">
+                        <span className="text-slate-500 font-bold uppercase text-[10px]">Composición Total de Envíos</span>
+                        <div className="w-full h-4 rounded-full bg-slate-100 overflow-hidden flex">
+                          <div className="h-full bg-gradient-to-r from-[#0E8388] to-[#10B981]" style={{ width: `${deliveryMethodStats.domicilioPct}%` }} />
+                          <div className="h-full bg-gradient-to-r from-purple-500 to-indigo-500" style={{ width: `${deliveryMethodStats.retiroPct}%` }} />
+                          <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${deliveryMethodStats.courierPct}%` }} />
                         </div>
-                        <div className="text-2xl font-black text-purple-900">26%</div>
-                        <p className="text-[11px] text-purple-700 font-medium">19 retiros en Clínicas y Guarderías</p>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold px-1">
+                          <span>🟢 {deliveryMethodStats.domicilioPct}% Flota Propia</span>
+                          <span>🟣 {deliveryMethodStats.retiroPct}% Retiro en Aliados</span>
+                          <span>🔵 {deliveryMethodStats.courierPct}% Courier</span>
+                        </div>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/80 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-blue-800">Courier Regional</span>
-                          <Package className="w-4 h-4 text-blue-600" />
+                      <div className="grid grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-center text-xs">
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Costo Promedio Flete</span>
+                          <span className="text-sm font-black text-slate-900">{orders.length > 0 ? '$1.990 CLP' : '$0 CLP'}</span>
                         </div>
-                        <div className="text-2xl font-black text-blue-900">10%</div>
-                        <p className="text-[11px] text-blue-700 font-medium">7 envíos nacionales Blue Express</p>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Ahorro Tutores</span>
+                          <span className="text-sm font-black text-purple-600">$0 CLP</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Cumplimiento</span>
+                          <span className="text-sm font-black text-emerald-600">100% ✓</span>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="space-y-2 pt-1">
-                      <span className="text-slate-500 font-bold uppercase text-[10px]">Composición Total de Envíos</span>
-                      <div className="w-full h-4 rounded-full bg-slate-100 overflow-hidden flex">
-                        <div className="h-full bg-gradient-to-r from-[#0E8388] to-[#10B981]" style={{ width: '64%' }} title="Domicilio 64%" />
-                        <div className="h-full bg-gradient-to-r from-purple-500 to-indigo-500" style={{ width: '26%' }} title="Punto Retiro 26%" />
-                        <div className="h-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: '10%' }} title="Courier 10%" />
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 font-semibold px-1">
-                        <span>🟢 64% Flota Propia</span>
-                        <span>🟣 26% Retiro en Aliados</span>
-                        <span>🔵 10% Courier Express</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-center text-xs">
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Costo Promedio Flete</span>
-                        <span className="text-sm font-black text-slate-900">$1.990 CLP</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Ahorro Tutores Convenio</span>
-                        <span className="text-sm font-black text-purple-600">$57.000 CLP</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Satisfacción Envíos</span>
-                        <span className="text-sm font-black text-emerald-600">99.4% ✓</span>
-                      </div>
-                    </div>
-                  </div>
+                  )
                 )}
 
                 {/* SLIDE 4: TOP 5 PRODUCTOS MÁS VENDIDOS */}
                 {currentChartSlide === 4 && (
-                  <div className="space-y-2.5 pt-1 animate-in fade-in duration-300">
-                    {[
-                      { rank: '🥇', name: 'Bravery Salmón Adulto Medium/Large', format: '12 kg', units: 32, total: '$2.207.680', percent: 100 },
-                      { rank: '🥈', name: 'Patagonia Holística Trucha Silvestre', format: '7 kg', units: 24, total: '$1.271.760', percent: 75 },
-                      { rank: '🥉', name: 'Bravery Pollo Adulto Raza Grande', format: '12 kg', units: 18, total: '$1.241.820', percent: 56 },
-                      { rank: '4️⃣', name: 'Snack Ciervo Patagónico Deshidratado', format: '200 g', units: 45, total: '$854.550', percent: 45 },
-                      { rank: '5️⃣', name: 'Dr. Pet Urinary Care Felino', format: '3 kg', units: 15, total: '$524.850', percent: 35 },
-                    ].map((item, idx) => (
-                      <div key={idx} className="p-2.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-base">{item.rank}</span>
-                          <div>
-                            <div className="font-black text-slate-900">{item.name}</div>
-                            <div className="text-[10px] text-slate-500 font-mono">Formato {item.format} • {item.units} unidades vendidas</div>
+                  topSellingProducts.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-1.5">
+                      <Award className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-600">Sin ventas de productos registradas</p>
+                      <p className="text-[11px] text-slate-400">El ranking de los más vendidos se generará a medida que se ingresen pedidos.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 pt-1 animate-in fade-in duration-300">
+                      {topSellingProducts.map((item, idx) => (
+                        <div key={idx} className="p-2.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">{item.rank}</span>
+                            <div>
+                              <div className="font-black text-slate-900">{item.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">Formato {item.format} • {item.units} {item.units === 1 ? 'unidad vendida' : 'unidades vendidas'}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-black text-slate-900">{item.total}</div>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                              Top #{idx + 1}
+                            </span>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="font-black text-slate-900">{item.total}</div>
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                            Top #{idx + 1}
-                          </span>
+                      ))}
+
+                      <div className="grid grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-center text-xs">
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Producto Líder</span>
+                          <span className="text-sm font-black text-slate-900 truncate max-w-[120px] inline-block">{topSellingProducts[0]?.name || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Formato Más Pedido</span>
+                          <span className="text-sm font-black text-[#0E8388]">{topSellingProducts[0]?.format || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Unidades Top #1</span>
+                          <span className="text-sm font-black text-purple-600">{topSellingProducts[0]?.units || 0} un.</span>
                         </div>
                       </div>
-                    ))}
-
-                    <div className="grid grid-cols-3 gap-4 pt-2 border-t border-slate-100 text-center text-xs">
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Categoría Líder</span>
-                        <span className="text-sm font-black text-slate-900">Perros Adultos (65%)</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Formato Más Pedido</span>
-                        <span className="text-sm font-black text-[#0E8388]">Saco 12 kg</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Ticket por Producto</span>
-                        <span className="text-sm font-black text-purple-600">$54.200</span>
-                      </div>
                     </div>
-                  </div>
+                  )
                 )}
 
                 {/* SLIDE 5: RENDIMIENTO POR CONVENIOS LOCALES */}
@@ -4481,69 +7309,50 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                 {/* SLIDE 6: HORARIOS Y DÍAS PICO DE COMPRA */}
                 {currentChartSlide === 6 && (
-                  <div className="space-y-4 pt-1 animate-in fade-in duration-300">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                      <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-1">
-                        <span className="text-[10px] font-black uppercase text-amber-800">Franja Pico Tarde (13:00 - 17:00)</span>
-                        <div className="text-2xl font-black text-amber-900">45% Demanda</div>
-                        <p className="text-[11px] text-amber-800 font-medium">Mayor concentración de compras del día</p>
+                  orders.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 bg-slate-50/50 rounded-2xl border border-slate-100 space-y-1.5">
+                      <Flame className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-600">Sin datos de demanda ni horarios pico</p>
+                      <p className="text-[11px] text-slate-400">Los patrones de compra y horas pico se analizarán al registrar nuevos pedidos.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 pt-1 animate-in fade-in duration-300">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                        <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-amber-800">Franja Pico Tarde (13:00 - 17:00)</span>
+                          <div className="text-2xl font-black text-amber-900">45% Demanda</div>
+                          <p className="text-[11px] text-amber-800 font-medium">Mayor concentración de compras del día</p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-purple-800">Franja Noche (18:00 - 22:00)</span>
+                          <div className="text-2xl font-black text-purple-900">35% Demanda</div>
+                          <p className="text-[11px] text-purple-800 font-medium">Compras en el hogar post-jornada laboral</p>
+                        </div>
+
+                        <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-blue-800">Franja Mañana (08:00 - 12:00)</span>
+                          <div className="text-2xl font-black text-blue-900">20% Demanda</div>
+                          <p className="text-[11px] text-blue-800 font-medium">Pedidos matutinos para entrega exprés</p>
+                        </div>
                       </div>
 
-                      <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200 space-y-1">
-                        <span className="text-[10px] font-black uppercase text-purple-800">Franja Noche (18:00 - 22:00)</span>
-                        <div className="text-2xl font-black text-purple-900">35% Demanda</div>
-                        <p className="text-[11px] text-purple-800 font-medium">Compras en el hogar post-jornada laboral</p>
-                      </div>
-
-                      <div className="p-3.5 rounded-2xl bg-blue-50/80 border border-blue-200 space-y-1">
-                        <span className="text-[10px] font-black uppercase text-blue-800">Franja Mañana (08:00 - 12:00)</span>
-                        <div className="text-2xl font-black text-blue-900">20% Demanda</div>
-                        <p className="text-[11px] text-blue-800 font-medium">Pedidos matutinos para entrega exprés</p>
+                      <div className="grid grid-cols-3 gap-4 pt-1 text-center text-xs">
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Total Pedidos</span>
+                          <span className="text-sm font-black text-slate-900">{orders.length}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Tasa de Entrega</span>
+                          <span className="text-sm font-black text-emerald-600">100%</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block font-semibold">Estado Sistema</span>
+                          <span className="text-sm font-black text-purple-600">En línea</span>
+                        </div>
                       </div>
                     </div>
-
-                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
-                      <span className="text-slate-500 font-bold uppercase text-[10px]">Días con Mayor Flujo de Pedidos</span>
-                      <div className="grid grid-cols-7 gap-1.5 text-center pt-1 font-bold">
-                        {[
-                          { day: 'Lun', val: '26% 🔥', active: true },
-                          { day: 'Mar', val: '14%', active: false },
-                          { day: 'Mié', val: '12%', active: false },
-                          { day: 'Jue', val: '15%', active: false },
-                          { day: 'Vie', val: '20% ⭐', active: true },
-                          { day: 'Sáb', val: '8%', active: false },
-                          { day: 'Dom', val: '5%', active: false },
-                        ].map((d, idx) => (
-                          <div
-                            key={idx}
-                            className={`p-2 rounded-xl border ${
-                              d.active
-                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 font-black'
-                                : 'bg-white border-slate-200 text-slate-600'
-                            }`}
-                          >
-                            <span className="text-[10px] block text-slate-400">{d.day}</span>
-                            <span className="text-[11px]">{d.val}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4 pt-1 text-center text-xs">
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Hora Punta Exacta</span>
-                        <span className="text-sm font-black text-rose-600">14:30 hrs</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Día Más Fuerte</span>
-                        <span className="text-sm font-black text-emerald-600">Lunes (26%)</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-semibold">Tasa de Conversión</span>
-                        <span className="text-sm font-black text-purple-600">4.8% en vivo</span>
-                      </div>
-                    </div>
-                  </div>
+                  )
                 )}
               </div>
 
@@ -4589,31 +7398,59 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
 
                 {/* Operational Quick Alert Box with Action Button */}
-                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
-                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
-                      <AlertTriangle className="w-3.5 h-3.5" />
+                {criticalReplenishmentCustomers.length === 0 ? (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                      <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                      </div>
+                      <span>Reposiciones al Día</span>
                     </div>
-                    <span>Alertas de Reposición Próxima</span>
+
+                    <p className="text-xs text-slate-500 leading-relaxed font-normal">
+                      No hay alertas de alimento crítico por agotar. Las fichas y consumos de los tutores están al día.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplenishmentFilter('todos');
+                        setIsReplenishmentModalOpen(true);
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-300" />
+                      <span className="whitespace-nowrap">Ver Reposiciones</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
                   </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                      </div>
+                      <span>Alertas de Reposición Próxima</span>
+                    </div>
 
-                  <p className="text-xs text-amber-950/80 leading-relaxed font-normal">
-                    Hay <strong className="font-semibold text-amber-950">2 tutores</strong> que agotarán el alimento de su mascota en menos de 5 días (<span className="underline decoration-amber-400">Kira: 4 días</span> • <span className="underline decoration-amber-400">Rocky: 2 días</span>).
-                  </p>
+                    <p className="text-xs text-amber-950/80 leading-relaxed font-normal">
+                      Hay <strong className="font-semibold text-amber-950">{criticalReplenishmentCustomers.length} {criticalReplenishmentCustomers.length === 1 ? 'tutor' : 'tutores'}</strong> que agotarán el alimento de su mascota en menos de 5 días.
+                    </p>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReplenishmentFilter('criticos');
-                      setIsReplenishmentModalOpen(true);
-                    }}
-                    className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-slate-300" />
-                    <span className="whitespace-nowrap">Ver Reposiciones</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplenishmentFilter('criticos');
+                        setIsReplenishmentModalOpen(true);
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-semibold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-slate-300" />
+                      <span className="whitespace-nowrap">Ver Reposiciones</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4668,9 +7505,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </td>
                           <td className="py-3.5 px-3 whitespace-nowrap min-w-[130px]">
                             <div className="font-bold text-slate-900 whitespace-nowrap leading-none">{o.customer}</div>
-                            <div className="text-[11px] text-slate-600 font-semibold whitespace-nowrap mt-1 flex items-center gap-1.5">
-                              <span>{o.petType?.toLowerCase().includes('gato') || o.petType?.includes('🐱') ? '🐱' : '🐶'}</span>
-                              <span>{o.petName}</span>
+                            <div className="text-[11px] text-slate-600 font-semibold whitespace-nowrap mt-1 flex items-center gap-1">
+                              <span>{o.petName || (String(o.customer || '').toLowerCase().includes('bárbara') || String(o.customer || '').toLowerCase().includes('barbara') ? 'Keiko' : 'Mascota')}</span>
                             </div>
                           </td>
                           <td className="py-3.5 px-3 max-w-xs truncate text-slate-600 font-medium">
@@ -4809,6 +7645,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <span className="truncate">Pedido Manual</span>
                     </button>
 
+                    {/* Botón de Optimización de Ruta Google Maps */}
+                    <button
+                      type="button"
+                      onClick={handleOpenRouteOptimizer}
+                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200/90 text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                      title="Optimizar ruta de reparto con Google Maps"
+                    >
+                      <GoogleMapsIcon className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Ruta Óptima Maps</span>
+                    </button>
+
                     {/* Resetear filtros si hay alguno activo */}
                     {(orderDayFilter !== 'todos' || orderStatusFilter !== 'todos' || orderSearch) && (
                       <button
@@ -4934,24 +7781,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             {order.id}
                           </span>
                           <span className="text-[11px] font-semibold text-slate-500">
-                            {order.date} · {order.time}
+                            {order.date}{order.time ? ` · ${order.time}` : ''}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
-                              order.status === 'entregado'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : order.status === 'en_camino'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}
-                          >
-                            {order.status === 'entregado' && <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />}
-                            {order.status === 'en_camino' && <Truck className="w-3 h-3 stroke-[2.5]" />}
-                            {order.status === 'en_preparacion' && <Clock className="w-3 h-3 stroke-[2.5]" />}
-                            <span>{order.status.replace('_', ' ')}</span>
-                          </span>
+                          <div className="flex flex-col items-end">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
+                                order.status === 'entregado'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : order.status === 'en_camino'
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
+                              {order.status === 'entregado' && <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />}
+                              {order.status === 'en_camino' && <Truck className="w-3 h-3 stroke-[2.5]" />}
+                              {order.status === 'en_preparacion' && <Clock className="w-3 h-3 stroke-[2.5]" />}
+                              <span>{order.status.replace('_', ' ')}</span>
+                            </span>
+                            {order.status === 'entregado' && (
+                              <span className="text-[9px] text-slate-500 font-semibold mt-0.5">
+                                👤 {order.deliveredByName || order.delivered_by_name || 'Ignacio Alarcón'}
+                              </span>
+                            )}
+                          </div>
 
                           {/* Botón Contraer / Expandir Pedido (iOS Chevron) */}
                           <button
@@ -4999,15 +7853,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <div className="font-mono font-black text-slate-900 text-sm sm:text-base">
                             {formatCLP(order.total)}
                           </div>
-                          {isOrderPaidOnline(order) ? (
-                            <div className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 inline-block mt-0.5">
-                              ✓ Pagado Web · $0
-                            </div>
-                          ) : (
-                            <div className="text-[10px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 inline-block mt-0.5">
-                              ⚠️ Cobrar en entrega
-                            </div>
-                          )}
+                          <div className={`text-[10px] font-black px-1.5 py-0.5 rounded border inline-block mt-0.5 ${getOrderPaymentStatus(order).badgeColor}`}>
+                            {getOrderPaymentStatus(order).statusText}
+                          </div>
                         </div>
                       </div>
 
@@ -5016,9 +7864,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                           <div className="flex items-center gap-1.5 truncate max-w-[65%]">
                             <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="font-semibold text-slate-700 shrink-0">{order.city}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="truncate text-slate-500">{order.address}</span>
+                            <span className="font-bold text-slate-800 truncate">{order.address}</span>
+                            <span className="text-slate-300 shrink-0">•</span>
+                            <span className="text-[11px] text-slate-500 shrink-0">{order.city}</span>
                           </div>
                           <span className="text-[10px] font-bold text-[#0E8388] shrink-0 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-100">
                             {itemsCount} {itemsCount === 1 ? 'prod.' : 'prods.'} · Expandir ▾
@@ -5032,9 +7880,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           {/* Ubicación / Dirección */}
                           <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50/80 px-2.5 py-1.5 rounded-xl border border-slate-100">
                             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            <span className="font-bold text-slate-800 shrink-0">{order.city}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-[11px] text-slate-500 truncate">{order.address}</span>
+                            <span className="font-bold text-slate-900 truncate">{order.address}</span>
+                            <span className="text-slate-300 shrink-0">•</span>
+                            <span className="text-[11px] text-slate-500 shrink-0">{order.city}</span>
                           </div>
 
                           {/* Desglose Visual de Productos (Consistente con Dashboard: Miniaturas + Badge Flotante de Cantidad) */}
@@ -5132,24 +7980,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             {/* Método de Pago */}
                             <div className="flex items-center gap-1.5 shrink-0">
                               {renderPaymentMethodBadge(order.paymentMethod)}
-                              {isOrderPaidOnline(order) && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                  <Check className="w-3 h-3 stroke-[3]" />
-                                  <span>Sin cobro</span>
-                                </span>
-                              )}
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black border ${getOrderPaymentStatus(order).actionBadgeColor}`}>
+                                {getOrderPaymentStatus(order).isPaid && <Check className="w-3 h-3 stroke-[3]" />}
+                                <span>{getOrderPaymentStatus(order).actionBadgeText}</span>
+                              </span>
                             </div>
 
                             {/* Botones de Acción */}
                             <div className="flex items-center gap-1.5">
                               {/* Google Maps 1-Tap */}
                               <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address + ', ' + (order.city || 'Puerto Varas'))}`}
+                                href={getSingleOrderNavigationUrl(order)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-slate-700 border border-blue-200/90 transition-all shadow-2xs active:scale-95"
-                                title="Abrir en Google Maps"
+                                title="Abrir ruta en Google Maps"
                               >
                                 <GoogleMapsIcon className="w-3.5 h-3.5" />
                               </a>
@@ -5226,13 +8072,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <table className="w-full text-left text-xs">
                   <thead className="text-slate-500 uppercase tracking-wider text-[10px] bg-slate-50/80 border-b border-slate-200">
                     <tr>
-                      <th className="py-3.5 px-4">Pedido / Fecha</th>
-                      <th className="py-3.5 px-4">Cliente & Mascota</th>
-                      <th className="py-3.5 px-4">Desglose de Ítems</th>
-                      <th className="py-3.5 px-4">Zona / Ciudad</th>
-                      <th className="py-3.5 px-4">Total</th>
-                      <th className="py-3.5 px-4">Estado</th>
-                      <th className="py-3.5 px-4 text-center">Acciones Rápidas</th>
+                      <th className="py-3 px-3.5">Pedido / Fecha</th>
+                      <th className="py-3 px-3.5">Cliente & Mascota</th>
+                      <th className="py-3 px-3.5">Desglose de Ítems</th>
+                      <th className="py-3 px-3.5">Dirección & Ciudad</th>
+                      <th className="py-3 px-3.5">Total</th>
+                      <th className="py-3 px-3">Pago</th>
+                      <th className="py-3 px-3">Estado</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -5252,143 +8098,107 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           }`}
                           title="Haz clic para ver el detalle del pedido y cliente en el panel derecho"
                         >
-                          <td className="py-4 px-4 whitespace-nowrap min-w-[130px]">
-                            <div className="font-mono font-black text-[#0E8388] text-xs whitespace-nowrap leading-none">{order.id}</div>
-                            <div className="text-[11px] text-slate-500 font-medium whitespace-nowrap mt-1">{order.date} • {order.time}</div>
-                            <div className="mt-1.5 flex items-center gap-1.5">
-                              {renderPaymentMethodBadge(order.paymentMethod)}
-                              {isOrderPaidOnline(order) ? (
-                                <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                  No cobrar
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                  Cobrar
+                          <td className="py-3.5 px-3.5 whitespace-nowrap">
+                            <div className="font-mono font-black text-[#0E8388] text-xs whitespace-nowrap leading-none flex items-center gap-1.5">
+                              <span>{order.id}</span>
+                              {(orderBoletas[order.id] || order.invoiceFile) && (
+                                <span className="inline-flex items-center text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200" title="Boleta adjuntada">
+                                  📄 Boleta
                                 </span>
                               )}
                             </div>
+                            <div className="text-[11px] text-slate-500 font-medium whitespace-nowrap mt-1">
+                              {order.date}{order.time ? ` • ${order.time}` : ''}
+                            </div>
                           </td>
-                          <td className="py-4 px-4 whitespace-nowrap min-w-[140px]">
+                          <td className="py-3.5 px-3.5 whitespace-nowrap">
                             <div className="font-bold text-slate-900 whitespace-nowrap leading-none">{order.customer}</div>
-                            <div className="text-[11px] text-slate-600 font-semibold whitespace-nowrap mt-1.5 flex items-center gap-1.5">
-                              <span>{order.petType?.toLowerCase().includes('gato') || order.petType?.includes('🐱') ? '🐱' : '🐶'}</span>
-                              <span>{order.petName}</span>
+                            <div className="text-[11px] text-slate-600 font-semibold whitespace-nowrap mt-1 flex items-center gap-1">
+                              <span>{order.petName || (String(order.customer || '').toLowerCase().includes('bárbara') || String(order.customer || '').toLowerCase().includes('barbara') ? 'Keiko' : 'Mascota')}</span>
                             </div>
                           </td>
-                          <td className="py-4 px-4 max-w-xs">
+                          <td className="py-3.5 px-3.5 max-w-xs">
                             <div className="space-y-1">
-                              {order.items.map((it, idx) => (
-                                <div
-                                  key={idx}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedProductPreview({
-                                      ...it,
-                                      orderId: order.id,
-                                      customer: order.customer,
-                                      petName: order.petName,
-                                      petType: order.petType,
-                                      tracking: order.tracking,
-                                    });
-                                  }}
-                                  className="text-slate-700 hover:text-[#0E8388] text-xs font-medium truncate cursor-pointer transition-colors hover:underline"
-                                  title="Clic para ver foto del producto"
-                                >
-                                  • {it.quantity}x {it.name} ({it.weight})
-                                </div>
-                              ))}
+                              {(order.items || []).map((it, idx) => {
+                                const qty = it.quantity || it.qty || 1;
+                                const weightStr = it.weight || (it.format && it.format !== '1 un.' ? it.format : '');
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedProductPreview({
+                                        ...it,
+                                        orderId: order.id,
+                                        customer: order.customer,
+                                        petName: order.petName,
+                                        petType: order.petType,
+                                        tracking: order.tracking,
+                                      });
+                                    }}
+                                    className="text-slate-800 hover:text-[#0E8388] text-xs font-medium truncate cursor-pointer transition-colors flex items-center gap-1.5 group"
+                                    title="Clic para ver foto del producto"
+                                  >
+                                    <span className="font-mono font-black text-[#0E8388] bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100/90 text-[11px] shrink-0 leading-none">
+                                      {qty}x
+                                    </span>
+                                    <span className="truncate font-semibold text-slate-800 group-hover:underline">
+                                      {it.name} {weightStr ? `(${weightStr})` : ''}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </td>
-                          <td className="py-4 px-4 text-slate-600">
-                            <div className="font-bold text-slate-800">{order.city}</div>
-                            <div className="text-[10px] text-slate-400 truncate max-w-[150px]">{order.address}</div>
+                          <td className="py-3.5 px-3.5 text-slate-600 min-w-[170px] max-w-[240px]">
+                            <div className="font-bold text-slate-900 text-xs sm:text-[13px] leading-snug break-words" title={order.address}>
+                              {order.address}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3 text-[#0E8388] shrink-0" />
+                              <span>{order.city}</span>
+                            </div>
                           </td>
-                          <td className="py-4 px-4 whitespace-nowrap">
+                          <td className="py-3.5 px-3.5 whitespace-nowrap">
                             <div className="font-black text-slate-900 text-sm">{formatCLP(order.total)}</div>
-                            {isOrderPaidOnline(order) ? (
-                              <div className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/80 inline-block mt-0.5">
-                                ✓ Pagado Web ($0)
-                              </div>
+                          </td>
+                          <td className="py-3.5 px-3 whitespace-nowrap">
+                            {getOrderPaymentStatus(order).isPaid || order.paymentStatus === 'pagado' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 shrink-0" />
+                                <span>Pagado</span>
+                              </span>
                             ) : (
-                              <div className="text-[10px] font-black text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/80 inline-block mt-0.5">
-                                ⚠️ Cobrar entrega
-                              </div>
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                <span>Pendiente de pago</span>
+                              </span>
                             )}
                           </td>
-                          <td className="py-4 px-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          <td className="py-3.5 px-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${
                               order.status === 'entregado'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : order.status === 'en_camino'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                             }`}>
-                              {order.status === 'entregado' && <CheckCircle2 className="w-3 h-3" />}
-                              {order.status === 'en_camino' && <Truck className="w-3 h-3" />}
-                              {order.status === 'en_preparacion' && <Clock className="w-3 h-3" />}
+                              {order.status === 'entregado' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                              {order.status === 'en_camino' && <Truck className="w-2.5 h-2.5 shrink-0" />}
+                              {order.status === 'en_preparacion' && <Clock className="w-2.5 h-2.5 shrink-0" />}
                               <span>{order.status.replace('_', ' ')}</span>
                             </span>
-                          </td>
-                          <td className="py-4 px-4 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center gap-1.5">
-                              {/* 1-Tap Navigation: Google Maps */}
-                              <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.address + ', ' + (order.city || 'Puerto Varas'))}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-slate-700 border border-blue-200 transition-all shadow-2xs hover:scale-105 active:scale-95"
-                                title="Abrir en Google Maps"
+                            {order.status === 'entregado' && (
+                              <div
+                                className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-1"
+                                title={`Entregado por ${order.deliveredByName || order.delivered_by_name || 'Ignacio Alarcón'}`}
                               >
-                                <GoogleMapsIcon className="w-3.5 h-3.5" />
-                              </a>
-
-                              {/* 1-Tap WhatsApp Contact */}
-                              <a
-                                href={`https://wa.me/${(order.phone || '+56987654321').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${order.customer}! Te contactamos de Patitas del Sur sobre tu pedido ${order.id}. 🐾`)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-all shadow-2xs hover:scale-105 active:scale-95"
-                                title="Avisar por WhatsApp"
-                              >
-                                <WhatsAppIcon className="w-3.5 h-3.5" />
-                              </a>
-
-                              {order.status === 'en_preparacion' && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateOrderStatus(order.id, 'en_camino');
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
-                                  title="Marcar En Camino"
-                                >
-                                  Despachar
-                                </button>
-                              )}
-                              {order.status === 'en_camino' && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateOrderStatus(order.id, 'entregado');
-                                  }}
-                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
-                                  title="Marcar Entregado"
-                                >
-                                  Entregar
-                                </button>
-                              )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedOrderModal(order);
-                                }}
-                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold text-xs border border-slate-200 transition-colors cursor-pointer shadow-xs"
-                              >
-                                Ver
-                              </button>
-                            </div>
+                                <span className="text-slate-400">👤</span>
+                                <span className="font-semibold text-slate-700 truncate max-w-[140px]">
+                                  {order.deliveredByName || order.delivered_by_name || 'Ignacio Alarcón'}
+                                </span>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -5456,9 +8266,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       c.name.toLowerCase().includes(q) ||
                       c.email.toLowerCase().includes(q) ||
                       c.city.toLowerCase().includes(q) ||
-                      (c.pets
-                        ? c.pets.some((p) => p.name.toLowerCase().includes(q) || p.breed.toLowerCase().includes(q))
-                        : (c.pet?.name.toLowerCase().includes(q) || c.pet?.breed.toLowerCase().includes(q)))
+                      (Array.isArray(c.pets)
+                        ? c.pets.some((p) => p.name?.toLowerCase().includes(q) || p.breed?.toLowerCase().includes(q))
+                        : (c.pet?.name?.toLowerCase().includes(q) || c.pet?.breed?.toLowerCase().includes(q)))
                     );
                   }).length} perfiles
                 </div>
@@ -5475,13 +8285,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       c.name.toLowerCase().includes(q) ||
                       c.email.toLowerCase().includes(q) ||
                       c.city.toLowerCase().includes(q) ||
-                      (c.pets
-                        ? c.pets.some((p) => p.name.toLowerCase().includes(q) || p.breed.toLowerCase().includes(q))
-                        : (c.pet?.name.toLowerCase().includes(q) || c.pet?.breed.toLowerCase().includes(q)))
+                      (Array.isArray(c.pets)
+                        ? c.pets.some((p) => p.name?.toLowerCase().includes(q) || p.breed?.toLowerCase().includes(q))
+                        : (c.pet?.name?.toLowerCase().includes(q) || c.pet?.breed?.toLowerCase().includes(q)))
                     );
                   })
                   .map((customer) => {
-                    const customerPets = (customer.pets && customer.pets.length > 0)
+                    const customerPets = Array.isArray(customer.pets) && customer.pets.length > 0
                       ? customer.pets
                       : (customer.pet ? [customer.pet] : []);
                     const urgentPet = customerPets.find((p) => (p.daysRemaining ?? 99) < 10);
@@ -5538,13 +8348,37 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                           </div>
 
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                            isUrgent
-                              ? 'bg-white text-rose-700 border-rose-300'
-                              : 'bg-purple-50 text-purple-700 border border-purple-200'
-                          }`}>
-                            {customer.points} pts
-                          </span>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              isUrgent
+                                ? 'bg-white text-rose-700 border-rose-300'
+                                : 'bg-purple-50 text-purple-700 border border-purple-200'
+                            }`}>
+                              {customer.points} pts
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenEditCustomer(customer);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-[#0E8388] hover:bg-emerald-50 active:scale-90 transition-all cursor-pointer"
+                              title="Editar tutor"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDeleteCustomer(customer);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 active:scale-90 transition-all cursor-pointer"
+                              title="Eliminar tutor"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Mascotas Box */}
@@ -5658,6 +8492,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <th className="py-4 px-4">Dirección(es)</th>
                         <th className="py-4 px-4">Mascotas</th>
                         <th className="py-4 px-4 text-center">Puntos</th>
+                        <th className="py-4 px-4 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -5669,13 +8504,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             c.email.toLowerCase().includes(q) ||
                             c.city.toLowerCase().includes(q) ||
                             c.address?.toLowerCase().includes(q) ||
-                            (c.pets
-                              ? c.pets.some((p) => p.name.toLowerCase().includes(q) || p.breed.toLowerCase().includes(q))
-                              : (c.pet?.name.toLowerCase().includes(q) || c.pet?.breed.toLowerCase().includes(q)))
+                            (Array.isArray(c.pets)
+                              ? c.pets.some((p) => p.name?.toLowerCase().includes(q) || p.breed?.toLowerCase().includes(q))
+                              : (c.pet?.name?.toLowerCase().includes(q) || c.pet?.breed?.toLowerCase().includes(q)))
                           );
                         })
                         .map((customer) => {
-                          const customerPets = (customer.pets && customer.pets.length > 0)
+                          const customerPets = Array.isArray(customer.pets) && customer.pets.length > 0
                             ? customer.pets
                             : (customer.pet ? [customer.pet] : []);
                           return (
@@ -5813,6 +8648,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   {customer.points} pts
                                 </span>
                               </td>
+
+                              {/* 6. Acciones */}
+                              <td className="py-4 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditCustomer(customer)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-[#0E8388] hover:bg-emerald-50 active:scale-90 transition-all cursor-pointer"
+                                    title="Editar tutor"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDeleteCustomer(customer)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 active:scale-90 transition-all cursor-pointer"
+                                    title="Eliminar tutor"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -5835,6 +8692,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             handleDeleteConvenio={handleDeleteConvenio}
             setSelectedConvenioForCoupons={setSelectedConvenioForCoupons}
             handleShareCouponsWhatsApp={handleShareCouponsWhatsApp}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 4.5: CLUB PATITAS & FIDELIZACIÓN (Premios en Dinero & Auditoría)     */}
+        {/* ========================================================================= */}
+        {activeTab === 'fidelizacion' && (
+          <LoyaltyAdminTab
+            customers={customers}
+            orders={orders}
           />
         )}
 
@@ -5894,8 +8761,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                 {/* Filtros Dropdowns en línea */}
                 <div className="flex items-center gap-2.5 shrink-0 flex-wrap sm:flex-nowrap">
-                  {/* Filtro Desplegable: Estado de Stock */}
+                  {/* Filtro Desplegable: Categoría */}
                   <div className="w-full sm:w-48 shrink-0">
+                    <CustomDropdown
+                      value={inventoryCategoryFilter}
+                      options={inventoryCategoryOptions}
+                      onChange={(val) => setInventoryCategoryFilter(val)}
+                      buttonClassName="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 font-bold hover:bg-white text-xs"
+                      popoverClassName="w-56"
+                    />
+                  </div>
+
+                  {/* Filtro Desplegable: Estado de Stock */}
+                  <div className="w-full sm:w-44 shrink-0">
                     <CustomDropdown
                       value={inventoryStockFilter}
                       options={inventoryStockFilterOptions}
@@ -5906,7 +8784,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
 
                   {/* Filtro Desplegable: Mascota (Perro / Gato) */}
-                  <div className="w-full sm:w-44 shrink-0">
+                  <div className="w-full sm:w-40 shrink-0">
                     <CustomDropdown
                       value={inventoryPetTypeFilter}
                       options={inventoryPetTypeOptions}
@@ -5917,7 +8795,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
 
                   {/* Filtro Desplegable: Marca */}
-                  <div className="w-full sm:w-52 shrink-0">
+                  <div className="w-full sm:w-48 shrink-0">
                     <CustomDropdown
                       value={inventoryBrandFilter}
                       options={inventoryBrandOptions}
@@ -5928,11 +8806,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
 
                   {/* Resetear filtros si hay alguno aplicado */}
-                  {(inventorySearch || inventoryStockFilter !== 'todos' || inventoryBrandFilter !== 'todas' || inventoryPetTypeFilter !== 'todos') && (
+                  {(inventorySearch || inventoryCategoryFilter !== 'todas' || inventoryStockFilter !== 'todos' || inventoryBrandFilter !== 'todas' || inventoryPetTypeFilter !== 'todos') && (
                     <button
                       type="button"
                       onClick={() => {
                         setInventorySearch('');
+                        setInventoryCategoryFilter('todas');
                         setInventoryStockFilter('todos');
                         setInventoryBrandFilter('todas');
                         setInventoryPetTypeFilter('todos');
@@ -5959,12 +8838,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       No se encontraron productos
                     </div>
                     <p className="text-xs text-slate-500">
-                      Prueba cambiando los filtros de marca, tipo de mascota o búsqueda.
+                      Prueba cambiando los filtros de categoría, marca, tipo de mascota o búsqueda.
                     </p>
                     <button
                       type="button"
                       onClick={() => {
                         setInventorySearch('');
+                        setInventoryCategoryFilter('todas');
                         setInventoryStockFilter('todos');
                         setInventoryBrandFilter('todas');
                         setInventoryPetTypeFilter('todos');
@@ -5978,7 +8858,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
                   {filteredInventory.map((prod) => {
-                    const isLow = prod.stock <= (prod.minStock || 5) || prod.status === 'stock_bajo';
+                    const isOutOfStock = (Number(prod.stock) || 0) <= 0;
+                    const isLow = isOutOfStock || (Number(prod.stock) || 0) <= (Number(prod.minStock) || 5);
                     const marginPercent = Math.round(
                       ((prod.salePrice - prod.unitCostNeto) / prod.salePrice) * 100
                     );
@@ -5987,24 +8868,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div
                         key={prod.id}
                         onClick={() => setSelectedProductSalesModal(prod)}
-                        className={`bg-white rounded-3xl border p-5 flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
-                          isLow
-                            ? 'border-2 border-rose-400 ring-2 ring-rose-300/30 bg-gradient-to-b from-rose-50/40 to-white'
-                            : 'border-slate-200/80 hover:border-[#0E8388]/40'
+                        className={`rounded-3xl border p-5 flex flex-col justify-between space-y-4 shadow-sm hover:shadow-md transition-all cursor-pointer group ${
+                          isOutOfStock
+                            ? 'border-2 border-rose-500/80 bg-rose-50/20'
+                            : 'bg-white border-slate-200/80 hover:border-[#0E8388]/40'
                         }`}
                       >
                         {/* Top: Product Image, Category & Stock Badge */}
                         <div>
-                          <div className="relative w-full h-44 rounded-2xl bg-gradient-to-b from-slate-50 to-slate-100/90 border border-slate-200/80 p-3 flex items-center justify-center overflow-hidden group">
+                          <div className={`relative w-full h-44 rounded-2xl border p-3 flex items-center justify-center overflow-hidden group ${
+                            isOutOfStock ? 'bg-rose-50/40 border-rose-200/60' : 'bg-gradient-to-b from-slate-50 to-slate-100/90 border-slate-200/80'
+                          }`}>
                             <img
                               src={getProductImage(prod.name)}
                               alt={prod.name}
                               className="max-h-full max-w-full object-contain drop-shadow-sm group-hover:scale-105 transition-transform duration-300"
                             />
-                            {/* Format Pill */}
-                            <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/95 text-[#0E8388] border border-slate-200 shadow-xs">
-                              {prod.format}
-                            </span>
+                            {/* Format Pill & Carousel Badge */}
+                            <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/95 text-[#0E8388] border border-slate-200 shadow-xs">
+                                {prod.format}
+                              </span>
+                              {prod.inCarousel && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-xs flex items-center gap-1">
+                                  <Star className="w-2.5 h-2.5 fill-current" />
+                                  <span>Carrusel</span>
+                                </span>
+                              )}
+                            </div>
                             {/* Overlay on hover to indicate clickable analytics */}
                             <div className="absolute inset-0 bg-[#0E8388]/10 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
                               <span className="px-3 py-1 rounded-xl bg-slate-900/85 backdrop-blur-xs text-white text-[11px] font-black flex items-center gap-1.5 shadow-lg">
@@ -6014,13 +8905,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             {/* Stock Indicator Badge */}
                             <span
-                              className={`absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                isLow
-                                  ? 'bg-rose-600 text-white shadow-xs animate-pulse'
-                                  : 'bg-emerald-100 text-emerald-800'
+                              className={`absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold tracking-tight shadow-xs ${
+                                isOutOfStock
+                                  ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                                  : 'bg-white/95 text-slate-700 border border-slate-200 shadow-2xs'
                               }`}
                             >
-                              {isLow ? `⚠️ ${prod.stock} u. Bajo` : `✓ ${prod.stock} u.`}
+                              {isOutOfStock ? '0 u. · Agotado' : `${prod.stock} u.`}
                             </span>
                           </div>
 
@@ -6101,6 +8992,27 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            {/* Botón Destacar en Carrusel */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCarouselProduct(prod)}
+                              className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                                prod.inCarousel
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-300 ring-2 ring-amber-200/50'
+                                  : 'bg-slate-100 hover:bg-amber-50 text-slate-400 hover:text-amber-700 border border-slate-200'
+                              }`}
+                              title={
+                                prod.inCarousel
+                                  ? 'En Carrusel Promocional (clic para quitar)'
+                                  : 'Destacar en Carrusel Promocional de la Tienda Web'
+                              }
+                            >
+                              <Star
+                                className={`w-3.5 h-3.5 ${
+                                  prod.inCarousel ? 'fill-amber-400 text-amber-500' : ''
+                                }`}
+                              />
+                            </button>
                             <button
                               type="button"
                               onClick={() =>
@@ -6157,17 +9069,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 2. Categoría & Marca */}
+                        {/* 2. Marca */}
                         <th
-                          onClick={() => handleInventorySort('category')}
+                          onClick={() => handleInventorySort('brand')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
-                          title="Ordenar alfabéticamente por marca y categoría (A-Z / Z-A)"
+                          title="Ordenar alfabéticamente por marca (A-Z / Z-A)"
                         >
                           <div className="flex items-center gap-1.5">
-                            <span className={inventorySortKey === 'category' ? 'text-[#0E8388] font-black' : ''}>
-                              Categoría & Marca
+                            <span className={inventorySortKey === 'brand' ? 'text-[#0E8388] font-black' : ''}>
+                              Marca
                             </span>
-                            {renderSortIndicator('category')}
+                            {renderSortIndicator('brand')}
                           </div>
                         </th>
 
@@ -6185,35 +9097,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 4. Precio Venta (PVP) */}
+                        {/* 4. Precio Venta */}
                         <th
                           onClick={() => handleInventorySort('salePrice')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
-                          title="Ordenar por precio venta PVP (menor a mayor / mayor a menor)"
+                          title="Ordenar por precio de venta (menor a mayor / mayor a menor)"
                         >
                           <div className="flex items-center gap-1.5">
                             <span className={inventorySortKey === 'salePrice' ? 'text-[#0E8388] font-black' : ''}>
-                              Precio Venta (PVP)
+                              Precio Venta
                             </span>
                             {renderSortIndicator('salePrice')}
                           </div>
                         </th>
 
-                        {/* 5. Margen */}
-                        <th
-                          onClick={() => handleInventorySort('margin')}
-                          className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
-                          title="Ordenar por margen porcentual (menor a mayor / mayor a menor)"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span className={inventorySortKey === 'margin' ? 'text-[#0E8388] font-black' : ''}>
-                              Margen
-                            </span>
-                            {renderSortIndicator('margin')}
-                          </div>
-                        </th>
-
-                        {/* 6. Stock en Bodega */}
+                        {/* 5. Stock en Bodega */}
                         <th
                           onClick={() => handleInventorySort('stock')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
@@ -6224,6 +9122,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               Stock en Bodega
                             </span>
                             {renderSortIndicator('stock')}
+                          </div>
+                        </th>
+
+                        {/* 6. % Ganancia */}
+                        <th
+                          onClick={() => handleInventorySort('margin')}
+                          className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
+                          title="Ordenar por porcentaje de ganancia / margen comercial (menor a mayor / mayor a menor)"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className={inventorySortKey === 'margin' ? 'text-[#0E8388] font-black' : ''}>
+                              % Ganancia
+                            </span>
+                            {renderSortIndicator('margin')}
                           </div>
                         </th>
 
@@ -6241,12 +9153,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 No se encontraron productos
                               </div>
                               <p className="text-xs text-slate-500">
-                                Prueba cambiando los filtros de marca, tipo de mascota o búsqueda.
+                                Prueba cambiando los filtros de categoría, marca, tipo de mascota o búsqueda.
                               </p>
                               <button
                                 type="button"
                                 onClick={() => {
                                   setInventorySearch('');
+                                  setInventoryCategoryFilter('todas');
                                   setInventoryStockFilter('todos');
                                   setInventoryBrandFilter('todas');
                                   setInventoryPetTypeFilter('todos');
@@ -6260,7 +9173,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </tr>
                       ) : (
                         filteredInventory.map((prod) => {
-                          const isLow = prod.stock <= (prod.minStock || 5) || prod.status === 'stock_bajo';
+                          const isOutOfStock = (Number(prod.stock) || 0) <= 0;
+                          const isLow = isOutOfStock || (Number(prod.stock) || 0) <= (Number(prod.minStock) || 5);
                           const marginPercent = Math.round(
                             ((prod.salePrice - prod.unitCostNeto) / prod.salePrice) * 100
                           );
@@ -6270,43 +9184,95 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               key={prod.id}
                               onClick={() => setSelectedProductSalesModal(prod)}
                               className={`transition-colors cursor-pointer group ${
-                                isLow
-                                  ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500'
-                                  : 'hover:bg-teal-50/40'
+                                isOutOfStock
+                                  ? 'bg-rose-50/40 hover:bg-rose-100/50 border-l-4 border-l-rose-500'
+                                  : 'hover:bg-slate-50/80'
                               }`}
                               title="Haz clic para ver el detalle de ventas, gráficos y pedidos de este producto"
                             >
                               {/* Product Info */}
                               <td className="py-4 px-4">
-                                <div className="flex items-center gap-3">
-                                  <img
-                                    src={getProductImage(prod.name)}
-                                    alt={prod.name}
-                                    className="w-10 h-10 rounded-xl object-contain bg-slate-50 border border-slate-200 p-1 shrink-0 group-hover:scale-105 transition-transform"
-                                  />
-                                  <div>
-                                    <div className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#0E8388] transition-colors flex items-center gap-1.5">
-                                      <span>{prod.name}</span>
-                                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[#0E8388] text-[10px] font-bold bg-[#0E8388]/10 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
-                                        <BarChart3 className="w-3 h-3" />
-                                        <span>Ventas</span>
-                                      </span>
+                                {(() => {
+                                  const siblingVariants = inventory.filter(
+                                    (o) => o.id !== prod.id && areProductsSameGroup(prod, o)
+                                  );
+                                  return (
+                                    <div className="flex items-center gap-2.5">
+                                      {/* Estrella para destacar en carrusel promocional */}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleToggleCarouselProduct(prod);
+                                        }}
+                                        className="p-1 -ml-1 rounded-lg transition-transform hover:scale-125 cursor-pointer shrink-0 focus:outline-none"
+                                        title={
+                                          prod.inCarousel
+                                            ? 'Destacado en Carrusel Promocional Web (clic para quitar)'
+                                            : 'Destacar en Carrusel Promocional Web (clic para seleccionar)'
+                                        }
+                                      >
+                                        <Star
+                                          className={`w-4 h-4 transition-colors ${
+                                            prod.inCarousel
+                                              ? 'fill-amber-400 text-amber-500 drop-shadow-xs'
+                                              : 'text-slate-300 hover:text-amber-400'
+                                          }`}
+                                        />
+                                      </button>
+                                      <img
+                                        src={getProductImage(prod.name)}
+                                        alt={prod.name}
+                                        className="w-10 h-10 rounded-xl object-contain bg-slate-50 border border-slate-200 p-1 shrink-0 group-hover:scale-105 transition-transform"
+                                      />
+                                      <div className="min-w-0 max-w-[210px] sm:max-w-[240px]">
+                                        <div className="font-bold text-slate-900 text-sm leading-snug group-hover:text-[#0E8388] transition-colors flex items-start gap-1.5">
+                                          <span className="line-clamp-2 break-words" title={prod.name}>
+                                            {prod.name}
+                                          </span>
+                                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[#0E8388] text-[10px] font-bold bg-[#0E8388]/10 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5 shrink-0 mt-0.5">
+                                            <BarChart3 className="w-3 h-3" />
+                                            <span>Ventas</span>
+                                          </span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 flex-wrap">
+                                          {prod.sku ? (
+                                            <>
+                                              <span>{prod.sku}</span>
+                                              <span>•</span>
+                                            </>
+                                          ) : null}
+                                          <span className="font-bold text-[#0E8388] bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200/70">
+                                            {prod.format || extractProductFormat(prod)}
+                                          </span>
+                                          {prod.inCarousel && (
+                                            <span className="font-black text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200/80 inline-flex items-center gap-1 shadow-2xs">
+                                              <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-600" />
+                                              <span>En Carrusel</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                        {siblingVariants.length > 0 && (
+                                          <div className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1 flex-wrap">
+                                            <span className="text-teal-700 font-bold bg-teal-50/80 px-1.5 py-0.2 rounded border border-teal-200/50">
+                                              🔗 Publicación agrupada
+                                            </span>
+                                            <span className="text-slate-400">
+                                              Otros formatos: {siblingVariants.map((s) => s.format || extractProductFormat(s)).join(', ')}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="text-[11px] text-slate-500 font-mono">
-                                      {prod.sku} • {prod.format}
-                                    </div>
-                                  </div>
-                                </div>
+                                  );
+                                })()}
                               </td>
 
-                              {/* Categoría & Marca */}
+                              {/* Marca */}
                               <td className="py-4 px-4">
-                                <div className="space-y-0.5">
-                                  <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-black text-[10px] uppercase tracking-wider">
-                                    {prod.brand}
-                                  </span>
-                                  <div className="text-xs text-slate-500 font-medium">{prod.category}</div>
-                                </div>
+                                <span className="inline-block px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-black text-[10px] uppercase tracking-wider">
+                                  {prod.brand || '—'}
+                                </span>
                               </td>
 
                               {/* Costo Neto */}
@@ -6319,36 +9285,98 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 {formatCLP(prod.salePrice)}
                               </td>
 
-                              {/* Margen */}
-                              <td className="py-4 px-4">
-                                <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold text-xs">
-                                  +{marginPercent}%
-                                </span>
-                              </td>
-
                               {/* Stock en Bodega */}
                               <td className="py-4 px-4">
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`font-black text-base ${isLow ? 'text-rose-600' : 'text-slate-900'}`}>
-                                      {prod.stock} u.
-                                    </span>
-                                    {prod.isPaused && (
-                                      <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-black uppercase border border-amber-200 inline-flex items-center gap-1">
-                                        <Pause className="w-2.5 h-2.5 fill-current" />
-                                        <span>Pausado</span>
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 font-mono">
-                                    Total: {formatCLP(prod.stock * prod.unitCostNeto)}
-                                  </div>
-                                </div>
+                                {(() => {
+                                  const siblingVariants = inventory.filter(
+                                    (o) => o.id !== prod.id && areProductsSameGroup(prod, o)
+                                  );
+                                  const totalGroupStock =
+                                    (prod.stock || 0) +
+                                    siblingVariants.reduce((sum, s) => sum + (s.stock || 0), 0);
+
+                                  return (
+                                    <div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`font-semibold text-base ${isOutOfStock ? 'text-rose-600' : 'text-slate-900'}`}>
+                                          {prod.stock} u.
+                                        </span>
+                                        {isOutOfStock && (
+                                          <span className="text-[11px] font-medium text-rose-500 tracking-tight">
+                                            · Agotado
+                                          </span>
+                                        )}
+                                        {prod.isPaused && (
+                                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium inline-flex items-center gap-1">
+                                            <Pause className="w-2.5 h-2.5 fill-current" />
+                                            <span>Pausado</span>
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] font-mono text-slate-400">
+                                        Total SKU: {formatCLP(prod.stock * prod.unitCostNeto)}
+                                      </div>
+                                      {siblingVariants.length > 0 && (
+                                        <div className="text-[10px] text-teal-700 font-bold mt-1 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60 inline-flex items-center gap-1">
+                                          <span>Total publicación:</span>
+                                          <span className="font-black">{totalGroupStock} u.</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </td>
 
-                              {/* Acciones: Editar, Eliminar, Pausar */}
+                              {/* % Ganancia */}
+                              <td className="py-4 px-4 font-mono">
+                                {(() => {
+                                  const sale = Number(prod.salePrice) || 0;
+                                  const cost = Number(prod.unitCostNeto) || 0;
+                                  const marginPct = sale > 0 ? Math.round(((sale - cost) / sale) * 100) : 0;
+                                  const profitCLP = sale - cost;
+
+                                  const isPositive = marginPct > 0;
+                                  const isNegative = marginPct < 0;
+
+                                  return (
+                                    <div>
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black shadow-2xs ${
+                                          isPositive
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                                            : isNegative
+                                            ? 'bg-rose-50 text-rose-700 border border-rose-200/80'
+                                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                        }`}
+                                      >
+                                        <TrendingUp
+                                          className={`w-3 h-3 ${
+                                            isPositive
+                                              ? 'text-emerald-600'
+                                              : isNegative
+                                              ? 'text-rose-600 rotate-180'
+                                              : 'text-slate-400'
+                                          }`}
+                                        />
+                                        <span>
+                                          {isPositive ? `+${marginPct}%` : `${marginPct}%`}
+                                        </span>
+                                      </span>
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                        {isPositive
+                                          ? `+${formatCLP(profitCLP)}/u.`
+                                          : isNegative
+                                          ? `-${formatCLP(Math.abs(profitCLP))}/u.`
+                                          : '$0/u.'}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+
+                              {/* Acciones: Pausar, Editar, Eliminar */}
                               <td className="py-4 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                                <div className="inline-flex items-center justify-center gap-2">
+                                <div className="inline-flex items-center justify-center gap-1.5">
                                   {/* Botón Pausar / Reactivar en web pública */}
                                   <button
                                     type="button"
@@ -6374,7 +9402,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   {/* Botón Editar Producto */}
                                   <button
                                     type="button"
-                                    onClick={() => setEditingProduct({ ...prod })}
+                                    onClick={() => {
+                                      setEditingProduct({
+                                        ...prod,
+                                        images: Array.isArray(prod.images) ? prod.images : [],
+                                        tagline: prod.tagline || '',
+                                        description: prod.description || prod.tagline || '',
+                                        badge: prod.badge || '',
+                                        benefits: Array.isArray(prod.benefits) ? prod.benefits : [],
+                                        proteinValue: prod.proteinValue || 30,
+                                        mainProtein: prod.mainProtein || 'Pollo',
+                                        grainLevel: prod.grainLevel || 'free',
+                                        isVeterinary: Boolean(prod.isVeterinary),
+                                        vetDetail: prod.vetDetail || '',
+                                        lifeStage: prod.lifeStage || 'adulto',
+                                      });
+                                      setEditProductStep(1);
+                                    }}
                                     className="p-2 rounded-xl bg-slate-100 hover:bg-[#0E8388]/10 text-slate-600 hover:text-[#0E8388] border border-slate-200 transition-all cursor-pointer flex items-center justify-center"
                                     title="Editar producto (precios, costos, stock, formato)"
                                   >
@@ -6408,7 +9452,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         {/* TAB 6: FINANZAS (Control Financiero, Facturas Stock, Ventas, Gastos & IVA) */}
         {/* ========================================================================= */}
         {activeTab === 'finanzas' && (() => {
-          const filteredFinancesOrders = orders.filter((o) => {
+          const filteredFinancesOrders = periodFilteredOrders.filter((o) => {
             const channel = o.channel || 'web';
             const matchesChannel = financesSalesChannelFilter === 'todos' || channel === financesSalesChannelFilter;
             const normPayment = normalizePaymentMethod(o.paymentMethod);
@@ -6417,18 +9461,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           });
 
           const paymentBreakdown = {
-            Web: { count: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Web').length, total: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Web').reduce((s, o) => s + (o.total || 0), 0) },
-            Tarjeta: { count: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').length, total: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').reduce((s, o) => s + (o.total || 0), 0) },
-            Efectivo: { count: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').length, total: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').reduce((s, o) => s + (o.total || 0), 0) },
-            Transferencia: { count: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').length, total: orders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').reduce((s, o) => s + (o.total || 0), 0) },
+            Web: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Web').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Web').reduce((s, o) => s + (o.total || 0), 0) },
+            Tarjeta: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').reduce((s, o) => s + (o.total || 0), 0) },
+            Efectivo: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').reduce((s, o) => s + (o.total || 0), 0) },
+            Transferencia: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').reduce((s, o) => s + (o.total || 0), 0) },
           };
 
-          const filteredInvoices = invoices.filter((inv) => {
+          const filteredInvoices = periodFilteredInvoices.filter((inv) => {
             if (financesInvoiceStatusFilter === 'todas') return true;
             return inv.status === financesInvoiceStatusFilter;
           });
 
-          const filteredExpenses = expenses.filter((exp) => {
+          const filteredExpenses = periodFilteredExpenses.filter((exp) => {
             const matchesCat = expenseFilterCategory === 'todos' ? true : exp.category === expenseFilterCategory;
             const isFac =
               exp.hasIvaCredit ||
@@ -6444,132 +9488,46 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           });
 
           // Cálculo dinámico para la pestaña F29 según período/mes seleccionado
-          const f29FilteredData = (() => {
-            if (f29PeriodFilter === 'todos') {
-              return {
-                ...financialMetrics,
-                periodLabel: 'Todo el Histórico (Consolidado)',
-                filteredOrdersCount: orders.length,
-                filteredInvoicesCount: invoices.length,
-                filteredExpensesCount: expenses.length,
-              };
-            }
-            const matchPeriod = (dateStr) => {
-              if (!dateStr) return false;
-              const str = String(dateStr).toLowerCase();
-              if (f29PeriodFilter === '2026-08' || f29PeriodFilter === 'ago') {
-                return str.includes('ago') || str.includes('08') || str.includes('aug');
-              }
-              if (f29PeriodFilter === '2026-09' || f29PeriodFilter === 'sep') {
-                return str.includes('sep') || str.includes('09');
-              }
-              if (f29PeriodFilter === '2026-10' || f29PeriodFilter === 'oct' || f29PeriodFilter === 'current') {
-                return str.includes('oct') || str.includes('10');
-              }
-              return true;
-            };
-
-            const periodOrders = orders.filter((o) => matchPeriod(o.date));
-            const periodInvoices = invoices.filter((i) => matchPeriod(i.date));
-            const periodExpenses = expenses.filter((e) => matchPeriod(e.date));
-
-            const totalSales = periodOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-            const salesNeto = Math.round(totalSales / 1.19);
-            const ivaDebito = totalSales - salesNeto;
-
-            const webOrders = periodOrders.filter((o) => (o.channel || 'web') === 'web');
-            const manualOrders = periodOrders.filter((o) => o.channel === 'manual');
-            const webSales = webOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-            const manualSales = manualOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-            const webSalesNeto = Math.round(webSales / 1.19);
-            const webIvaDebito = webSales - webSalesNeto;
-            const manualSalesNeto = Math.round(manualSales / 1.19);
-            const manualIvaDebito = manualSales - manualSalesNeto;
-
-            const invoicesNeto = periodInvoices.reduce((sum, inv) => sum + (inv.totalNeto || 0), 0);
-            const invoicesIvaCredito = periodInvoices.reduce(
-              (sum, inv) => sum + (inv.iva || Math.round((inv.totalNeto || 0) * 0.19)),
-              0
-            );
-            const invoicesTotalBruto = periodInvoices.reduce(
-              (sum, inv) => sum + (inv.totalBruto || (inv.totalNeto || 0) + (inv.iva || 0)),
-              0
-            );
-
-            const expensesIvaCredito = periodExpenses.reduce((sum, e) => {
-              if (
-                e.hasIvaCredit ||
-                e.documentType === 'factura' ||
-                (e.documentNumber && e.documentNumber.startsWith('FAC'))
-              ) {
-                const neto = Math.round(e.amount / 1.19);
-                return sum + (e.amount - neto);
-              }
-              return sum;
-            }, 0);
-
-            const totalIvaCredito = invoicesIvaCredito + expensesIvaCredito;
-            const ivaBalance = ivaDebito - totalIvaCredito;
-            const ivaStatus = ivaBalance > 0 ? 'a_pagar' : 'remanente';
-            const ivaCoveredPercent =
-              ivaDebito > 0 ? Math.min(100, Math.round((totalIvaCredito / ivaDebito) * 100)) : 100;
-
-            const periodLabels = {
-              '2026-08': 'Agosto 2026',
-              '2026-09': 'Septiembre 2026',
-              '2026-10': 'Octubre 2026 (Mes Actual)',
-              'current': 'Octubre 2026 (Mes Actual)',
-            };
-
-            return {
-              periodLabel: periodLabels[f29PeriodFilter] || f29PeriodFilter,
-              totalSales,
-              salesNeto,
-              ivaDebito,
-              webSales,
-              webSalesNeto,
-              webIvaDebito,
-              manualSales,
-              manualSalesNeto,
-              manualIvaDebito,
-              invoicesNeto,
-              invoicesIvaCredito,
-              invoicesTotalBruto,
-              invoicesCount: periodInvoices.length,
-              expensesIvaCredito,
-              totalIvaCredito,
-              ivaBalance,
-              ivaStatus,
-              ivaCoveredPercent,
-              filteredOrdersCount: periodOrders.length,
-              filteredInvoicesCount: periodInvoices.length,
-              filteredExpensesCount: periodExpenses.length,
-            };
-          })();
+          const f29FilteredData = {
+            ...financialMetrics,
+            periodLabel: financesPeriodFilter === 'todos' ? 'Todo el Histórico (Consolidado)' : formatPeriodLabel(financesPeriodFilter),
+            filteredOrdersCount: periodFilteredOrders.length,
+            filteredInvoicesCount: periodFilteredInvoices.length,
+            filteredExpensesCount: periodFilteredExpenses.length,
+          };
 
           // Lista combinada de todos los egresos (Facturas Stock + Gastos Operacionales)
           const combinedGastosList = [
-            ...invoices.map((inv) => ({
+            ...periodFilteredInvoices.map((inv) => ({
+              ...inv,
               type: 'factura',
               id: inv.invoiceNumber,
+              invoiceNumber: inv.invoiceNumber,
               provider: inv.provider,
               rut: inv.rut,
               date: inv.date,
+              dueDate: inv.dueDate || inv.due_date || inv.date,
               description: inv.productName || 'Mercadería & Stock para Bodega',
+              productName: inv.productName || inv.product_name,
               quantity: inv.quantityReceived || inv.itemsCount || 1,
+              quantityReceived: inv.quantityReceived || inv.itemsCount || 1,
               neto: inv.totalNeto,
+              totalNeto: inv.totalNeto,
               iva: inv.iva,
               total: inv.totalBruto,
+              totalBruto: inv.totalBruto,
               hasIvaCredit: true,
-              paymentMethod: inv.paymentMethod,
-              status: inv.status,
+              paymentMethod: inv.paymentMethod || 'Crédito Proveedor',
+              status: inv.status || 'pendiente',
+              items: inv.items || null,
             })),
-            ...expenses.map((exp) => ({
+            ...periodFilteredExpenses.map((exp) => ({
               type: 'gasto',
               id: exp.documentNumber || exp.id,
               provider: exp.provider,
               rut: exp.rut || 'N/A',
               date: exp.date,
+              dueDate: exp.dueDate || exp.date,
               description: `${exp.icon || '🧾'} ${exp.description}`,
               quantity: null,
               neto: exp.neto,
@@ -6577,10 +9535,70 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               total: exp.amount,
               hasIvaCredit: exp.hasIvaCredit,
               paymentMethod: exp.paymentMethod,
-              status: 'pagado',
+              status: exp.status || 'pagado',
               category: exp.categoryLabel || exp.category,
             })),
           ];
+
+          // Lista combinada de todos los ingresos (Aportes de Socios + Ventas)
+          const combinedIngresosList = [
+            ...periodFilteredInvestments.map((inv) => ({
+              id: inv.id,
+              date: inv.date || inv.createdAt,
+              type: 'inversion',
+              title: inv.partnerName || 'Socio',
+              subtitle: inv.investmentTypeLabel || (inv.investmentType === 'capital_inicial' ? 'Capital Inicial' : 'Aumento de Capital'),
+              amount: inv.amount || 0,
+              neto: inv.amount || 0,
+              iva: 0,
+              hasIva: false,
+              paymentMethod: inv.paymentMethod || 'Transferencia Bancaria',
+              status: 'Acreditado en Banco',
+              category: 'Aporte de Capital',
+              badge: inv.investmentType === 'capital_inicial' ? 'Capital Inicial' : 'Aumento Capital',
+              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+              icon: Landmark,
+              raw: inv,
+            })),
+            ...periodFilteredOrders.map((ord) => ({
+              id: ord.id,
+              date: ord.date,
+              type: 'venta',
+              title: ord.customer?.name || ord.customer || 'Cliente Tienda',
+              subtitle: ord.channel === 'manual' ? 'Venta Manual (Mesón)' : 'Venta Tienda Web',
+              amount: ord.total || 0,
+              neto: Math.round((ord.total || 0) / 1.19),
+              iva: (ord.total || 0) - Math.round((ord.total || 0) / 1.19),
+              hasIva: true,
+              paymentMethod: ord.paymentMethod || 'Web / Tarjeta',
+              status: ord.status || 'Completado',
+              category: 'Venta Comercial',
+              badge: ord.channel === 'manual' ? '✍️ Manual' : '🌐 Web',
+              badgeColor: ord.channel === 'manual' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-sky-50 text-sky-700 border-sky-200',
+              icon: ShoppingBag,
+              raw: ord,
+            })),
+          ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+          // Flujo de Caja Maestro: Registro Unificado de Movimientos de Dinero (Entradas y Salidas)
+          const allCashMovements = [
+            ...combinedIngresosList.map((ing) => ({
+              ...ing,
+              flowType: 'entrada',
+              isPositive: true,
+            })),
+            ...combinedGastosList.map((gst) => ({
+              ...gst,
+              flowType: 'salida',
+              isPositive: false,
+              amount: gst.total,
+              title: gst.provider,
+              subtitle: gst.description,
+              badge: gst.type === 'factura' ? 'Factura Stock' : (gst.category || 'Gasto'),
+              badgeColor: gst.type === 'factura' ? 'bg-teal-50 text-teal-700 border-teal-200' : 'bg-amber-50 text-amber-700 border-amber-200',
+              icon: gst.type === 'factura' ? Package : Receipt,
+            })),
+          ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
           return (
             <div className="space-y-6 animate-in fade-in duration-300">
@@ -6622,7 +9640,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           : 'bg-slate-200/60 text-slate-600'
                       }`}
                     >
-                      {invoices.length + expenses.length}
+                      {periodFilteredInvoices.length + periodFilteredExpenses.length}
                     </span>
                   </button>
 
@@ -6645,7 +9663,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           : 'bg-slate-200/60 text-slate-600'
                       }`}
                     >
-                      {orders.length}
+                      {periodFilteredOrders.length}
                     </span>
                   </button>
 
@@ -6675,108 +9693,234 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </div>
 
               {/* ========================================================================= */}
+              {/* SELECTOR DE PERÍODO / MES (Apple Pastel Capsule Bar)                      */}
+              {/* ========================================================================= */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/90 backdrop-blur-md p-3 px-4 rounded-2xl border border-slate-200/80 shadow-xs">
+                <div className="flex items-center gap-2.5 self-start sm:self-auto">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        Período Contable
+                      </span>
+                      {financesPeriodFilter !== 'todos' ? (
+                        <span className="text-[9px] font-black px-2 py-0.2 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          Mes Filtrado
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold px-2 py-0.2 rounded-full bg-slate-100 text-slate-500">
+                          Consolidado
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs font-black text-slate-900">
+                      {financesPeriodFilter === 'todos' ? 'Todo el Histórico' : formatPeriodLabel(financesPeriodFilter)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Control de Navegación por Meses: Mes actual por defecto + Flechas a meses anteriores (futuros bloqueados) */}
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <div className="inline-flex items-center p-1 rounded-2xl bg-slate-100/90 border border-slate-200 shadow-2xs">
+                    {/* Flecha mes anterior */}
+                    <button
+                      type="button"
+                      onClick={handlePrevPeriodMonth}
+                      className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-white hover:shadow-xs transition-all cursor-pointer active:scale-95 flex items-center justify-center"
+                      title="Ir al mes anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    {/* Mes actual / seleccionado */}
+                    <div className="px-4 py-1 flex items-center gap-2 select-none min-w-[150px] justify-center">
+                      <span className="text-xs font-black text-slate-900 tracking-tight capitalize">
+                        {formatPeriodLabel(financesPeriodFilter)}
+                      </span>
+                      {financesPeriodFilter === currentYM && (
+                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          Actual
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Flecha mes siguiente (bloqueada en mes actual o futuros) */}
+                    <button
+                      type="button"
+                      onClick={handleNextPeriodMonth}
+                      disabled={financesPeriodFilter >= currentYM}
+                      className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                        financesPeriodFilter >= currentYM
+                          ? 'opacity-30 cursor-not-allowed text-slate-400'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white hover:shadow-xs cursor-pointer active:scale-95'
+                      }`}
+                      title={
+                        financesPeriodFilter >= currentYM
+                          ? 'No es posible avanzar a meses futuros'
+                          : 'Ir al mes siguiente'
+                      }
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ========================================================================= */}
               {/* PESTAÑA 1: RESUMEN                                                        */}
               {/* ========================================================================= */}
               {financesSubTab === 'resumen' && (
                 <div className="space-y-6">
-                  {/* Top 4 KPI Cards (Pastel & Minimalist iOS Style) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Card 1: Ingresos Totales */}
-                    <div className="bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/40 border border-emerald-100/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
-                          Ingresos Totales
-                        </span>
-                        <span className="p-1.5 rounded-xl bg-emerald-100/70 text-emerald-700">
-                          <TrendingUp className="w-4 h-4" />
-                        </span>
-                      </div>
-                      <div className="text-2xl font-black text-slate-900">{formatCLP(financialMetrics.totalSales)}</div>
-                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                        <div className="flex justify-between">
-                          <span>Neto: {formatCLP(financialMetrics.salesNeto)}</span>
-                          <span className="text-rose-600 font-bold">IVA: {formatCLP(financialMetrics.ivaDebito)}</span>
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          🌐 Web: {formatCLP(financialMetrics.webSales)} • ✍️ Manual: {formatCLP(financialMetrics.manualSales)}
-                        </div>
-                      </div>
-                    </div>
+                  {/* Top 4 KPI Cards Simplificadas (Ingresos, Gastos, Utilidad, IVA) */}
+                  {(() => {
+                    const totalFreightFromInvoices = periodFilteredInvoices.reduce((sum, inv) => {
+                      const hasShipping = inv.hasShippingCost || inv.has_shipping_cost;
+                      const cost = Number(inv.shippingCostNeto || inv.shipping_cost_neto || 0);
+                      return sum + (hasShipping ? cost : 0);
+                    }, 0);
+                    const expensesFreight = periodFilteredExpenses
+                      .filter((e) => e.category === 'transporte' || e.category === 'flete')
+                      .reduce((s, e) => s + e.amount, 0);
+                    const allFreight = totalFreightFromInvoices + expensesFreight;
 
-                    {/* Card 2: Egresos Totales (Facturas Stock + Gastos Operacionales) */}
-                    <div className="bg-gradient-to-br from-amber-50/70 via-white to-orange-50/40 border border-amber-100/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
-                          Egresos Totales
-                        </span>
-                        <span className="p-1.5 rounded-xl bg-amber-100/70 text-amber-700">
-                          <Receipt className="w-4 h-4" />
-                        </span>
-                      </div>
-                      <div className="text-2xl font-black text-amber-800">
-                        {formatCLP(financialMetrics.invoicesTotalBruto + financialMetrics.totalRegisteredExpenses)}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5">
-                        <div className="flex justify-between">
-                          <span>📦 Stock: {formatCLP(financialMetrics.invoicesTotalBruto)}</span>
-                          <span>🧾 Operac: {formatCLP(financialMetrics.totalRegisteredExpenses)}</span>
-                        </div>
-                        <div className="text-[10px] text-emerald-700 font-bold">
-                          IVA Crédito Ahorrado: +{formatCLP(financialMetrics.totalIvaCredito)}
-                        </div>
-                      </div>
-                    </div>
+                    const isIvaPayable = financialMetrics.ivaBalance > 0;
+                    const ivaAmount = Math.abs(financialMetrics.ivaBalance);
 
-                    {/* Card 3: Utilidad Operativa EBITDA */}
-                    <div className="bg-gradient-to-br from-sky-50/70 via-white to-indigo-50/40 border border-sky-100/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
-                          Utilidad Real
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-black uppercase">
-                          EBITDA
-                        </span>
-                      </div>
-                      <div className="text-2xl font-black text-sky-900">{formatCLP(financialMetrics.netProfit)}</div>
-                      <div className="text-[11px] text-sky-700 font-bold">
-                        {financialMetrics.netProfitPercent}% rentabilidad neta real
-                      </div>
-                      <div className="text-[10px] text-slate-400">
-                        Margen bruto: {formatCLP(financialMetrics.grossMargin)} ({financialMetrics.grossMarginPercent}%)
-                      </div>
-                    </div>
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Card 1: Ingresos (Capital, Ventas, etc.) */}
+                        <div className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
+                                Ingresos Totales
+                              </span>
+                              <span className="p-1.5 rounded-xl bg-emerald-100 text-emerald-800">
+                                <TrendingUp className="w-4 h-4" />
+                              </span>
+                            </div>
+                            <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                              {formatCLP(financialMetrics.totalCashInflows)}
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-semibold space-y-1 pt-1 border-t border-slate-100/80">
+                            <div className="flex justify-between">
+                              <span>💼 Capital: <strong className="text-emerald-700">+{formatCLP(financialMetrics.totalInvested)}</strong></span>
+                              <span>🛒 Ventas: <strong className="text-slate-800">+{formatCLP(financialMetrics.totalSales)}</strong></span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex justify-between">
+                              <span>Web: {formatCLP(financialMetrics.webSales)} • Man: {formatCLP(financialMetrics.manualSales)}</span>
+                              <span className="text-emerald-700 font-bold">Caja: {formatCLP(financialMetrics.netCashBalance)}</span>
+                            </div>
+                          </div>
+                        </div>
 
-                    {/* Card 4: Balance Semáforo F29 */}
-                    <div className="bg-gradient-to-br from-purple-50/70 via-white to-indigo-50/40 border border-purple-100/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
-                          Balance IVA F29
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                            financialMetrics.ivaStatus === 'remanente'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {financialMetrics.ivaStatus === 'remanente' ? 'A Favor' : 'A Pagar'}
-                        </span>
+                        {/* Card 2: Gastos (Facturas, Transporte, Documentación, etc.) */}
+                        <div className="bg-gradient-to-br from-amber-50/70 via-white to-orange-50/40 border border-amber-200/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
+                                Gastos & Egresos
+                              </span>
+                              <span className="p-1.5 rounded-xl bg-amber-100/80 text-amber-700">
+                                <Receipt className="w-4 h-4" />
+                              </span>
+                            </div>
+                            <div className="text-2xl font-black text-amber-900 font-mono mt-1">
+                              {formatCLP(financialMetrics.totalRegisteredOutflows)}
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-semibold space-y-1 pt-1 border-t border-slate-100/80">
+                            <div className="flex justify-between">
+                              <span>📦 Facturas: <strong className="text-slate-700">{formatCLP(financialMetrics.invoicesTotalBruto)}</strong></span>
+                              <span>📑 Docs/Operac: <strong className="text-amber-800">{formatCLP(financialMetrics.totalRegisteredExpenses)}</strong></span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex justify-between">
+                              <span>🚚 Transporte: {formatCLP(allFreight)}</span>
+                              <span className="text-emerald-700 font-bold">IVA Ahorrado: +{formatCLP(financialMetrics.totalIvaCredito)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card 3: Utilidad Real */}
+                        <div className="bg-gradient-to-br from-sky-50/70 via-white to-indigo-50/40 border border-sky-200/90 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
+                                Utilidad Real
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 text-[10px] font-black uppercase">
+                                {financialMetrics.netProfit >= 0 ? 'Ganancia' : 'Déficit'}
+                              </span>
+                            </div>
+                            <div className={`text-2xl font-black font-mono mt-1 ${financialMetrics.netProfit >= 0 ? 'text-sky-900' : 'text-rose-600'}`}>
+                              {formatCLP(financialMetrics.netProfit)}
+                            </div>
+                          </div>
+                          <div className="text-[11px] font-semibold space-y-1 pt-1 border-t border-slate-100/80">
+                            <div className="text-sky-700 flex justify-between font-bold">
+                              <span>Rentabilidad neta real:</span>
+                              <span className="font-mono">{financialMetrics.netProfitPercent}%</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex justify-between font-medium">
+                              <span>Margen bruto: {formatCLP(financialMetrics.grossMargin)}</span>
+                              <span>({financialMetrics.grossMarginPercent}%)</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card 4: IVA (Lo que se debe pagar el próximo periodo o a favor) */}
+                        <div className={`bg-gradient-to-br ${
+                          isIvaPayable
+                            ? 'from-rose-50/80 via-white to-amber-50/40 border-rose-200/90'
+                            : 'from-purple-50/70 via-white to-emerald-50/40 border-purple-200/90'
+                        } border rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between`}>
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 text-[11px] font-extrabold uppercase tracking-wider">
+                                IVA Próximo Período
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  isIvaPayable
+                                    ? 'bg-rose-100 text-rose-800'
+                                    : 'bg-emerald-100 text-emerald-800'
+                                }`}
+                              >
+                                {isIvaPayable ? 'A Pagar' : 'A Favor'}
+                              </span>
+                            </div>
+                            <div className={`text-2xl font-black font-mono mt-1 ${isIvaPayable ? 'text-rose-700' : 'text-purple-900'}`}>
+                              {isIvaPayable ? formatCLP(ivaAmount) : '$0'}
+                            </div>
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-semibold space-y-1 pt-1 border-t border-slate-100/80">
+                            <div className="flex items-center justify-between">
+                              <span className={isIvaPayable ? 'text-rose-700 font-bold' : 'text-emerald-700 font-bold'}>
+                                {isIvaPayable
+                                  ? '⚠️ Pagar al SII día 20'
+                                  : `Remanente acumulado: +${formatCLP(ivaAmount)}`}
+                              </span>
+                            </div>
+                            <div className="text-[10px] flex items-center justify-between">
+                              <span className="text-slate-400">
+                                Débito: {formatCLP(financialMetrics.ivaDebito)} • Crédito: {formatCLP(financialMetrics.totalIvaCredito)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setFinancesSubTab('f29')}
+                                className="text-purple-700 hover:text-purple-900 font-bold underline cursor-pointer"
+                              >
+                                Ver F29 →
+                              </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-2xl font-black text-purple-900">
-                        {formatCLP(Math.abs(financialMetrics.ivaBalance))}
-                      </div>
-                      <div className="text-[11px] text-slate-500 font-semibold flex items-center justify-between">
-                        <span>{financialMetrics.ivaStatus === 'remanente' ? 'Remanente Fiscal' : 'Impuesto Líquido'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setFinancesSubTab('f29')}
-                          className="text-purple-600 hover:text-purple-800 font-bold text-xs underline cursor-pointer"
-                        >
-                          Ver F29 →
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })()}
 
                   {/* Flow Bar: Proporción Visual de Ingresos vs Egresos */}
                   <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-xs space-y-4">
@@ -6889,89 +10033,316 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Acceso Rápido a Últimos Movimientos */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Quick Gastos */}
+                  {/* Acceso Rápido a Últimos Movimientos (3 Columnas: Capital, Egresos, Ventas) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {/* Columna 1: Aportes de Capital (Socios) */}
                     <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">Egresos Recientes</h3>
-                          <p className="text-[11px] text-slate-500">Facturas de stock y gastos operacionales</p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-700">
+                            <Landmark className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">Aportes de Capital</h3>
+                            <p className="text-[11px] text-slate-500">Inyecciones de socios ({periodFilteredInvestments.length})</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFinancesSubTab('ingresos');
+                            setIngresosViewMode('inversiones');
+                          }}
+                          className="text-emerald-700 font-bold text-xs hover:underline cursor-pointer"
+                        >
+                          Ver todos ({periodFilteredInvestments.length}) →
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {periodFilteredInvestments.length === 0 ? (
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
+                            <p className="text-xs text-slate-500 font-medium">No hay aportes registrados en este período</p>
+                            <button
+                              type="button"
+                              onClick={() => setIsCreatePartnerInvestmentModalOpen(true)}
+                              className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+                            >
+                              + Registrar Inversión
+                            </button>
+                          </div>
+                        ) : (
+                          periodFilteredInvestments.slice(0, 3).map((inv, idx) => (
+                            <div key={inv.id || idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-3 text-xs">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                    💼 {inv.investmentTypeLabel || (inv.investmentType === 'capital_inicial' ? 'Capital Inicial' : 'Aporte')}
+                                  </span>
+                                  <span className="font-mono text-[10px] text-slate-400">#{inv.id}</span>
+                                </div>
+                                <div className="font-bold text-slate-900 truncate mt-0.5">{inv.partnerName}</div>
+                                <div className="text-[10px] text-slate-400">{formatCLPDate(inv.date)} • {inv.paymentMethod || 'Transferencia'}</div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="font-black text-emerald-700 font-mono text-sm">+{formatCLP(inv.amount)}</div>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 inline-block mt-0.5">
+                                  Acreditado
+                                </span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Columna 2: Quick Gastos (Egresos) */}
+                    <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700">
+                            <Receipt className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">Egresos Recientes</h3>
+                            <p className="text-[11px] text-slate-500">Facturas de stock y gastos ({combinedGastosList.length})</p>
+                          </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => setFinancesSubTab('gastos')}
                           className="text-amber-600 font-bold text-xs hover:underline cursor-pointer"
                         >
-                          Ver todos los gastos ({invoices.length + expenses.length}) →
+                          Ver todos ({combinedGastosList.length}) →
                         </button>
                       </div>
 
                       <div className="space-y-2">
-                        {combinedGastosList.slice(0, 3).map((item, idx) => (
-                          <div key={idx} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-3 text-xs">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold uppercase ${item.type === 'factura' ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                                  {item.type === 'factura' ? 'Factura Stock' : 'Gasto'}
-                                </span>
-                                <span className="font-mono font-bold text-slate-700">{item.id}</span>
-                              </div>
-                              <div className="font-bold text-slate-900 truncate mt-0.5">{item.provider}</div>
-                              <div className="text-[10px] text-slate-400">{item.description} • {item.date}</div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <div className="font-black text-slate-900 font-mono">{formatCLP(item.total)}</div>
-                              <span className="text-[9px] text-emerald-700 font-bold block">
-                                IVA: +{formatCLP(item.iva)}
-                              </span>
-                            </div>
+                        {combinedGastosList.length === 0 ? (
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                            <p className="text-xs text-slate-500 font-medium">Sin egresos en este período</p>
                           </div>
+                        ) : (
+                          combinedGastosList.slice(0, 3).map((item, idx) => {
+                            const isPaid = (item.status || '').toLowerCase() === 'pagada' || (item.status || '').toLowerCase() === 'pagado';
+                            const isOverdue = (item.status || '').toLowerCase() === 'vencida';
+
+                            return (
+                              <div
+                                key={idx}
+                                onClick={() => {
+                                  if (item.type === 'factura') {
+                                    const fullInv = invoices.find((i) => i.invoiceNumber === item.id) || item;
+                                    setSelectedInvoiceModal(fullInv);
+                                  }
+                                }}
+                                className={`p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-3 text-xs transition-all ${
+                                  item.type === 'factura'
+                                    ? 'cursor-pointer hover:bg-slate-100/90 hover:border-teal-300 group'
+                                    : 'hover:bg-slate-100/60'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold uppercase ${item.type === 'factura' ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                                      {item.type === 'factura' ? 'Factura Stock' : 'Gasto'}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-500">{item.id ? `#${item.id}` : ''}</span>
+                                  </div>
+                                  <div className="font-bold text-slate-900 truncate mt-0.5">{item.provider}</div>
+                                  <div className="text-[10px] text-slate-400 truncate">{formatCLPDate(item.date)} • {item.description}</div>
+                                </div>
+                                <div className="text-right shrink-0 flex flex-col items-end">
+                                  <div className="font-black text-slate-900 font-mono text-sm leading-tight">{formatCLP(item.total)}</div>
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase border mt-0.5 ${
+                                    isPaid
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : isOverdue
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                                  }`}>
+                                    {item.status || 'pendiente'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Columna 3: Quick Ventas */}
+                    <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-700">
+                            <ShoppingBag className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">Ventas Recientes</h3>
+                            <p className="text-[11px] text-slate-500">Pedidos web y mesón ({periodFilteredOrders.length})</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFinancesSubTab('ingresos');
+                            setIngresosViewMode('ventas');
+                          }}
+                          className="text-blue-600 font-bold text-xs hover:underline cursor-pointer"
+                        >
+                          Ver todas ({periodFilteredOrders.length}) →
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {periodFilteredOrders.length === 0 ? (
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                            <p className="text-xs text-slate-500 font-medium">Sin ventas registradas en este período</p>
+                          </div>
+                        ) : (
+                          periodFilteredOrders.slice(0, 3).map((ord) => {
+                            const isManual = ord.channel === 'manual';
+                            return (
+                              <div
+                                key={ord.id}
+                                onClick={() => setSelectedOrderModal(ord)}
+                                className="p-3 rounded-2xl bg-slate-50 hover:bg-slate-100/90 border border-slate-200/70 flex items-center justify-between gap-3 text-xs transition-all cursor-pointer"
+                                title="Clic para ver detalle del pedido"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-mono text-[10px] text-slate-500">{ord.id}</span>
+                                    <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold ${isManual ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-sky-50 text-sky-700 border border-sky-200'}`}>
+                                      {isManual ? '✍️ Manual' : '🌐 Web'}
+                                    </span>
+                                  </div>
+                                  <div className="font-bold text-slate-900 truncate mt-0.5">
+                                    {(typeof ord.customer === 'string' ? ord.customer : ord.customer?.name) || ord.customerName || ord.customer_name || 'Bárbara Frías'}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400">{ord.date} • {ord.paymentMethod}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <div className="font-black text-slate-900 font-mono text-sm">{formatCLP(ord.total)}</div>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 inline-block mt-0.5">
+                                    {ord.status}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Registro Unificado de Movimientos de Dinero (Libro Diario de Caja) */}
+                  <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                          <span>Registro Unificado de Movimientos de Dinero</span>
+                          <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black uppercase">
+                            Libro Diario de Caja
+                          </span>
+                        </h3>
+                        <p className="text-[11px] text-slate-500">
+                          Trazabilidad completa de cada peso que entra y sale de la empresa en tiempo real
+                        </p>
+                      </div>
+
+                      {/* Movement Quick Filter Buttons */}
+                      <div className="flex items-center p-1 rounded-xl bg-slate-100 border border-slate-200/70 gap-1 flex-wrap">
+                        {[
+                          { id: 'todos', label: `Todos (${allCashMovements.length})` },
+                          { id: 'entradas', label: `Entradas (${combinedIngresosList.length})` },
+                          { id: 'salidas', label: `Salidas (${combinedGastosList.length})` },
+                          { id: 'inversiones', label: `Capital Socios (${periodFilteredInvestments.length})` },
+                        ].map((flt) => (
+                          <button
+                            key={flt.id}
+                            type="button"
+                            onClick={() => setCashMovementFilter(flt.id)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              cashMovementFilter === flt.id
+                                ? 'bg-white text-slate-900 shadow-2xs font-black'
+                                : 'text-slate-500 hover:text-slate-900'
+                            }`}
+                          >
+                            {flt.label}
+                          </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Quick Ventas */}
-                    <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div>
-                          <h3 className="text-sm font-black text-slate-900">Ventas Recientes</h3>
-                          <p className="text-[11px] text-slate-500">Pedidos procesados en web y ventas manuales</p>
+                    {/* Timeline Table of Movements */}
+                    <div className="space-y-2">
+                      {allCashMovements.length === 0 ? (
+                        <div className="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                          <p className="text-xs text-slate-500 font-medium">No hay movimientos registrados en este período</p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setFinancesSubTab('ingresos')}
-                          className="text-blue-600 font-bold text-xs hover:underline cursor-pointer"
-                        >
-                          Ver todas las ventas ({orders.length}) →
-                        </button>
-                      </div>
+                      ) : (
+                        allCashMovements
+                          .filter((mov) => {
+                            if (cashMovementFilter === 'entradas') return mov.isPositive;
+                            if (cashMovementFilter === 'salidas') return !mov.isPositive;
+                            if (cashMovementFilter === 'inversiones') return mov.type === 'inversion';
+                            return true;
+                          })
+                          .slice(0, 8)
+                          .map((mov, mIdx) => {
+                            const MovIcon = mov.icon || Landmark;
+                            return (
+                              <div
+                                key={mIdx}
+                                className="p-3.5 rounded-2xl bg-slate-50/70 hover:bg-slate-100/80 border border-slate-200/70 flex items-center justify-between gap-3 text-xs transition-colors"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border shadow-2xs ${
+                                    mov.type === 'inversion'
+                                      ? 'bg-emerald-100/70 border-emerald-200 text-emerald-800'
+                                      : mov.type === 'venta'
+                                      ? 'bg-blue-100/70 border-blue-200 text-blue-800'
+                                      : mov.type === 'factura'
+                                      ? 'bg-teal-100/70 border-teal-200 text-teal-800'
+                                      : 'bg-amber-100/70 border-amber-200 text-amber-800'
+                                  }`}>
+                                    <MovIcon className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase border ${mov.badgeColor}`}>
+                                        {mov.badge}
+                                      </span>
+                                      {mov.id && <span className="font-mono text-[10px] text-slate-500">#{mov.id}</span>}
+                                    </div>
+                                    <div className="font-bold text-slate-900 truncate mt-0.5 text-xs">
+                                      {mov.title}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-medium">
+                                      {formatCLPDate(mov.date)} • {mov.paymentMethod} • {mov.subtitle}
+                                    </div>
+                                  </div>
+                                </div>
 
-                      <div className="space-y-2">
-                        {orders.slice(0, 3).map((ord) => {
-                          const isManual = ord.channel === 'manual';
-                          return (
-                            <div key={ord.id} className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-3 text-xs">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-mono font-bold text-slate-700">{ord.id}</span>
-                                  <span className={`px-1.5 py-0.2 rounded-md text-[9px] font-bold ${isManual ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'bg-sky-50 text-sky-700 border border-sky-200'}`}>
-                                    {isManual ? '✍️ Manual' : '🌐 Web'}
+                                <div className="text-right shrink-0 flex flex-col items-end">
+                                  <div className={`font-black font-mono text-sm ${
+                                    mov.isPositive ? 'text-emerald-700' : 'text-slate-900'
+                                  }`}>
+                                    {mov.isPositive ? '+' : '-'}{formatCLP(mov.amount)}
+                                  </div>
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase border mt-1 ${
+                                    mov.isPositive
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                                  }`}>
+                                    {mov.status || (mov.isPositive ? 'Ingresado' : 'Pagado')}
                                   </span>
                                 </div>
-                                <div className="font-bold text-slate-900 truncate mt-0.5">{ord.customer?.name || 'Cliente'}</div>
-                                <div className="text-[10px] text-slate-400">{ord.date} • {ord.paymentMethod}</div>
                               </div>
-                              <div className="text-right shrink-0">
-                                <div className="font-black text-slate-900 font-mono">{formatCLP(ord.total)}</div>
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200 inline-block mt-0.5">
-                                  {ord.status}
-                                </span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })
+                      )}
                     </div>
                   </div>
                 </div>
@@ -7023,7 +10394,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         {formatCLP(financialMetrics.invoicesTotalBruto + financialMetrics.totalRegisteredExpenses)}
                       </div>
                       <span className="text-[10px] text-slate-500 font-medium">
-                        {invoices.length + expenses.length} egresos computados
+                        {periodFilteredInvoices.length + periodFilteredExpenses.length} egresos computados
                       </span>
                     </div>
 
@@ -7033,7 +10404,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         {formatCLP(financialMetrics.invoicesTotalBruto)}
                       </div>
                       <span className="text-[10px] text-teal-700 font-medium">
-                        {invoices.length} facturas • +{financialMetrics.invoicesTotalUnits} un. a bodega
+                        {periodFilteredInvoices.length} facturas • +{financialMetrics.invoicesTotalUnits} un. a bodega
                       </span>
                     </div>
 
@@ -7043,7 +10414,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         {formatCLP(financialMetrics.totalRegisteredExpenses)}
                       </div>
                       <span className="text-[10px] text-slate-500 font-medium">
-                        {expenses.length} comprobantes de gasto
+                        {periodFilteredExpenses.length} comprobantes de gasto
                       </span>
                     </div>
 
@@ -7070,7 +10441,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             : 'text-slate-500 hover:text-slate-900'
                         }`}
                       >
-                        Todos los Gastos ({invoices.length + expenses.length})
+                        Todos los Gastos ({periodFilteredInvoices.length + periodFilteredExpenses.length})
                       </button>
 
                       <button
@@ -7083,7 +10454,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         }`}
                       >
                         <Package className="w-3.5 h-3.5" />
-                        <span>Facturas Proveedores ({invoices.length})</span>
+                        <span>Facturas Proveedores ({periodFilteredInvoices.length})</span>
                       </button>
 
                       <button
@@ -7096,7 +10467,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         }`}
                       >
                         <Receipt className="w-3.5 h-3.5" />
-                        <span>Gastos Operacionales ({expenses.length})</span>
+                        <span>Gastos Operacionales ({periodFilteredExpenses.length})</span>
                       </button>
                     </div>
                   </div>
@@ -7142,8 +10513,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <th className="py-3 px-3">Tipo</th>
                                 <th className="py-3 px-3">N° Documento</th>
                                 <th className="py-3 px-3">Proveedor / Emisor</th>
-                                <th className="py-3 px-3">Concepto / Detalle</th>
-                                <th className="py-3 px-3">Fecha</th>
+                                <th className="py-3 px-3">Emisión / Venc.</th>
                                 <th className="py-3 px-3">Monto Neto</th>
                                 <th className="py-3 px-3">IVA Crédito</th>
                                 <th className="py-3 px-3">Total Bruto</th>
@@ -7151,27 +10521,78 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {combinedGastosList.map((item, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                                  <td className="py-3 px-3">
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${item.type === 'factura' ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
-                                      {item.type === 'factura' ? '📥 Factura Stock' : '🧾 Gasto Operacional'}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-3 font-mono font-bold text-slate-700">{item.id}</td>
-                                  <td className="py-3 px-3 font-bold text-slate-900">{item.provider}</td>
-                                  <td className="py-3 px-3 text-slate-600 max-w-xs truncate">{item.description}</td>
-                                  <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{item.date}</td>
-                                  <td className="py-3 px-3 font-mono text-slate-700">{formatCLP(item.neto)}</td>
-                                  <td className="py-3 px-3 font-mono font-bold text-emerald-700">+{formatCLP(item.iva)}</td>
-                                  <td className="py-3 px-3 font-mono font-black text-slate-900">{formatCLP(item.total)}</td>
-                                  <td className="py-3 px-3 text-center">
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                      {item.status}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
+                              {combinedGastosList.map((item, idx) => {
+                                const isPaid = (item.status || '').toLowerCase() === 'pagada' || (item.status || '').toLowerCase() === 'pagado';
+                                const isOverdue = (item.status || '').toLowerCase() === 'vencida';
+
+                                return (
+                                  <tr
+                                    key={idx}
+                                    onClick={() => {
+                                      if (item.type === 'factura') {
+                                        const fullInv = invoices.find((i) => i.invoiceNumber === item.id) || item;
+                                        setSelectedInvoiceModal(fullInv);
+                                      }
+                                    }}
+                                    className={`transition-colors ${
+                                      item.type === 'factura'
+                                        ? 'hover:bg-teal-50/60 cursor-pointer group'
+                                        : 'hover:bg-slate-50/80'
+                                    }`}
+                                  >
+                                    <td className="py-3 px-3">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${item.type === 'factura' ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}`}>
+                                        {item.type === 'factura' ? '📥 Factura Stock' : '🧾 Gasto Operacional'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 font-mono font-bold text-slate-700">
+                                      {item.id ? (
+                                        <span className={item.type === 'factura' ? 'text-[#0E8388] font-black group-hover:underline underline-offset-2 flex items-center gap-1.5' : ''}>
+                                          #{item.id}
+                                          {item.type === 'factura' && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 text-[#0E8388] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-bold">
+                                              Ver 📄
+                                            </span>
+                                          )}
+                                        </span>
+                                      ) : '-'}
+                                    </td>
+                                    <td className="py-3 px-3 font-bold text-slate-900 max-w-[180px] sm:max-w-[220px]">
+                                      <span className="line-clamp-2 block leading-snug">{item.provider}</span>
+                                    </td>
+                                    <td className="py-3 px-3 text-slate-500 whitespace-nowrap font-mono text-[11px]">
+                                      <div className="text-slate-800 font-semibold">{formatCLPDate(item.date)}</div>
+                                      {item.type === 'factura' && (
+                                        <div className="text-[10px] text-slate-400">Vence: {formatCLPDate(item.dueDate || item.date)}</div>
+                                      )}
+                                    </td>
+                                    <td className="py-3 px-3 font-mono text-slate-700">{formatCLP(item.neto)}</td>
+                                    <td className="py-3 px-3 font-mono font-bold text-emerald-700">+{formatCLP(item.iva)}</td>
+                                    <td className="py-3 px-3 font-mono font-black text-slate-900">{formatCLP(item.total)}</td>
+                                    <td className="py-3 px-3 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (item.type === 'factura') handleToggleInvoiceStatus(item.id);
+                                        }}
+                                        className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border transition-all ${
+                                          item.type === 'factura' ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'cursor-default'
+                                        } ${
+                                          isPaid
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : isOverdue
+                                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200'
+                                        }`}
+                                        title={item.type === 'factura' ? 'Clic para alternar estado Pagada / Pendiente' : undefined}
+                                      >
+                                        {item.status || 'pendiente'}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -7222,21 +10643,32 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {filteredInvoices.map((inv, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                <td className="py-3.5 px-3 font-mono font-bold text-[#0E8388]">{inv.invoiceNumber}</td>
-                                <td className="py-3.5 px-3">
-                                  <div className="font-bold text-slate-900">{inv.provider}</div>
+                              <tr
+                                key={idx}
+                                onClick={() => setSelectedInvoiceModal(inv)}
+                                className="hover:bg-teal-50/50 transition-colors cursor-pointer group"
+                              >
+                                <td className="py-3.5 px-3 font-mono font-bold text-[#0E8388]">
+                                  <span className="group-hover:underline underline-offset-2 flex items-center gap-1.5">
+                                    #{inv.invoiceNumber}
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-100 text-[#0E8388] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-bold">
+                                      Ver 📄
+                                    </span>
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-3 max-w-[200px]">
+                                  <div className="font-bold text-slate-900 line-clamp-2 leading-snug">{inv.provider}</div>
                                   <div className="text-[10px] text-slate-400 font-mono">{inv.rut}</div>
                                 </td>
                                 <td className="py-3.5 px-3">
-                                  <div className="font-semibold text-slate-900">{inv.productName || 'Mercadería surtida'}</div>
+                                  <div className="font-semibold text-slate-900 line-clamp-1">{inv.productName || 'Mercadería surtida'}</div>
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[10px] font-bold border border-emerald-200/60 mt-0.5">
                                     <span>📦 +{inv.quantityReceived || inv.itemsCount || 1} un. a bodega</span>
                                   </span>
                                 </td>
-                                <td className="py-3.5 px-3">
-                                  <div className="text-slate-700">{inv.date}</div>
-                                  <div className="text-[10px] text-slate-400">{inv.dueDate}</div>
+                                <td className="py-3.5 px-3 whitespace-nowrap font-mono text-[11px]">
+                                  <div className="text-slate-700 font-semibold">{formatCLPDate(inv.date)}</div>
+                                  <div className="text-[10px] text-slate-400">Vence: {formatCLPDate(inv.dueDate || inv.date)}</div>
                                 </td>
                                 <td className="py-3.5 px-3 font-mono text-slate-700">{formatCLP(inv.totalNeto)}</td>
                                 <td className="py-3.5 px-3 font-mono font-bold text-emerald-700">+{formatCLP(inv.iva)}</td>
@@ -7247,7 +10679,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <td className="py-3.5 px-3 text-center">
                                   <button
                                     type="button"
-                                    onClick={() => handleToggleInvoiceStatus(inv.invoiceNumber)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleInvoiceStatus(inv.invoiceNumber);
+                                    }}
                                     className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase transition-all cursor-pointer ${
                                       inv.status === 'pagada'
                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
@@ -7343,14 +10778,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   </span>
                                 </td>
                                 <td className="py-3.5 px-3 font-semibold text-slate-900 max-w-xs">{exp.description}</td>
-                                <td className="py-3.5 px-3 text-slate-600">{exp.provider}</td>
+                                <td className="py-3.5 px-3 text-slate-600 max-w-[200px]">
+                                  <span className="line-clamp-2 block leading-snug">{exp.provider}</span>
+                                </td>
                                 <td className="py-3.5 px-3 font-mono text-[11px]">
                                   <span className="text-slate-700">{exp.documentNumber}</span>
                                   <span className={`block text-[9px] uppercase font-bold ${exp.hasIvaCredit ? 'text-emerald-700' : 'text-slate-400'}`}>
                                     {exp.hasIvaCredit ? '✓ Genera IVA Crédito' : 'Sin crédito fiscal'}
                                   </span>
                                 </td>
-                                <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap">{exp.date}</td>
+                                <td className="py-3.5 px-3 text-slate-600 whitespace-nowrap font-mono text-[11px]">{formatCLPDate(exp.date)}</td>
                                 <td className="py-3.5 px-3 font-mono text-slate-700">{formatCLP(exp.neto)}</td>
                                 <td className="py-3.5 px-3 font-mono font-bold text-emerald-700">
                                   {exp.iva > 0 ? `+${formatCLP(exp.iva)}` : '$0'}
@@ -7385,57 +10822,364 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-white border border-blue-200/70 shadow-xs">
                     <div>
                       <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                        <span>Consolidación de Ingresos & Ventas</span>
+                        <span>Consolidación de Ingresos, Ventas & Inversiones</span>
                         <span className="text-lg">🛒</span>
                       </h2>
                       <p className="text-xs text-slate-600 mt-0.5">
-                        Registro integral de pedidos realizados en la tienda online pública y ventas manuales (mesón, WhatsApp y convenios).
+                        Registro integral de pedidos realizados en la tienda online pública, ventas manuales y aportes de capital de socios.
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setManualOrderStep(1);
-                        setIsAddOrderModalOpen(true);
-                      }}
-                      className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center gap-2 shadow-sm cursor-pointer shrink-0"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>+ Registrar Venta Manual</span>
-                    </button>
+                    <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddInvestmentModalOpen(true)}
+                        className="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black flex items-center gap-2 shadow-sm shadow-emerald-600/20 hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <Landmark className="w-4 h-4 stroke-[2.5]" />
+                        <span>+ Registrar Inversión Socio</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setManualOrderStep(1);
+                          setIsAddOrderModalOpen(true);
+                        }}
+                        className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black flex items-center gap-2 shadow-sm shadow-blue-600/20 hover:shadow-md transition-all cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                        <span>+ Registrar Venta Manual</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* 4 Pastel KPI Cards */}
+                  {/* Sub-tabs: Consolidado vs Inversiones de Socios vs Ventas */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50/90 p-1.5 rounded-2xl border border-slate-200/80">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setIngresosViewMode('todos')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          ingresosViewMode === 'todos'
+                            ? 'bg-slate-900 text-white shadow-xs font-black'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>Consolidado ({combinedIngresosList.length})</span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                            ingresosViewMode === 'todos'
+                              ? 'bg-white/20 text-white'
+                              : 'bg-slate-200 text-slate-800'
+                          }`}
+                        >
+                          {formatCLP(financialMetrics.totalCashInflows)}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIngresosViewMode('inversiones')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          ingresosViewMode === 'inversiones'
+                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-xs font-black'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        <Landmark className="w-3.5 h-3.5" />
+                        <span>Inversiones de Socios ({periodFilteredInvestments.length})</span>
+                        {investmentsSummary.totalAmount > 0 && (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                              ingresosViewMode === 'inversiones'
+                                ? 'bg-white/20 text-white'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {formatCLP(investmentsSummary.totalAmount)}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIngresosViewMode('ventas')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          ingresosViewMode === 'ventas'
+                            ? 'bg-white text-blue-700 shadow-xs font-black'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                        }`}
+                      >
+                        <ShoppingBag className="w-3.5 h-3.5" />
+                        <span>Ventas & Pedidos ({periodFilteredOrders.length})</span>
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 font-semibold px-2">
+                      {ingresosViewMode === 'todos' && (
+                        <span>Ingreso Total a Caja: <strong className="text-emerald-700 font-mono">+{formatCLP(financialMetrics.totalCashInflows)}</strong></span>
+                      )}
+                      {ingresosViewMode === 'inversiones' && (
+                        <span>Total Invertido en Sociedad: <strong className="text-emerald-700 font-mono">+{formatCLP(investmentsSummary.totalAmount)}</strong></span>
+                      )}
+                      {ingresosViewMode === 'ventas' && (
+                        <span>Total Venta Bruta: <strong className="text-slate-800 font-mono">{formatCLP(financialMetrics.totalSales)}</strong></span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* VISTA 0: CONSOLIDADO DE TODOS LOS INGRESOS (Aportes de Capital + Ventas) */}
+                  {ingresosViewMode === 'todos' && (
+                    <div className="space-y-6">
+                      {/* Top 4 KPI Cards Consolidado */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">
+                            Ingreso Total a Caja
+                          </span>
+                          <div className="text-2xl font-black text-emerald-950 font-mono">
+                            {formatCLP(financialMetrics.totalCashInflows)}
+                          </div>
+                          <span className="text-[10px] text-emerald-700 font-semibold block">
+                            {combinedIngresosList.length} movimientos de entrada
+                          </span>
+                        </div>
+
+                        <div className="bg-gradient-to-br from-teal-50/80 via-white to-cyan-50/40 border border-teal-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-teal-800 tracking-wider block">
+                            Aportes de Capital (Socios)
+                          </span>
+                          <div className="text-2xl font-black text-teal-950 font-mono">
+                            {formatCLP(financialMetrics.totalInvested)}
+                          </div>
+                          <span className="text-[10px] text-teal-700 font-semibold block">
+                            {periodFilteredInvestments.length} aporte(s) registrados a la sociedad
+                          </span>
+                        </div>
+
+                        <div className="bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/40 border border-blue-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-blue-800 tracking-wider block">
+                            Ventas Comerciales
+                          </span>
+                          <div className="text-2xl font-black text-blue-950 font-mono">
+                            {formatCLP(financialMetrics.totalSales)}
+                          </div>
+                          <span className="text-[10px] text-blue-700 font-semibold block">
+                            {periodFilteredOrders.length} pedidos comerciales emitidos
+                          </span>
+                        </div>
+
+                        <div className="bg-gradient-to-br from-purple-50/80 via-white to-indigo-50/40 border border-purple-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-purple-800 tracking-wider block">
+                            IVA Débito (Ventas)
+                          </span>
+                          <div className="text-2xl font-black text-purple-900 font-mono">
+                            {formatCLP(financialMetrics.ivaDebito)}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-medium block">
+                            Exento para aportes de capital
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Tabla Consolidada de Todos los Ingresos */}
+                      <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                              <span>Movimientos de Ingreso & Capital</span>
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black uppercase">
+                                Consolidado
+                              </span>
+                            </h3>
+                            <p className="text-[11px] text-slate-500">
+                              Aportes de socios y ventas comerciales en orden cronológico
+                            </p>
+                          </div>
+                          <span className="text-xs text-slate-500 font-medium font-mono">
+                            {combinedIngresosList.length} registros
+                          </span>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="text-slate-500 uppercase tracking-wider text-[10px] bg-slate-50/80 border-b border-slate-200">
+                              <tr>
+                                <th className="py-3 px-3">Tipo</th>
+                                <th className="py-3 px-3">Referencia</th>
+                                <th className="py-3 px-3">Titular / Origen</th>
+                                <th className="py-3 px-3">Fecha</th>
+                                <th className="py-3 px-3">Medio de Pago</th>
+                                <th className="py-3 px-3 text-right">Total Ingresado</th>
+                                <th className="py-3 px-3 text-center">Estado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {combinedIngresosList.length === 0 ? (
+                                <tr>
+                                  <td colSpan="7" className="py-8 text-center text-slate-400">
+                                    No hay ingresos registrados en este período
+                                  </td>
+                                </tr>
+                              ) : (
+                                combinedIngresosList.map((item, idx) => {
+                                  const isInv = item.type === 'inversion';
+                                  return (
+                                    <tr key={item.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                                      <td className="py-3.5 px-3">
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${item.badgeColor}`}>
+                                          {isInv ? <Landmark className="w-3 h-3" /> : <ShoppingBag className="w-3 h-3" />}
+                                          <span>{item.badge}</span>
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-3 font-mono font-bold text-slate-700">
+                                        #{item.id}
+                                      </td>
+                                      <td className="py-3.5 px-3 font-semibold text-slate-900">
+                                        {item.title}
+                                      </td>
+                                      <td className="py-3.5 px-3 font-mono text-slate-600 whitespace-nowrap">
+                                        {formatCLPDate(item.date)}
+                                      </td>
+                                      <td className="py-3.5 px-3 text-slate-600">
+                                        {item.paymentMethod}
+                                      </td>
+                                      <td className="py-3.5 px-3 font-black text-emerald-700 font-mono text-sm text-right">
+                                        +{formatCLP(item.amount)}
+                                      </td>
+                                      <td className="py-3.5 px-3 text-center">
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                          {item.status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* VISTA 1: VENTAS Y PEDIDOS */}
+                  {ingresosViewMode === 'ventas' && (
+                    <div className="space-y-6">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-gradient-to-br from-blue-50/70 via-white to-indigo-50/30 border border-blue-200/70 rounded-3xl p-5 space-y-1 shadow-xs">
-                      <span className="text-[10px] font-extrabold uppercase text-slate-400 block">Ventas Brutas Totales</span>
-                      <div className="text-2xl font-black text-slate-900 font-mono">{formatCLP(financialMetrics.totalSales)}</div>
-                      <span className="text-[10px] text-slate-500 font-medium">{orders.length} pedidos emitidos</span>
+                    {/* Card 1: Ventas del Período */}
+                    <div className="bg-gradient-to-br from-blue-50/70 via-white to-indigo-50/30 border border-blue-200/80 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">
+                            Ventas del Período
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase">
+                            Facturación
+                          </span>
+                        </div>
+                        <div className="text-2xl font-black text-slate-900 font-mono mt-1">
+                          {formatCLP(financialMetrics.totalSales)}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5 pt-1 border-t border-slate-100">
+                        <div className="flex justify-between">
+                          <span>{periodFilteredOrders.length} pedido(s) emitidos</span>
+                          <span>Neto: <strong className="text-slate-700">{formatCLP(financialMetrics.salesNeto)}</strong></span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Web: {formatCLP(financialMetrics.webSales)} • Manual: {formatCLP(financialMetrics.manualSales)}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-sky-50/70 via-white to-blue-50/30 border border-sky-200/70 rounded-3xl p-5 space-y-1 shadow-xs">
-                      <span className="text-[10px] font-extrabold uppercase text-sky-800 block">Ventas Tienda Web</span>
-                      <div className="text-2xl font-black text-sky-900 font-mono">{formatCLP(financialMetrics.webSales)}</div>
-                      <span className="text-[10px] text-sky-700 font-medium">
-                        {financialMetrics.webOrdersCount} pedidos online (Neto: {formatCLP(financialMetrics.webSalesNeto)})
-                      </span>
+                    {/* Card 2: IVA Débito Generado */}
+                    <div className="bg-gradient-to-br from-rose-50/70 via-white to-orange-50/30 border border-rose-200/80 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-extrabold uppercase text-rose-800 tracking-wider block">
+                            IVA Débito Generado
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-black uppercase">
+                            19% F29
+                          </span>
+                        </div>
+                        <div className="text-2xl font-black text-rose-600 font-mono mt-1">
+                          {formatCLP(financialMetrics.ivaDebito)}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5 pt-1 border-t border-slate-100">
+                        <div className="text-[11px] text-slate-600">
+                          Cobrado a clientes en ventas
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          A declarar ante el SII en Formulario 29
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-purple-50/70 via-white to-indigo-50/30 border border-purple-200/70 rounded-3xl p-5 space-y-1 shadow-xs">
-                      <span className="text-[10px] font-extrabold uppercase text-purple-800 block">Ventas Manuales (Mesón)</span>
-                      <div className="text-2xl font-black text-purple-900 font-mono">{formatCLP(financialMetrics.manualSales)}</div>
-                      <span className="text-[10px] text-purple-700 font-medium">
-                        {financialMetrics.manualOrdersCount} pedidos directos (Neto: {formatCLP(financialMetrics.manualSalesNeto)})
-                      </span>
+                    {/* Card 3: Ingresos Alamiro Huerto */}
+                    <div className="bg-gradient-to-br from-teal-50/70 via-white to-emerald-50/30 border border-teal-200/80 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-extrabold uppercase text-teal-800 tracking-wider block">
+                            Ingresos Alamiro Huerto
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 text-[10px] font-black uppercase">
+                            Socio
+                          </span>
+                        </div>
+                        <div className="text-2xl font-black text-teal-950 font-mono mt-1">
+                          {formatCLP(financialMetrics.partnerDistribution?.alamiro?.total || 0)}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5 pt-1 border-t border-slate-100">
+                        <div className="flex justify-between">
+                          <span>50% Ganancia:</span>
+                          <strong className="text-slate-800 font-mono">
+                            +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.productProfit || 0)}
+                          </strong>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-teal-700">
+                          <span>Despachos ({financialMetrics.partnerDistribution?.alamiro?.deliveryCount || 0}):</span>
+                          <span className="font-bold font-mono">
+                            +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.deliveryFees || 0)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="bg-gradient-to-br from-rose-50/70 via-white to-orange-50/30 border border-rose-200/70 rounded-3xl p-5 space-y-1 shadow-xs">
-                      <span className="text-[10px] font-extrabold uppercase text-rose-800 block">IVA Débito Generado (19%)</span>
-                      <div className="text-2xl font-black text-rose-600 font-mono">{formatCLP(financialMetrics.ivaDebito)}</div>
-                      <span className="text-[10px] text-slate-500 font-medium">
-                        Cobrado a clientes por pagar ante SII
-                      </span>
+                    {/* Card 4: Ingresos Ignacio Alarcón */}
+                    <div className="bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/30 border border-emerald-200/80 rounded-3xl p-5 space-y-2 shadow-xs relative overflow-hidden flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">
+                            Ingresos Ignacio Alarcón
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase">
+                            Socio
+                          </span>
+                        </div>
+                        <div className="text-2xl font-black text-emerald-950 font-mono mt-1">
+                          {formatCLP(financialMetrics.partnerDistribution?.ignacio?.total || 0)}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-semibold space-y-0.5 pt-1 border-t border-slate-100">
+                        <div className="flex justify-between">
+                          <span>50% Ganancia:</span>
+                          <strong className="text-slate-800 font-mono">
+                            +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.productProfit || 0)}
+                          </strong>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-emerald-700">
+                          <span>Despachos ({financialMetrics.partnerDistribution?.ignacio?.deliveryCount || 0}):</span>
+                          <span className="font-bold font-mono">
+                            +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.deliveryFees || 0)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -7447,7 +11191,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">Canal:</span>
                         {[
-                          { id: 'todos', label: `Todos (${orders.length})` },
+                          { id: 'todos', label: `Todos (${periodFilteredOrders.length})` },
                           { id: 'web', label: `🌐 Web (${financialMetrics.webOrdersCount})` },
                           { id: 'manual', label: `✍️ Manual (${financialMetrics.manualOrdersCount})` },
                         ].map((ch) => (
@@ -7542,12 +11286,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             const isManual = ord.channel === 'manual';
                             const orderNeto = Math.round(ord.total / 1.19);
                             const orderIva = ord.total - orderNeto;
+                            const dist = calculateOrderFinancialDistribution(ord);
+                            const customerName = (typeof ord.customer === 'string' ? ord.customer : ord.customer?.name) || ord.customerName || ord.customer_name || 'Bárbara Frías';
+
                             return (
                               <tr key={ord.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="py-3.5 px-3 font-mono font-bold text-blue-600">{ord.id}</td>
                                 <td className="py-3.5 px-3">
                                   <div className="font-bold text-slate-900">
-                                    {typeof ord.customer === 'object' ? ord.customer?.name : ord.customer || 'Cliente'}
+                                    {customerName}
                                   </div>
                                   <div className="text-[10px] text-slate-400">
                                     {typeof ord.customer === 'object' ? ord.customer?.email : ord.email || ''}
@@ -7569,6 +11316,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
                                     {ord.status}
                                   </span>
+                                  {dist && (
+                                    <div
+                                      className="text-[9px] text-slate-500 font-semibold mt-1 whitespace-nowrap"
+                                      title={`Repartición de este pedido:\n• Ignacio: ${formatCLP(dist.ignacioTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})\n• Alamiro: ${formatCLP(dist.alamiroTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})`}
+                                    >
+                                      <span>Ignacio: <strong className="text-slate-800 font-mono">{formatCLP(dist.ignacioTotal)}</strong></span>
+                                      <span className="mx-1 text-slate-300">|</span>
+                                      <span>Alamiro: <strong className="text-slate-800 font-mono">{formatCLP(dist.alamiroTotal)}</strong></span>
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="py-3.5 px-3 text-center">
                                   <button
@@ -7589,6 +11346,302 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
                 </div>
               )}
+
+              {/* VISTA 2: INVERSIONES DE SOCIOS */}
+              {ingresosViewMode === 'inversiones' && (
+                <div className="space-y-6">
+                  {/* 4 Pastel KPI Cards para Inversiones */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* KPI 1: Total Capital Aportado */}
+                    <div className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/40 border border-emerald-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">
+                          Capital Total Aportado
+                        </span>
+                        <span className="p-1.5 rounded-xl bg-emerald-100 text-emerald-700">
+                          <Landmark className="w-4 h-4" />
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-emerald-950 font-mono">
+                        {formatCLP(investmentsSummary.totalAmount)}
+                      </div>
+                      <span className="text-[10px] text-emerald-700 font-semibold block">
+                        {investmentsSummary.count} aporte(s) registrados en la sociedad
+                      </span>
+                    </div>
+
+                    {/* KPI 2: Socios Inversionistas */}
+                    <div className="bg-gradient-to-br from-teal-50/80 via-white to-cyan-50/40 border border-teal-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-teal-800 tracking-wider block">
+                          Socios Aportantes
+                        </span>
+                        <span className="p-1.5 rounded-xl bg-teal-100 text-teal-700">
+                          <Users className="w-4 h-4" />
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-teal-950 font-mono">
+                        {investmentsSummary.uniquePartnersCount} {investmentsSummary.uniquePartnersCount === 1 ? 'Socio' : 'Socios'}
+                      </div>
+                      <div className="text-[10px] text-teal-700 font-semibold truncate">
+                        {investmentsSummary.partnersList.length > 0
+                          ? investmentsSummary.partnersList.map((p) => `${p.name} (${p.percent}%)`).join(' • ')
+                          : 'Sin socios registrados'}
+                      </div>
+                    </div>
+
+                    {/* KPI 3: Promedio por Inyección */}
+                    <div className="bg-gradient-to-br from-indigo-50/80 via-white to-blue-50/40 border border-indigo-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-indigo-800 tracking-wider block">
+                          Promedio por Aporte
+                        </span>
+                        <span className="p-1.5 rounded-xl bg-indigo-100 text-indigo-700">
+                          <Wallet className="w-4 h-4" />
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-indigo-950 font-mono">
+                        {formatCLP(investmentsSummary.count > 0 ? Math.round(investmentsSummary.totalAmount / investmentsSummary.count) : 0)}
+                      </div>
+                      <span className="text-[10px] text-indigo-700 font-semibold block">
+                        Inyección promedio de fondos
+                      </span>
+                    </div>
+
+                    {/* KPI 4: Último Aporte */}
+                    <div className="bg-gradient-to-br from-purple-50/80 via-white to-pink-50/40 border border-purple-200/80 rounded-3xl p-5 space-y-1 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase text-purple-800 tracking-wider block">
+                          Último Aporte
+                        </span>
+                        <span className="p-1.5 rounded-xl bg-purple-100 text-purple-700">
+                          <Calendar className="w-4 h-4" />
+                        </span>
+                      </div>
+                      <div className="text-2xl font-black text-purple-950 font-mono">
+                        {investmentsSummary.lastInvestment ? formatCLP(investmentsSummary.lastInvestment.amount) : '$0'}
+                      </div>
+                      <span className="text-[10px] text-purple-700 font-semibold truncate block">
+                        {investmentsSummary.lastInvestment
+                          ? `${investmentsSummary.lastInvestment.partnerName} (${formatCLPDate(investmentsSummary.lastInvestment.date)})`
+                          : 'Sin aportes registrados'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Desglose por Socio en tarjetas horizontales si hay más de 0 socios */}
+                  {investmentsSummary.partnersList.length > 0 && (
+                    <div className="bg-white border border-slate-200/80 rounded-3xl p-5 space-y-3 shadow-xs">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>Participación y Fondos por Socio</span>
+                          <span className="text-sm">🤝</span>
+                        </h3>
+                        <span className="text-[10px] font-bold text-slate-400">
+                          Base Total: {formatCLP(investmentsSummary.totalAmount)}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {investmentsSummary.partnersList.map((partner, pIdx) => (
+                          <div
+                            key={pIdx}
+                            className="p-3.5 rounded-2xl bg-gradient-to-br from-slate-50 to-emerald-50/30 border border-slate-200/90 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                                  {partner.name.slice(0, 1).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-xs font-black text-slate-900 leading-tight">{partner.name}</div>
+                                  {partner.rut && (
+                                    <div className="text-[10px] text-slate-400 font-mono">{partner.rut}</div>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                                {partner.percent}%
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between pt-1 border-t border-slate-100">
+                              <span className="text-[10px] text-slate-500 font-semibold">{partner.count} aporte(s)</span>
+                              <span className="text-sm font-black text-emerald-700 font-mono">{formatCLP(partner.total)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tabla de Inversiones */}
+                  <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
+                    {/* Header con Buscador & Botón */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="relative flex-1 max-w-md">
+                        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={investmentsSearchQuery}
+                          onChange={(e) => setInvestmentsSearchQuery(e.target.value)}
+                          placeholder="Buscar por socio, RUT, concepto o comprobante..."
+                          className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium"
+                        />
+                        {investmentsSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setInvestmentsSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsAddInvestmentModalOpen(true)}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black flex items-center gap-1.5 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>+ Nuevo Aporte</span>
+                      </button>
+                    </div>
+
+                    {/* Tabla o Empty State */}
+                    {(() => {
+                      const filteredInvs = periodFilteredInvestments.filter((inv) => {
+                        if (!investmentsSearchQuery.trim()) return true;
+                        const q = investmentsSearchQuery.toLowerCase().trim();
+                        return (
+                          (inv.partnerName || '').toLowerCase().includes(q) ||
+                          (inv.partnerRut || '').toLowerCase().includes(q) ||
+                          (inv.investmentTypeLabel || '').toLowerCase().includes(q) ||
+                          (inv.destinationAccount || '').toLowerCase().includes(q) ||
+                          (inv.referenceNumber || '').toLowerCase().includes(q) ||
+                          (inv.notes || '').toLowerCase().includes(q)
+                        );
+                      });
+
+                      if (filteredInvs.length === 0) {
+                        return (
+                          <div className="py-14 text-center space-y-3">
+                            <div className="w-14 h-14 rounded-3xl bg-emerald-50 border border-emerald-200/80 text-emerald-600 flex items-center justify-center mx-auto text-2xl shadow-inner">
+                              🏛️
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="text-sm font-black text-slate-800">
+                                {investmentsSearchQuery
+                                  ? 'No se encontraron aportes con esa búsqueda'
+                                  : 'No hay inversiones de socios en este período'}
+                              </h4>
+                              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                                {investmentsSearchQuery
+                                  ? 'Intenta con otro término de búsqueda o limpia el filtro.'
+                                  : 'Registra los aportes de capital, fecha y monto que cada socio ha aportado a la sociedad.'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setIsAddInvestmentModalOpen(true)}
+                              className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black inline-flex items-center gap-2 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer active:scale-95"
+                            >
+                              <Landmark className="w-4 h-4" />
+                              <span>+ Registrar Primer Aporte de Socio</span>
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="overflow-x-auto rounded-2xl border border-slate-100">
+                          <table className="w-full text-left text-xs">
+                            <thead className="text-slate-500 uppercase tracking-wider text-[10px] bg-slate-50/80 border-b border-slate-200">
+                              <tr>
+                                <th className="py-3 px-3"># ID</th>
+                                <th className="py-3 px-3">Socio Inversionista</th>
+                                <th className="py-3 px-3">Fecha Ingreso</th>
+                                <th className="py-3 px-3">Concepto / Tipo</th>
+                                <th className="py-3 px-3">Cuenta de Destino</th>
+                                <th className="py-3 px-3">Comprobante</th>
+                                <th className="py-3 px-3">Monto Aportado</th>
+                                <th className="py-3 px-3 text-center">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredInvs.map((inv) => (
+                                <tr key={inv.id} className="hover:bg-emerald-50/40 transition-colors">
+                                  <td className="py-3.5 px-3 font-mono font-bold text-emerald-700 whitespace-nowrap">
+                                    #{inv.id}
+                                  </td>
+                                  <td className="py-3.5 px-3">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                        {inv.partnerName.slice(0, 1).toUpperCase()}
+                                      </div>
+                                      <div>
+                                        <div className="font-black text-slate-900 leading-snug">{inv.partnerName}</div>
+                                        {inv.partnerRut ? (
+                                          <div className="text-[10px] text-slate-400 font-mono">RUT: {inv.partnerRut}</div>
+                                        ) : (
+                                          <div className="text-[10px] text-slate-400 italic">Sin RUT</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3.5 px-3 whitespace-nowrap font-mono text-slate-700">
+                                    <div className="font-bold">{formatCLPDate(inv.date)}</div>
+                                    <div className="text-[10px] text-slate-400">Ingreso a caja</div>
+                                  </td>
+                                  <td className="py-3.5 px-3">
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                      <span>🏛️</span>
+                                      <span>{inv.investmentTypeLabel || 'Aporte de Capital'}</span>
+                                    </span>
+                                    {inv.notes && (
+                                      <div className="text-[10px] text-slate-500 line-clamp-1 mt-0.5" title={inv.notes}>
+                                        {inv.notes}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-3 text-slate-600 text-[11px] max-w-[180px]">
+                                    <div className="line-clamp-1 font-semibold text-slate-800">{inv.destinationAccount || 'Cta. Cte. Santander'}</div>
+                                    <div className="text-[10px] text-slate-400">{inv.paymentMethod || 'Transferencia'}</div>
+                                  </td>
+                                  <td className="py-3.5 px-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                                    {inv.referenceNumber ? (
+                                      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-bold border border-slate-200">
+                                        {inv.referenceNumber}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-300">-</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-3 font-mono font-black text-emerald-700 text-sm whitespace-nowrap">
+                                    +{formatCLP(inv.amount)}
+                                  </td>
+                                  <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteInvestment(inv.id)}
+                                      className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                      title="Eliminar registro de inversión"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
               {/* ========================================================================= */}
               {/* PESTAÑA 4: F29 (Cálculo por Fecha & Mes del Balance de IVA ante SII)       */}
@@ -7623,27 +11676,43 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                       </div>
 
-                      {/* Selector de Mes y Período (iOS Native Capsule) */}
-                      <div className="inline-flex items-center p-1 rounded-full bg-white border border-slate-200 shadow-xs gap-1 self-start lg:self-auto">
-                        {[
-                          { id: 'todos', label: 'Todo el Histórico' },
-                          { id: '2026-08', label: 'Agosto 2026' },
-                          { id: '2026-09', label: 'Septiembre 2026' },
-                          { id: '2026-10', label: 'Octubre 2026 (Actual)' },
-                        ].map((period) => (
-                          <button
-                            key={period.id}
-                            type="button"
-                            onClick={() => setF29PeriodFilter(period.id)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                              f29PeriodFilter === period.id
-                                ? 'bg-purple-600 text-white shadow-xs font-black'
-                                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                            }`}
-                          >
-                            {period.label}
-                          </button>
-                        ))}
+                      {/* Selector de Mes y Período con Navegación Anterior / Siguiente */}
+                      <div className="inline-flex items-center p-1 rounded-2xl bg-white border border-slate-200 shadow-xs self-start lg:self-auto">
+                        <button
+                          type="button"
+                          onClick={handlePrevPeriodMonth}
+                          className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all cursor-pointer active:scale-95 flex items-center justify-center"
+                          title="Ir al mes anterior"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <div className="px-4 py-1 flex items-center gap-2 select-none min-w-[150px] justify-center">
+                          <span className="text-xs font-black text-slate-900 tracking-tight capitalize">
+                            {formatPeriodLabel(financesPeriodFilter)}
+                          </span>
+                          {financesPeriodFilter === currentYM && (
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                              Actual
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleNextPeriodMonth}
+                          disabled={financesPeriodFilter >= currentYM}
+                          className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                            financesPeriodFilter >= currentYM
+                              ? 'opacity-30 cursor-not-allowed text-slate-400'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 cursor-pointer active:scale-95'
+                          }`}
+                          title={
+                            financesPeriodFilter >= currentYM
+                              ? 'No es posible avanzar a meses futuros'
+                              : 'Ir al mes siguiente'
+                          }
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -7935,412 +12004,46 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {vehicles.length}
                   </span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDispatchSubTab('horarios')}
+                  className={`inline-flex items-center gap-2 px-5 sm:px-6 py-2 rounded-full font-black text-xs sm:text-sm transition-all cursor-pointer ${
+                    dispatchSubTab === 'horarios'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                  }`}
+                >
+                  <Clock className={`w-4 h-4 ${dispatchSubTab === 'horarios' ? 'text-white' : 'text-[#0E8388]'}`} />
+                  <span>Horarios y Rutas</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-black ${
+                      dispatchSubTab === 'horarios'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {deliverySchedules.length}
+                  </span>
+                </button>
               </div>
             </div>
 
             {/* SUB-TAB 1: ZONAS Y TARIFAS (MAPA RADIAL + LISTA DE ZONAS) */}
             {dispatchSubTab === 'zonas' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-              {/* Left Column: Google Maps Interactive Radial Zones Map */}
-              <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-sm flex flex-col h-full">
-              {/* Map Header & Toolbar */}
-              <div className="p-3.5 sm:p-4 border-b border-slate-100 bg-slate-50/90 flex items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                    <Compass className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="font-black text-slate-900 text-base block truncate">
-                      Mapa de Cobertura y Distancias
-                    </span>
-                    <p className="text-xs text-slate-500 font-medium truncate">
-                      Bodega Central: San Francisco 412, Puerto Varas
-                    </p>
-                  </div>
-                </div>
-
-                {/* Map Controls */}
-                <div className="flex items-center gap-2 shrink-0">
-                  {/* Zoom Buttons */}
-                  <div className="inline-flex items-center bg-white rounded-xl border border-slate-200 p-0.5 text-xs shadow-xs">
-                    <button
-                      type="button"
-                      onClick={() => setMapZoomLevel((z) => Math.min(z + 0.15, 1.4))}
-                      className="w-8 h-8 flex items-center justify-center text-slate-700 hover:text-slate-900 font-black cursor-pointer text-base rounded-lg hover:bg-slate-100"
-                      title="Acercar mapa"
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMapZoomLevel((z) => Math.max(z - 0.15, 0.75))}
-                      className="w-8 h-8 flex items-center justify-center text-slate-700 hover:text-slate-900 font-black cursor-pointer border-l border-slate-200 text-base rounded-lg hover:bg-slate-100"
-                      title="Alejar mapa"
-                    >
-                      −
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMapZoomLevel(1)}
-                      className="px-2.5 h-8 flex items-center justify-center text-slate-700 hover:text-emerald-700 font-bold cursor-pointer border-l border-slate-200 text-xs rounded-lg hover:bg-slate-100"
-                      title="Re-centrar mapa"
-                    >
-                      Centrar
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Interactive Radial Map Canvas with Google Maps UI Overlays */}
-              <div
-                className={`relative w-full h-[600px] overflow-hidden select-none transition-colors duration-300 ${
-                  mapType === 'satellite'
-                    ? 'bg-[#15231c]'
-                    : mapType === 'terrain'
-                    ? 'bg-[#eaf0e6]'
-                    : 'bg-[#f4f1ea]'
-                }`}
-              >
-                {/* Floating Google Maps Search Bar */}
-                <div className="absolute top-3.5 left-3.5 right-3.5 z-20 pointer-events-none">
-                  {/* Search Bar */}
-                  <div className="bg-white/95 backdrop-blur-md shadow-md border border-slate-200 rounded-2xl px-4 py-2.5 flex items-center gap-2.5 w-full pointer-events-auto">
-                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                    <input
-                      type="text"
-                      placeholder="Probar dirección (ej: Puerto Montt, Llanquihue, Frutillar)..."
-                      value={simulatedAddress}
-                      onChange={(e) => setSimulatedAddress(e.target.value)}
-                      className="w-full bg-transparent text-slate-900 text-sm font-semibold focus:outline-none placeholder:text-slate-400"
-                    />
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-xs shrink-0 border border-emerald-200">
-                      {simulatedDistanceKm} km
-                    </span>
-                  </div>
-                </div>
-
-                {/* SVG Radial Map */}
-                <svg
-                  viewBox="0 0 1000 620"
-                  preserveAspectRatio="xMidYMid slice"
-                  className="w-full h-full object-cover transition-transform duration-300"
-                  style={{ transform: `scale(${mapZoomLevel})`, transformOrigin: '480px 340px' }}
-                >
-                  <defs>
-                    <radialGradient id="hubRadarGlow" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="#0E8388" stopOpacity="0.5" />
-                      <stop offset="100%" stopColor="#0E8388" stopOpacity="0" />
-                    </radialGradient>
-                    <filter id="shadowGlow" x="-20%" y="-20%" width="140%" height="140%">
-                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3" />
-                    </filter>
-                    <filter id="badgeShadow" x="-10%" y="-10%" width="120%" height="120%">
-                      <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.15" />
-                    </filter>
-                  </defs>
-
-                  {/* Grid Lines (Google Maps coordinates grid) */}
-                  <g opacity={mapType === 'satellite' ? '0.1' : '0.25'} stroke="#94A3B8" strokeWidth="1" strokeDasharray="2 4">
-                    <line x1="0" y1="120" x2="1000" y2="120" />
-                    <line x1="0" y1="240" x2="1000" y2="240" />
-                    <line x1="0" y1="360" x2="1000" y2="360" />
-                    <line x1="0" y1="480" x2="1000" y2="480" />
-                    <line x1="200" y1="0" x2="200" y2="620" />
-                    <line x1="400" y1="0" x2="400" y2="620" />
-                    <line x1="600" y1="0" x2="600" y2="620" />
-                    <line x1="800" y1="0" x2="800" y2="620" />
-                  </g>
-
-                  {/* Topographic Background: Lago Llanquihue */}
-                  <path
-                    d="M 360,130 Q 420,95 530,115 T 720,180 T 780,270 Q 750,330 650,340 T 475,310 T 360,250 Z"
-                    fill={mapType === 'satellite' ? '#0E334D' : '#A3D3F5'}
-                    stroke={mapType === 'satellite' ? '#1E4B6E' : '#7CBFE6'}
-                    strokeWidth="2.5"
-                  />
-                  <text
-                    x="560"
-                    y="210"
-                    fill={mapType === 'satellite' ? '#7BB2DD' : '#3B82B6'}
-                    fontSize="14"
-                    fontWeight="900"
-                    fontStyle="italic"
-                    letterSpacing="1"
-                    textAnchor="middle"
-                    opacity="0.85"
-                  >
-                    LAGO LLANQUIHUE
-                  </text>
-
-                  {/* Seno de Reloncaví (Puerto Montt) */}
-                  <path
-                    d="M 440,540 Q 520,510 620,530 T 800,580 L 800,620 L 300,620 Z"
-                    fill={mapType === 'satellite' ? '#092336' : '#9DCDEB'}
-                    stroke={mapType === 'satellite' ? '#183D5C' : '#7CBFE6'}
-                    strokeWidth="2"
-                  />
-                  <text
-                    x="560"
-                    y="585"
-                    fill={mapType === 'satellite' ? '#7BB2DD' : '#3B82B6'}
-                    fontSize="12"
-                    fontWeight="800"
-                    fontStyle="italic"
-                    textAnchor="middle"
-                    opacity="0.8"
-                  >
-                    Seno de Reloncaví (Puerto Montt)
-                  </text>
-
-                  {/* Main Highways Network (Google Maps Style) */}
-                  {/* Ruta 5 Sur (Dual Carriageway Orange Highway) */}
-                  <path
-                    d="M 330,50 Q 365,160 395,250 T 475,335 T 505,425 T 525,505"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="7"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 330,50 Q 365,160 395,250 T 475,335 T 505,425 T 525,505"
-                    fill="none"
-                    stroke="#F59E0B"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                  />
-                  {/* Route 5 Shield Marker */}
-                  <g filter="url(#badgeShadow)">
-                    <rect x="335" y="70" width="22" height="16" rx="4" fill="#0E8388" stroke="#FFFFFF" strokeWidth="1.5" />
-                    <text x="346" y="82" fill="#FFFFFF" fontSize="9" fontWeight="900" textAnchor="middle">5</text>
-                  </g>
-
-                  {/* Ruta 225 a Ensenada */}
-                  <path
-                    d="M 475,335 Q 600,345 710,290"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d="M 475,335 Q 600,345 710,290"
-                    fill="none"
-                    stroke="#FB923C"
-                    strokeWidth="3.5"
-                    strokeLinecap="round"
-                  />
-                  <text x="610" y="325" fill="#64748B" fontSize="9" fontWeight="800">
-                    Ruta 225 (Ensenada)
-                  </text>
-
-                  {/* Ruta V-505 Puerto Varas - Alerce - Pto Montt */}
-                  <path
-                    d="M 475,335 Q 500,380 505,425 Q 515,465 525,505"
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="4"
-                    strokeDasharray="4 2"
-                  />
-
-                  {/* ========================================================= */}
-                  {/* CONCENTRIC RADIAL DISTANCE RINGS (Configured Dynamically) */}
-                  {/* ========================================================= */}
-                  {dispatchZones.map((z, idx) => {
-                    const r = Math.min(Math.max(Math.round((z.radiusMaxKm || 5) * 8.5), 35), 280);
-                    const isSelected = z.id === selectedConfigZoneId;
-                    const badgeX = idx % 2 === 0 ? 530 : 220;
-                    const badgeY = 270 + idx * 55;
-
-                    return (
-                      <g key={z.id || idx}>
-                        <circle
-                          cx="480"
-                          cy="340"
-                          r={r}
-                          fill={isSelected ? `${z.color}30` : `${z.color}15`}
-                          stroke={z.color || '#10B981'}
-                          strokeWidth={isSelected ? '3.5' : '2'}
-                          strokeDasharray="5 3"
-                          className="transition-all cursor-pointer"
-                          onClick={() => setSelectedConfigZoneId(z.id)}
-                        />
-                        {/* Zone Distance and Fee Badge */}
-                        <g
-                          filter="url(#badgeShadow)"
-                          className="cursor-pointer"
-                          onClick={() => setSelectedConfigZoneId(z.id)}
-                        >
-                          <rect
-                            x={badgeX}
-                            y={badgeY}
-                            width="165"
-                            height="24"
-                            rx="12"
-                            fill={z.color || '#10B981'}
-                          />
-                          <text
-                            x={badgeX + 82}
-                            y={badgeY + 16}
-                            fill="#FFFFFF"
-                            fontSize="10"
-                            fontWeight="900"
-                            textAnchor="middle"
-                          >
-                            {z.name || `Zona ${idx + 1}`} (hasta {z.radiusMaxKm} km) • {z.baseFee > 0 ? formatCLP(z.baseFee) : 'A definir'}
-                          </text>
-                        </g>
-                      </g>
-                    );
-                  })}
-
-                  {/* ========================================================= */}
-                  {/* LANDMARKS & CITIES ON MAP                                 */}
-                  {/* ========================================================= */}
-
-                  {/* Llanquihue (7.5 km) */}
-                  <g className="cursor-pointer group" onClick={() => { setSimulatedAddress('Llanquihue Centro'); setSimulatedDistanceKm(7.5); }}>
-                    <circle cx="400" cy="270" r="5" fill="#0E8388" stroke="#FFFFFF" strokeWidth="2" />
-                    <text x="390" y="265" fill="#0F172A" fontSize="11" fontWeight="800" textAnchor="end">Llanquihue (7.5 km)</text>
-                  </g>
-
-                  {/* Frutillar (24 km) */}
-                  <g className="cursor-pointer group" onClick={() => { setSimulatedAddress('Frutillar Bajo'); setSimulatedDistanceKm(24); }}>
-                    <circle cx="360" cy="170" r="5" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="2" />
-                    <text x="350" y="165" fill="#0F172A" fontSize="11" fontWeight="800" textAnchor="end">Frutillar (24 km)</text>
-                  </g>
-
-                  {/* Alerce (11.5 km) */}
-                  <g className="cursor-pointer group" onClick={() => { setSimulatedAddress('Alerce Norte'); setSimulatedDistanceKm(11.5); }}>
-                    <circle cx="505" cy="425" r="5" fill="#0E8388" stroke="#FFFFFF" strokeWidth="2" />
-                    <text x="518" y="429" fill="#0F172A" fontSize="11" fontWeight="800">Alerce (11.5 km)</text>
-                  </g>
-
-                  {/* Puerto Montt (18 km) */}
-                  <g className="cursor-pointer group" onClick={() => { setSimulatedAddress('Puerto Montt Costanera'); setSimulatedDistanceKm(18); }}>
-                    <circle cx="525" cy="495" r="6" fill="#0E8388" stroke="#FFFFFF" strokeWidth="2.5" />
-                    <text x="538" y="499" fill="#0F172A" fontSize="12" fontWeight="900">Puerto Montt (18 km)</text>
-                  </g>
-
-                  {/* Ensenada (38 km) */}
-                  <g className="cursor-pointer group" onClick={() => { setSimulatedAddress('Ensenada / Ruta 225'); setSimulatedDistanceKm(38); }}>
-                    <circle cx="710" cy="290" r="5" fill="#8B5CF6" stroke="#FFFFFF" strokeWidth="2" />
-                    <text x="722" y="294" fill="#0F172A" fontSize="11" fontWeight="800">Ensenada (38 km)</text>
-                  </g>
-
-                  {/* ========================================================= */}
-                  {/* SIMULATED DYNAMIC VECTOR & DELIVERY VAN (🚚)              */}
-                  {/* ========================================================= */}
-                  {simulatedDistanceKm && (() => {
-                    const angle = 0.785; // ~45 deg angle vector
-                    const maxRadius = 275;
-                    const clampedKm = Math.min(simulatedDistanceKm, 65);
-                    const vectorLength = (clampedKm / 65) * maxRadius;
-                    const targetX = 480 + Math.cos(angle) * vectorLength;
-                    const targetY = 340 + Math.sin(angle) * vectorLength;
-                    const midX = 480 + Math.cos(angle) * (vectorLength * 0.5);
-                    const midY = 340 + Math.sin(angle) * (vectorLength * 0.5);
-
-                    return (
-                      <g>
-                        {/* Dynamic Distance Vector Line */}
-                        <line
-                          x1="480"
-                          y1="340"
-                          x2={targetX}
-                          y2={targetY}
-                          stroke="#EF4444"
-                          strokeWidth="3.5"
-                          strokeDasharray="6 3"
-                        />
-
-                        {/* Animated Dispatch Van moving on route */}
-                        <g transform={`translate(${midX - 12}, ${midY - 12})`}>
-                          <circle cx="12" cy="12" r="14" fill="#0F172A" stroke="#FFFFFF" strokeWidth="2" shadow="drop" />
-                          <text x="12" y="17" fontSize="13" textAnchor="middle">🚚</text>
-                        </g>
-
-                        {/* Destination Target Pin (Google Maps Red Marker) */}
-                        <circle
-                          cx={targetX}
-                          cy={targetY}
-                          r="16"
-                          fill="#EF4444"
-                          opacity="0.35"
-                          className="animate-ping"
-                        />
-                        <circle
-                          cx={targetX}
-                          cy={targetY}
-                          r="9"
-                          fill="#EF4444"
-                          stroke="#FFFFFF"
-                          strokeWidth="3"
-                        />
-
-                        {/* Floating InfoWindow Tooltip above target pin */}
-                        <g filter="url(#shadowGlow)">
-                          <rect
-                            x={targetX - 90}
-                            y={targetY - 55}
-                            width="180"
-                            height="44"
-                            rx="14"
-                            fill="#0F172A"
-                          />
-                          {/* Triangle pointer */}
-                          <polygon
-                            points={`${targetX - 6},${targetY - 11} ${targetX + 6},${targetY - 11} ${targetX},${targetY - 3}`}
-                            fill="#0F172A"
-                          />
-                          <text x={targetX} y={targetY - 37} fill="#38BDF8" fontSize="10" fontWeight="900" textAnchor="middle">
-                            📍 {simulatedAddress || 'Dirección de Entrega'}
-                          </text>
-                          <text x={targetX} y={targetY - 22} fill="#FFFFFF" fontSize="11" fontWeight="900" textAnchor="middle">
-                            {simulatedDistanceKm} km → Tarifa: {formatCLP(simulatedZoneResult.baseFee)}
-                          </text>
-                        </g>
-                      </g>
-                    );
-                  })()}
-
-                  {/* ========================================================= */}
-                  {/* CENTRAL HUB (BODEGA CENTRAL PUERTO VARAS - KM 0)          */}
-                  {/* ========================================================= */}
-                  <g filter="url(#shadowGlow)">
-                    {/* Animated Radar Pulse */}
-                    <circle cx="480" cy="340" r="22" fill="url(#hubRadarGlow)" className="animate-ping" opacity="0.8" />
-                    {/* Central Marker */}
-                    <circle cx="480" cy="340" r="10" fill="#0E8388" stroke="#FFFFFF" strokeWidth="3" />
-                    <circle cx="480" cy="340" r="4" fill="#FFFFFF" />
-
-                    {/* Central Badge */}
-                    <rect x="405" y="356" width="150" height="24" rx="12" fill="#0E8388" stroke="#FFFFFF" strokeWidth="1.5" />
-                    <text x="480" y="372" fill="#FFFFFF" fontSize="10" fontWeight="900" textAnchor="middle">
-                      🏠 BODEGA CENTRAL (Km 0)
-                    </text>
-                  </g>
-                </svg>
-
-                {/* Google Maps Bottom Bar: Watermark */}
-                <div className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-xl border border-slate-200 text-[10px] font-mono text-slate-600 shadow-xs">
-                  <span className="font-black text-slate-800 tracking-tighter text-xs">Google</span>
-                  <span>•</span>
-                  <span className="text-[10px] text-slate-400">Región de Los Lagos</span>
-                </div>
-
-                {/* Floating Map Legend Bar */}
-                {dispatchZones.length > 0 && (
-                  <div className="absolute bottom-3 right-3 z-10 bg-white/95 backdrop-blur-md p-2 rounded-xl border border-slate-200/90 shadow-md hidden 2xl:flex items-center gap-2 text-[10px] font-bold text-slate-800">
-                    {dispatchZones.map((z, idx) => (
-                      <div key={z.id || idx} className="flex items-center gap-1">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: z.color || '#10B981' }} />
-                        <span>{z.name || `Zona ${idx + 1}`} (hasta {z.radiusMaxKm} km)</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+                {/* Left Column: Google Maps Real Map with Dynamic Dispatch Zones */}
+                <DispatchGoogleMap
+                  dispatchZones={dispatchZones}
+                  selectedZoneId={selectedConfigZoneId}
+                  onSelectZone={(zoneId) => setSelectedConfigZoneId(zoneId)}
+                  simulatedAddress={simulatedAddress}
+                  simulatedDistanceKm={simulatedDistanceKm}
+                  onAddressSelected={({ address, distanceKm }) => {
+                    setSimulatedAddress(address);
+                    setSimulatedDistanceKm(distanceKm);
+                  }}
+                />
 
             {/* Right Column: Panel de Zonas de Despacho */}
             <div className="bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-7 shadow-sm flex flex-col justify-between space-y-6">
@@ -8715,11 +12418,392 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             </div>
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* SUB-TAB 3: HORARIOS Y RUTAS DE ENTREGA (PERSONALIZACIÓN POR COMUNA)     */}
+        {/* ========================================================================= */}
+        {dispatchSubTab === 'horarios' && (
+          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-300">
+            {/* Header explicativo */}
+            <div className="bg-white border border-slate-200/80 rounded-3xl p-6 sm:p-8 shadow-sm space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-100 text-[#0E8388] flex items-center justify-center shrink-0">
+                    <Clock className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">
+                      Horarios y Franjas de Entrega
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+                      Configura qué franjas horarias y días de entrega ve el cliente según la comuna elegida al comprar.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultSchedules}
+                    className="px-3.5 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs transition-all cursor-pointer"
+                    title="Restaurar valores predeterminados"
+                  >
+                    Restaurar Predeterminados
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddSlotModal()}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-2xl bg-[#0E8388] hover:bg-[#0c6f73] text-white font-black text-xs sm:text-sm shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>Agregar Franja</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Banner informativo de cómo impacta al cliente */}
+              <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                <div className="text-xs sm:text-sm text-emerald-950 font-medium leading-relaxed">
+                  <span className="font-bold">Conexión con el Carrito de Compra: </span>
+                  Cuando un cliente selecciona su comuna en el checkout (ej: Frutillar, Puerto Varas o Casma), la lista desplegable de <strong>Horario Preferido</strong> se actualiza automáticamente mostrando solo las opciones que tengas activas aquí.
+                </div>
+              </div>
+            </div>
+
+            {/* Grid de Comunas y sus horarios configurados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {deliverySchedules.map((schedule) => {
+                const activeCount = (schedule.slots || []).filter((s) => s.active !== false).length;
+                return (
+                  <div
+                    key={schedule.id}
+                    className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col justify-between hover:border-teal-200 transition-all"
+                  >
+                    <div>
+                      {/* Top de la Comuna */}
+                      <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100 mb-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center font-black text-sm">
+                            <MapPin className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-900 text-base leading-tight">
+                              {schedule.cityName}
+                            </h3>
+                            <span className="text-[11px] text-slate-400 font-semibold">
+                              {schedule.coverageDays || 'Lunes a Sábado'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`text-[11px] font-black px-2.5 py-1 rounded-full ${
+                            activeCount > 0
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200/70'
+                          }`}
+                        >
+                          {activeCount} {activeCount === 1 ? 'franja activa' : 'franjas activas'}
+                        </span>
+                      </div>
+
+                      {/* Lista de franjas */}
+                      <div className="space-y-2.5 mb-4">
+                        {(!schedule.slots || schedule.slots.length === 0) ? (
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-400 font-medium">
+                            Sin horarios configurados. Haz clic en "Agregar Franja".
+                          </div>
+                        ) : (
+                          schedule.slots.map((slot) => (
+                            <div
+                              key={slot.id}
+                              className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                                slot.active !== false
+                                  ? 'bg-slate-50/80 border-slate-200/90 text-slate-800'
+                                  : 'bg-slate-100/50 border-slate-200/40 text-slate-400 opacity-60'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-xs sm:text-sm truncate">
+                                    {slot.label}
+                                  </span>
+                                  {slot.active === false && (
+                                    <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-slate-200 text-slate-600">
+                                      Pausado
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium mt-0.5">
+                                  <span>📅 {slot.days || 'Lunes a Sábado'}</span>
+                                  {slot.cutoffNote && (
+                                    <span className="truncate text-slate-400">· {slot.cutoffNote}</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {/* Toggle Active */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleSlotActive(schedule.id, slot.id)}
+                                  className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                                    slot.active !== false
+                                      ? 'bg-emerald-100/80 text-emerald-800 hover:bg-emerald-200'
+                                      : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                                  }`}
+                                  title={slot.active !== false ? 'Pausar franja' : 'Activar franja'}
+                                >
+                                  {slot.active !== false ? 'Activo' : 'Inactivo'}
+                                </button>
+
+                                {/* Edit */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditSlotModal(schedule.id, slot)}
+                                  className="p-1.5 rounded-xl hover:bg-slate-200/70 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                                  title="Editar horario"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Delete */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSlot(schedule.id, slot.id)}
+                                  className="p-1.5 rounded-xl hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors cursor-pointer"
+                                  title="Eliminar horario"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Botón rápido para agregar franja a esta comuna */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAddSlotModal(schedule.id)}
+                      className="w-full py-2.5 rounded-xl border border-dashed border-teal-300/80 bg-teal-50/40 hover:bg-teal-50 text-[#0E8388] text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                      <span>Agregar franja a {schedule.cityName}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     )}
 
         </main>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL: OPTIMIZADOR DE RUTAS MULTIPARADA (Google Maps)                     */}
+      {/* ========================================================================= */}
+      {isRouteOptimizerModalOpen && optimizedRouteData && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setIsRouteOptimizerModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200/90 text-slate-900 overflow-hidden flex flex-col max-h-[90vh] font-sans"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-blue-50/80 via-white to-emerald-50/60 border-b border-slate-200/80 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-blue-600/10 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0 shadow-xs">
+                  <GoogleMapsIcon className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                    <span>Ruta Óptima de Despacho</span>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase">
+                      Google Maps
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Secuencia inteligente ordenada para menor consumo de combustible
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRouteOptimizerModalOpen(false)}
+                className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4 stroke-[2.5]" />
+              </button>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-3 gap-2 px-5 sm:px-6 py-3 bg-slate-50/80 border-b border-slate-200/70 text-xs shrink-0">
+              <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Paradas</span>
+                <span className="text-base font-black text-slate-900">
+                  {optimizedRouteData.optimizedOrders.length} domicilios
+                </span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Distancia Aprox.</span>
+                <span className="text-base font-black text-emerald-700">
+                  ~{optimizedRouteData.totalDistanceKm} km
+                </span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-2xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Costo de la API</span>
+                <span className="text-base font-black text-blue-700">
+                  $0 CLP (Gratis)
+                </span>
+              </div>
+            </div>
+
+            {/* Stops Timeline (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-3">
+              {/* Origin Hub Card */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-blue-50/60 border border-blue-200/70 text-xs">
+                <div className="w-8 h-8 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs">
+                  🏢
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold text-blue-950 text-xs uppercase tracking-wide">
+                      Punto de Partida (Bodega Central)
+                    </span>
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-100/80 px-2 py-0.5 rounded-full">
+                      Inicio
+                    </span>
+                  </div>
+                  <p className="font-bold text-slate-900 mt-0.5">
+                    {CENTRAL_HUB.name}
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    {CENTRAL_HUB.address}
+                  </p>
+                </div>
+              </div>
+
+              {/* Stop Sequence */}
+              <div className="relative pl-4 space-y-3 before:absolute before:left-7.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                {optimizedRouteData.optimizedOrders.map((order, idx) => (
+                  <div
+                    key={order.id || idx}
+                    className="relative flex items-start gap-3 p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all text-xs"
+                  >
+                    {/* Badge Number */}
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs z-10 ring-4 ring-white">
+                      {order.stopNumber}
+                    </div>
+
+                    {/* Order Details */}
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-extrabold text-slate-900 truncate block text-xs">
+                            {order.customer}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            Pedido #{order.id}
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                          +{order.legDistanceKm} km
+                        </span>
+                      </div>
+
+                      <div className="flex items-start gap-1.5 text-slate-700 font-medium text-[11px]">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                        <span className="truncate">
+                          {order.address}, <strong>{order.city || 'Puerto Varas'}</strong>
+                        </span>
+                      </div>
+
+                      {order.items && order.items.length > 0 && (
+                        <div className="text-[10px] text-slate-500 truncate pt-0.5">
+                          📦 {order.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[10px]">
+                        <span className="font-bold text-slate-600">
+                          Total: ${Number(order.total || 0).toLocaleString('es-CL')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {order.phone && (
+                            <a
+                              href={`https://wa.me/${order.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${order.customer}! Te contactamos de Patitas del Sur, tu pedido #${order.id} va en camino a ${order.address}. 🐾`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-0.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 transition-colors flex items-center gap-1"
+                              title="Avisar por WhatsApp"
+                            >
+                              <WhatsAppIcon className="w-3 h-3" />
+                              <span>WhatsApp</span>
+                            </a>
+                          )}
+                          <a
+                            href={getSingleOrderNavigationUrl(order)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold border border-blue-200 transition-colors flex items-center gap-1"
+                            title="Navegar a esta parada en Google Maps"
+                          >
+                            <GoogleMapsIcon className="w-3 h-3" />
+                            <span>Solo este</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer / CTAs */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(optimizedRouteData.googleMapsUrl);
+                  showToast('📋 ¡Enlace de ruta copiado al portapapeles! Puedes enviarlo por WhatsApp al repartidor.');
+                }}
+                className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copiar Enlace de Ruta</span>
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsRouteOptimizerModalOpen(false)}
+                  className="px-4 py-2.5 rounded-2xl bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cerrar
+                </button>
+                <a
+                  href={optimizedRouteData.googleMapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-2xl bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow-md cursor-pointer active:scale-95"
+                >
+                  <GoogleMapsIcon className="w-4 h-4 shrink-0" />
+                  <span>Iniciar Ruta Multiparada</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* DRAWER LATERAL: DETALLE DE PEDIDO & CLIENTE (Panel Derecho Apple Native)   */}
@@ -8775,6 +12859,33 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
             {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Badge de Entrega & Repartidor Responsable */}
+              {selectedOrderModal.status === 'entregado' && (
+                <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      ✓
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-800 font-extrabold uppercase tracking-wider block">
+                        Pedido Entregado con Éxito
+                      </span>
+                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span className="text-slate-500 font-medium">Repartido por:</span>
+                        <span className="text-slate-900 font-black">
+                          {selectedOrderModal.deliveredByName || selectedOrderModal.delivered_by_name || 'Ignacio Alarcón'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono font-bold text-emerald-800 bg-white/90 px-2.5 py-1 rounded-xl border border-emerald-200 shadow-2xs">
+                    {selectedOrderModal.deliveredAt
+                      ? new Date(selectedOrderModal.deliveredAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) + ' ' + new Date(selectedOrderModal.deliveredAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+                      : 'Completado'}
+                  </span>
+                </div>
+              )}
+
               {/* Card 1: Cliente & Mascota (Grouped Inset Apple Style) */}
               <div>
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 block">
@@ -8788,43 +12899,140 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
                       <div>
                         <div className="font-bold text-slate-900 text-sm">{selectedOrderModal.customer}</div>
-                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                          <Mail className="w-3 h-3 text-slate-400" />
-                          <a href={`mailto:${selectedOrderModal.email}`} className="hover:text-[#0E8388] transition-colors">
-                            {selectedOrderModal.email}
-                          </a>
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                          <Phone className="w-3 h-3 text-slate-400" />
-                          <a href={`tel:${selectedOrderModal.phone}`} className="hover:text-[#0E8388] transition-colors">
-                            {selectedOrderModal.phone}
-                          </a>
-                        </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs">
-                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 mb-0.5">
-                        <Heart className="w-3 h-3 text-rose-500" />
-                        <span>Mascota</span>
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 flex flex-col justify-between">
+                      <div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 mb-0.5">
+                          <Heart className="w-3 h-3 text-rose-500" />
+                          <span>Mascota</span>
+                        </div>
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>{selectedOrderModal.petType?.toLowerCase().includes('gato') || selectedOrderModal.petType?.includes('🐱') ? '🐱' : '🐶'}</span>
+                          <span>{selectedOrderModal.petName}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">{selectedOrderModal.petBreed || 'Mascota regalona'}</div>
                       </div>
-                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                        <span>{selectedOrderModal.petType?.toLowerCase().includes('gato') || selectedOrderModal.petType?.includes('🐱') ? '🐱' : '🐶'}</span>
-                        <span>{selectedOrderModal.petName}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">{selectedOrderModal.petBreed || 'Mascota regalona'}</div>
                     </div>
 
-                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 mb-0.5">
-                        <Receipt className="w-3 h-3 text-[#0E8388]" />
-                        <span>Boleta / Factura</span>
-                      </div>
-                      <div className="font-bold text-[#0E8388] font-mono text-[11px]">{selectedOrderModal.invoiceNumber}</div>
-                      <div className="text-[10px] text-slate-500 font-mono truncate">Track: {selectedOrderModal.tracking}</div>
-                    </div>
+                    {(() => {
+                      const currentBoleta = orderBoletas[selectedOrderModal.id] || selectedOrderModal.invoiceFile;
+                      const normPM = normalizePaymentMethod(selectedOrderModal.paymentMethod);
+                      const isCashOrTransfer =
+                        normPM === 'Efectivo' ||
+                        normPM === 'Transferencia' ||
+                        String(selectedOrderModal.paymentMethod || '').toLowerCase().includes('efectivo') ||
+                        String(selectedOrderModal.paymentMethod || '').toLowerCase().includes('transferencia');
+                      const isDelivered = selectedOrderModal.status === 'entregado';
+                      const isPaid =
+                        String(selectedOrderModal.paymentStatus || '').toLowerCase() === 'pagado' ||
+                        getOrderPaymentStatus(selectedOrderModal).isPaid;
+                      const canUploadBoleta = isDelivered && isPaid && isCashOrTransfer;
+
+                      const lockReason = !isCashOrTransfer
+                        ? 'Solo disponible para pagos en Efectivo o Transferencia'
+                        : !isDelivered && !isPaid
+                        ? 'Se activa al estar Entregado y Pagado'
+                        : !isDelivered
+                        ? 'Se activa cuando el pedido esté Entregado'
+                        : 'Se activa cuando el pedido esté Pagado';
+
+                      return (
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 flex flex-col justify-between">
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center justify-between gap-1 mb-0.5">
+                              <div className="flex items-center gap-1">
+                                <Receipt className="w-3 h-3 text-[#0E8388]" />
+                                <span>Boleta / Factura</span>
+                              </div>
+                              {currentBoleta && (
+                                <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-emerald-700 bg-emerald-100/90 px-1.5 py-0.5 rounded-full">
+                                  <Check className="w-2.5 h-2.5 stroke-[3]" /> Subida
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-bold text-[#0E8388] font-mono text-[11px]">{selectedOrderModal.invoiceNumber}</div>
+                            <div className="text-[10px] text-slate-500 font-mono truncate">Track: {selectedOrderModal.tracking}</div>
+                          </div>
+
+                          {/* Campo para subir la boleta */}
+                          <div className="mt-2 pt-2 border-t border-slate-200/70">
+                            {currentBoleta ? (
+                              <div className="bg-emerald-50/90 border border-emerald-200 rounded-lg p-1.5 text-xs">
+                                <div className="flex items-center justify-between gap-1.5 min-w-0">
+                                  <div className="flex items-center gap-1 min-w-0">
+                                    <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span className="font-bold text-slate-800 text-[10px] truncate" title={currentBoleta.name}>
+                                      {currentBoleta.name}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <a
+                                      href={currentBoleta.dataUrl}
+                                      download={currentBoleta.name}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="p-1 rounded bg-white hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors shadow-2xs"
+                                      title="Descargar o ver boleta"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                    </a>
+                                    {canUploadBoleta && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveBoleta(selectedOrderModal.id)}
+                                        className="p-1 rounded bg-white hover:bg-rose-50 text-rose-500 border border-slate-200 hover:border-rose-200 transition-colors cursor-pointer shadow-2xs"
+                                        title="Eliminar o cambiar boleta"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : canUploadBoleta ? (
+                              <div>
+                                <label className="flex items-center justify-center gap-1.5 w-full py-1.5 px-2 bg-gradient-to-r from-teal-600 to-[#0E8388] hover:from-teal-700 hover:to-[#0C7175] text-white rounded-lg font-bold text-[10px] cursor-pointer shadow-xs hover:shadow transition-all active:scale-98">
+                                  <Upload className="w-3 h-3 stroke-[2.5]" />
+                                  <span>Subir Boleta</span>
+                                  <input
+                                    type="file"
+                                    accept=".pdf,image/png,image/jpeg,image/webp"
+                                    className="hidden"
+                                    onChange={(e) => handleBoletaFileUpload(e, selectedOrderModal.id)}
+                                  />
+                                </label>
+                                <span className="text-[9px] text-slate-400 block mt-1 text-center font-medium">
+                                  PDF o imagen (JPG, PNG)
+                                </span>
+                              </div>
+                            ) : (
+                              <div>
+                                <div
+                                  className="flex items-center justify-center gap-1 px-1.5 py-1.5 rounded-lg bg-slate-100/90 border border-dashed border-slate-200 text-slate-400 text-[10px] font-semibold cursor-not-allowed select-none transition-colors"
+                                  title={lockReason}
+                                >
+                                  <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">Subir Boleta (Bloqueado)</span>
+                                </div>
+                                <span className="text-[9px] text-slate-400 block mt-1 text-center leading-tight">
+                                  {!isCashOrTransfer
+                                    ? 'Solo Efectivo o Transferencia'
+                                    : !isDelivered && !isPaid
+                                    ? 'Requiere entregado y pagado'
+                                    : !isDelivered
+                                    ? 'Requiere estar entregado'
+                                    : 'Requiere estar pagado'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -8851,14 +13059,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   {/* 1-Tap Fast Dispatch Actions */}
                   <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
                     <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedOrderModal.address + ', ' + (selectedOrderModal.city || 'Puerto Varas'))}`}
+                      href={getSingleOrderNavigationUrl(selectedOrderModal)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-slate-800 border border-blue-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-2xs hover:scale-102 active:scale-95"
-                      title="Abrir en Google Maps"
+                      title={`Calcular ruta, tiempo y navegación en Google Maps desde Bodega (${CENTRAL_HUB.city}) hasta ${selectedOrderModal.address}`}
                     >
                       <GoogleMapsIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span>Google Maps</span>
+                      <span>Ruta Google Maps</span>
                     </a>
 
                     <a
@@ -8928,60 +13136,310 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
               </div>
 
-              {/* Card 4: Resumen Financiero */}
-              <div>
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 block">
-                  Resumen de Pago
-                </span>
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs space-y-2.5 text-xs">
-                  {/* Banner de Cobro / No Cobro para Repartidor */}
-                  {renderPaymentCollectionBanner(selectedOrderModal)}
+              {/* Card 4: Resumen Financiero & Rentabilidad Real */}
+              {(() => {
+                const orderTotal = Number(selectedOrderModal.total || 0);
+                const shippingCharged = Number(selectedOrderModal.shippingCost || 0);
 
-                  <div className="flex items-center justify-between text-slate-600 pb-1.5 border-b border-slate-100">
-                    <span className="font-bold">Tipo de Pago:</span>
-                    <div className="flex items-center gap-2">
-                      {renderPaymentMethodBadge(selectedOrderModal.paymentMethod)}
-                      <div className="w-32">
-                        <CustomDropdown
-                          value={normalizePaymentMethod(selectedOrderModal.paymentMethod)}
-                          options={[
-                            { value: 'Web', label: 'Web' },
-                            { value: 'Tarjeta', label: 'Tarjeta' },
-                            { value: 'Efectivo', label: 'Efectivo' },
-                            { value: 'Transferencia', label: 'Transferencia' },
-                          ]}
-                          onChange={(val) => handleUpdateOrderPaymentMethod(selectedOrderModal.id, val)}
-                          usePortal={true}
-                          align="right"
-                          minMenuWidth={130}
-                          buttonClassName="h-7 px-2 rounded-lg bg-slate-50 hover:bg-white border border-slate-200 text-[10px] font-bold text-slate-700 flex items-center justify-between gap-1 w-full"
-                          popoverClassName="p-1 rounded-xl shadow-xl border border-slate-200"
-                        />
+                // 1. Obtener ítems del pedido
+                const items = selectedOrderModal.items && selectedOrderModal.items.length > 0
+                  ? selectedOrderModal.items
+                  : [{
+                      name: selectedOrderModal.product || 'Producto',
+                      price: selectedOrderModal.total || 0,
+                      quantity: selectedOrderModal.qty || 1,
+                    }];
+
+                // 2. Costo del producto con IVA (19%)
+                let totalProductCostWithIva = 0;
+                items.forEach((item) => {
+                  const qty = parseInt(item.quantity || item.qty || 1, 10) || 1;
+                  const itemName = (item.name || '').toLowerCase().trim();
+
+                  const match = (inventory || []).find((p) => {
+                    if (!p) return false;
+                    const pName = (p.name || '').toLowerCase().trim();
+                    return (
+                      (item.id && p.id && item.id === p.id) ||
+                      (item.code && p.sku && item.code === p.sku) ||
+                      pName === itemName ||
+                      pName.includes(itemName) ||
+                      itemName.includes(pName)
+                    );
+                  });
+
+                  if (match && Number(match.unitCostNeto) > 0) {
+                    const unitNeto = Number(match.unitCostNeto);
+                    const unitConIva = Math.round(unitNeto * 1.19);
+                    totalProductCostWithIva += unitConIva * qty;
+                  } else {
+                    const itemPrice = Number(item.price || (orderTotal > 0 ? orderTotal / qty : 0));
+                    totalProductCostWithIva += Math.round(itemPrice * 0.65) * qty;
+                  }
+                });
+
+                // 3. Costo calculado del despacho desde Bodega Central (Loteo Espacio Frutillar)
+                const loc = `${selectedOrderModal.city || ''} ${selectedOrderModal.address || ''} ${selectedOrderModal.deliveryZone || ''}`.toLowerCase();
+                let kmRoundTrip = 14; // Default Frutillar local (14 km ida y vuelta)
+                let baseFixed = 0;
+                let zoneName = 'Frutillar';
+                let zoneDesc = 'Reparto local Frutillar (~14 km ida y vuelta)';
+
+                if (loc.includes('espacio frutillar') || selectedOrderModal.id === 'PED-0001') {
+                  // Mismo Loteo/Condominio donde se ubica la Bodega Central (entrega interna directa ~1 km I/V)
+                  kmRoundTrip = 1;
+                  baseFixed = 0;
+                  zoneName = 'Espacio Frutillar';
+                  zoneDesc = 'Reparto interno Loteo Espacio Frutillar (~1 km ida y vuelta)';
+                } else if (loc.includes('frutillar')) {
+                  // Reparto local dentro de la zona de cobertura Frutillar (hasta 7 km radio, 14 km I/V)
+                  kmRoundTrip = 14;
+                  baseFixed = 0;
+                  zoneName = 'Frutillar';
+                  zoneDesc = 'Reparto local Frutillar (~14 km ida y vuelta)';
+                } else if (loc.includes('casma')) {
+                  kmRoundTrip = 26; // ~13 km ida hacia Casma/Purranque
+                  baseFixed = 500;
+                  zoneName = 'Casma';
+                  zoneDesc = 'Traslado Casma (~26 km ida y vuelta)';
+                } else if (loc.includes('llanquihue')) {
+                  kmRoundTrip = 36; // ~18 km ida por Ruta 5 Sur
+                  baseFixed = 800;
+                  zoneName = 'Llanquihue';
+                  zoneDesc = 'Traslado Llanquihue (~36 km ida y vuelta)';
+                } else if (loc.includes('puerto varas') || loc.includes('ptovaras')) {
+                  kmRoundTrip = 52; // ~26 km ida por Ruta 5 Sur
+                  baseFixed = 1000;
+                  zoneName = 'Puerto Varas';
+                  zoneDesc = 'Traslado Puerto Varas (~52 km ida y vuelta)';
+                } else if (loc.includes('puerto octay')) {
+                  kmRoundTrip = 48; // ~24 km ida por V-55
+                  baseFixed = 800;
+                  zoneName = 'Puerto Octay';
+                  zoneDesc = 'Traslado Puerto Octay (~48 km ida y vuelta)';
+                } else if (loc.includes('fresia') || loc.includes('totoral')) {
+                  kmRoundTrip = 56;
+                  baseFixed = 1000;
+                  zoneName = 'Fresia / Totoral';
+                  zoneDesc = 'Traslado Fresia/Totoral (~56 km ida y vuelta)';
+                } else if (loc.includes('alerce')) {
+                  kmRoundTrip = 68; // ~34 km ida
+                  baseFixed = 1200;
+                  zoneName = 'Alerce';
+                  zoneDesc = 'Traslado Alerce (~68 km ida y vuelta)';
+                } else if (loc.includes('puerto montt') || loc.includes('ptomontt')) {
+                  kmRoundTrip = 88; // ~44 km ida
+                  baseFixed = 1500;
+                  zoneName = 'Puerto Montt';
+                  zoneDesc = 'Traslado Puerto Montt (~88 km ida y vuelta)';
+                } else {
+                  kmRoundTrip = 14;
+                  baseFixed = 0;
+                  zoneName = selectedOrderModal.city || 'Frutillar';
+                  zoneDesc = `Reparto local ${zoneName} (~14 km ida y vuelta)`;
+                }
+
+                const avgFuelPerKm = fleetFuelStats?.avgCostPerKm || 110;
+                const fuelCost = Math.round(kmRoundTrip * avgFuelPerKm);
+                const deliveryCalculatedCost = fuelCost + baseFixed;
+
+                // 4. Ganancia Real Neta
+                const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost;
+                const profitMarginPercent = orderTotal > 0 ? ((realProfit / orderTotal) * 100).toFixed(1) : '0';
+
+                const isPaid = String(selectedOrderModal.paymentStatus || '').toLowerCase() === 'pagado';
+
+                return (
+                  <div>
+                    <div className="flex items-center justify-between px-1 mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        Resumen Financiero del Pedido
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Rentabilidad neta calculada
+                      </span>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs space-y-3 text-xs">
+                      {/* Fila Minimalista de Método y Estado de Pago */}
+                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-slate-500">Pago:</span>
+                          <div className="w-32">
+                            <CustomDropdown
+                              value={normalizePaymentMethod(selectedOrderModal.paymentMethod)}
+                              options={[
+                                { value: 'Web', label: 'Web' },
+                                { value: 'Tarjeta', label: 'Tarjeta' },
+                                { value: 'Efectivo', label: 'Efectivo' },
+                                { value: 'Transferencia', label: 'Transferencia' },
+                              ]}
+                              onChange={(val) => handleUpdateOrderPaymentMethod(selectedOrderModal.id, val)}
+                              usePortal={true}
+                              align="left"
+                              minMenuWidth={130}
+                              buttonClassName="h-7 px-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-700 flex items-center justify-between gap-1 w-full transition-colors"
+                              popoverClassName="p-1 rounded-xl shadow-xl border border-slate-200"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleUpdateOrderPaymentStatus(selectedOrderModal.id, isPaid ? 'pendiente' : 'pagado');
+                          }}
+                          className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs active:scale-95 ${
+                            isPaid
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                          }`}
+                          title={isPaid ? 'Clic para cambiar a pendiente' : 'Clic para marcar como pagado'}
+                        >
+                          {isPaid ? (
+                            <>
+                              <Check className="w-3 h-3 stroke-[3]" />
+                              <span>Pagado</span>
+                            </>
+                          ) : (
+                            <>
+                              <Clock className="w-3 h-3" />
+                              <span>Pendiente</span>
+                            </>
+                          )}
+                        </button>
                       </div>
+
+                      {/* Desglose Financiero Minimalista */}
+                      <div className="space-y-2 py-0.5">
+                        {/* 1. Costo total del pedido */}
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-700">Costo total del pedido:</span>
+                          <span className="font-mono font-bold text-slate-900 text-sm">{formatCLP(orderTotal)}</span>
+                        </div>
+
+                        {/* 2. Despacho cobrado */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-600">Despacho cobrado:</span>
+                          <span className={`font-mono font-semibold ${shippingCharged === 0 ? 'text-emerald-700 font-bold' : 'text-slate-900'}`}>
+                            {shippingCharged === 0 ? '$0 (Gratis)' : formatCLP(shippingCharged)}
+                          </span>
+                        </div>
+
+                        {/* 3. Costo del producto con el IVA */}
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0 pr-2">
+                            <span className="text-slate-600">Costo del producto con el IVA:</span>
+                            <span className="block text-[10px] text-slate-400">Costo reposición bodega c/ IVA</span>
+                          </div>
+                          <span className="font-mono font-semibold text-slate-700 shrink-0">
+                            -{formatCLP(totalProductCostWithIva)}
+                          </span>
+                        </div>
+
+                        {/* 4. Costo calculado del despacho */}
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0 pr-2">
+                            <span className="text-slate-600">Costo calculado del despacho:</span>
+                            <span className="block text-[10px] text-slate-400">
+                              {zoneDesc}
+                            </span>
+                          </div>
+                          <span className="font-mono font-semibold text-slate-700 shrink-0">
+                            -{formatCLP(deliveryCalculatedCost)}
+                          </span>
+                        </div>
+
+                        {selectedOrderModal.agreementUsed && (
+                          <div className="flex items-center justify-between text-purple-700 text-[11px] pt-1 border-t border-slate-100">
+                            <span>Convenio aplicado:</span>
+                            <span className="font-semibold">{selectedOrderModal.agreementUsed}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 5. Ganancia Real / Margen Neto */}
+                      <div className={`p-3 rounded-xl border flex items-center justify-between transition-all ${
+                        realProfit > 0
+                          ? 'bg-gradient-to-r from-emerald-50 to-teal-50/70 border-emerald-200/90 text-emerald-950'
+                          : realProfit === 0
+                          ? 'bg-slate-50 border-slate-200 text-slate-900'
+                          : 'bg-rose-50 border-rose-200 text-rose-950'
+                      }`}>
+                        <div>
+                          <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            Ganancia Real Estimada
+                          </div>
+                          <div className={`text-[10px] font-bold ${realProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {profitMarginPercent}% margen neto real
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-base sm:text-lg font-black font-mono tracking-tight ${
+                            realProfit > 0 ? 'text-emerald-700' : realProfit === 0 ? 'text-slate-800' : 'text-rose-700'
+                          }`}>
+                            {realProfit >= 0 ? `+${formatCLP(realProfit)}` : `-${formatCLP(Math.abs(realProfit))}`}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 6. Repartición entre Socios (50/50 + Despacho) */}
+                      {(() => {
+                        const dist = calculateOrderFinancialDistribution(selectedOrderModal);
+                        return (
+                          <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 space-y-2 mt-2">
+                            <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                              <span>Repartición entre Socios</span>
+                              <span className="text-emerald-700 font-bold">50% Utilidad + Despacho</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              {/* Ignacio Alarcón */}
+                              <div className={`p-2.5 rounded-xl border transition-all ${
+                                dist.isIgnacio ? 'bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200/80'
+                              }`}>
+                                <div className="flex items-center justify-between">
+                                  <span className="font-extrabold text-slate-800 text-[11px]">Ignacio Alarcón</span>
+                                  {dist.isIgnacio && (
+                                    <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-md">
+                                      Despachó
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="font-mono font-black text-slate-900 text-sm mt-1">
+                                  {formatCLP(dist.ignacioTotal)}
+                                </div>
+                                <div className="text-[9px] text-slate-500 font-medium mt-0.5">
+                                  50% ganancia: {formatCLP(dist.halfProfit)} {dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} flete` : ''}
+                                </div>
+                              </div>
+
+                              {/* Alamiro Huerto */}
+                              <div className={`p-2.5 rounded-xl border transition-all ${
+                                dist.isAlamiro ? 'bg-emerald-50/80 border-emerald-300 ring-1 ring-emerald-400/30' : 'bg-white border-slate-200/80'
+                              }`}>
+                                <div className="flex items-center justify-between">
+                                  <span className="font-extrabold text-slate-800 text-[11px]">Alamiro Huerto</span>
+                                  {dist.isAlamiro && (
+                                    <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-md">
+                                      Despachó
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="font-mono font-black text-slate-900 text-sm mt-1">
+                                  {formatCLP(dist.alamiroTotal)}
+                                </div>
+                                <div className="text-[9px] text-slate-500 font-medium mt-0.5">
+                                  50% ganancia: {formatCLP(dist.halfProfit)} {dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} flete` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Subtotal Productos:</span>
-                    <span className="font-mono text-slate-900 font-bold">{formatCLP(selectedOrderModal.subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>Costo de Despacho:</span>
-                    <span className="font-mono text-emerald-700 font-bold">
-                      {selectedOrderModal.shippingCost === 0 ? 'GRATIS' : formatCLP(selectedOrderModal.shippingCost)}
-                    </span>
-                  </div>
-                  {selectedOrderModal.agreementUsed && (
-                    <div className="flex justify-between text-purple-700 font-semibold">
-                      <span>Convenio Aplicado:</span>
-                      <span>{selectedOrderModal.agreementUsed}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-base font-black text-slate-900 pt-2.5 border-t border-slate-100">
-                    <span>Total Pagado:</span>
-                    <span className="text-[#0E8388] font-mono">{formatCLP(selectedOrderModal.total)}</span>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Card 5: Cambio de Estado Rápido */}
               <div>
@@ -9038,7 +13496,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
               <button
                 type="button"
-                onClick={() => showToast(`Imprimiendo Guía & Boleta ${selectedOrderModal.invoiceNumber}...`)}
+                onClick={() => {
+                  const currentBoleta = orderBoletas[selectedOrderModal.id] || selectedOrderModal.invoiceFile;
+                  if (currentBoleta?.dataUrl) {
+                    window.open(currentBoleta.dataUrl, '_blank');
+                  } else {
+                    showToast(`Imprimiendo Guía & Boleta ${selectedOrderModal.invoiceNumber}...`);
+                  }
+                }}
                 className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
               >
                 <Receipt className="w-4 h-4 text-emerald-400" />
@@ -10300,9 +14765,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                           </div>
                           <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                              (manualOrderCustomer.address || '') + ', ' + (manualOrderCustomer.city || 'Puerto Varas')
-                            )}`}
+                            href={getSingleOrderNavigationUrl(manualOrderCustomer)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-[10px] font-black text-[#0E8388] hover:text-[#0A3E40] bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1 shrink-0 shadow-2xs hover:shadow-xs transition-all"
@@ -10314,7 +14777,29 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       )}
                     </div>
 
-                    {/* Tipo de Pago, Estado Inicial & Resumen Financiero */}
+                    {/* Tipo de Pago, Fecha de la Venta & Resumen Financiero */}
+                    {/* Fecha de la Venta & Período Contable Asignado */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-1">
+                      <div>
+                        <AdminDatePicker
+                          label="Fecha de la Venta / Ingreso"
+                          value={manualOrderCustomer.date || new Date().toISOString().split('T')[0]}
+                          onChange={(newDate) =>
+                            setManualOrderCustomer((prev) => ({ ...prev, date: newDate }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Período Contable Asignado
+                        </span>
+                        <div className="h-[38px] px-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2 text-xs font-bold text-slate-800">
+                          <Calendar className="w-3.5 h-3.5 text-[#0E8388]" />
+                          <span>{formatPeriodLabel(getYearMonthFromDate(manualOrderCustomer.date))}</span>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Selector de Tipo de Pago Conectado a Pedidos */}
                     <div>
                       <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">
@@ -10502,17 +14987,35 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedCustomerModal(null)}
-                className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditCustomer(selectedCustomerModal)}
+                  className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-[#0E8388] hover:bg-emerald-50 transition-colors cursor-pointer"
+                  title="Editar tutor"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenDeleteCustomer(selectedCustomerModal)}
+                  className="p-2 rounded-full bg-slate-100 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                  title="Eliminar tutor"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setSelectedCustomerModal(null)}
+                  className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* SUBPESTAÑAS CON FORMA DE CÁPSULAS (PILLS) */}
             {(() => {
-              const modalPets = (selectedCustomerModal.pets && selectedCustomerModal.pets.length > 0)
+              const modalPets = Array.isArray(selectedCustomerModal.pets) && selectedCustomerModal.pets.length > 0
                 ? selectedCustomerModal.pets
                 : (selectedCustomerModal.pet ? [selectedCustomerModal.pet] : []);
 
@@ -11047,6 +15550,237 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDITAR TUTOR / CLIENTE                                             */}
+      {/* ========================================================================= */}
+      {editingCustomer && (
+        <div
+          onClick={() => !isSavingCustomer && setEditingCustomer(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto no-scrollbar text-slate-900"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#0E8388] flex items-center justify-center shrink-0">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">Editar Tutor</h3>
+                  <p className="text-[11px] text-slate-500">Actualiza los datos personales y de contacto en Supabase</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={isSavingCustomer}
+                onClick={() => setEditingCustomer(null)}
+                className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditCustomer} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  value={customerEditForm.name}
+                  onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Ej: Camila Silva"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={customerEditForm.email}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="tutor@ejemplo.cl"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Teléfono (WhatsApp)</label>
+                  <input
+                    type="tel"
+                    value={customerEditForm.phone}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="+56 9 8456 1234"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Ciudad</label>
+                  <select
+                    value={customerEditForm.city}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, city: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#0E8388] cursor-pointer"
+                  >
+                    <option value="Puerto Varas">Puerto Varas</option>
+                    <option value="Puerto Montt">Puerto Montt</option>
+                    <option value="Llanquihue">Llanquihue</option>
+                    <option value="Frutillar">Frutillar</option>
+                    <option value="Osorno">Osorno</option>
+                    <option value="Valdivia">Valdivia</option>
+                    <option value="Temuco">Temuco</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Puntos Patitas</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="50"
+                    value={customerEditForm.points}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, points: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Dirección de Despacho</label>
+                <input
+                  type="text"
+                  value={customerEditForm.address}
+                  onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, address: e.target.value }))}
+                  placeholder="Calle y número (Ej: Los Colonos 450)"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Depto / Casa (Opcional)</label>
+                  <input
+                    type="text"
+                    value={customerEditForm.depto}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, depto: e.target.value }))}
+                    placeholder="Depto 402 / Casa 12"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Rol</label>
+                  <select
+                    value={customerEditForm.role}
+                    onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, role: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-bold focus:outline-none focus:bg-white focus:border-[#0E8388] cursor-pointer"
+                  >
+                    <option value="cliente">Cliente / Tutor</option>
+                    <option value="admin">Administrador</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">Referencia de Entrega</label>
+                <input
+                  type="text"
+                  value={customerEditForm.deliveryReference}
+                  onChange={(e) => setCustomerEditForm((prev) => ({ ...prev, deliveryReference: e.target.value }))}
+                  placeholder="Ej: Portón verde, dejar con conserje"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  disabled={isSavingCustomer}
+                  onClick={() => setEditingCustomer(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCustomer}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-black shadow-md shadow-[#0E8388]/20 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isSavingCustomer ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Guardando en Supabase...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Guardar Cambios</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CONFIRMAR ELIMINAR TUTOR / CLIENTE (Minimalista)                  */}
+      {/* ========================================================================= */}
+      {customerToDelete && (
+        <div
+          onClick={() => !isDeletingCustomer && setCustomerToDelete(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-slate-200/90 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-slate-900"
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
+                <Trash2 className="w-5 h-5 stroke-[2]" />
+              </div>
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-base font-black text-slate-900 leading-snug">
+                  ¿Eliminar a {customerToDelete.name}?
+                </h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  Se removerá su ficha y mascotas registradas. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeletingCustomer}
+                onClick={() => setCustomerToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingCustomer}
+                onClick={handleConfirmDeleteCustomer}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm shadow-rose-600/20 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {isDeletingCustomer ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <span>Eliminar</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -11656,15 +16390,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 4: INGRESAR FACTURA & STOCK (Light Design)                         */}
+      {/* MODAL 4: INGRESAR FACTURA & STOCK (Minimalist Design)                    */}
       {/* ========================================================================= */}
       {isAddInvoiceModalOpen && (() => {
-        const selectedInvProd = inventory.find((p) => p.id === newInvoiceForm.selectedProductId);
-        const modalQty = parseInt(newInvoiceForm.quantityReceived, 10) || 0;
-        const modalUnitCost = parseInt(newInvoiceForm.unitCostNeto, 10) || 0;
-        const modalSubtotalNeto = modalQty * modalUnitCost;
+        const items = newInvoiceForm.items || [];
+        const modalSubtotalNeto = items.reduce((acc, it) => {
+          const q = parseInt(it.quantityReceived, 10) || 0;
+          const c = parseInt(it.unitCostNeto, 10) || 0;
+          return acc + q * c;
+        }, 0);
         const modalIvaCredito = Math.round(modalSubtotalNeto * 0.19);
         const modalTotalBruto = modalSubtotalNeto + modalIvaCredito;
+        const totalItemsUnits = items.reduce(
+          (acc, it) => acc + (parseInt(it.quantityReceived, 10) || 0),
+          0
+        );
+
+        const currentRutKey = (newInvoiceForm.providerRut || '').replace(/[^0-9kK]/g, '').toUpperCase();
+        const isKnownSupplier = Boolean(currentRutKey && knownSuppliers.has(currentRutKey));
 
         return (
           <div
@@ -11673,285 +16416,1404 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto no-scrollbar text-slate-900"
+              className="bg-white border border-slate-200 rounded-3xl max-w-2xl sm:max-w-3xl w-full p-5 sm:p-6 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto no-scrollbar text-slate-900"
             >
+              {/* Encabezado del Modal */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] flex items-center justify-center text-xl font-black shadow-xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-[#0E8388]/10 text-[#0E8388] flex items-center justify-center text-lg font-black">
                     📦
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900">Ingreso de Factura & Stock</h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Asocia la factura al inventario: aumentará el stock físico y sumará IVA Crédito Fiscal
+                    <h3 className="text-base font-black text-slate-900">Ingreso de Factura & Stock</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Registro de compras y actualización de inventario por pasos
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsAddInvoiceModalOpen(false)}
-                  className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
-                {/* Datos de la Factura */}
-                <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
-                  <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider block">
-                    1. Identificación del Documento Tributario
+              {/* Barra de Pasos Minimalista (Stepper) */}
+              <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100/90 rounded-2xl border border-slate-200 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setInvoiceStep(1)}
+                  className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    invoiceStep === 1
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : invoiceStep > 1
+                      ? 'text-emerald-700 hover:bg-white/60'
+                      : 'text-slate-400'
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                      invoiceStep === 1
+                        ? 'bg-[#0E8388] text-white shadow-xs'
+                        : invoiceStep > 1
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-300 text-slate-600'
+                    }`}
+                  >
+                    {invoiceStep > 1 ? '✓' : '1'}
                   </span>
+                  <span className="truncate text-[11px]">1. Factura</span>
+                </button>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">N° Factura Compra</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="FAC-2026-9042"
-                        value={newInvoiceForm.invoiceNumber}
-                        onChange={(e) =>
-                          setNewInvoiceForm({ ...newInvoiceForm, invoiceNumber: e.target.value.toUpperCase() })
-                        }
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-[#0E8388] font-mono font-bold focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Fecha Emisión</label>
-                      <input
-                        type="date"
-                        required
-                        value={newInvoiceForm.date}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, date: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Vencimiento / Plazo</label>
-                      <input
-                        type="text"
-                        placeholder="30 días / 20 Sep 2026"
-                        value={newInvoiceForm.dueDate}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, dueDate: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                  </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newInvoiceForm.invoiceNumber?.trim()) setInvoiceStep(2);
+                    else showToast('Por favor completa el N° de factura');
+                  }}
+                  className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    invoiceStep === 2
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : invoiceStep > 2
+                      ? 'text-emerald-700 hover:bg-white/60'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                      invoiceStep === 2
+                        ? 'bg-[#0E8388] text-white shadow-xs'
+                        : invoiceStep > 2
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-300 text-slate-600'
+                    }`}
+                  >
+                    {invoiceStep > 2 ? '✓' : '2'}
+                  </span>
+                  <span className="truncate text-[11px]">2. Productos ({items.length})</span>
+                </button>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Proveedor / Distribuidora</label>
-                      <input
-                        type="text"
-                        placeholder="Distribuidora Bravery Chile SpA"
-                        value={newInvoiceForm.provider}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, provider: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">RUT Proveedor</label>
-                      <input
-                        type="text"
-                        placeholder="76.452.190-3"
-                        value={newInvoiceForm.providerRut}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, providerRut: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hasNum = Boolean(newInvoiceForm.invoiceNumber?.trim());
+                    const validProd = (newInvoiceForm.items || []).some(
+                      (it) => (it.productName || '').trim() || (it.brand || '').trim()
+                    );
+                    if (!hasNum) {
+                      showToast('Por favor completa el N° de factura');
+                      return;
+                    }
+                    if (!validProd) {
+                      showToast('Por favor ingresa al menos un producto');
+                      return;
+                    }
+                    setInvoiceStep(3);
+                  }}
+                  className={`py-2 px-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    invoiceStep === 3
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                      invoiceStep === 3
+                        ? 'bg-[#0E8388] text-white shadow-xs'
+                        : 'bg-slate-300 text-slate-600'
+                    }`}
+                  >
+                    3
+                  </span>
+                  <span className="truncate text-[11px]">3. Resumen y Cuadratura</span>
+                </button>
+              </div>
 
-                {/* Selección o Creación de Producto para Inventario */}
-                <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase text-emerald-900 tracking-wider">
-                      2. Producto y Afectación en Inventario (Bodega)
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                      Afecta Stock Físico
-                    </span>
-                  </div>
+              <form onSubmit={handleSaveInvoice} className="space-y-3.5 text-xs">
+                {/* ========================================================================= */}
+                {/* PASO 1: INFORMACIÓN DE LA FACTURA                                         */}
+                {/* ========================================================================= */}
+                {invoiceStep === 1 && (
+                  <div className="space-y-4 animate-in fade-in duration-150">
+                    <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider">
+                          1. Proveedor y Documento Tributario
+                        </span>
+                        {isKnownSupplier && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            ✓ Proveedor Reconocido
+                          </span>
+                        )}
+                      </div>
 
-                  <div>
-                    <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">
-                      Seleccionar Producto de Catálogo o Ingresar Nuevo
-                    </label>
-                    <select
-                      value={newInvoiceForm.selectedProductId}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === 'nuevo') {
-                          setNewInvoiceForm({
-                            ...newInvoiceForm,
-                            selectedProductId: 'nuevo',
-                            productName: '',
-                            unitCostNeto: 35000,
-                            salePrice: 59990,
-                          });
-                        } else if (val) {
-                          const prod = inventory.find((p) => p.id === val);
-                          if (prod) {
-                            setNewInvoiceForm({
-                              ...newInvoiceForm,
-                              selectedProductId: prod.id,
-                              productName: prod.name,
-                              format: prod.format || '12 kg',
-                              unitCostNeto: prod.unitCostNeto || 42000,
-                              salePrice: prod.salePrice || 68990,
-                            });
+                      {/* Fila 1: 1. RUT Proveedor & 2. Nombre del Proveedor */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                            RUT Proveedor
+                          </label>
+                          <input
+                            type="text"
+                            autoFocus
+                            list="known-suppliers-ruts"
+                            placeholder="78.920.800-K"
+                            maxLength={12}
+                            value={newInvoiceForm.providerRut}
+                            onChange={handleProviderRutChange}
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                          />
+                          <datalist id="known-suppliers-ruts">
+                            {Array.from(knownSuppliers.values()).map((s) => (
+                              <option key={s.rut} value={s.rut}>
+                                {s.name}
+                              </option>
+                            ))}
+                          </datalist>
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1 flex items-center justify-between">
+                            <span>Nombre del Proveedor</span>
+                            {isKnownSupplier && (
+                              <span className="text-[9px] font-normal text-emerald-600">Autocompletado</span>
+                            )}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Comercial Milka Limitada"
+                            value={newInvoiceForm.provider}
+                            onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, provider: e.target.value })}
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Fila 2: 3. N° Factura, 4. Fecha Emisión, 5. Vencimiento/Plazo y 6. Estado */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">N° Factura</label>
+                          <input
+                            type="text"
+                            placeholder="94258"
+                            value={newInvoiceForm.invoiceNumber}
+                            onChange={(e) =>
+                              setNewInvoiceForm({ ...newInvoiceForm, invoiceNumber: e.target.value.toUpperCase() })
+                            }
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-[#0E8388] font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388]"
+                          />
+                        </div>
+                        <div>
+                          <AdminDatePicker
+                            label="Fecha Emisión"
+                            value={newInvoiceForm.date}
+                            onChange={(newDate) =>
+                              setNewInvoiceForm({ ...newInvoiceForm, date: newDate })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <AdminDatePicker
+                            label="Vencimiento / Plazo"
+                            value={newInvoiceForm.dueDate}
+                            presets={true}
+                            onChange={(newDate) =>
+                              setNewInvoiceForm({ ...newInvoiceForm, dueDate: newDate })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">Estado Factura</label>
+                          <div className="grid grid-cols-2 p-0.5 rounded-xl bg-white border border-slate-200 text-xs h-[35px] items-center">
+                            <button
+                              type="button"
+                              onClick={() => setNewInvoiceForm({ ...newInvoiceForm, status: 'pendiente' })}
+                              className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center ${
+                                newInvoiceForm.status === 'pendiente'
+                                  ? 'bg-amber-500 text-white shadow-xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Pendiente
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setNewInvoiceForm({ ...newInvoiceForm, status: 'pagada' })}
+                              className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center ${
+                                newInvoiceForm.status === 'pagada'
+                                  ? 'bg-emerald-600 text-white shadow-xs'
+                                  : 'text-slate-500 hover:text-slate-800'
+                              }`}
+                            >
+                              Pagada
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Fila 3: Flete y Despacho Asociado al Pedido (Opcional) */}
+                    <div className="p-3.5 rounded-2xl bg-teal-50/60 border border-teal-200/70 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={newInvoiceForm.hasShippingCost}
+                            onChange={(e) =>
+                              setNewInvoiceForm({
+                                ...newInvoiceForm,
+                                hasShippingCost: e.target.checked,
+                              })
+                            }
+                            className="w-4 h-4 rounded text-[#0E8388] focus:ring-[#0E8388] border-slate-300 cursor-pointer"
+                          />
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
+                            <Truck className="w-4 h-4 text-[#0E8388]" />
+                            <span>¿Esta compra tuvo costo de flete o despacho pagado aparte?</span>
+                          </div>
+                        </label>
+                        {newInvoiceForm.hasShippingCost && (
+                          <span className="text-[10px] font-bold text-[#0E8388] bg-teal-100/70 px-2 py-0.5 rounded-full border border-teal-200">
+                            Se prorratea al costo unitario
+                          </span>
+                        )}
+                      </div>
+
+                      {newInvoiceForm.hasShippingCost && (
+                        <div className="pt-2 border-t border-teal-200/50 space-y-2.5 animate-in fade-in duration-150">
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                N° Factura Flete
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: 45201"
+                                value={newInvoiceForm.shippingInvoiceNumber}
+                                onChange={(e) =>
+                                  setNewInvoiceForm({
+                                    ...newInvoiceForm,
+                                    shippingInvoiceNumber: e.target.value.toUpperCase(),
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-teal-200/80 text-[#0E8388] font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Transportista
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: Starken, Cruz del Sur"
+                                value={newInvoiceForm.shippingProvider}
+                                onChange={(e) =>
+                                  setNewInvoiceForm({
+                                    ...newInvoiceForm,
+                                    shippingProvider: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-teal-200/80 text-slate-800 text-xs focus:outline-none focus:border-[#0E8388]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Monto Neto Flete ($)
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="100"
+                                placeholder="Ej: 25000"
+                                value={newInvoiceForm.shippingCostNeto}
+                                onChange={(e) =>
+                                  setNewInvoiceForm({
+                                    ...newInvoiceForm,
+                                    shippingCostNeto: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-teal-200/80 text-slate-900 font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388]"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Criterio Prorrateo
+                              </label>
+                              <CustomDropdown
+                                value={newInvoiceForm.shippingDistributionMethod || 'units'}
+                                options={SHIPPING_DISTRIBUTION_OPTIONS}
+                                onChange={(val) =>
+                                  setNewInvoiceForm({
+                                    ...newInvoiceForm,
+                                    shippingDistributionMethod: val,
+                                  })
+                                }
+                                buttonClassName="h-[35px] w-full px-2.5 py-1.5 rounded-xl bg-white border border-teal-200/80 text-slate-800 text-xs font-semibold hover:border-[#0E8388] focus:outline-none focus:border-[#0E8388] flex items-center justify-between"
+                                usePortal={true}
+                                minMenuWidth={270}
+                                popoverClassName="shadow-xl border border-teal-200/90"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 text-[11px] text-teal-800 bg-white/70 p-2 rounded-xl border border-teal-200/40">
+                            <span className="text-teal-600 font-bold">💡 Impacto Contable:</span>
+                            <span>
+                              Este flete se incorporará directamente al costo neto de reposición de cada producto y promediará con el stock existente mediante <strong>PMP</strong>.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Botones de navegación Paso 1 */}
+                    <div className="pt-3 flex justify-between items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsAddInvoiceModalOpen(false)}
+                        className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer text-xs"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newInvoiceForm.invoiceNumber?.trim()) {
+                            setInvoiceStep(2);
+                          } else {
+                            showToast('Por favor completa el N° de factura antes de continuar');
                           }
-                        } else {
-                          setNewInvoiceForm({
-                            ...newInvoiceForm,
-                            selectedProductId: '',
-                          });
-                        }
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-emerald-300 text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                    >
-                      <option value="">-- Elige un producto existente en bodega --</option>
-                      {inventory.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.format || 'Formato estándar'}) • Stock actual: {p.stock} un. • PVP: {formatCLP(p.salePrice)}
-                        </option>
-                      ))}
-                      <option value="nuevo">➕ Registrar un producto nuevo que no está en catálogo...</option>
-                    </select>
-                  </div>
-
-                  {newInvoiceForm.selectedProductId === 'nuevo' && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Nombre del Producto Nuevo</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Ej: Bravery Pavo Puppy 12kg"
-                          value={newInvoiceForm.productName}
-                          onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, productName: e.target.value })}
-                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 focus:outline-none focus:border-[#0E8388]"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Formato / Peso</label>
-                        <input
-                          type="text"
-                          placeholder="12 kg, 7 kg, 200 g..."
-                          value={newInvoiceForm.format}
-                          onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, format: e.target.value })}
-                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 focus:outline-none focus:border-[#0E8388]"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Stock projection banner */}
-                  {selectedInvProd && (
-                    <div className="p-2.5 rounded-xl bg-white border border-emerald-200 text-xs flex items-center justify-between text-slate-700">
-                      <div>
-                        <span className="text-slate-500 block text-[10px] uppercase font-bold">Proyección de Stock:</span>
-                        <span className="font-medium">
-                          Stock actual: <strong>{selectedInvProd.stock} un.</strong>
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-emerald-700 font-black text-sm">
-                          → Nuevo Stock: {selectedInvProd.stock + modalQty} un. (+{modalQty})
-                        </span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Costos y Cantidades */}
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Cantidad (Unidades)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        required
-                        value={newInvoiceForm.quantityReceived}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, quantityReceived: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-black text-sm focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">Costo Unit. Neto ($)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={newInvoiceForm.unitCostNeto}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, unitCostNeto: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono font-bold focus:outline-none focus:border-[#0E8388]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-slate-700 font-bold uppercase text-[10px] mb-1">PVP Venta ($ CLP)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={newInvoiceForm.salePrice}
-                        onChange={(e) => setNewInvoiceForm({ ...newInvoiceForm, salePrice: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-[#0E8388] font-mono font-black focus:outline-none focus:border-[#0E8388]"
-                      />
+                        }}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-bold shadow-md shadow-[#0E8388]/20 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+                      >
+                        <span>Continuar a Productos</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Tarjeta de Cálculo de Impuestos en Vivo (IVA Crédito Fiscal) */}
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-indigo-950 text-white space-y-2.5 shadow-md">
-                  <div className="flex items-center justify-between text-[11px] border-b border-white/10 pb-2">
-                    <span className="uppercase tracking-wider font-extrabold text-slate-300">Resumen Fiscal de la Factura:</span>
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">
-                      IVA 19% Ley de Impuestos
+                {/* ========================================================================= */}
+                {/* PASO 2: AGREGAR PRODUCTOS ASOCIADOS                                       */}
+                {/* ========================================================================= */}
+                {invoiceStep === 2 && (
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-black uppercase text-emerald-950 tracking-wider flex items-center gap-1.5">
+                      <span>2. Productos e Inventario</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        {items.length} {items.length === 1 ? 'producto' : 'productos'}
+                      </span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      Total unidades: <strong className="font-bold">{totalItemsUnits} un.</strong>
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-center pt-1">
-                    <div className="bg-white/5 p-2 rounded-xl border border-white/10">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Subtotal Neto</span>
-                      <span className="text-sm font-black font-mono text-white">{formatCLP(modalSubtotalNeto)}</span>
-                    </div>
-                    <div className="bg-emerald-500/15 p-2 rounded-xl border border-emerald-500/30">
-                      <span className="text-[10px] uppercase font-bold text-emerald-300 block">IVA Crédito (19%)</span>
-                      <span className="text-sm font-black font-mono text-emerald-300">+{formatCLP(modalIvaCredito)}</span>
-                    </div>
-                    <div className="bg-white/10 p-2 rounded-xl border border-white/15">
-                      <span className="text-[10px] uppercase font-bold text-slate-300 block">Total Bruto Factura</span>
-                      <span className="text-sm font-black font-mono text-white">{formatCLP(modalTotalBruto)}</span>
-                    </div>
+                  {/* Lista de productos por factura */}
+                  <div className="space-y-3">
+                    {items.map((item, idx) => {
+                      const selectedInvProd = inventory.find((p) => p.id === item.selectedProductId);
+                      const itemQty = parseInt(item.quantityReceived, 10) || 0;
+                      const itemCost = parseInt(item.unitCostNeto, 10) || 0;
+                      const itemUnitIva = Math.round(itemCost * 0.19);
+                      const isDropdownOpen = openDropdownItemId === item.id;
+
+                      const selectedProdDisplayName =
+                        item.selectedProductId === 'nuevo'
+                          ? '➕ Registrar producto nuevo'
+                          : selectedInvProd
+                          ? `${selectedInvProd.brand ? `${selectedInvProd.brand} - ` : ''}${selectedInvProd.name} (${selectedInvProd.format || '12 kg'})`
+                          : '';
+
+                      const currentSearchTerm =
+                        invoiceItemSearchTerms[item.id] !== undefined
+                          ? invoiceItemSearchTerms[item.id]
+                          : selectedProdDisplayName;
+
+                      // Determina si el usuario está realizando una búsqueda activa
+                      const isSearching =
+                        invoiceItemSearchTerms[item.id] !== undefined &&
+                        invoiceItemSearchTerms[item.id] !== selectedProdDisplayName &&
+                        invoiceItemSearchTerms[item.id] !== '➕ Registrar producto nuevo';
+
+                      const cleanQuery = isSearching ? currentSearchTerm.trim() : '';
+
+                      const normalizeForSearch = (str) =>
+                        (str || '')
+                          .toLowerCase()
+                          .normalize('NFD')
+                          .replace(/[\u0300-\u036f]/g, '');
+
+                      const matchingProducts = inventory.filter((p) => {
+                        if (!cleanQuery) return true;
+                        const fullSearchable = `${p.brand || ''} ${p.name || ''} ${p.variety || ''} ${p.format || ''} ${p.category || ''}`;
+                        const tokens = normalizeForSearch(cleanQuery).split(/\s+/).filter(Boolean);
+                        const target = normalizeForSearch(fullSearchable);
+                        return tokens.every((tok) => target.includes(tok));
+                      });
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-3.5 rounded-2xl bg-emerald-50/40 border border-emerald-200/80 space-y-3 relative transition-all"
+                        >
+                          {/* Cabecera del ítem de producto */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100/90 text-emerald-900 text-[10px] font-black uppercase">
+                                Producto #{idx + 1}
+                              </span>
+                              {selectedInvProd && (
+                                <span className="text-[10px] text-emerald-700 font-medium">
+                                  Bodega: {selectedInvProd.stock} un. → <strong className="font-bold">+{itemQty} un.</strong>
+                                </span>
+                              )}
+                            </div>
+
+                            {items.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveInvoiceItem(item.id)}
+                                className="px-2 py-1 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Eliminar producto de la factura"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Quitar</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Selector personalizado con campo de búsqueda interactivo */}
+                          <div className="relative" id={`invoice-prod-dropdown-${item.id}`}>
+                            <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                              Seleccionar de Catálogo o Crear Nuevo
+                            </label>
+
+                            {/* Campo de búsqueda editable */}
+                            <div className="relative flex items-center">
+                              <input
+                                type="text"
+                                placeholder="-- Escribe para buscar producto o crear nuevo --"
+                                value={currentSearchTerm}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setInvoiceItemSearchTerms((prev) => ({ ...prev, [item.id]: val }));
+                                  if (!isDropdownOpen) setOpenDropdownItemId(item.id);
+                                }}
+                                onFocus={() => {
+                                  setOpenDropdownItemId(item.id);
+                                }}
+                                className={`w-full h-[36px] pl-3 pr-16 rounded-xl bg-white border text-left text-xs font-semibold transition-all shadow-xs focus:outline-none ${
+                                  isDropdownOpen
+                                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 text-slate-900 bg-white'
+                                    : 'border-emerald-300 hover:border-emerald-400 text-slate-800'
+                                }`}
+                              />
+
+                              {/* Acciones en el extremo derecho del input */}
+                              <div className="absolute right-1.5 flex items-center gap-0.5">
+                                {currentSearchTerm && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setInvoiceItemSearchTerms((prev) => ({ ...prev, [item.id]: '' }));
+                                      handleUpdateInvoiceItem(item.id, {
+                                        selectedProductId: '',
+                                        brand: '',
+                                        productName: '',
+                                        variety: '',
+                                      });
+                                      setOpenDropdownItemId(item.id);
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                    title="Limpiar campo"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenDropdownItemId(isDropdownOpen ? null : item.id);
+                                  }}
+                                  className="p-1 rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                  title={isDropdownOpen ? 'Cerrar opciones' : 'Ver todas las opciones'}
+                                >
+                                  <ChevronDown
+                                    className={`w-4 h-4 transition-transform duration-200 ${
+                                      isDropdownOpen ? 'rotate-180' : ''
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Menú flotante desplegable */}
+                            {isDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 z-40 bg-white rounded-2xl p-1.5 shadow-xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 max-h-56 overflow-y-auto space-y-0.5 text-xs">
+                                {/* ========================================================= */}
+                                {/* 1. BOTÓN REGISTRAR PRODUCTO NUEVO (SIEMPRE AL PRINCIPIO) */}
+                                {/* ========================================================= */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const initialName = isSearching ? currentSearchTerm.trim() : '';
+                                    handleUpdateInvoiceItem(item.id, {
+                                      selectedProductId: 'nuevo',
+                                      brand: '',
+                                      productName: initialName,
+                                      variety: '',
+                                      format: '12 kg',
+                                      petType: 'perros',
+                                      category: 'Alimento Seco',
+                                      customCategory: '',
+                                      unitCostNeto: 35000,
+                                      profitMarginPercent: 30,
+                                      salePrice: 52150,
+                                    });
+                                    setInvoiceItemSearchTerms((prev) => ({
+                                      ...prev,
+                                      [item.id]: initialName ? `➕ ${initialName} (Nuevo)` : '➕ Registrar producto nuevo',
+                                    }));
+                                    setOpenDropdownItemId(null);
+                                  }}
+                                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left font-bold transition-all cursor-pointer ${
+                                    item.selectedProductId === 'nuevo'
+                                      ? 'bg-emerald-100/90 text-emerald-900 border border-emerald-300'
+                                      : 'text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100/80 border border-emerald-200/80'
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-md bg-emerald-600 text-white flex items-center justify-center text-xs font-black shadow-2xs">
+                                      +
+                                    </span>
+                                    <span className="font-bold text-emerald-800 text-xs">
+                                      Registrar producto nuevo
+                                      {isSearching && cleanQuery && (
+                                        <span className="font-normal text-emerald-600 text-[11px] ml-1.5">
+                                          "{cleanQuery}"
+                                        </span>
+                                      )}
+                                    </span>
+                                  </span>
+                                  {item.selectedProductId === 'nuevo' && (
+                                    <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                                  )}
+                                </button>
+
+                                {/* Separador y contador de coincidencias */}
+                                <div className="my-1 border-t border-slate-100 pt-1 px-1.5 flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                  <span>Productos en Bodega ({matchingProducts.length})</span>
+                                  {isSearching && cleanQuery && (
+                                    <span className="text-emerald-600 font-semibold lowercase">
+                                      coincidencias para "{cleanQuery}"
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Lista de productos que coinciden con la búsqueda */}
+                                {matchingProducts.map((p) => {
+                                  const isSelected = item.selectedProductId === p.id;
+                                  return (
+                                    <button
+                                      key={p.id}
+                                      type="button"
+                                      onClick={() => {
+                                        const uCost = p.unitCostNeto || 35000;
+                                        const sPrice = p.salePrice || Math.round(uCost * 1.49);
+                                        const margin =
+                                          uCost > 0
+                                            ? Math.max(0, Math.round(((sPrice - uCost * 1.19) / uCost) * 100))
+                                            : 30;
+                                        handleUpdateInvoiceItem(item.id, {
+                                          selectedProductId: p.id,
+                                          brand: p.brand || '',
+                                          productName: p.name || '',
+                                          variety: p.variety || '',
+                                          format: p.format || (Array.isArray(p.weights) ? p.weights[0] : '12 kg'),
+                                          petType: p.petType || p.pet_type || 'perros',
+                                          category: p.category || 'Alimento Seco',
+                                          customCategory: '',
+                                          unitCostNeto: uCost,
+                                          profitMarginPercent: margin,
+                                          salePrice: sPrice,
+                                        });
+                                        setInvoiceItemSearchTerms((prev) => ({
+                                          ...prev,
+                                          [item.id]: `${p.brand ? `${p.brand} - ` : ''}${p.name} (${p.format || '12 kg'})`,
+                                        }));
+                                        setOpenDropdownItemId(null);
+                                      }}
+                                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-[#0E8388]/10 text-[#0E8388] font-black'
+                                          : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-semibold'
+                                      }`}
+                                    >
+                                      <span className="truncate mr-2">
+                                        {p.brand ? `${p.brand} - ` : ''}{p.name}{' '}
+                                        <span className="text-slate-400 font-normal text-[11px]">
+                                          ({p.format || '12 kg'})
+                                        </span>
+                                      </span>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                          Stock: {p.stock}
+                                        </span>
+                                        {isSelected && <Check className="w-3.5 h-3.5 text-[#0E8388]" />}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+
+                                {matchingProducts.length === 0 && (
+                                  <div className="p-3 text-center text-slate-500 text-xs bg-slate-50 rounded-xl space-y-1">
+                                    <div>No hay productos en bodega que coincidan con <strong>"{cleanQuery}"</strong>.</div>
+                                    <div className="text-[11px] text-emerald-700 font-semibold">
+                                      👆 Puedes hacer clic arriba en <strong>"Registrar producto nuevo"</strong> para darlo de alta.
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Categorización: Mascota (Perro / Gato / Ambos) y Categoría del Producto */}
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 p-2 rounded-2xl bg-slate-50 border border-slate-200/70">
+                            {/* 1. Mascota / Especie */}
+                            <div className="sm:col-span-5">
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Mascota / Especie
+                              </label>
+                              <div className="grid grid-cols-3 p-0.5 rounded-xl bg-white border border-slate-200 text-xs h-[35px] items-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateInvoiceItem(item.id, { petType: 'perros' })}
+                                  className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                    (item.petType || 'perros') === 'perros'
+                                      ? 'bg-[#0E8388] text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  <span>🐶</span>
+                                  <span>Perro</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateInvoiceItem(item.id, { petType: 'gatos' })}
+                                  className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                    item.petType === 'gatos'
+                                      ? 'bg-amber-500 text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  <span>🐱</span>
+                                  <span>Gato</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateInvoiceItem(item.id, { petType: 'ambos' })}
+                                  className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                    item.petType === 'ambos'
+                                      ? 'bg-slate-800 text-white shadow-xs'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  <span>🐾</span>
+                                  <span>Ambos</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 2. Categoría del Producto */}
+                            <div className="sm:col-span-7">
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Categoría del Producto
+                              </label>
+                              <CustomDropdown
+                                value={item.category || 'Alimento Seco'}
+                                options={INVOICE_PRODUCT_CATEGORIES}
+                                onChange={(catVal) => {
+                                  const updates = { category: catVal };
+                                  if (catVal === 'Arena Sanitaria' && (!item.petType || item.petType === 'perros')) {
+                                    updates.petType = 'gatos';
+                                  }
+                                  handleUpdateInvoiceItem(item.id, updates);
+                                }}
+                                buttonClassName="h-[35px] w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-800 text-xs font-bold hover:border-slate-300 focus:outline-none focus:border-[#0E8388]"
+                                popoverClassName="w-64"
+                              />
+                            </div>
+
+                            {/* Campo opcional de categoría personalizada si seleccionan 'Otro' */}
+                            {item.category === 'Otro' && (
+                              <div className="sm:col-span-12 pt-0.5">
+                                <input
+                                  type="text"
+                                  placeholder="Escribe la categoría personalizada (ej: Ropa, Collares, Huesos...)"
+                                  value={item.customCategory || ''}
+                                  onChange={(e) =>
+                                    handleUpdateInvoiceItem(item.id, { customCategory: e.target.value })
+                                  }
+                                  className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388]"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Campos 1 al 4: Identificación */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Marca
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: Bravery"
+                                value={item.brand || ''}
+                                onChange={(e) => handleUpdateInvoiceItem(item.id, { brand: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Nombre del Producto
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="Ej: Adult Medium/Large"
+                                value={item.productName || ''}
+                                onChange={(e) =>
+                                  handleUpdateInvoiceItem(item.id, { productName: e.target.value })
+                                }
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Variedad
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: Salmón"
+                                value={item.variety || ''}
+                                onChange={(e) => handleUpdateInvoiceItem(item.id, { variety: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Formato / Peso
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ej: 12 kg"
+                                value={item.format || ''}
+                                onChange={(e) => handleUpdateInvoiceItem(item.id, { format: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Campos 5 al 9: Cantidad, Costos, IVA, Margen y Venta */}
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-1">
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Unidades
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                required
+                                value={item.quantityReceived}
+                                onChange={(e) =>
+                                  handleUpdateInvoiceItem(item.id, {
+                                    quantityReceived:
+                                      e.target.value === '' ? '' : Math.max(1, parseInt(e.target.value, 10) || 1),
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 font-bold text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                Costo Unitario
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  required
+                                  value={item.unitCostNeto}
+                                  onChange={(e) => {
+                                    const cost =
+                                      e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                    const margin = Number(item.profitMarginPercent) || 0;
+                                    const newSale = Math.round(cost * (1 + 0.19 + margin / 100));
+                                    handleUpdateInvoiceItem(item.id, {
+                                      unitCostNeto: e.target.value === '' ? '' : cost,
+                                      salePrice: newSale,
+                                    });
+                                  }}
+                                  placeholder="0"
+                                  className="w-full pl-6 pr-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                IVA (19%)
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs font-bold">
+                                  +
+                                </span>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={`$${itemUnitIva.toLocaleString('es-CL')}`}
+                                  className="w-full pl-6 pr-2.5 py-1.5 rounded-xl bg-slate-100/90 border border-slate-200 text-slate-600 font-mono font-bold text-xs select-none focus:outline-none cursor-not-allowed"
+                                  title="19% fijo sobre el costo unitario según ley tributaria"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                                % Ganancia
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="500"
+                                  step="1"
+                                  value={item.profitMarginPercent}
+                                  onChange={(e) => {
+                                    const marginVal =
+                                      e.target.value === '' ? '' : Math.max(0, parseFloat(e.target.value) || 0);
+                                    const cost = Number(item.unitCostNeto) || 0;
+                                    const marginNum = typeof marginVal === 'number' ? marginVal : 0;
+                                    const newSale = Math.round(cost * (1 + 0.19 + marginNum / 100));
+                                    handleUpdateInvoiceItem(item.id, {
+                                      profitMarginPercent: marginVal,
+                                      salePrice: newSale,
+                                    });
+                                  }}
+                                  placeholder="30"
+                                  className="w-full pl-3 pr-6 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-900 font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388] transition-colors"
+                                />
+                                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                                  %
+                                </span>
+                              </div>
+                            </div>
+                            <div className="col-span-2 sm:col-span-1">
+                              <label className="block text-emerald-800 font-black uppercase text-[10px] mb-1">
+                                Costo de Venta
+                              </label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-600 font-mono text-xs font-bold">
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  required
+                                  value={item.salePrice}
+                                  onChange={(e) => {
+                                    const newSale =
+                                      e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                                    const cost = Number(item.unitCostNeto) || 0;
+                                    let margin = 30;
+                                    if (cost > 0) {
+                                      margin = Math.max(0, Math.round(((newSale - cost * 1.19) / cost) * 100));
+                                    }
+                                    handleUpdateInvoiceItem(item.id, {
+                                      salePrice: e.target.value === '' ? '' : newSale,
+                                      profitMarginPercent: margin,
+                                    });
+                                  }}
+                                  placeholder="0"
+                                  className="w-full pl-6 pr-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 font-mono font-black text-xs focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Previsualización del Flete Unitario y Costo Landed si hay flete */}
+                          {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0 && (() => {
+                            const shippingNeto = parseFloat(newInvoiceForm.shippingCostNeto) || 0;
+                            const totUnits = items.reduce((acc, it) => acc + (parseInt(it.quantityReceived, 10) || 0), 0);
+                            const totNeto = items.reduce((acc, it) => acc + ((parseInt(it.quantityReceived, 10) || 0) * (parseInt(it.unitCostNeto, 10) || 0)), 0);
+                            const q = parseInt(item.quantityReceived, 10) || 1;
+                            const u = parseInt(item.unitCostNeto, 10) || 0;
+                            let estimatedUnitFreight = 0;
+                            if (newInvoiceForm.shippingDistributionMethod === 'value' && totNeto > 0) {
+                              estimatedUnitFreight = Math.round(((q * u) / totNeto * shippingNeto) / q);
+                            } else if (totUnits > 0) {
+                              estimatedUnitFreight = Math.round(shippingNeto / totUnits);
+                            }
+                            const landedEstimated = u + estimatedUnitFreight;
+                            return (
+                              <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-between text-[11px] text-teal-950 font-medium">
+                                <span className="flex items-center gap-1.5 font-bold text-teal-800">
+                                  <Truck className="w-3.5 h-3.5 text-[#0E8388]" />
+                                  <span>Flete asignado: +{formatCLP(estimatedUnitFreight)} / un.</span>
+                                </span>
+                                <span>
+                                  Costo Puesto en Bodega: <strong className="font-mono font-black text-[#0E8388] text-xs">{formatCLP(landedEstimated)} neto</strong>
+                                </span>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
                   </div>
 
-                  <p className="text-[11px] text-emerald-300/90 font-medium pt-1">
-                    🛡️ <strong>Impacto Tributario:</strong> Los <strong>{formatCLP(modalIvaCredito)}</strong> de IVA quedarán cargados a tu favor en el Formulario 29, descontándose automáticamente del IVA de tus ventas del mes.
-                  </p>
-                </div>
-
-                <div className="pt-2 flex justify-end gap-3">
+                  {/* Botón para agregar más productos a la factura */}
                   <button
                     type="button"
-                    onClick={() => setIsAddInvoiceModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 font-bold transition-colors cursor-pointer"
+                    onClick={handleAddInvoiceItem}
+                    className="w-full py-2.5 px-4 rounded-2xl border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50 text-emerald-800 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-2xs hover:shadow-xs group"
                   >
-                    Cancelar
+                    <Plus className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                    <span>Agregar otro producto a la factura</span>
                   </button>
-                  <button
-                    type="submit"
-                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-black shadow-md shadow-[#0E8388]/20 transition-all cursor-pointer flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Guardar Factura & Aumentar Stock (+{modalQty} un.)</span>
-                  </button>
-                </div>
+
+                  {/* Resumen preliminar rápido */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs gap-2">
+                      <div className="flex items-center gap-3 sm:gap-4 text-slate-600 text-xs flex-wrap">
+                        <span>Mercadería: <strong className="font-mono text-slate-800">{formatCLP(modalSubtotalNeto)}</strong></span>
+                        {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0 && (
+                          <span className="text-teal-700 font-medium flex items-center gap-1">
+                            <Truck className="w-3 h-3 text-[#0E8388]" />
+                            <span>Flete:</span>
+                            <strong className="font-mono font-bold">+{formatCLP(parseFloat(newInvoiceForm.shippingCostNeto) || 0)}</strong>
+                          </span>
+                        )}
+                        <span>IVA (19%): <strong className="font-mono text-emerald-600">+{formatCLP(modalIvaCredito)}</strong></span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 text-[10px] uppercase font-bold mr-1.5">Total Preliminar:</span>
+                        <span className="font-mono font-black text-slate-900 text-sm sm:text-base">
+                          {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0))}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Botones de navegación Paso 2 */}
+                    <div className="pt-2 flex justify-between items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setInvoiceStep(1)}
+                        className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold transition-colors cursor-pointer text-xs flex items-center gap-1.5"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Volver a Factura</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddInvoiceModalOpen(false)}
+                          className="px-3 py-2 rounded-xl text-slate-400 hover:text-slate-600 font-bold transition-colors cursor-pointer text-xs"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const validProd = (newInvoiceForm.items || []).some(
+                              (it) => (it.productName || '').trim() || (it.brand || '').trim()
+                            );
+                            if (validProd) {
+                              setInvoiceStep(3);
+                            } else {
+                              showToast('Por favor ingresa al menos un producto con nombre o marca');
+                            }
+                          }}
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-bold shadow-md shadow-[#0E8388]/20 transition-all cursor-pointer flex items-center gap-1.5 text-xs"
+                        >
+                          <span>Continuar a Resumen</span>
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ========================================================================= */}
+                {/* PASO 3: RESUMEN Y CUADRATURA DEL GASTO                                    */}
+                {/* ========================================================================= */}
+                {invoiceStep === 3 && (
+                  <div className="space-y-4 animate-in fade-in duration-150">
+                    {/* Cabecera resumen de la factura */}
+                    <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                          #
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-slate-900 text-sm">
+                              Factura #{newInvoiceForm.invoiceNumber || 'S/N'}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                                newInvoiceForm.status === 'pagada'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {newInvoiceForm.status === 'pagada' ? 'Pagada' : 'Pendiente'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            {newInvoiceForm.provider || 'Proveedor no especificado'} • RUT: {newInvoiceForm.providerRut || 'Sin RUT'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="text-right text-[11px] text-slate-500">
+                        <div>Emisión: <strong className="text-slate-800 font-mono">{newInvoiceForm.date}</strong></div>
+                        <div>Vence: <strong className="text-slate-800 font-mono">{newInvoiceForm.dueDate}</strong></div>
+                      </div>
+                    </div>
+
+                    {/* Tabla / Desglose de Productos */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider">
+                          Desglose de Productos ({items.length})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceStep(2)}
+                          className="text-[11px] text-[#0E8388] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Editar productos</span>
+                        </button>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white shadow-2xs">
+                        <div className="overflow-x-auto max-h-56">
+                          <table className="w-full text-left text-xs">
+                            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider z-10">
+                              <tr>
+                                <th className="py-2.5 px-3">#</th>
+                                <th className="py-2.5 px-3">Producto & Formato</th>
+                                <th className="py-2.5 px-3 text-center">Cant.</th>
+                                <th className="py-2.5 px-3 text-right">
+                                  {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0
+                                    ? 'Costo Bodega (Landed)'
+                                    : 'Costo Neto'}
+                                </th>
+                                <th className="py-2.5 px-3 text-right">IVA (19%)</th>
+                                <th className="py-2.5 px-3 text-right">Subtotal Neto</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                              {items.map((it, idx) => {
+                                const q = parseInt(it.quantityReceived, 10) || 0;
+                                const c = parseInt(it.unitCostNeto, 10) || 0;
+                                const subNet = q * c;
+                                const unitIva = Math.round(c * 0.19);
+                                const title = [it.brand, it.productName, it.variety].filter(Boolean).join(' ') || 'Producto sin nombre';
+
+                                const shippingNeto = parseFloat(newInvoiceForm.shippingCostNeto) || 0;
+                                let itFreight = 0;
+                                if (newInvoiceForm.hasShippingCost && shippingNeto > 0) {
+                                  if (newInvoiceForm.shippingDistributionMethod === 'value' && modalSubtotalNeto > 0) {
+                                    itFreight = Math.round(((subNet / modalSubtotalNeto) * shippingNeto) / q);
+                                  } else if (totalItemsUnits > 0) {
+                                    itFreight = Math.round(shippingNeto / totalItemsUnits);
+                                  }
+                                }
+                                const landedC = c + itFreight;
+
+                                return (
+                                  <tr key={it.id} className="hover:bg-slate-50/70 transition-colors">
+                                    <td className="py-2.5 px-3 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                                    <td className="py-2.5 px-3">
+                                      <div className="font-bold text-slate-900 truncate max-w-[260px]">{title}</div>
+                                      <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                                        <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold">
+                                          {it.petType === 'gatos' ? '🐱 Gato' : it.petType === 'ambos' ? '🐾 Ambos' : '🐶 Perro'}
+                                        </span>
+                                        <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200/60 text-[9px] font-bold">
+                                          {it.category === 'Otro' && it.customCategory ? it.customCategory : (it.category || 'Alimento Seco')}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-normal">
+                                          • {it.format || '12 kg'}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800">{q} un.</td>
+                                    <td className="py-2.5 px-3 text-right font-mono">
+                                      {itFreight > 0 ? (
+                                        <div>
+                                          <div className="font-black text-slate-900">{formatCLP(landedC)}</div>
+                                          <div className="text-[9px] text-[#0E8388] font-bold">+{formatCLP(itFreight)} flete</div>
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-700">{formatCLP(c)}</span>
+                                      )}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-right font-mono text-emerald-600">+{formatCLP(unitIva)}</td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">{formatCLP(subNet)}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Cuadratura del Gasto Realizado */}
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-slate-50 to-slate-100/80 border border-emerald-200/80 space-y-3">
+                      <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60">
+                        <span className="text-[10px] font-black uppercase text-emerald-950 tracking-wider flex items-center gap-1.5">
+                          <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Cuadratura y Desglose Tributario</span>
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200 shadow-2xs">
+                          {items.length} {items.length === 1 ? 'ítem' : 'ítems'} • {totalItemsUnits} un. totales a bodega
+                        </span>
+                      </div>
+
+                      {/* Banner de flete en cuadratura */}
+                      {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0 && (
+                        <div className="p-2.5 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-between text-xs text-teal-900">
+                          <span className="flex items-center gap-1.5 font-bold">
+                            <Truck className="w-4 h-4 text-[#0E8388]" />
+                            <span>
+                              Flete Asociado: Factura #{newInvoiceForm.shippingInvoiceNumber || 'S/N'} ({newInvoiceForm.shippingProvider || 'Transporte'})
+                            </span>
+                          </span>
+                          <span className="font-mono font-black text-teal-800 text-sm">
+                            +{formatCLP(parseFloat(newInvoiceForm.shippingCostNeto) || 0)} neto
+                          </span>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">1. Mercadería Neta</span>
+                          <span className="font-mono font-black text-slate-900 text-sm sm:text-base">{formatCLP(modalSubtotalNeto)}</span>
+                          <span className="block text-[9px] text-slate-400 mt-0.5">Costo compras mercadería</span>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-teal-200 shadow-2xs">
+                          <span className="block text-[10px] font-bold text-teal-700 uppercase mb-0.5">2. Flete Neto</span>
+                          <span className="font-mono font-black text-teal-700 text-sm sm:text-base">
+                            +{formatCLP(newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0)}
+                          </span>
+                          <span className="block text-[9px] text-teal-600/80 mt-0.5">Prorrateado al costo PMP</span>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs">
+                          <span className="block text-[10px] font-bold text-emerald-700 uppercase mb-0.5">3. IVA Crédito (19%)</span>
+                          <span className="font-mono font-black text-emerald-600 text-sm sm:text-base">+{formatCLP(modalIvaCredito)}</span>
+                          <span className="block text-[9px] text-emerald-600/80 mt-0.5">Crédito fiscal mercadería</span>
+                        </div>
+
+                        <div className="p-3 bg-gradient-to-br from-emerald-600 to-[#0E8388] text-white rounded-xl shadow-xs">
+                          <span className="block text-[10px] font-bold text-emerald-100 uppercase mb-0.5">4. Desembolso Total</span>
+                          <span className="font-mono font-black text-white text-base sm:text-lg">
+                            {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0))}
+                          </span>
+                          <span className="block text-[9px] text-emerald-100/90 mt-0.5">Mercadería bruta + Flete</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Botones de acción Paso 3 */}
+                    <div className="pt-2 flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setInvoiceStep(2)}
+                        className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold transition-colors cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Volver a Productos</span>
+                      </button>
+
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddInvoiceModalOpen(false)}
+                          className="px-3 py-2 rounded-xl text-slate-400 hover:text-slate-600 font-bold transition-colors cursor-pointer text-xs"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-black shadow-md shadow-[#0E8388]/20 transition-all cursor-pointer flex items-center justify-center gap-2 text-xs"
+                        >
+                          <Package className="w-4 h-4" />
+                          <span>Confirmar y Guardar Factura</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </form>
             </div>
           </div>
         );
       })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CREAR / CONFIGURAR FRANJA HORARIA DE ENTREGA                      */}
+      {/* ========================================================================= */}
+      {isSlotModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 sm:p-7 space-y-5 shadow-2xl text-slate-900 max-h-[92vh] overflow-y-auto font-sans">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-teal-100 text-[#0E8388] flex items-center justify-center shrink-0">
+                  <Clock className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">
+                    {slotModalForm.id ? 'Editar Franja Horaria' : 'Nueva Franja Horaria'}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium mt-0.5">
+                    Define el horario de entrega para los clientes al comprar.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSlotModalOpen(false)}
+                className="p-2 rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+                title="Cerrar ventana"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSlotModal} className="space-y-4">
+              {/* Comuna / Ruta de destino */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Comuna o Ruta:
+                </label>
+                <select
+                  value={slotModalCityId}
+                  onChange={(e) => setSlotModalCityId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-bold text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                >
+                  {deliverySchedules.map((sched) => (
+                    <option key={sched.id} value={sched.id}>
+                      {sched.cityName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Nombre / Franja de Horario */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Texto del Horario (lo que ve el cliente):
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Tarde (14:00 - 19:00 hrs)"
+                  value={slotModalForm.label}
+                  onChange={(e) => setSlotModalForm({ ...slotModalForm, label: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Ejemplos: "Mañana (09:00 - 13:00 hrs)", "Tarde (14:00 - 19:00 hrs)", "Jornada Completa (10:00 - 18:00 hrs)".
+                </span>
+              </div>
+
+              {/* Días aplicables */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Días de Reparto:
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Lunes a Sábado"
+                  value={slotModalForm.days}
+                  onChange={(e) => setSlotModalForm({ ...slotModalForm, days: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  Ejemplos: "Lunes a Sábado", "Martes y Jueves", "Miércoles y Viernes".
+                </span>
+              </div>
+
+              {/* Nota de corte / Entrega */}
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Nota o Regla de Corte (Opcional):
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej: Mismo día si compras antes de las 13:00 hrs"
+                  value={slotModalForm.cutoffNote}
+                  onChange={(e) => setSlotModalForm({ ...slotModalForm, cutoffNote: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+
+              {/* Estado Activo / Inactivo */}
+              <div className="pt-2 flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-slate-800 block">
+                    Franja Activa
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Si está desactivada, no aparecerá en la lista del checkout.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={slotModalForm.active}
+                  onChange={(e) => setSlotModalForm({ ...slotModalForm, active: e.target.checked })}
+                  className="w-5 h-5 rounded text-[#0E8388] focus:ring-teal-500 cursor-pointer accent-[#0E8388]"
+                />
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsSlotModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] text-white text-xs sm:text-sm font-extrabold shadow-md hover:shadow-lg transition-all cursor-pointer active:scale-95"
+                >
+                  {slotModalForm.id ? 'Guardar Cambios' : 'Crear Franja'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODAL: CREAR / CONFIGURAR ZONA DE DESPACHO                                */}
@@ -13304,7 +19166,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       {prod.stock} <span className="text-xs font-bold text-slate-500">en bodega</span>
                     </div>
                     <div className="text-[10px] text-slate-500 font-medium">
-                      Cobertura estimada: <strong className="text-slate-700">{analytics.stockCoverageDays} días</strong>
+                      Cobertura estimada: <strong className="text-slate-700">{analytics.stockCoverageDays}</strong>
                     </div>
                   </div>
                 </div>
@@ -13648,44 +19510,58 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {analytics.recentOrders.map((ord) => (
-                          <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                              {ord.id}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-500">
-                              {ord.date}
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <div className="font-bold text-slate-800">{ord.customer}</div>
-                              <div className="text-[10px] text-slate-400">{ord.pet}</div>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-black text-slate-900">
-                              {ord.units} u.
-                            </td>
-                            <td className="py-2.5 px-3 font-black text-emerald-600 font-mono">
-                              {formatCLP(ord.total)}
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-600">
-                              <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
-                                {ord.paymentMethod}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              {ord.status === 'entregado' ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  Entregado
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                                  <Truck className="w-3 h-3" />
-                                  En camino
-                                </span>
-                              )}
+                        {analytics.recentOrders.length === 0 ? (
+                          <tr>
+                            <td colSpan="7" className="py-8 text-center text-slate-400">
+                              <Package className="w-6 h-6 mx-auto mb-1.5 text-slate-300 stroke-[1.5]" />
+                              <span>Aún no hay pedidos registrados con este producto.</span>
                             </td>
                           </tr>
-                        ))}
+                        ) : (
+                          analytics.recentOrders.map((ord) => (
+                            <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
+                                {ord.id}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
+                                {ord.date}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="font-bold text-slate-800">{ord.customer}</div>
+                                <div className="text-[10px] text-slate-400">{ord.pet}</div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-black text-slate-900">
+                                {ord.units} u.
+                              </td>
+                              <td className="py-2.5 px-3 font-black text-emerald-600 font-mono">
+                                {formatCLP(ord.total)}
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-600">
+                                <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
+                                  {ord.paymentMethod}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                {ord.status === 'entregado' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                    <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
+                                    Entregado
+                                  </span>
+                                ) : ord.status === 'en_camino' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                    <Truck className="w-3 h-3 stroke-[2.5]" />
+                                    En camino
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
+                                    <Clock className="w-3 h-3 stroke-[2.5]" />
+                                    En preparación
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -13742,238 +19618,1935 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] no-scrollbar"
+            className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh] no-scrollbar"
           >
             {/* Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0 relative z-20">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20">
                   <Edit2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Editar Producto 📝</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-slate-900">Editar Producto 📝</h3>
+                    {/* Etiqueta Multi-Formato con Tooltip al pasar el mouse */}
+                    <div className="relative group inline-flex items-center">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs hover:bg-teal-100 hover:border-teal-300 transition-all cursor-help select-none">
+                        <span>🔗</span>
+                        <span>Multi-Formato</span>
+                        <span className="w-3.5 h-3.5 rounded-full bg-teal-200/80 text-teal-900 flex items-center justify-center text-[9px] font-black">?</span>
+                      </span>
+
+                      {/* Tooltip flotante explicativo */}
+                      <div className="absolute left-0 top-full mt-2 w-80 p-3.5 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 text-[11px] leading-relaxed opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none transform -translate-y-1 group-hover:translate-y-0">
+                        <div className="flex items-center justify-between font-bold text-teal-300 text-xs mb-1.5">
+                          <span className="flex items-center gap-1.5">
+                            <span>🔗</span>
+                            <span>Publicación Web Inteligente</span>
+                          </span>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-teal-200 bg-teal-950/80 px-2 py-0.5 rounded-full border border-teal-400/40">
+                            Multi-Formato
+                          </span>
+                        </div>
+                        <p className="text-slate-200 text-[11px] leading-snug font-normal">
+                          En la tienda web pública, los productos con el mismo nombre y marca se publican juntos en una sola tarjeta con selector interactivo de kilos (ej: <span className="font-bold text-teal-300 underline">3 kg</span> y <span className="font-bold text-teal-300 underline">10 kg</span>). En bodega se mantiene el stock físico individual por SKU.
+                        </p>
+                        {/* Flecha indicadora superior */}
+                        <div className="absolute -top-1.5 left-5 w-3 h-3 bg-slate-900 border-t border-l border-slate-700/80 rotate-45"></div>
+                      </div>
+                    </div>
+                  </div>
                   <p className="text-[11px] text-slate-500 font-mono">
-                    SKU: {editingProduct.sku} • {editingProduct.brand}
+                    {editingProduct.sku ? `SKU: ${editingProduct.sku} • ` : ''}{editingProduct.brand}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setEditingProduct(null)}
-                className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                onClick={() => {
+                  setEditingProduct(null);
+                  setEditProductStep(1);
+                }}
+                disabled={isSavingProduct}
+                className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSaveEditProduct} className="p-6 space-y-4 overflow-y-auto text-xs no-scrollbar">
-              {/* Nombre del Producto */}
-              <div>
-                <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                  Nombre del Producto *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editingProduct.name}
-                  onChange={(e) => setEditingProduct((prev) => ({ ...prev, name: e.target.value }))}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                />
-              </div>
-
-              {/* Mascota, Marca & Categoría */}
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Mascota
-                  </label>
-                  <select
-                    value={editingProduct.petType || 'perros'}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, petType: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none cursor-pointer"
+            {/* Stepper Tabs Bar */}
+            <div className="bg-slate-100/90 px-4 py-2 border-b border-slate-200 flex items-center justify-between gap-1 overflow-x-auto no-scrollbar shrink-0">
+              {[
+                { step: 1, label: '1. Datos & Precios', icon: Package },
+                { step: 2, label: '2. Imágenes Web', icon: ImageIcon },
+                { step: 3, label: '3. Descripción', icon: FileText },
+                { step: 4, label: '4. Datos Técnicos', icon: SlidersHorizontal },
+              ].map((item) => {
+                const IconComp = item.icon;
+                const isActive = editProductStep === item.step;
+                const isPassed = editProductStep > item.step;
+                return (
+                  <button
+                    key={item.step}
+                    type="button"
+                    onClick={() => setEditProductStep(item.step)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? 'bg-white text-[#0E8388] shadow-sm border border-slate-200/90 font-black'
+                        : isPassed
+                        ? 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100/80'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-white/60'
+                    }`}
                   >
-                    <option value="perros">🐶 Perros</option>
-                    <option value="gatos">🐱 Gatos</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Marca
-                  </label>
-                  <input
-                    type="text"
-                    value={editingProduct.brand || ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, brand: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Categoría
-                  </label>
-                  <input
-                    type="text"
-                    value={editingProduct.category || ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, category: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Formato & SKU */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Formato / Peso (ej: 12 kg)
-                  </label>
-                  <input
-                    type="text"
-                    value={editingProduct.format || ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, format: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Código SKU
-                  </label>
-                  <input
-                    type="text"
-                    value={editingProduct.sku || ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, sku: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Costo Neto & Precio Venta (PVP) */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Costo Neto Unitario ($ CLP)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={editingProduct.unitCostNeto ?? ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, unitCostNeto: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Precio Venta PVP ($ CLP)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="100"
-                    value={editingProduct.salePrice ?? ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, salePrice: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Margen Estimado Preview */}
-              {Number(editingProduct.salePrice) > 0 && Number(editingProduct.unitCostNeto) > 0 && (
-                <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between text-xs">
-                  <span className="text-emerald-800 font-bold">Margen comercial proyectado:</span>
-                  <span className="font-mono font-black text-emerald-700 text-sm">
-                    +{Math.round(((Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto)) / Number(editingProduct.salePrice)) * 100)}%
-                    <span className="text-[11px] font-medium text-emerald-600 ml-1.5">
-                      ({formatCLP(Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto))} margen bruto)
+                    <span
+                      className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                        isActive
+                          ? 'bg-[#0E8388] text-white'
+                          : isPassed
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {isPassed ? '✓' : item.step}
                     </span>
-                  </span>
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Form Container */}
+            <form onSubmit={handleSaveEditProduct} className="p-6 space-y-4 overflow-y-auto text-xs no-scrollbar flex-1">
+              
+              {/* ======================================================= */}
+              {/* PASO 1: DATOS GENERALES & PRECIOS                       */}
+              {/* ======================================================= */}
+              {editProductStep === 1 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Nombre del Producto */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                      Nombre del Producto *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editingProduct.name || ''}
+                      onChange={(e) => setEditingProduct((prev) => ({ ...prev, name: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Mascota, Marca & Categoría */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Mascota
+                      </label>
+                      <select
+                        value={editingProduct.petType || 'perros'}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, petType: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none cursor-pointer"
+                      >
+                        <option value="perros">🐶 Perros</option>
+                        <option value="gatos">🐱 Gatos</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Marca
+                      </label>
+                      <input
+                        type="text"
+                        value={editingProduct.brand || ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, brand: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Categoría
+                      </label>
+                      <input
+                        type="text"
+                        value={editingProduct.category || ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, category: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Formato & SKU */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Formato / Peso (ej: 12 kg)
+                      </label>
+                      <input
+                        type="text"
+                        value={editingProduct.format || ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, format: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Código SKU <span className="text-slate-400 font-normal lowercase">(opcional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Opcional (dejar vacío si no aplica)"
+                        value={editingProduct.sku || ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, sku: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Costo Neto & Precio Venta (PVP) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Costo Neto Unitario ($ CLP)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={editingProduct.unitCostNeto ?? ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, unitCostNeto: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Precio Venta PVP ($ CLP)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={editingProduct.salePrice ?? ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, salePrice: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Margen Estimado Preview */}
+                  {Number(editingProduct.salePrice) > 0 && Number(editingProduct.unitCostNeto) > 0 && (
+                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between text-xs">
+                      <span className="text-emerald-800 font-bold">Margen comercial proyectado:</span>
+                      <span className="font-mono font-black text-emerald-700 text-sm">
+                        +{Math.round(((Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto)) / Number(editingProduct.salePrice)) * 100)}%
+                        <span className="text-[11px] font-medium text-emerald-600 ml-1.5">
+                          ({formatCLP(Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto))} margen bruto)
+                        </span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Stock Actual & Stock Mínimo */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Stock Físico en Bodega (u.)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingProduct.stock ?? ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, stock: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-black text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Stock Mínimo Crítico (Alerta)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editingProduct.minStock ?? 5}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, minStock: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Visibilidad en Tienda Pública (Pausa) */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900 text-xs">Visibilidad en Tienda Online Pública</div>
+                      <div className="text-[11px] text-slate-500">
+                        {editingProduct.isPaused
+                          ? '⏸️ Producto actualmente oculto en el catálogo público'
+                          : '👁️ Producto visible y disponible para compras'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingProduct((prev) => ({ ...prev, isPaused: !prev.isPaused }))
+                      }
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        editingProduct.isPaused
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      }`}
+                    >
+                      {editingProduct.isPaused ? (
+                        <>
+                          <Pause className="w-3.5 h-3.5 fill-current" />
+                          <span>Pausado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Visible</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Destacado en Carrusel Promocional */}
+                  <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
+                        <span>Aparecer en Carrusel Promocional Web</span>
+                      </div>
+                      <div className="text-[11px] text-amber-800/80">
+                        {editingProduct.inCarousel
+                          ? '⭐ Este producto se mostrará en el banner carrusel superior de la tienda'
+                          : '⚪ Producto no incluido en el carrusel de ofertas'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingProduct((prev) => ({ ...prev, inCarousel: !prev.inCarousel }))
+                      }
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        editingProduct.inCarousel
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{editingProduct.inCarousel ? 'En Carrusel' : 'No incluir'}</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Stock Actual & Stock Mínimo */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Stock Físico en Bodega (u.)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editingProduct.stock ?? ''}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, stock: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-black text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
-                    Stock Mínimo Crítico (Alerta)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={editingProduct.minStock ?? 5}
-                    onChange={(e) => setEditingProduct((prev) => ({ ...prev, minStock: e.target.value }))}
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                </div>
-              </div>
+              {/* ======================================================= */}
+              {/* PASO 2: IMÁGENES PARA EL SITIO WEB PÚBLICO             */}
+              {/* ======================================================= */}
+              {editProductStep === 2 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="p-3 rounded-2xl bg-[#E6F4F1]/60 border border-[#0E8388]/30 flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-white text-[#0E8388] shadow-xs">
+                      <ImageIcon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-xs">Imágenes para la Tienda Web Pública</h4>
+                      <p className="text-[11px] text-slate-600">
+                        La imagen de portada aparecerá en el catálogo general, y la galería adicional en la ficha detallada del producto.
+                      </p>
+                    </div>
+                  </div>
 
-              {/* Visibilidad en Tienda Pública (Pausa) */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div>
-                  <div className="font-bold text-slate-900 text-xs">Visibilidad en Tienda Online Pública</div>
-                  <div className="text-[11px] text-slate-500">
-                    {editingProduct.isPaused
-                      ? '⏸️ Producto actualmente oculto en el catálogo público'
-                      : '👁️ Producto visible y disponible para compras'}
+                  {/* Imagen Principal / Portada */}
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                        Imagen de Portada Principal
+                      </span>
+                      {editingProduct.image && (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          ✓ Foto cargada
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                      {/* Preview Container */}
+                      <div className="w-32 h-32 sm:w-36 sm:h-36 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 flex items-center justify-center p-2 relative overflow-hidden shrink-0 group">
+                        {editingProduct.image ? (
+                          <>
+                            <img
+                              src={editingProduct.image}
+                              alt="Vista previa"
+                              className="w-full h-full object-contain"
+                            />
+                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-[10px] font-black text-white bg-black/60 px-2 py-1 rounded-md">
+                                Portada Web
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center p-2 text-slate-400">
+                            <ImageIcon className="w-8 h-8 mx-auto mb-1 text-slate-300" />
+                            <span className="text-[10px] font-bold block">Sin imagen</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Controles de carga */}
+                      <div className="flex-1 w-full space-y-2.5">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                            Subir desde tu equipo:
+                          </label>
+                          <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-bold text-xs cursor-pointer shadow-xs transition-colors">
+                            <Upload className="w-4 h-4" />
+                            <span>Seleccionar archivo local</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setEditingProduct((prev) => ({ ...prev, image: reader.result }));
+                                };
+                                reader.readAsDataURL(file);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                            O pegar URL web de la imagen:
+                          </label>
+                          <input
+                            type="url"
+                            placeholder="https://images.unsplash.com/..."
+                            value={editingProduct.image || ''}
+                            onChange={(e) => setEditingProduct((prev) => ({ ...prev, image: e.target.value }))}
+                            className="w-full p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-mono focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Galería de Fotos Secundarias */}
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                          Galería de Fotos Adicionales
+                        </span>
+                        <p className="text-[10px] text-slate-500">
+                          Fotos complementarias que se mostrarán en la página de detalle del producto.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {Array.isArray(editingProduct.images) ? editingProduct.images.length : 0} fotos
+                      </span>
+                    </div>
+
+                    {/* Grid de Fotos */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {(editingProduct.images || []).map((imgUrl, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-square rounded-xl bg-slate-50 border border-slate-200 p-1.5 overflow-hidden group shadow-2xs"
+                        >
+                          <img
+                            src={imgUrl}
+                            alt={`Foto ${idx + 1}`}
+                            className="w-full h-full object-contain"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = editingProduct.image;
+                                setEditingProduct((prev) => ({
+                                  ...prev,
+                                  image: imgUrl,
+                                  images: [current, ...prev.images.filter((_, i) => i !== idx)].filter(Boolean),
+                                }));
+                              }}
+                              className="p-1.5 rounded-lg bg-amber-500 text-white hover:bg-amber-600 transition-colors"
+                              title="Convertir en portada principal"
+                            >
+                              <Star className="w-3.5 h-3.5 fill-current" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingProduct((prev) => ({
+                                  ...prev,
+                                  images: prev.images.filter((_, i) => i !== idx),
+                                }));
+                              }}
+                              className="p-1.5 rounded-lg bg-rose-600 text-white hover:bg-rose-700 transition-colors"
+                              title="Eliminar foto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Card para subir archivo adicional */}
+                      <label className="aspect-square rounded-xl border-2 border-dashed border-slate-200 hover:border-[#0E8388] bg-slate-50/60 hover:bg-teal-50/40 transition-colors flex flex-col items-center justify-center p-2 text-center cursor-pointer group">
+                        <Upload className="w-5 h-5 text-slate-400 group-hover:text-[#0E8388] transition-colors mb-1" />
+                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-[#0E8388] leading-tight">
+                          Subir foto
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                images: [...(prev.images || []), reader.result],
+                              }));
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {/* Agregar por URL directa */}
+                    <div className="pt-1 flex items-center gap-2">
+                      <input
+                        type="url"
+                        placeholder="O pegar URL directa de foto adicional..."
+                        value={newGalleryUrlInput}
+                        onChange={(e) => setNewGalleryUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newGalleryUrlInput.trim()) {
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                images: [...(prev.images || []), newGalleryUrlInput.trim()],
+                              }));
+                              setNewGalleryUrlInput('');
+                            }
+                          }
+                        }}
+                        className="flex-1 p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-mono focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newGalleryUrlInput.trim()) {
+                            setEditingProduct((prev) => ({
+                              ...prev,
+                              images: [...(prev.images || []), newGalleryUrlInput.trim()],
+                            }));
+                            setNewGalleryUrlInput('');
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                      >
+                        + Añadir
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingProduct((prev) => ({ ...prev, isPaused: !prev.isPaused }))
-                  }
-                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 ${
-                    editingProduct.isPaused
-                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  }`}
-                >
-                  {editingProduct.isPaused ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5 fill-current" />
-                      <span>Pausado</span>
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Visible</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              )}
 
-              {/* Botones de acción del Modal */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              {/* ======================================================= */}
+              {/* PASO 3: DESCRIPCIÓN DEL PRODUCTO                        */}
+              {/* ======================================================= */}
+              {editProductStep === 3 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200 flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-white text-amber-700 shadow-xs">
+                      <FileText className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-xs">Descripción y Textos Comerciales</h4>
+                      <p className="text-[11px] text-slate-600">
+                        Informa a los clientes sobre las propiedades de la receta, beneficios y distintivos promocionales.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Subtítulo / Tagline Promocional */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                      Subtítulo Promocional / Tagline (Aparece en catálogo y cabecera)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Nutrición 100% completa y balanceada para perros con ingredientes naturales."
+                      value={editingProduct.tagline || ''}
+                      onChange={(e) => setEditingProduct((prev) => ({ ...prev, tagline: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Descripción Completa */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                      Descripción Completa y Modo de Empleo (Ficha Técnica del Producto)
+                    </label>
+                    <textarea
+                      rows={4}
+                      placeholder="Detalla las características de la fórmula, palatabilidad, beneficios de sus ingredientes, modo de conservación..."
+                      value={editingProduct.description || editingProduct.tagline || ''}
+                      onChange={(e) => setEditingProduct((prev) => ({ ...prev, description: e.target.value, tagline: e.target.value }))}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-normal text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Badge Comercial Destacado */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                      Distintivo Comercial Destacado (Badge)
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {[
+                        '⭐ Más Vendido',
+                        '🌿 100% Natural',
+                        '🌾 Sin Granos',
+                        '🩺 Recomendado Vet',
+                        '🔥 Oferta',
+                        '✨ Nuevo',
+                      ].map((b) => (
+                        <button
+                          key={b}
+                          type="button"
+                          onClick={() => setEditingProduct((prev) => ({ ...prev, badge: b }))}
+                          className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            editingProduct.badge === b
+                              ? 'bg-[#0E8388] text-white shadow-xs'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          {b}
+                        </button>
+                      ))}
+                      {editingProduct.badge && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct((prev) => ({ ...prev, badge: '' }))}
+                          className="px-2 py-1 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 transition-colors"
+                        >
+                          ✕ Quitar
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="O escribe un distintivo personalizado..."
+                      value={editingProduct.badge || ''}
+                      onChange={(e) => setEditingProduct((prev) => ({ ...prev, badge: e.target.value }))}
+                      className="w-full p-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none text-xs"
+                    />
+                  </div>
+
+                  {/* Beneficios Clave Nutricionales */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                      Beneficios Clave Nutricionales (Puntos en Ficha Técnica)
+                    </label>
+                    <div className="space-y-1.5 mb-2">
+                      {(editingProduct.benefits || []).map((ben, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800"
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-[#0E8388] font-black">✓</span>
+                            <span>{ben}</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                benefits: prev.benefits.filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Ej: Óptimo desarrollo óseo y muscular..."
+                        value={newBenefitInput}
+                        onChange={(e) => setNewBenefitInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newBenefitInput.trim()) {
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                benefits: [...(prev.benefits || []), newBenefitInput.trim()],
+                              }));
+                              setNewBenefitInput('');
+                            }
+                          }
+                        }}
+                        className="flex-1 p-2 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newBenefitInput.trim()) {
+                            setEditingProduct((prev) => ({
+                              ...prev,
+                              benefits: [...(prev.benefits || []), newBenefitInput.trim()],
+                            }));
+                            setNewBenefitInput('');
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                      >
+                        + Añadir
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ======================================================= */}
+              {/* PASO 4: DATOS TÉCNICOS (LOS 4 CHIPS DE LA 2DA IMAGEN)  */}
+              {/* ======================================================= */}
+              {editProductStep === 4 && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="p-3 rounded-2xl bg-teal-50 border border-teal-200 flex items-center gap-3">
+                    <div className="p-2 rounded-xl bg-white text-[#0E8388] shadow-xs">
+                      <SlidersHorizontal className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-xs">Datos Técnicos Nutricionales</h4>
+                      <p className="text-[11px] text-slate-600">
+                        Estos son los 4 indicadores visuales clave que aparecen bajo la imagen en la tienda pública (Perros y Gatos).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* PREVIEW EN VIVO DE LOS 4 CHIPS IDÉNTICO A LA TIENDA PÚBLICA */}
+                  <div className="p-4 rounded-3xl bg-slate-50/90 border border-slate-200 space-y-2">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block text-center">
+                      Vista Previa en Vivo (Tarjeta Pública):
+                    </span>
+                    <div className="p-3 rounded-2xl bg-white border border-[#0E8388]/20 flex items-center justify-around gap-1 shadow-xs max-w-sm mx-auto">
+                      {/* 1: % Proteína */}
+                      <div className="flex flex-col items-center gap-1 text-center justify-center">
+                        <div className="relative w-11 h-11 flex items-center justify-center">
+                          <svg className="w-11 h-11 -rotate-90 transform" viewBox="0 0 40 40">
+                            <circle cx="20" cy="20" r="14" strokeWidth="3.5" stroke="currentColor" className="text-slate-200" fill="transparent" />
+                            <circle
+                              cx="20"
+                              cy="20"
+                              r="14"
+                              strokeWidth="3.5"
+                              strokeDasharray={2 * Math.PI * 14}
+                              strokeDashoffset={(2 * Math.PI * 14) * (1 - (Number(editingProduct.proteinValue || 30) / 100))}
+                              strokeLinecap="round"
+                              stroke="#0E8388"
+                              fill="transparent"
+                              className="transition-all duration-500"
+                            />
+                          </svg>
+                          <div className="absolute inset-0 flex items-center justify-center text-center">
+                            <span className="text-[10px] font-black text-slate-900 leading-none">
+                              {editingProduct.proteinValue || 30}%
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tight leading-none">
+                          Proteína
+                        </span>
+                      </div>
+
+                      {/* 2: Icono Proteína */}
+                      <div className="flex flex-col items-center gap-1 text-center justify-center">
+                        <div className="w-11 h-11 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs flex items-center justify-center">
+                          {(() => {
+                            const p = (editingProduct.mainProtein || 'Pollo').toLowerCase();
+                            if (p.includes('pollo')) return <Drumstick className="w-5 h-5 text-amber-600" />;
+                            if (p.includes('salmón') || p.includes('salmon') || p.includes('pescado')) return <Fish className="w-5 h-5 text-teal-600" />;
+                            if (p.includes('cordero')) return <Beef className="w-5 h-5 text-amber-700" />;
+                            if (p.includes('multi')) return <Sparkles className="w-5 h-5 text-[#0E8388]" />;
+                            return <Beef className="w-5 h-5 text-red-600" />;
+                          })()}
+                        </div>
+                        <span className="text-[9px] font-black text-slate-800 uppercase tracking-tight leading-none">
+                          {editingProduct.mainProtein || 'Proteína'}
+                        </span>
+                      </div>
+
+                      {/* 3: Grano */}
+                      <div className="flex flex-col items-center gap-1 text-center justify-center">
+                        <div className={`w-11 h-11 rounded-2xl shadow-xs border flex items-center justify-center ${
+                          editingProduct.grainLevel === 'low'
+                            ? 'bg-amber-50 border-amber-200 text-amber-900'
+                            : editingProduct.grainLevel === 'with'
+                            ? 'bg-amber-100 border-amber-300 text-amber-900'
+                            : 'bg-slate-100 border-slate-200 text-slate-500'
+                        }`}>
+                          <Wheat className={`w-5 h-5 ${
+                            editingProduct.grainLevel === 'low'
+                              ? 'text-amber-500'
+                              : editingProduct.grainLevel === 'with'
+                              ? 'text-amber-700'
+                              : 'text-slate-400'
+                          }`} />
+                        </div>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tight leading-none">
+                          {editingProduct.grainLevel === 'low' ? 'BAJO GRANO' : editingProduct.grainLevel === 'with' ? 'CON GRANO' : 'LIBRE GRANO'}
+                        </span>
+                      </div>
+
+                      {/* 4: Vet */}
+                      <div className="flex flex-col items-center gap-1 text-center justify-center">
+                        <div className={`w-11 h-11 rounded-2xl shadow-xs border flex items-center justify-center ${
+                          editingProduct.isVeterinary
+                            ? 'bg-purple-100 border-purple-300 text-purple-900'
+                            : 'bg-slate-100 border-slate-200 text-slate-500'
+                        }`}>
+                          <Stethoscope className={`w-5 h-5 ${
+                            editingProduct.isVeterinary ? 'text-purple-600' : 'text-slate-400'
+                          }`} />
+                        </div>
+                        <span className="text-[9px] font-black text-slate-600 uppercase tracking-tight leading-none">
+                          {editingProduct.isVeterinary ? 'RECETA VET' : 'NO VET'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* FORMULARIO DE EDICIÓN DE CADA MÉTRICA */}
+                  <div className="space-y-3.5">
+                    {/* Métrica 1: Porcentaje de Proteína */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold uppercase text-slate-600">
+                          1. Porcentaje de Proteína (%)
+                        </label>
+                        <span className="font-mono font-black text-[#0E8388] text-sm">
+                          {editingProduct.proteinValue || 30}% Proteína
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min="10"
+                          max="60"
+                          value={editingProduct.proteinValue ?? 30}
+                          onChange={(e) => setEditingProduct((prev) => ({ ...prev, proteinValue: e.target.value }))}
+                          className="w-24 p-2 rounded-xl border border-slate-200 bg-slate-50 font-mono font-black text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none text-center"
+                        />
+                        <div className="flex flex-wrap gap-1.5 flex-1">
+                          {[26, 28, 30, 32, 34, 38].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setEditingProduct((prev) => ({ ...prev, proteinValue: val }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                Number(editingProduct.proteinValue) === val
+                                  ? 'bg-[#0E8388] text-white shadow-xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Métrica 2: Origen de Proteína */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
+                      <label className="text-[10px] font-bold uppercase text-slate-600 block">
+                        2. Origen Principal de la Proteína
+                      </label>
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {[
+                          { label: 'Pollo', icon: Drumstick, color: 'text-amber-600' },
+                          { label: 'Salmón', icon: Fish, color: 'text-teal-600' },
+                          { label: 'Res', icon: Beef, color: 'text-red-600' },
+                          { label: 'Cordero', icon: Beef, color: 'text-amber-700' },
+                          { label: 'Multiproteico', icon: Sparkles, color: 'text-[#0E8388]' },
+                        ].map((item) => {
+                          const IconComp = item.icon;
+                          const isSelected = (editingProduct.mainProtein || 'Pollo').toLowerCase() === item.label.toLowerCase();
+                          return (
+                            <button
+                              key={item.label}
+                              type="button"
+                              onClick={() => setEditingProduct((prev) => ({ ...prev, mainProtein: item.label }))}
+                              className={`p-2 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#0E8388]/10 border-[#0E8388] text-[#0E8388] shadow-xs'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              <IconComp className={`w-4 h-4 ${item.color}`} />
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Métrica 3: Nivel de Grano */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
+                      <label className="text-[10px] font-bold uppercase text-slate-600 block">
+                        3. Nivel de Granos (Cereales)
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { key: 'free', label: '🌾 Libre Grano', desc: '100% Grain Free' },
+                          { key: 'low', label: '🌾 Bajo Grano', desc: 'Low Grain (Arroz)' },
+                          { key: 'with', label: '🌾 Con Grano', desc: 'Cereales estándar' },
+                        ].map((item) => {
+                          const isSelected = (editingProduct.grainLevel || 'free') === item.key;
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => setEditingProduct((prev) => ({ ...prev, grainLevel: item.key }))}
+                              className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-0.5 text-center transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-500/10 border-amber-500 text-amber-900 shadow-xs'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              <span>{item.label}</span>
+                              <span className="text-[9px] text-slate-400 font-normal">{item.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Métrica 4: Línea Veterinaria */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-600 block">
+                            4. Clasificación Veterinaria / Medicada
+                          </label>
+                          <span className="text-[11px] text-slate-500">
+                            {editingProduct.isVeterinary
+                              ? '🩺 Alimento terapéutico (Requiere supervisión veterinaria)'
+                              : '🌿 Nutrición diaria de mantenimiento (Venta libre)'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingProduct((prev) => ({ ...prev, isVeterinary: !prev.isVeterinary }))}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                            editingProduct.isVeterinary
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          <Stethoscope className="w-3.5 h-3.5" />
+                          <span>{editingProduct.isVeterinary ? 'Receta Vet' : 'No Vet'}</span>
+                        </button>
+                      </div>
+
+                      {editingProduct.isVeterinary && (
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-purple-900 block mb-1">
+                            Detalle de prescripción clínica (opcional):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ej: Renal, Hipoalergénico, Urinario, Gastrointestinal..."
+                            value={editingProduct.vetDetail || ''}
+                            onChange={(e) => setEditingProduct((prev) => ({ ...prev, vetDetail: e.target.value }))}
+                            className="w-full p-2 rounded-xl border border-purple-200 bg-purple-50/50 text-purple-950 font-bold focus:bg-white focus:border-purple-500 focus:outline-none text-xs"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Etapa de Vida */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
+                      <label className="text-[10px] font-bold uppercase text-slate-600 block">
+                        5. Etapa de Vida Destinada
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { key: 'cachorro', label: '🐾 Cachorro / Gatito' },
+                          { key: 'adulto', label: '🐕 Adulto' },
+                          { key: 'senior', label: '🦺 Senior / Mayor' },
+                        ].map((item) => {
+                          const isSelected = (editingProduct.lifeStage || 'adulto') === item.key;
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => setEditingProduct((prev) => ({ ...prev, lifeStage: item.key }))}
+                              className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#0E8388] text-white shadow-xs border-[#0E8388]'
+                                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Botones de acción del Modal (Navegación Stepper + Guardar) */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setEditingProduct(null)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+                  onClick={() => {
+                    setEditingProduct(null);
+                    setEditProductStep(1);
+                  }}
+                  disabled={isSavingProduct}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer disabled:opacity-40 text-xs"
                 >
                   Cancelar
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-black shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Guardar Cambios</span>
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {editProductStep > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditProductStep((prev) => Math.max(1, prev - 1))}
+                      disabled={isSavingProduct}
+                      className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer flex items-center gap-1.5 text-xs"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Anterior</span>
+                    </button>
+                  )}
+
+                  {editProductStep < 4 ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditProductStep((prev) => Math.min(4, prev + 1))}
+                      className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold transition-colors cursor-pointer flex items-center gap-1.5 text-xs shadow-sm"
+                    >
+                      <span>Siguiente</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="submit"
+                    disabled={isSavingProduct}
+                    className="px-5 py-2.5 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-black shadow-md transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-75 disabled:cursor-wait text-xs"
+                  >
+                    {isSavingProduct ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Guardando en Backend...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Guardar Cambios</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* ======================================================= */}
+      {/* POP-UP: DETALLE DE FACTURA ELECTRÓNICA (FORMATO OFICIAL) */}
+      {/* ======================================================= */}
+      {selectedInvoiceModal && (() => {
+        const invItems = resolveInvoiceItems(selectedInvoiceModal, inventory);
+        const invNumber = selectedInvoiceModal.invoiceNumber || selectedInvoiceModal.id;
+        const isPaid = (selectedInvoiceModal.status || '').toLowerCase() === 'pagada' || (selectedInvoiceModal.status || '').toLowerCase() === 'pagado';
+        const isOverdue = (selectedInvoiceModal.status || '').toLowerCase() === 'vencida';
+        const totalUnits = invItems.reduce((acc, it) => acc + (it.qty || 1), 0);
+
+        return (
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+            onClick={() => setSelectedInvoiceModal(null)}
+          >
+            <div
+              className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header Toolbar del Pop-up */}
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-[#0E8388] flex items-center justify-center shadow-2xs">
+                    <Receipt className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900">
+                        Detalle de Factura
+                      </h3>
+                      <span className="font-mono text-xs font-bold text-[#0E8388] bg-teal-50 px-2 py-0.5 rounded-lg border border-teal-200/60">
+                        #{invNumber}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Documento Tributario Electrónico (DTE) • Compra y reposición de stock
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditInvoice(selectedInvoiceModal)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-800 hover:bg-amber-100 text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                    title="Editar productos y costo de transporte"
+                  >
+                    <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Editar</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                    title="Imprimir o guardar comprobante"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Imprimir</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInvoiceModal(null)}
+                    className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    title="Cerrar"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Hoja de Factura Oficial Ordenada */}
+              <div className="p-6 sm:p-8 overflow-y-auto flex-1 space-y-6 text-xs text-slate-800 bg-white no-scrollbar">
+                
+                {/* 1. Encabezado DTE: Emisor & Recuadro Rojo Oficial SII */}
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-200">
+                  {/* Datos Proveedor Emisor */}
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
+                      <Building2 className="w-3 h-3" />
+                      <span>Proveedor Emisor</span>
+                    </div>
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
+                      {selectedInvoiceModal.provider || 'Proveedor Autorizado'}
+                    </h2>
+                    <div className="space-y-0.5 text-[11px] text-slate-600 font-medium">
+                      <p>
+                        <span className="text-slate-400 font-normal">R.U.T.:</span>{' '}
+                        <strong className="font-mono font-bold text-slate-900">
+                          {selectedInvoiceModal.rut || '78.920.800-K'}
+                        </strong>
+                      </p>
+                      <p>
+                        <span className="text-slate-400 font-normal">Giro:</span> Distribución Mayorista de Alimentos y Artículos para Mascotas
+                      </p>
+                      <p>
+                        <span className="text-slate-400 font-normal">Ciudad:</span> Puerto Varas, Región de Los Lagos
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Recuadro Rojo de Factura Electrónica Chilena */}
+                  <div className="border-2 border-red-600 rounded-2xl p-4 text-center bg-red-50/20 text-red-700 min-w-[210px] shrink-0 shadow-2xs self-center sm:self-start">
+                    <div className="font-mono font-bold text-xs text-red-800 tracking-wide">
+                      R.U.T.: {selectedInvoiceModal.rut || '78.920.800-K'}
+                    </div>
+                    <div className="font-black text-xs uppercase tracking-wider text-red-600 my-1 py-1 border-y border-red-600/30">
+                      FACTURA ELECTRÓNICA
+                    </div>
+                    <div className="font-mono text-xl font-black text-red-700">
+                      N° {invNumber}
+                    </div>
+                    <div className="text-[9px] font-bold text-red-500 uppercase tracking-widest mt-1">
+                      S.I.I. - PUERTO MONTT
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Datos del Receptor y Fechas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 text-xs">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
+                      Receptor / Adquiriente:
+                    </span>
+                    <p className="font-black text-slate-900 text-sm">Patitas del Sur SpA</p>
+                    <p className="text-slate-600 text-[11px]">
+                      <span className="text-slate-400 font-normal">R.U.T.:</span> <span className="font-mono font-bold text-slate-800">77.654.321-8</span>
+                    </p>
+                    <p className="text-slate-600 text-[11px]">
+                      <span className="text-slate-400 font-normal">Giro:</span> Venta al por menor de alimentos y accesorios para mascotas
+                    </p>
+                    <p className="text-slate-600 text-[11px]">
+                      <span className="text-slate-400 font-normal">Dirección:</span> Puerto Varas, Chile
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 sm:border-l sm:border-slate-200 sm:pl-4">
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
+                      Condiciones del Documento:
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Fecha Emisión:</span>
+                        <span className="font-mono font-bold text-slate-800 text-[11px]">
+                          {formatCLPDate(selectedInvoiceModal.date)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Fecha Vencimiento:</span>
+                        <span className="font-mono font-bold text-slate-800 text-[11px]">
+                          {formatCLPDate(selectedInvoiceModal.dueDate || selectedInvoiceModal.date)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Forma de Pago:</span>
+                        <span className="font-bold text-slate-700 text-[11px]">
+                          {selectedInvoiceModal.paymentMethod || 'Crédito Proveedor'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-[10px] block">Estado Factura:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleInvoiceStatus(invNumber)}
+                          className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border mt-0.5 inline-flex items-center gap-1 cursor-pointer transition-all hover:scale-105 ${
+                            isPaid
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : isOverdue
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
+                          }`}
+                          title="Clic para cambiar estado Pagada / Pendiente"
+                        >
+                          <span>●</span>
+                          <span>{selectedInvoiceModal.status || 'pendiente'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bloque Informativo: Flete / Transporte Asociado al Pedido */}
+                {(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || (parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0) > 0) && (() => {
+                  const sNeto = parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0;
+                  const sMethod = selectedInvoiceModal.shippingDistributionMethod || selectedInvoiceModal.shipping_distribution_method || 'units';
+                  const sInvNum = selectedInvoiceModal.shippingInvoiceNumber || selectedInvoiceModal.shipping_invoice_number;
+                  const sProv = selectedInvoiceModal.shippingProvider || selectedInvoiceModal.shipping_provider;
+
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-teal-50/90 border border-teal-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-white border border-teal-200 text-[#0E8388] flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+                          <Truck className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-slate-900 text-xs">
+                              Transporte y Despacho Asociado al Pedido
+                            </span>
+                            {sInvNum && (
+                              <span className="font-mono text-[10px] font-bold text-[#0E8388] bg-white px-2 py-0.5 rounded-md border border-teal-200 shadow-2xs">
+                                DTE Flete #{sInvNum}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            Transportista: <strong className="text-slate-800">{sProv || 'Transporte externo'}</strong> • Monto neto flete:{' '}
+                            <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> (incorporado al costo unitario en inventario)
+                          </p>
+                        </div>
+                      </div>
+                      <div className="sm:text-right shrink-0 bg-white/70 sm:bg-transparent p-2 sm:p-0 rounded-xl">
+                        <span className="text-[9px] font-bold uppercase text-slate-400 block tracking-wider">Criterio Prorrateo</span>
+                        <span className="text-[11px] font-bold text-[#0E8388]">
+                          {sMethod === 'value' ? 'Por Valor Neto' : 'Equitativo por Unidades'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. Tabla Detallada de Productos (Requerimiento Principal) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider">
+                      Detalle de Productos, Unidades & Costos Netos
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                      {invItems.length} ítems en factura • {totalUnits} unidades
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100/90 text-slate-600 uppercase tracking-wider text-[10px] border-b border-slate-200">
+                        <tr>
+                          <th className="py-2.5 px-3 text-center w-10">#</th>
+                          <th className="py-2.5 px-3">Descripción del Producto</th>
+                          <th className="py-2.5 px-3 text-center">Formato / Peso</th>
+                          <th className="py-2.5 px-3 text-center">Cantidad</th>
+                          <th className="py-2.5 px-3 text-right">
+                            {(selectedInvoiceModal.hasShippingCost || (parseFloat(selectedInvoiceModal.shippingCostNeto) || 0) > 0)
+                              ? 'Costo Unit. (Neto + Flete)'
+                              : 'Costo Unitario (Neto)'}
+                          </th>
+                          <th className="py-2.5 px-3 text-right">Subtotal Neto</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {invItems.map((it) => (
+                          <tr key={it.index} className="hover:bg-slate-50/70 transition-colors">
+                            <td className="py-2.5 px-3 text-center text-slate-400 font-mono font-bold text-[10px]">
+                              {it.index}
+                            </td>
+                            <td className="py-2.5 px-3 font-bold text-slate-900">
+                              {it.name}
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-mono font-semibold">
+                                {it.format}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center font-mono font-black text-slate-800">
+                              <span className="inline-flex items-center gap-1 text-[#0E8388] font-bold">
+                                {it.qty} un.
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono">
+                              {it.unitShippingCost > 0 ? (
+                                <div>
+                                  <div className="font-black text-slate-900">{formatCLP(it.landedUnitNeto || it.unitNeto)}</div>
+                                  <div className="text-[9px] text-slate-400 font-normal">
+                                    Prov: {formatCLP(it.supplierUnitNeto)} <span className="text-[#0E8388] font-bold">(+{formatCLP(it.unitShippingCost)} flete)</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="font-semibold text-slate-700">{formatCLP(it.unitNeto)}</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
+                              {formatCLP(it.subtotalNeto)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 4. Pie de Factura: Timbre SII y Totales */}
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-2 border-t border-slate-200">
+                  {/* Timbre Electrónico DTE simulado */}
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-[10px] text-slate-500 space-y-1.5 max-w-xs shrink-0 text-center sm:text-left">
+                    <div className="flex items-center justify-center sm:justify-start gap-1 font-bold text-slate-700">
+                      <span>🛡️ Timbre Electrónico SII</span>
+                    </div>
+                    {/* Barras DTE */}
+                    <div className="h-6 bg-slate-900/10 rounded flex items-center justify-around px-2 overflow-hidden opacity-70">
+                      {Array.from({ length: 30 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="h-full bg-slate-800"
+                          style={{ width: `${(i % 3) + 1}px` }}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-mono leading-tight">
+                      Res. N° 80 de 2014 • Verifique documento en www.sii.cl
+                    </p>
+                  </div>
+
+                  {/* Resumen Financiero de Totales */}
+                  {(() => {
+                    const sNeto = parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0;
+                    const hasShipping = Boolean(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || sNeto > 0);
+
+                    return (
+                      <div className="w-full sm:w-80 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-2">
+                        <div className="flex items-center justify-between text-xs text-slate-600">
+                          <span>Monto Neto Mercadería:</span>
+                          <span className="font-mono font-bold text-slate-900">
+                            {formatCLP(selectedInvoiceModal.totalNeto || selectedInvoiceModal.neto)}
+                          </span>
+                        </div>
+                        {hasShipping && sNeto > 0 && (
+                          <div className="flex items-center justify-between text-xs text-[#0E8388] font-medium">
+                            <span className="flex items-center gap-1">
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Flete Neto Asociado:</span>
+                            </span>
+                            <span className="font-mono font-bold">
+                              +{formatCLP(sNeto)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
+                          <span>IVA Crédito Fiscal (19%):</span>
+                          <span className="font-mono font-bold">
+                            +{formatCLP(selectedInvoiceModal.iva)}
+                          </span>
+                        </div>
+                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                          <span className="font-black text-slate-900 text-sm">TOTAL FACTURA PROVEEDOR:</span>
+                          <span className="font-black font-mono text-base sm:text-lg text-slate-900">
+                            {formatCLP(selectedInvoiceModal.totalBruto || selectedInvoiceModal.total)}
+                          </span>
+                        </div>
+                        {hasShipping && sNeto > 0 && (
+                          <div className="pt-1.5 border-t border-dashed border-teal-200/80 flex items-center justify-between text-[11px] text-teal-800">
+                            <span className="font-bold">Total Desembolso (con flete):</span>
+                            <span className="font-mono font-black text-slate-900 text-xs">
+                              {formatCLP((selectedInvoiceModal.totalBruto || selectedInvoiceModal.total) + sNeto)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+              </div>
+
+              {/* Footer con Acciones */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                  📦 {totalUnits} unidades registradas en inventario físico
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInvoiceModal(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Imprimir Factura</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ======================================================= */}
+      {/* MODAL: EDITAR PRODUCTOS Y COSTO DE TRANSPORTE DE FACTURA */}
+      {/* ======================================================= */}
+      {editingInvoiceModal && (() => {
+        const hasShipping = Boolean(editingInvoiceModal.hasShippingCost);
+        const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(editingInvoiceModal.shippingCostNeto, 10) || 0) : 0;
+        const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'units';
+
+        const totalQuantity = editingInvoiceModal.items.reduce((acc, it) => acc + (Math.max(1, parseInt(it.qty, 10) || 1)), 0);
+        const totalNetoMercaderia = editingInvoiceModal.items.reduce((acc, it) => {
+          const q = Math.max(1, parseInt(it.qty, 10) || 1);
+          const u = Math.max(0, parseInt(it.unitNeto, 10) || 0);
+          return acc + q * u;
+        }, 0);
+
+        const calculatedIva = Math.round(totalNetoMercaderia * 0.19);
+        const calculatedTotalBruto = totalNetoMercaderia + calculatedIva;
+        const totalConFlete = calculatedTotalBruto + (hasShipping ? shippingFeeNeto : 0);
+
+        return (
+          <div
+            className="fixed inset-0 z-60 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
+            onClick={() => {
+              if (!isSavingInvoice) setEditingInvoiceModal(null);
+            }}
+          >
+            <div
+              className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-6 py-4 bg-gradient-to-r from-amber-500/10 via-slate-50 to-teal-500/10 border-b border-slate-200 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <Edit2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-black text-slate-900">
+                        Editar Productos & Costo de Transporte
+                      </h3>
+                      <span className="font-mono text-xs font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-300">
+                        #{editingInvoiceModal.invoiceNumber}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Actualiza los productos, cantidades, costos unitarios netos y asigna el flete de la factura
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isSavingInvoice}
+                  onClick={() => setEditingInvoiceModal(null)}
+                  className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                  title="Cerrar sin guardar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Datalist para autocompletar nombres de productos del inventario */}
+              <datalist id="edit-invoice-product-options">
+                {(inventory || []).map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.brand ? `${p.brand} - ` : ''}{p.format || (Array.isArray(p.weights) ? p.weights[0] : '')}
+                  </option>
+                ))}
+              </datalist>
+
+              {/* Contenido Scrollable */}
+              <div className="p-6 sm:p-8 overflow-y-auto flex-1 space-y-6 text-xs text-slate-800 bg-white no-scrollbar">
+                
+                {/* 1. Datos Generales de la Factura (Informativo / Resumen) */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Proveedor</span>
+                    <strong className="text-slate-900 font-black text-xs block truncate">{editingInvoiceModal.provider || 'Proveedor'}</strong>
+                    <span className="font-mono text-[10px] text-slate-500">{editingInvoiceModal.rut || 'RUT S/N'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Fecha Emisión</span>
+                    <span className="font-mono font-bold text-slate-800 text-xs">{formatCLPDate(editingInvoiceModal.date)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Forma de Pago</span>
+                    <span className="font-bold text-slate-700 text-xs">{editingInvoiceModal.paymentMethod || 'Crédito'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Estado Actual</span>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border mt-0.5 ${
+                      editingInvoiceModal.status === 'pagada'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {editingInvoiceModal.status || 'pendiente'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Sección: Detalle de Productos de la Factura */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-amber-600" />
+                        <span>Detalle de Productos en Factura</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Edita nombre, formato/peso, cantidad y costo unitario neto acordado con el proveedor
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddEditInvoiceItem}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer self-start sm:self-auto"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Agregar Producto</span>
+                    </button>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100/90 text-slate-600 uppercase tracking-wider text-[10px] border-b border-slate-200">
+                          <tr>
+                            <th className="py-2.5 px-2 text-center w-8">#</th>
+                            <th className="py-2.5 px-3 min-w-[220px]">Descripción del Producto</th>
+                            <th className="py-2.5 px-2 text-center min-w-[100px]">Formato / Peso</th>
+                            <th className="py-2.5 px-2 text-center w-20">Cantidad</th>
+                            <th className="py-2.5 px-2 text-right min-w-[110px]">Costo Unit. (Neto)</th>
+                            {hasShipping && shippingFeeNeto > 0 && (
+                              <th className="py-2.5 px-2 text-right min-w-[110px] text-[#0E8388]">
+                                + Flete Unit.
+                              </th>
+                            )}
+                            {hasShipping && shippingFeeNeto > 0 && (
+                              <th className="py-2.5 px-2 text-right min-w-[120px] text-emerald-800">
+                                Costo Final (Neto)
+                              </th>
+                            )}
+                            <th className="py-2.5 px-3 text-right min-w-[110px]">Subtotal Neto</th>
+                            <th className="py-2.5 px-2 text-center w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {editingInvoiceModal.items.map((it, idx) => {
+                            const q = Math.max(1, parseInt(it.qty, 10) || 1);
+                            const u = Math.max(0, parseInt(it.unitNeto, 10) || 0);
+                            const lineNeto = q * u;
+
+                            let unitShippingCost = 0;
+                            if (hasShipping && shippingFeeNeto > 0) {
+                              if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
+                                unitShippingCost = Math.round(((lineNeto / totalNetoMercaderia) * shippingFeeNeto) / q);
+                              } else if (totalQuantity > 0) {
+                                unitShippingCost = Math.round(shippingFeeNeto / totalQuantity);
+                              }
+                            }
+                            const landedCost = u + unitShippingCost;
+
+                            return (
+                              <tr key={it.tempId} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="py-2.5 px-2 text-center text-slate-400 font-mono font-bold text-[10px]">
+                                  {idx + 1}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <input
+                                    type="text"
+                                    list="edit-invoice-product-options"
+                                    value={it.name}
+                                    placeholder="Nombre del producto..."
+                                    onChange={(e) => handleUpdateEditInvoiceItem(it.tempId, 'name', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 text-xs font-bold text-slate-900 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-2">
+                                  <input
+                                    type="text"
+                                    value={it.format}
+                                    placeholder="10 kg, 12 kg..."
+                                    onChange={(e) => handleUpdateEditInvoiceItem(it.tempId, 'format', e.target.value)}
+                                    className="w-full text-center px-2 py-1.5 text-xs font-mono font-medium text-slate-700 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-2">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={it.qty}
+                                    onChange={(e) => handleUpdateEditInvoiceItem(it.tempId, 'qty', e.target.value)}
+                                    className="w-full text-center px-2 py-1.5 text-xs font-mono font-black text-slate-900 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                                  />
+                                </td>
+                                <td className="py-2.5 px-2">
+                                  <div className="relative">
+                                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">$</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={it.unitNeto}
+                                      onChange={(e) => handleUpdateEditInvoiceItem(it.tempId, 'unitNeto', e.target.value)}
+                                      className="w-full text-right pl-6 pr-2.5 py-1.5 text-xs font-mono font-bold text-slate-900 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none"
+                                    />
+                                  </div>
+                                </td>
+                                {hasShipping && shippingFeeNeto > 0 && (
+                                  <td className="py-2.5 px-2 text-right font-mono font-bold text-[#0E8388]">
+                                    +{formatCLP(unitShippingCost)}
+                                  </td>
+                                )}
+                                {hasShipping && shippingFeeNeto > 0 && (
+                                  <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-800">
+                                    {formatCLP(landedCost)}
+                                  </td>
+                                )}
+                                <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
+                                  {formatCLP(lineNeto)}
+                                </td>
+                                <td className="py-2.5 px-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveEditInvoiceItem(it.tempId)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Eliminar producto"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Sección: Costo de Transporte / Flete (REQUERIMIENTO CLAVE) */}
+                <div className="rounded-2xl border-2 border-teal-500/30 bg-teal-50/40 p-5 space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={hasShipping}
+                        onChange={(e) =>
+                          setEditingInvoiceModal((prev) => ({
+                            ...prev,
+                            hasShippingCost: e.target.checked,
+                          }))
+                        }
+                        className="w-4 h-4 rounded text-[#0E8388] focus:ring-teal-500 border-slate-300 cursor-pointer"
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <Truck className="w-4 h-4 text-[#0E8388]" />
+                        <span className="font-black text-slate-900 text-xs sm:text-sm">
+                          Asignar Costo de Transporte / Flete a esta Factura
+                        </span>
+                      </div>
+                    </label>
+                    <span className="text-[10px] text-teal-800 bg-teal-100 px-2.5 py-0.5 rounded-full font-bold">
+                      {hasShipping ? 'Flete Activo' : 'Sin Flete'}
+                    </span>
+                  </div>
+
+                  {hasShipping && (
+                    <div className="pt-3 border-t border-teal-200/80 space-y-4 animate-in fade-in duration-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">
+                            Costo de Transporte Neto ($) *
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">$</span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={
+                                editingInvoiceModal.shippingCostNeto === '' || editingInvoiceModal.shippingCostNeto === 0
+                                  ? ''
+                                  : String(editingInvoiceModal.shippingCostNeto).replace(/^0+/, '')
+                              }
+                              placeholder="Ej: 15000"
+                              onChange={(e) => {
+                                const rawVal = e.target.value.replace(/\D/g, '');
+                                setEditingInvoiceModal((prev) => ({
+                                  ...prev,
+                                  shippingCostNeto: rawVal === '' ? '' : parseInt(rawVal, 10),
+                                }));
+                              }}
+                              className="w-full pl-7 pr-3 py-2 text-xs font-mono font-bold text-slate-900 bg-white border border-teal-300 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">
+                            Empresa Transportista
+                          </label>
+                          <input
+                            type="text"
+                            value={editingInvoiceModal.shippingProvider}
+                            placeholder="Ej: Starken, Chilexpress, Camión..."
+                            onChange={(e) =>
+                              setEditingInvoiceModal((prev) => ({
+                                ...prev,
+                                shippingProvider: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 text-xs font-medium text-slate-900 bg-white border border-teal-300 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">
+                            N° DTE / Factura Flete (Opcional)
+                          </label>
+                          <input
+                            type="text"
+                            value={editingInvoiceModal.shippingInvoiceNumber}
+                            placeholder="Ej: 12480"
+                            onChange={(e) =>
+                              setEditingInvoiceModal((prev) => ({
+                                ...prev,
+                                shippingInvoiceNumber: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono font-medium text-slate-900 bg-white border border-teal-300 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Método de Distribución del Flete */}
+                      <div className="p-3.5 rounded-xl bg-white border border-teal-200/90 space-y-2">
+                        <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider block">
+                          Criterio de Distribución del Flete en los Costos Unitarios:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <label
+                            className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                              shippingMethod === 'units'
+                                ? 'bg-teal-50 border-[#0E8388] text-slate-900 shadow-2xs'
+                                : 'bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="editShippingMethod"
+                              checked={shippingMethod === 'units'}
+                              onChange={() =>
+                                setEditingInvoiceModal((prev) => ({
+                                  ...prev,
+                                  shippingDistributionMethod: 'units',
+                                }))
+                              }
+                              className="mt-0.5 text-[#0E8388] focus:ring-teal-500 cursor-pointer"
+                            />
+                            <div>
+                              <strong className="block text-xs font-black text-slate-900">
+                                Equitativo por Unidades (Recomendado)
+                              </strong>
+                              <span className="text-[10px] text-slate-500">
+                                Divide el flete neto ({formatCLP(shippingFeeNeto)}) en partes iguales entre las {totalQuantity} unidades ({totalQuantity > 0 ? formatCLP(Math.round(shippingFeeNeto / totalQuantity)) : '$0'} por unidad).
+                              </span>
+                            </div>
+                          </label>
+
+                          <label
+                            className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                              shippingMethod === 'value'
+                                ? 'bg-teal-50 border-[#0E8388] text-slate-900 shadow-2xs'
+                                : 'bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="editShippingMethod"
+                              checked={shippingMethod === 'value'}
+                              onChange={() =>
+                                setEditingInvoiceModal((prev) => ({
+                                  ...prev,
+                                  shippingDistributionMethod: 'value',
+                                }))
+                              }
+                              className="mt-0.5 text-[#0E8388] focus:ring-teal-500 cursor-pointer"
+                            />
+                            <div>
+                              <strong className="block text-xs font-black text-slate-900">
+                                Proporcional por Valor Neto ($)
+                              </strong>
+                              <span className="text-[10px] text-slate-500">
+                                Los productos más caros de la factura absorben mayor porcentaje del flete según su participación en el subtotal.
+                              </span>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Resumen Financiero Recalculado en Vivo */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-2">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
+                    Resumen Financiero Recalculado:
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                      <span className="text-slate-400 text-[10px] block">Total Unidades</span>
+                      <strong className="font-mono text-slate-900 font-black text-sm">{totalQuantity} un.</strong>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                      <span className="text-slate-400 text-[10px] block">Neto Mercadería</span>
+                      <strong className="font-mono text-slate-900 font-bold text-xs">{formatCLP(totalNetoMercaderia)}</strong>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                      <span className="text-[#0E8388] text-[10px] font-bold block">Flete Neto</span>
+                      <strong className="font-mono text-[#0E8388] font-bold text-xs">+{formatCLP(shippingFeeNeto)}</strong>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
+                      <span className="text-emerald-700 text-[10px] font-bold block">IVA (19%)</span>
+                      <strong className="font-mono text-emerald-800 font-bold text-xs">+{formatCLP(calculatedIva)}</strong>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-300 col-span-2 sm:col-span-1 shadow-2xs">
+                      <span className="text-slate-500 text-[10px] font-black uppercase block">Total Factura</span>
+                      <strong className="font-mono text-slate-950 font-black text-sm">{formatCLP(calculatedTotalBruto)}</strong>
+                    </div>
+                  </div>
+                  {hasShipping && shippingFeeNeto > 0 && (
+                    <div className="text-right text-[11px] text-teal-800 font-medium pt-1">
+                      Total Desembolso (Factura + Flete): <strong className="font-mono font-black text-slate-900">{formatCLP(totalConFlete)}</strong>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Footer con Botones */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                  💡 Los cambios actualizarán la factura y se recalcularán los costos unitarios en inventario.
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    disabled={isSavingInvoice}
+                    onClick={() => setEditingInvoiceModal(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingInvoice}
+                    onClick={handleSaveEditedInvoice}
+                    className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black text-xs shadow-xs transition-all cursor-pointer flex items-center gap-2 hover:scale-[1.02]"
+                  >
+                    {isSavingInvoice ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Guardando Cambios...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Guardar Cambios</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ======================================================= */}
       {/* POP-UP: CONFIRMAR ELIMINACIÓN DE PRODUCTO               */}
@@ -14350,16 +21923,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                      Fecha del Gasto
-                    </label>
-                    <input
-                      type="date"
+                    <AdminDatePicker
+                      label="Fecha del Gasto"
                       value={newExpenseForm.date}
-                      onChange={(e) =>
-                        setNewExpenseForm((prev) => ({ ...prev, date: e.target.value }))
+                      onChange={(newDate) =>
+                        setNewExpenseForm((prev) => ({ ...prev, date: newDate }))
                       }
-                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
                     />
                   </div>
 
@@ -14369,7 +21938,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </label>
                     <input
                       type="number"
-                      step="500"
+                      step="any"
                       min="1"
                       placeholder="Ej: 35000"
                       value={newExpenseForm.amount}
@@ -14445,6 +22014,365 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           </div>
         );
       })()}
+
+      {/* ======================================================= */}
+      {/* POP-UP: REGISTRAR INVERSIÓN / APORTE DE SOCIO           */}
+      {/* ======================================================= */}
+      {isAddInvestmentModalOpen && (() => {
+        const rawAmount = parseInt(String(newInvestmentForm.amount).replace(/\D/g, ''), 10) || 0;
+        const currentPartner = (newInvestmentForm.partnerName || user?.name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerto' : 'Ignacio Alarcón')).trim();
+
+        // Formateo automático de monto con punto de miles chileno
+        const handleAmountInputChange = (e) => {
+          const rawDigits = e.target.value.replace(/\D/g, '');
+          if (!rawDigits) {
+            setNewInvestmentForm((prev) => ({ ...prev, amount: '' }));
+            return;
+          }
+          const formatted = rawDigits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+          setNewInvestmentForm((prev) => ({ ...prev, amount: formatted }));
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 my-8">
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50/90 via-teal-50/40 to-white">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Registrar Inversión de Socio</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    Ingreso de capital a la sociedad
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddInvestmentModalOpen(false)}
+                  className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Form */}
+              <form onSubmit={handleSaveNewInvestment} className="p-6 space-y-4 text-xs">
+                {/* 1. Nombre del Socio (Selector de socios) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      Nombre del Socio <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      {currentPartner}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['Alamiro Huerto', 'Ignacio Alarcón'].map((pName) => {
+                      const isSelected = currentPartner === pName;
+                      return (
+                        <button
+                          key={pName}
+                          type="button"
+                          onClick={() => setNewInvestmentForm((prev) => ({ ...prev, partnerName: pName }))}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-xs scale-[1.01]'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <User className="w-3.5 h-3.5 shrink-0" />
+                          <span>{pName}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. Monto Ingresado ($ CLP con punto automático) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      Monto Ingresado ($ CLP) <span className="text-rose-500">*</span>
+                    </label>
+                    {rawAmount > 0 && (
+                      <span className="text-xs font-mono font-black text-emerald-700">
+                        {formatCLP(rawAmount)}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-mono font-bold text-slate-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      autoFocus
+                      value={newInvestmentForm.amount}
+                      onChange={handleAmountInputChange}
+                      placeholder="5.000.000"
+                      className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-base font-mono font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all placeholder:text-slate-300"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. Fecha de Ingreso */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                    Fecha de Ingreso <span className="text-rose-500">*</span>
+                  </label>
+                  <AdminDatePicker
+                    value={newInvestmentForm.date}
+                    onChange={(val) => setNewInvestmentForm((prev) => ({ ...prev, date: val }))}
+                    placeholder="DD/MM/AAAA"
+                  />
+                </div>
+
+                {/* 4. Opciones: Capital Inicial o Aumento de Capital (Sin iconos) */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                    Concepto de Aporte
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewInvestmentForm((prev) => ({ ...prev, investmentType: 'capital_inicial' }))}
+                      className={`py-2.5 px-3 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                        newInvestmentForm.investmentType === 'capital_inicial'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      Capital Inicial
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewInvestmentForm((prev) => ({ ...prev, investmentType: 'aumento_capital' }))}
+                      className={`py-2.5 px-3 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                        newInvestmentForm.investmentType === 'aumento_capital'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                          : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      Aumento de Capital
+                    </button>
+                  </div>
+                </div>
+
+                {/* Resumen visual limpio */}
+                <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200/80 flex items-center justify-between text-xs mt-2">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] font-extrabold uppercase text-emerald-800 block">
+                      Total a Registrar
+                    </span>
+                    <span className="text-[11px] text-emerald-700">
+                      Socio: <strong>{currentPartner}</strong> ({newInvestmentForm.investmentType === 'aumento_capital' ? 'Aumento de Capital' : 'Capital Inicial'})
+                    </span>
+                  </div>
+                  <div className="text-base font-black text-emerald-900 font-mono">
+                    +{formatCLP(rawAmount)}
+                  </div>
+                </div>
+
+                {/* Modal Buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddInvestmentModalOpen(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black shadow-md shadow-emerald-600/20 transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+                  >
+                    <span>Guardar Inversión</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ======================================================= */}
+      {/* MODAL: CONFIRMACIÓN DE PAGO AL ENTREGAR PEDIDO          */}
+      {/* ======================================================= */}
+      {paymentDeliveryConfirmModal && (() => {
+        const { order, paymentMethod } = paymentDeliveryConfirmModal;
+        const totalFormatted = formatCLP(order.total || 0);
+        const pointsToEarn = order.pointsEarned ?? Math.floor((order.total || 0) / 1000);
+
+        return (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
+              
+              {/* Header */}
+              <div className="p-6 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-100 flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shadow-xs shrink-0">
+                    <DollarSign className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">
+                      Confirmar Pago para Entrega
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Pedido <strong>{order.id}</strong> · {order.customer || order.customerName || 'Cliente'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaymentDeliveryConfirmModal(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                
+                {/* Total box */}
+                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">
+                      Monto a confirmar
+                    </span>
+                    <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
+                      {totalFormatted}
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                    <Clock className="w-3 h-3 text-amber-700" />
+                    Pago Pendiente
+                  </span>
+                </div>
+
+                {/* Explicación clara */}
+                <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                  Este pedido aún no figura como pagado (no fue abonado vía Mercado Pago online). Para marcarlo como <strong>Entregado</strong>, confirma que fue recibida la transferencia o el efectivo:
+                </p>
+
+                {/* Selector de Método de Pago */}
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    ¿Cómo fue recibido el pago?
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Opción 1: Transferencia */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentDeliveryConfirmModal((prev) => ({ ...prev, paymentMethod: 'Transferencia' }))}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                        paymentMethod === 'Transferencia'
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          paymentMethod === 'Transferencia' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <Landmark className="w-4 h-4" />
+                        </div>
+                        {paymentMethod === 'Transferencia' && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">✓</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-black text-xs text-slate-900">Transferencia</div>
+                        <div className="text-[10px] text-slate-500 font-medium">Recibida y verificada en cuenta bancaria</div>
+                      </div>
+                    </button>
+
+                    {/* Opción 2: Efectivo */}
+                    <button
+                      type="button"
+                      onClick={() => setPaymentDeliveryConfirmModal((prev) => ({ ...prev, paymentMethod: 'Efectivo' }))}
+                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                        paymentMethod === 'Efectivo'
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                          paymentMethod === 'Efectivo' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          <Banknote className="w-4 h-4" />
+                        </div>
+                        {paymentMethod === 'Efectivo' && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">✓</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-black text-xs text-slate-900">Efectivo</div>
+                        <div className="text-[10px] text-slate-500 font-medium">Recibido en mano durante la entrega</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Repartidor Responsable de la Entrega */}
+                <div className="p-3 rounded-2xl bg-teal-50/80 border border-teal-200/90 text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-xl bg-[#0E8388] text-white flex items-center justify-center font-black text-xs shadow-2xs">
+                      {currentAdminName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-[#0E8388] font-extrabold uppercase tracking-wider block">
+                        Repartidor Responsable
+                      </span>
+                      <strong className="text-slate-900 font-black">
+                        {currentAdminName}
+                      </strong>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-teal-800 bg-white/90 px-2 py-0.5 rounded-lg border border-teal-200">
+                    Administrador
+                  </span>
+                </div>
+
+                {/* Nota de resultado automático */}
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>
+                    Al confirmar, el pedido pasará a <strong>Pagado</strong> y <strong>Entregado</strong> por <strong>{currentAdminName}</strong>, y se acreditarán automáticamente <strong>+{pointsToEarn} Pts</strong> Club Patitas al cliente.
+                  </span>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 sm:px-6 bg-slate-50 border-t border-slate-200/80 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPaymentDeliveryConfirmModal(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPaymentAndDelivery}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>Confirmar Pago y Entregar</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ======================================================= */}
       {/* NATIVE iOS STYLE MOBILE BOTTOM NAVIGATION BAR            */}
       {/* ======================================================= */}
