@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
-import { fetchProductsFromSupabase } from '../services/productsService';
+import { fetchProductsFromSupabase, updateProductInSupabase } from '../services/productsService';
 import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import AppleNutritionSpecs from '../components/AppleNutritionSpecs';
@@ -34,6 +34,12 @@ import {
   Beef,
   Drumstick,
   Wheat,
+  Upload,
+  Plus,
+  Trash2,
+  Image as ImageIcon,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 // Custom Vector Paw Print Icon for gallery indicators
@@ -377,6 +383,23 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
   const isDog = product?.petType === 'perros';
 
+  // Remove redundant brand name from title if product name starts with the brand
+  const displayProductName = useMemo(() => {
+    if (!product?.name) return '';
+    const rawName = String(product.name).trim();
+    const brand = String(product.brand || '').trim();
+    if (!brand) return rawName;
+
+    // Check if name starts with brand (case-insensitive)
+    const escapedBrand = brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`^${escapedBrand}\\s*[-•:]?\\s*`, 'i');
+    if (regex.test(rawName)) {
+      const stripped = rawName.replace(regex, '').trim();
+      return stripped || rawName;
+    }
+    return rawName;
+  }, [product?.name, product?.brand]);
+
   const [selectedWeight, setSelectedWeight] = useState(() => {
     if (!product) return 'Estándar';
     const matchV = product.variants?.find((v) => v.id === id || v.sku === id);
@@ -392,7 +415,38 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   const [selectedBreedSize, setSelectedBreedSize] = useState(null);
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  const productImages = product?.images && product.images.length > 0 ? product.images : [product?.image || '/images/hero_dog.png'];
+
+  // Derivar la lista de imágenes del producto
+  const productImages = useMemo(() => {
+    if (!product) return [isDog ? '/images/hero_dog.png' : '/images/cat_food_tuna.png'];
+    const list = [];
+    if (product.image && typeof product.image === 'string' && product.image.trim()) {
+      list.push(product.image.trim());
+    }
+    if (Array.isArray(product.images)) {
+      product.images.forEach((img) => {
+        if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
+          list.push(img.trim());
+        }
+      });
+    }
+    if (Array.isArray(product.variants)) {
+      product.variants.forEach((v) => {
+        if (v.image && typeof v.image === 'string' && v.image.trim() && !list.includes(v.image.trim())) {
+          list.push(v.image.trim());
+        }
+      });
+    }
+    if (list.length === 0) {
+      list.push(isDog ? '/images/hero_dog.png' : '/images/cat_food_tuna.png');
+    }
+    return list;
+  }, [product, isDog]);
+
+  // Reset al cambiar de producto
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [product?.id]);
 
   const mainCtaRef = useRef(null);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -507,6 +561,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     : null;
 
   const currentPrice = activeVariant ? activeVariant.price : (product?.price || 0);
+  const currentOriginalPrice = activeVariant ? activeVariant.originalPrice : (product?.originalPrice || null);
   const currentStock = activeVariant
     ? (typeof activeVariant.stock === 'number' ? activeVariant.stock : 10)
     : (typeof product?.stock === 'number' ? product.stock : 10);
@@ -598,17 +653,17 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
       </div>
 
       {/* 2. Main Product Showcase Hero Section (Integrated Single Card) */}
-      <section className="max-w-7xl mx-auto px-6 mb-16">
-        <div className="bg-white rounded-3xl p-6 md:p-12 shadow-xl border border-slate-200/80">
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 mb-16">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-xl border border-slate-200/80">
           
           {/* Top Grid: Gallery & Purchase Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start">
           
           {/* Left Column: Minimalist Multi-Image Gallery Showcase */}
-          <div className="lg:col-span-6 flex flex-col items-center w-full">
+          <div className="lg:col-span-5 flex flex-col items-center w-full">
             
             {/* Image Box with Soft Pastel Glow */}
-            <div className={`relative w-full aspect-square rounded-3xl p-8 flex items-center justify-center border border-slate-100 overflow-hidden shadow-inner group ${
+            <div className={`relative w-full aspect-square max-h-[420px] rounded-3xl p-6 flex items-center justify-center border border-slate-100 overflow-hidden shadow-inner group ${
               isDog
                 ? 'bg-gradient-to-br from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1]'
                 : 'bg-gradient-to-br from-[#FFF4EB] via-[#FAF9F6] to-[#FCE6D5]'
@@ -635,22 +690,13 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 </>
               )}
               
-              {/* Paw Print Vector Indicators (Identicas a la Imagen 2) */}
+              {/* Photo Counter Pill (Top-Left) */}
               {productImages.length > 1 && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-5 py-2.5 rounded-full bg-white/90 backdrop-blur-md border border-slate-200 shadow-lg">
-                  {productImages.map((_, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => setActiveImageIndex(idx)}
-                      title={`Ir a foto ${idx + 1}`}
-                      className="focus:outline-none"
-                    >
-                      <PawPrintIcon
-                        active={activeImageIndex === idx}
-                        activeColor={isDog ? '#10B981' : '#C86D39'}
-                      />
-                    </button>
-                  ))}
+                <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
+                  <span className="px-3 py-1.5 rounded-full text-xs font-black bg-white/90 text-slate-800 border border-slate-200 shadow-sm backdrop-blur-md flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <span>Foto {activeImageIndex + 1} de {productImages.length}</span>
+                  </span>
                 </div>
               )}
 
@@ -670,51 +716,78 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               />
             </div>
 
-            {/* Thumbnail Strip (Fotos secundarias en miniatura) */}
+            {/* Recuadros Pequeños (Miniaturas de Galería) ubicados en la posición entre la foto y la nutrición */}
             {productImages.length > 1 && (
-              <div className="mt-4 flex items-center justify-center gap-3 overflow-x-auto p-1">
-                {productImages.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setActiveImageIndex(idx)}
-                    className={`w-16 h-16 rounded-2xl overflow-hidden border-2 transition-all p-1 bg-white shadow-xs flex-shrink-0 ${
-                      activeImageIndex === idx
-                        ? 'border-[#0E8388] ring-2 ring-[#0E8388]/30 scale-105 shadow-md'
-                        : 'border-slate-200 opacity-60 hover:opacity-100 hover:border-slate-300'
-                    }`}
-                  >
-                    <img src={img} alt={`Miniatura ${idx + 1}`} className="w-full h-full object-contain" />
-                  </button>
-                ))}
+              <div className="flex items-center justify-center gap-3 w-full py-2 overflow-x-auto scrollbar-none px-1">
+                {productImages.map((img, idx) => {
+                  const isActive = activeImageIndex === idx;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setActiveImageIndex(idx)}
+                      className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl p-1.5 cursor-pointer flex-shrink-0 transition-all duration-200 border-2 bg-white ${
+                        isActive
+                          ? isDog
+                            ? 'border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-105'
+                            : 'border-[#C86D39] shadow-md ring-2 ring-[#C86D39]/30 scale-105'
+                          : 'border-slate-200/90 hover:border-slate-300 opacity-75 hover:opacity-100 hover:scale-102 shadow-2xs'
+                      }`}
+                      title={`Ver foto ${idx + 1}`}
+                      aria-label={`Ver foto ${idx + 1}`}
+                    >
+                      <img
+                        src={img}
+                        alt={`Miniatura ${idx + 1}`}
+                        className="w-full h-full object-contain rounded-xl"
+                      />
+                      {isActive && (
+                        <span
+                          className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs ${
+                            isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'
+                          }`}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-
+            {/* Apple Style Nutrition Rings & Spec Visualizer (Proteína Animal % + Libre de Grano) */}
+            <AppleNutritionSpecs
+              product={product}
+              activeFlavor={selectedWeight || ''}
+              className="w-full shadow-2xs mt-2"
+            />
           </div>
 
-          {/* Right Column: Product Info & Purchase Action */}
-          <div className="lg:col-span-6 space-y-6">
+          {/* Right Column: Product Info, Purchase Action & Integrated Detail Tabs */}
+          <div className="lg:col-span-7 space-y-5">
             
             {/* Header: Brand & Rating */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#0E8388]/10 text-[#0E8388]">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Brand Name */}
+                  <span className="text-xl sm:text-2xl font-black uppercase tracking-wider text-[#0E8388]">
                     {product.brand || 'Patagonia Holística'}
                   </span>
+
                   {product.targetStageLabel && (
-                    <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5">
+                    <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5 shadow-2xs">
                       <span>🐾</span>
                       <span>{product.targetStageLabel}</span>
                     </span>
                   )}
                   {Boolean(product.isVeterinary) && (
-                    <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1.5 shadow-xs">
+                    <span className="px-3 py-1 rounded-full text-xs font-black bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1.5 shadow-2xs">
                       <Stethoscope className="w-3.5 h-3.5 text-purple-600" />
                       <span>Receta Veterinaria</span>
                     </span>
                   )}
                 </div>
+
                 <div className="flex items-center gap-1.5 text-amber-500 font-black text-sm">
                   <Star className="w-4 h-4 fill-amber-400" />
                   <span>{product.rating}</span>
@@ -723,19 +796,21 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               </div>
 
               {/* Product Name */}
-              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl text-slate-900 tracking-tight leading-tight">
-                {product.name}
+              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-slate-900 tracking-tight leading-tight">
+                {displayProductName}
               </h1>
 
               {/* Tagline */}
-              <p className="text-slate-600 text-sm md:text-base font-medium leading-relaxed">
-                {product.tagline}
-              </p>
+              {product.tagline && (
+                <p className="text-slate-600 text-xs sm:text-sm font-medium leading-relaxed pt-0.5">
+                  {product.tagline}
+                </p>
+              )}
             </div>
 
             {/* Weight / Format Selector */}
             {product.weights && product.weights.length > 0 && (
-              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+              <div className="space-y-2 pt-1 border-t border-slate-100">
                 <label className="flex items-center justify-between text-xs font-bold tracking-tight text-slate-700">
                   <span className="text-slate-500 font-medium">
                     {product.hasFlavorVariants ? 'Sabor:' : 'Formato:'}{' '}
@@ -745,7 +820,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     {product.weights.length} variedades
                   </span>
                 </label>
-                <div className="flex flex-wrap gap-2.5">
+                <div className="flex flex-wrap gap-2">
                   {product.weights.map((w) => {
                     const matchV = variants.find((v) => v.format === w || v.weight === w);
                     const isVOutOfStock = matchV && matchV.stock <= 0;
@@ -758,19 +833,19 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         type="button"
                         onClick={() => setSelectedWeight(w)}
                         disabled={isVOutOfStock}
-                        className={`flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
+                        className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
                           isSelected
                             ? isDog
-                              ? 'bg-emerald-50 text-slate-900 border-[#0E8388] shadow-xs ring-2 ring-[#0E8388]/30 scale-102'
-                              : 'bg-amber-50 text-slate-900 border-[#C86D39] shadow-xs ring-2 ring-[#C86D39]/30 scale-102'
+                              ? 'bg-emerald-50 text-slate-900 border-[#0E8388] shadow-2xs ring-2 ring-[#0E8388]/30'
+                              : 'bg-amber-50 text-slate-900 border-[#C86D39] shadow-2xs ring-2 ring-[#C86D39]/30'
                             : isVOutOfStock
                             ? 'bg-slate-100 text-slate-300 border-slate-200 line-through cursor-not-allowed opacity-60'
-                            : 'bg-white text-slate-700 border-slate-200/80 hover:border-slate-300 hover:bg-slate-50'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                         }`}
                       >
                         {swatch && (
                           <span
-                            className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 bg-white"
+                            className="w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 bg-white"
                             style={{
                               border: `1.5px solid ${swatch.primaryColor}`,
                               padding: isSelected ? '2px' : '0px',
@@ -793,659 +868,652 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               </div>
             )}
 
-            {/* Pricing Section */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-              <div>
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  {activeVariant ? `Precio Formato ${activeVariant.format}:` : 'Precio Total:'}
-                </div>
-                <div className="text-3xl md:text-4xl font-black text-slate-900">
-                  {formatCLP(currentPrice)}
-                </div>
-                {currentOriginalPrice && (
-                  <div className="text-xs text-slate-400 line-through font-semibold">
-                    {formatCLP(currentOriginalPrice)}
-                  </div>
-                )}
-              </div>
-
-              {isOutOfStock ? (
-                <span className="px-3.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-black text-xs">
-                  Agotado en {selectedWeight}
-                </span>
-              ) : currentStock === 1 ? (
-                <span className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-black text-xs">
-                  ⚡ ¡Última unidad en bodega!
-                </span>
-              ) : (
-                <span className="px-3.5 py-1.5 rounded-xl bg-[#10B981]/15 text-[#10B981] font-black text-xs">
-                  ✓ {currentStock} unidades disponibles
-                </span>
-              )}
-            </div>
-
-            {/* Quantity Spinner & Add to Cart Action */}
-            <div ref={mainCtaRef} className="flex items-center gap-4 pt-2">
-              
-              {/* Quantity Spinner */}
-              <div className="flex items-center border border-slate-200 rounded-2xl bg-slate-50 p-1">
-                <button
-                  disabled={isOutOfStock}
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs disabled:opacity-50"
-                >
-                  -
-                </button>
-                <span className="w-12 text-center text-sm font-black text-slate-900">{quantity}</span>
-                <button
-                  disabled={isOutOfStock}
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="w-10 h-10 rounded-xl bg-white text-slate-800 font-extrabold text-base flex items-center justify-center hover:bg-slate-100 shadow-xs disabled:opacity-50"
-                >
-                  +
-                </button>
-              </div>
-
-              {/* CTA Button */}
-              <button
-                disabled={isOutOfStock}
-                onClick={handleAddToCart}
-                className={`flex-1 py-4 px-8 rounded-2xl font-black text-sm text-white transition-all shadow-xl flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
-                  isOutOfStock
-                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
-                    : addedSuccess
-                    ? 'bg-[#10B981] shadow-[#10B981]/30'
-                    : isDog
-                    ? 'bg-[#0E8388] hover:bg-[#10B981] shadow-[#0E8388]/30'
-                    : 'bg-[#C86D39] hover:bg-[#D97706] shadow-[#C86D39]/30'
-                }`}
-              >
-                {isOutOfStock ? (
-                  <span>Agotado en {selectedWeight}</span>
-                ) : addedSuccess ? (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>¡AGREGADO AL CARRITO!</span>
-                  </>
-                ) : (
-                  <>
-                    <ShoppingBag className="w-5 h-5" />
-                    <span>AGREGAR AL CARRITO ({formatCLP(currentPrice * quantity)})</span>
-                  </>
-                )}
-              </button>
-
-            </div>
-
-            {/* Apple Style Nutrition Rings & Spec Visualizer */}
-            <AppleNutritionSpecs
-              product={product}
-              activeFlavor={selectedWeight || ''}
-              className="p-3.5 my-3 shadow-xs"
-            />
-
-          </div>
-
-        </div>
-
-        {/* Divider Bar Integrating Top Section with Tabs Info inside the SAME Card */}
-        <hr className="border-slate-200/80 my-8" />
-
-        {/* Integrated Tab Controls Navigation */}
-        <div className="flex items-center gap-3 border-b border-slate-200 pb-4 overflow-x-auto scrollbar-none mb-8">
-          <button
-            onClick={() => setActiveTab('ingredientes')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black transition-all shrink-0 ${
-              activeTab === 'ingredientes'
-                ? 'bg-[#0A3E40] text-white shadow-md'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Utensils className="w-4 h-4 text-[#0E8388]" />
-            <span>Ingredientes & Análisis</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('racion')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black transition-all shrink-0 ${
-              activeTab === 'racion'
-                ? 'bg-[#0A3E40] text-white shadow-md'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Scale className="w-4 h-4 text-[#C86D39]" />
-            <span>Guía de Alimentación</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('beneficios')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black transition-all shrink-0 ${
-              activeTab === 'beneficios'
-                ? 'bg-[#0A3E40] text-white shadow-md'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Sparkles className="w-4 h-4 text-[#10B981]" />
-            <span>Beneficios de Nutrición</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('resenas')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black transition-all shrink-0 ${
-              activeTab === 'resenas'
-                ? 'bg-[#0A3E40] text-white shadow-md'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4 text-amber-400" />
-            <span>Reseñas de Clientes ({product.reviewsCount})</span>
-          </button>
-        </div>
-
-          {/* TAB 1: INGREDIENTES & ANÁLISIS GARANTIZADO */}
-          {activeTab === 'ingredientes' && (
-            <div className="space-y-8 animate-in fade-in duration-300">
-              {/* Ingredients List */}
-              <div className="space-y-3">
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Ingredientes Principales:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {product.ingredients?.map((ing, idx) => (
-                    <span key={idx} className="px-4 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200">
-                      🌿 {ing}
+            {/* Pricing & Add to Cart Action Bar */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900">
+                    {formatCLP(currentPrice)}
+                  </span>
+                  {currentOriginalPrice && (
+                    <span className="text-xs text-slate-400 line-through font-semibold">
+                      {formatCLP(currentOriginalPrice)}
                     </span>
-                  ))}
+                  )}
                 </div>
-              </div>
 
-              {/* Guaranteed Analysis Table */}
-              {product.guaranteedAnalysis && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Análisis Nutricional Garantizado:</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {Object.entries(product.guaranteedAnalysis).map(([key, val]) => (
-                      <div key={key} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center">
-                        <div className="text-2xl font-black text-[#0E8388]">{val}</div>
-                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-1">{key}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: GUÍA DE ALIMENTACIÓN DIARIA (FORMULARIO MULTI-PASOS) */}
-          {activeTab === 'racion' && (
-            <div className="space-y-6 animate-in fade-in duration-300 max-w-4xl mx-auto">
-              
-              {/* Header Title */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3 text-center sm:text-left">
-                <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                    Calculadora Nutricional de Ración Diaria
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Completa los sencillos pasos para conocer la porción recomendada para tu mascota:
-                  </p>
-                </div>
-                {product.targetStageLabel && (
-                  <span className="px-3 py-1 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-xs font-black self-center sm:self-auto">
-                    {product.targetStageLabel}
+                {isOutOfStock ? (
+                  <span className="px-3 py-1 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-black text-xs">
+                    Agotado en {selectedWeight}
+                  </span>
+                ) : currentStock === 1 ? (
+                  <span className="px-3 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-black text-xs">
+                    ⚡ ¡Última unidad!
+                  </span>
+                ) : (
+                  <span className="px-3 py-1 rounded-xl bg-[#10B981]/15 text-[#10B981] font-black text-xs">
+                    ✓ {currentStock} unidades disponibles
                   </span>
                 )}
               </div>
 
-              {/* Wizard Step Progress Tracker Bar */}
-              <div className="flex items-center justify-between gap-2 max-w-md mx-auto bg-slate-50 p-2.5 rounded-full border border-slate-200 shadow-xs">
-                {/* Step 1 Pill */}
+              {/* Quantity Spinner & CTA Button */}
+              <div ref={mainCtaRef} className="flex items-center gap-3">
+                <div className="flex items-center border border-slate-200 rounded-xl bg-white p-0.5 shrink-0">
+                  <button
+                    disabled={isOutOfStock}
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-50 cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="w-9 text-center text-sm font-black text-slate-900">{quantity}</span>
+                  <button
+                    disabled={isOutOfStock}
+                    onClick={() => setQuantity(quantity + 1)}
+                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-50 cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setWizardStep(1)}
-                  className={`flex items-center gap-1.5 text-xs font-black px-3.5 py-1.5 rounded-full transition-all ${
-                    wizardStep === 1
-                      ? 'bg-[#0E8388] text-white shadow-md'
-                      : wizardStep > 1 || wizardStep === 'result'
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                      : 'bg-white text-slate-400 border border-slate-200'
+                  disabled={isOutOfStock}
+                  onClick={handleAddToCart}
+                  className={`flex-1 py-3 px-6 rounded-xl font-black text-xs sm:text-sm text-white transition-all shadow-md flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
+                    isOutOfStock
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                      : addedSuccess
+                      ? 'bg-[#10B981] shadow-[#10B981]/30'
+                      : isDog
+                      ? 'bg-[#0E8388] hover:bg-[#0A3E40] shadow-[#0E8388]/30'
+                      : 'bg-[#C86D39] hover:bg-[#A8582C] shadow-[#C86D39]/30'
                   }`}
                 >
-                  <span>{wizardStep > 1 || wizardStep === 'result' ? '✓' : '1'}</span>
-                  <span>Etapa</span>
-                </button>
-
-                <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
-
-                {/* Step 2 Pill (dogs adult/senior) */}
-                {isDog && selectedLifeStage !== 'cachorro' && (
-                  <>
-                    <button
-                      onClick={() => selectedLifeStage && setWizardStep(2)}
-                      disabled={!selectedLifeStage}
-                      className={`flex items-center gap-1.5 text-xs font-black px-3.5 py-1.5 rounded-full transition-all ${
-                        wizardStep === 2
-                          ? 'bg-[#0E8388] text-white shadow-md'
-                          : wizardStep > 2 || wizardStep === 'result'
-                          ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                          : 'bg-white text-slate-400 border border-slate-200'
-                      }`}
-                    >
-                      <span>{wizardStep > 2 || wizardStep === 'result' ? '✓' : '2'}</span>
-                      <span>Raza</span>
-                    </button>
-                    <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
-                  </>
-                )}
-
-                {/* Step 3 Pill */}
-                <button
-                  onClick={() => {
-                    if (selectedLifeStage && (!isDog || selectedLifeStage === 'cachorro' || selectedBreedSize)) {
-                      setWizardStep(3);
-                    }
-                  }}
-                  disabled={!selectedLifeStage}
-                  className={`flex items-center gap-1.5 text-xs font-black px-3.5 py-1.5 rounded-full transition-all ${
-                    wizardStep === 3
-                      ? 'bg-[#0E8388] text-white shadow-md'
-                      : wizardStep === 'result'
-                      ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                      : 'bg-white text-slate-400 border border-slate-200'
-                  }`}
-                >
-                  <span>{wizardStep === 'result' ? '✓' : isDog && selectedLifeStage !== 'cachorro' ? '3' : '2'}</span>
-                  <span>Peso</span>
+                  {isOutOfStock ? (
+                    <span>Agotado en {selectedWeight}</span>
+                  ) : addedSuccess ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>¡AGREGADO AL CARRITO!</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>AGREGAR AL CARRITO ({formatCLP(currentPrice * quantity)})</span>
+                    </>
+                  )}
                 </button>
               </div>
+            </div>
 
-              {/* PASO 1: Seleccionar Etapa de Vida */}
-              {wizardStep === 1 && (
-                <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-md space-y-6 text-center max-w-xl mx-auto animate-in fade-in duration-300">
-                  <div className="space-y-1">
-                    <span className="px-3 py-1 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[11px] font-black uppercase tracking-wider">
-                      Paso 1 de {isDog ? '3' : '2'}
-                    </span>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                      ¿Cuál es la Etapa de Vida de tu {isDog ? 'Perro' : 'Gato'}?
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Selecciona la edad actual de tu mascota para calcular sus requerimientos:
-                    </p>
-                  </div>
+            {/* Integrated Tab Navigation Bar (Elevado junto con las demás secciones) */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5 overflow-x-auto scrollbar-none pt-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab('ingredientes')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'ingredientes'
+                    ? 'bg-[#0A3E40] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Utensils className="w-3.5 h-3.5 text-[#0E8388]" />
+                <span>Ingredientes & Análisis</span>
+              </button>
 
-                  <div className="flex flex-wrap justify-center gap-4 py-2">
-                    <button
-                      onClick={() => setSelectedLifeStage('cachorro')}
-                      className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                        selectedLifeStage === 'cachorro'
-                          ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-lg ring-4 ring-[#0E8388]/20 scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-3xl">🐾</span>
-                      <div className="text-sm font-black">{isDog ? 'Cachorro' : 'Gatito'}</div>
-                      <div className="text-[10px] opacity-80 font-medium">2 - 12 meses</div>
-                    </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('racion')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'racion'
+                    ? 'bg-[#0A3E40] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Scale className="w-3.5 h-3.5 text-[#C86D39]" />
+                <span>Guía de Alimentación</span>
+              </button>
 
-                    <button
-                      onClick={() => setSelectedLifeStage('adulto')}
-                      className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                        selectedLifeStage === 'adulto'
-                          ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-lg ring-4 ring-[#0E8388]/20 scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-3xl">🐕</span>
-                      <div className="text-sm font-black">Adulto</div>
-                      <div className="text-[10px] opacity-80 font-medium">1 - 7 años</div>
-                    </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('beneficios')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'beneficios'
+                    ? 'bg-[#0A3E40] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+                <span>Beneficios</span>
+              </button>
 
-                    {isDog && (
-                      <button
-                        onClick={() => setSelectedLifeStage('senior')}
-                        className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                          selectedLifeStage === 'senior'
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-lg ring-4 ring-[#0E8388]/20 scale-105'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="text-3xl">🦴</span>
-                        <div className="text-sm font-black">Senior</div>
-                        <div className="text-[10px] opacity-80 font-medium">7+ años</div>
-                      </button>
-                    )}
-                  </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('resenas')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
+                  activeTab === 'resenas'
+                    ? 'bg-[#0A3E40] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+                <span>Reseñas ({product.reviewsCount})</span>
+              </button>
+            </div>
 
-                  <div className="pt-4 border-t border-slate-100 flex justify-end">
-                    <button
-                      disabled={!selectedLifeStage}
-                      onClick={() => {
-                        if (isDog && selectedLifeStage !== 'cachorro') {
-                          setWizardStep(2);
-                        } else {
-                          setWizardStep(3);
-                        }
-                      }}
-                      className={`px-6 py-3 rounded-full font-black text-xs transition-all flex items-center gap-2 ${
-                        selectedLifeStage
-                          ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-md hover:scale-105'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <span>Siguiente Paso</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+            {/* TAB 1: INGREDIENTES & ANÁLISIS GARANTIZADO */}
+            {activeTab === 'ingredientes' && (
+              <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                {/* Ingredientes Principales */}
+                <div className="space-y-1.5">
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Ingredientes Principales:
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {product.ingredients?.map((ing, idx) => (
+                      <span key={idx} className="px-3 py-1 rounded-xl bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200/80">
+                        🌿 {ing}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              )}
 
-              {/* PASO 2: Seleccionar Tamaño de Raza (solo perros adultos/seniors) */}
-              {wizardStep === 2 && (
-                <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-md space-y-6 text-center max-w-xl mx-auto animate-in fade-in duration-300">
-                  <div className="space-y-1">
-                    <span className="px-3 py-1 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[11px] font-black uppercase tracking-wider">
-                      Paso 2 de 3
-                    </span>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                      ¿Cuál es el Tamaño de Raza de tu Perro?
+                {/* Guaranteed Analysis Table */}
+                {product.guaranteedAnalysis && (
+                  <div className="space-y-1.5">
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      Análisis Nutricional Garantizado:
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      El tamaño de la raza define la densidad nutricional recomendada:
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap justify-center gap-4 py-2">
-                    <button
-                      onClick={() => setSelectedBreedSize('pequena')}
-                      className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                        selectedBreedSize === 'pequena'
-                          ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-lg ring-4 ring-[#0A3E40]/20 scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-3xl">🐩</span>
-                      <div className="text-sm font-black">Raza Pequeña</div>
-                      <div className="text-[10px] opacity-80 font-medium">Menos de 10 kg</div>
-                    </button>
-
-                    <button
-                      onClick={() => setSelectedBreedSize('mediana')}
-                      className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                        selectedBreedSize === 'mediana'
-                          ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-lg ring-4 ring-[#0A3E40]/20 scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-3xl">🐕</span>
-                      <div className="text-sm font-black">Raza Mediana</div>
-                      <div className="text-[10px] opacity-80 font-medium">10 a 25 kg</div>
-                    </button>
-
-                    <button
-                      onClick={() => setSelectedBreedSize('grande')}
-                      className={`p-5 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-2 min-w-[130px] active:scale-95 ${
-                        selectedBreedSize === 'grande'
-                          ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-lg ring-4 ring-[#0A3E40]/20 scale-105'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                      }`}
-                    >
-                      <span className="text-3xl">🦮</span>
-                      <div className="text-sm font-black">Raza Grande</div>
-                      <div className="text-[10px] opacity-80 font-medium">Más de 25 kg</div>
-                    </button>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <button
-                      onClick={() => setWizardStep(1)}
-                      className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                    >
-                      ← Paso Anterior
-                    </button>
-
-                    <button
-                      disabled={!selectedBreedSize}
-                      onClick={() => setWizardStep(3)}
-                      className={`px-6 py-3 rounded-full font-black text-xs transition-all flex items-center gap-2 ${
-                        selectedBreedSize
-                          ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-md hover:scale-105'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <span>Siguiente Paso</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* PASO 3: Ingresar Peso de la Mascota */}
-              {wizardStep === 3 && (
-                <div className="p-8 rounded-3xl bg-white border border-slate-200 shadow-md space-y-6 text-center max-w-xl mx-auto animate-in fade-in duration-300">
-                  <div className="space-y-1">
-                    <span className="px-3 py-1 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[11px] font-black uppercase tracking-wider">
-                      Último Paso
-                    </span>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">
-                      Ingresa el Peso Exacto de tu Mascota
-                    </h3>
-                    <p className="text-xs text-slate-500 font-medium">
-                      Ajusta los kilos para calcular la porción diaria recomendada en gramos:
-                    </p>
-                  </div>
-
-                  {/* Weight Input Selector */}
-                  <div className="flex flex-col items-center gap-4 py-2">
-                    <div className="flex items-center border-2 border-[#0E8388]/30 rounded-2xl bg-slate-50 p-2 shadow-inner">
-                      <button
-                        onClick={() => setPetWeight(Math.max(1, (parseFloat(petWeight) || 1) - 1))}
-                        className="w-11 h-11 rounded-xl bg-white text-slate-800 font-black text-lg flex items-center justify-center hover:bg-slate-100 shadow-xs active:scale-95"
-                      >
-                        -
-                      </button>
-                      <div className="flex items-center px-4">
-                        <input
-                          type="number"
-                          min="0.5"
-                          max="100"
-                          step="0.5"
-                          value={petWeight}
-                          onChange={(e) => setPetWeight(e.target.value)}
-                          className="w-16 text-center text-2xl font-black text-slate-900 focus:outline-hidden"
-                        />
-                        <span className="text-base font-bold text-slate-600 ml-1">kg</span>
-                      </div>
-                      <button
-                        onClick={() => setPetWeight((parseFloat(petWeight) || 0) + 1)}
-                        className="w-11 h-11 rounded-xl bg-white text-slate-800 font-black text-lg flex items-center justify-center hover:bg-slate-100 shadow-xs active:scale-95"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    {/* Quick weight chips */}
-                    <div className="flex flex-wrap justify-center items-center gap-2">
-                      <span className="text-xs font-bold text-slate-400 mr-1">Pesos habituales:</span>
-                      {(isDog ? [3, 8, 20, 35] : [2, 4, 6]).map((w) => (
-                        <button
-                          key={w}
-                          onClick={() => setPetWeight(w)}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-black transition-all border ${
-                            parseFloat(petWeight) === w
-                              ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
-                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                          }`}
-                        >
-                          {w} kg
-                        </button>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {Object.entries(product.guaranteedAnalysis).map(([key, val]) => (
+                        <div key={key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
+                          <div className="text-lg font-black text-[#0E8388]">{val}</div>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">{key}</div>
+                        </div>
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
 
-                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
-                    <button
-                      onClick={() => {
-                        if (isDog && selectedLifeStage !== 'cachorro') {
-                          setWizardStep(2);
-                        } else {
-                          setWizardStep(1);
-                        }
-                      }}
-                      className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                    >
-                      ← Paso Anterior
-                    </button>
-
-                    <button
-                      onClick={() => setWizardStep('result')}
-                      className="px-7 py-3.5 rounded-full font-black text-xs bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white hover:shadow-lg hover:scale-105 transition-all flex items-center gap-2 shadow-md"
-                    >
-                      <span>🎯 Calcular Ración Recomendada</span>
-                    </button>
+            {/* TAB 2: GUÍA DE ALIMENTACIÓN DIARIA (FORMULARIO MULTI-PASOS) */}
+            {activeTab === 'racion' && (
+              <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                {/* Header Title */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                      Calculadora Nutricional de Ración Diaria
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Completa los pasos para conocer la porción recomendada:
+                    </p>
                   </div>
+                  {product.targetStageLabel && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black self-start sm:self-auto">
+                      {product.targetStageLabel}
+                    </span>
+                  )}
                 </div>
-              )}
 
-              {/* VISTA RESULTADO: Revela la Tabla y el Banner SOLO al completar el formulario */}
-              {wizardStep === 'result' && (
-                <div className="space-y-6 animate-in fade-in duration-400">
-                  
-                  {/* Active Selection Summary Bar */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 flex-wrap text-xs font-black text-slate-800">
-                      <span className="text-slate-400">Mascota seleccionada:</span>
-                      <span className="px-3 py-1 rounded-full bg-[#0E8388]/15 text-[#0E8388] flex items-center gap-1.5">
-                        {selectedLifeStage === 'cachorro' ? '🐾 Cachorro' : selectedLifeStage === 'adulto' ? '🐕 Adulto' : '🦴 Senior'}
-                      </span>
-                      {selectedBreedSize && (
-                        <span className="px-3 py-1 rounded-full bg-[#0A3E40]/15 text-[#0A3E40] flex items-center gap-1.5">
-                          {selectedBreedSize === 'pequena' ? '🐩 Raza Pequeña' : selectedBreedSize === 'mediana' ? '🐕 Raza Mediana' : '🦮 Raza Grande'}
-                        </span>
-                      )}
-                      <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 flex items-center gap-1">
-                        ⚖️ {petWeight} kg
-                      </span>
-                    </div>
+                {/* Wizard Step Progress Tracker Bar */}
+                <div className="flex items-center justify-between gap-2 bg-slate-50 p-2 rounded-full border border-slate-200 shadow-2xs">
+                  {/* Step 1 Pill */}
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(1)}
+                    className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
+                      wizardStep === 1
+                        ? 'bg-[#0E8388] text-white shadow-2xs'
+                        : wizardStep > 1 || wizardStep === 'result'
+                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        : 'bg-white text-slate-400 border border-slate-200'
+                    }`}
+                  >
+                    <span>{wizardStep > 1 || wizardStep === 'result' ? '✓' : '1'}</span>
+                    <span>Etapa</span>
+                  </button>
 
-                    <button
-                      onClick={() => setWizardStep(1)}
-                      className="px-4 py-2 rounded-full text-xs font-black bg-[#0E8388]/10 text-[#0E8388] hover:bg-[#0E8388] hover:text-white transition-colors flex items-center gap-1.5 self-start sm:self-auto"
-                    >
-                      <span>✏️ Recalcular / Modificar Formulario</span>
-                    </button>
-                  </div>
+                  <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
 
-                  {/* Highlight Banner */}
-                  {activeFeedingRow && (
-                    <div className={`p-5 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-md transition-all ${
-                      isDog
-                        ? 'bg-[#0E8388]/10 border-[#0E8388]/30 text-[#0A3E40]'
-                        : 'bg-[#C86D39]/10 border-[#C86D39]/30 text-[#692A08]'
-                    }`}>
-                      <div className="flex items-center gap-3 font-black text-sm md:text-base">
-                        <span className={`p-2.5 rounded-xl text-white text-sm shadow-xs ${isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'}`}>🎯</span>
-                        <div>
-                          <div>Ración Diaria Sugerida ({petWeight} kg):</div>
-                          <div className="text-xs font-normal opacity-80">{activeFeedingRow.label}</div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-3 font-bold">
-                        <span className="px-5 py-2.5 rounded-xl bg-white border border-slate-200 shadow-sm text-sm font-black text-emerald-600">
-                          🟢 Ración Diaria: <strong>{activeFeedingRow.maint}</strong>
-                        </span>
-                      </div>
-                    </div>
+                  {/* Step 2 Pill (dogs adult/senior) */}
+                  {isDog && selectedLifeStage !== 'cachorro' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => selectedLifeStage && setWizardStep(2)}
+                        disabled={!selectedLifeStage}
+                        className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
+                          wizardStep === 2
+                            ? 'bg-[#0E8388] text-white shadow-2xs'
+                            : wizardStep > 2 || wizardStep === 'result'
+                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            : 'bg-white text-slate-400 border border-slate-200'
+                        }`}
+                      >
+                        <span>{wizardStep > 2 || wizardStep === 'result' ? '✓' : '2'}</span>
+                        <span>Raza</span>
+                      </button>
+                      <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
+                    </>
                   )}
 
-                  {/* Feeding Table */}
-                  <div className="overflow-x-auto rounded-3xl border border-slate-200 shadow-md bg-white">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
-                        <tr>
-                          <th className="px-6 py-4">Rango de Peso de la Mascota</th>
-                          <th className="px-6 py-4">Ración Diaria Recomendada (Gramos / Día)</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
-                        {feedingGuide.map((row) => {
-                          const isActive = activeFeedingRow?.id === row.id;
-                          return (
-                            <tr
-                              key={row.id}
-                              className={`transition-all duration-300 ${
-                                isActive
-                                  ? isDog
-                                    ? 'bg-[#0E8388]/15 font-black text-[#0A3E40] ring-2 ring-inset ring-[#0E8388]'
-                                    : 'bg-[#C86D39]/15 font-black text-[#692A08] ring-2 ring-inset ring-[#C86D39]'
-                                  : 'hover:bg-slate-50'
-                              }`}
-                            >
-                              <td className="px-6 py-4">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-extrabold text-sm">{row.label}</span>
-                                  {isActive && (
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black text-white shadow-xs ${
-                                      isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'
-                                    }`}>
-                                      ✓ Tu Mascota ({petWeight} kg)
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-sm font-bold">{row.maint}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
+                  {/* Step 3 Pill */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedLifeStage && (!isDog || selectedLifeStage === 'cachorro' || selectedBreedSize)) {
+                        setWizardStep(3);
+                      }
+                    }}
+                    disabled={!selectedLifeStage}
+                    className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
+                      wizardStep === 3
+                        ? 'bg-[#0E8388] text-white shadow-2xs'
+                        : wizardStep === 'result'
+                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        : 'bg-white text-slate-400 border border-slate-200'
+                    }`}
+                  >
+                    <span>{wizardStep === 'result' ? '✓' : isDog && selectedLifeStage !== 'cachorro' ? '3' : '2'}</span>
+                    <span>Peso</span>
+                  </button>
                 </div>
-              )}
 
-            </div>
-          )}
-
-          {/* TAB 3: BENEFICIOS DE NUTRICIÓN */}
-          {activeTab === 'beneficios' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-              {product.benefits ? (
-                product.benefits.map((b, idx) => (
-                  <div key={idx} className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-start gap-4">
-                    <div className="p-3 rounded-xl bg-[#10B981]/15 text-[#10B981] shrink-0">
-                      <CheckCircle2 className="w-6 h-6" />
+                {/* PASO 1: Seleccionar Etapa de Vida */}
+                {wizardStep === 1 && (
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
+                    <div className="space-y-0.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                        Paso 1 de {isDog ? '3' : '2'}
+                      </span>
+                      <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                        ¿Cuál es la Etapa de Vida de tu {isDog ? 'Perro' : 'Gato'}?
+                      </h4>
                     </div>
-                    <div>
-                      <h4 className="text-base font-extrabold text-slate-900 mb-1">Beneficio Clave #{idx + 1}</h4>
-                      <p className="text-xs text-slate-600 font-medium leading-relaxed">{b}</p>
+
+                    <div className="flex flex-wrap justify-center gap-2.5 py-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLifeStage('cachorro')}
+                        className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                          selectedLifeStage === 'cachorro'
+                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-2xl">🐾</span>
+                        <div className="text-xs font-black">{isDog ? 'Cachorro' : 'Gatito'}</div>
+                        <div className="text-[9px] opacity-80 font-medium">2 - 12 meses</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedLifeStage('adulto')}
+                        className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                          selectedLifeStage === 'adulto'
+                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-2xl">🐕</span>
+                        <div className="text-xs font-black">Adulto</div>
+                        <div className="text-[9px] opacity-80 font-medium">1 - 7 años</div>
+                      </button>
+
+                      {isDog && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedLifeStage('senior')}
+                          className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                            selectedLifeStage === 'senior'
+                              ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span className="text-2xl">🦴</span>
+                          <div className="text-xs font-black">Senior</div>
+                          <div className="text-[9px] opacity-80 font-medium">7+ años</div>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={!selectedLifeStage}
+                        onClick={() => {
+                          if (isDog && selectedLifeStage !== 'cachorro') {
+                            setWizardStep(2);
+                          } else {
+                            setWizardStep(3);
+                          }
+                        }}
+                        className={`px-4 py-2 rounded-full font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                          selectedLifeStage
+                            ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-2xs hover:scale-105'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <span>Siguiente Paso</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                ))
-              ) : (
-                <p className="text-xs text-slate-500">Receta nutricional holística libre de granos.</p>
-              )}
-            </div>
-          )}
+                )}
 
-          {/* TAB 4: RESEÑAS DE CLIENTES */}
-          {activeTab === 'resenas' && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="flex items-center gap-6 p-6 rounded-2xl bg-slate-50 border border-slate-200">
-                <div className="text-center">
-                  <div className="text-5xl font-black text-slate-900">{product.rating}</div>
-                  <div className="flex text-amber-400 justify-center my-1">
-                    {'★'.repeat(5)}
+                {/* PASO 2: Seleccionar Tamaño de Raza */}
+                {wizardStep === 2 && (
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
+                    <div className="space-y-0.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                        Paso 2 de 3
+                      </span>
+                      <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                        ¿Cuál es el Tamaño de Raza de tu Perro?
+                      </h4>
+                    </div>
+
+                    <div className="flex flex-wrap justify-center gap-2.5 py-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBreedSize('pequena')}
+                        className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                          selectedBreedSize === 'pequena'
+                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-2xl">🐩</span>
+                        <div className="text-xs font-black">Pequeña</div>
+                        <div className="text-[9px] opacity-80 font-medium">&lt; 10 kg</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBreedSize('mediana')}
+                        className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                          selectedBreedSize === 'mediana'
+                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-2xl">🐕</span>
+                        <div className="text-xs font-black">Mediana</div>
+                        <div className="text-[9px] opacity-80 font-medium">10 - 25 kg</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBreedSize('grande')}
+                        className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                          selectedBreedSize === 'grande'
+                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="text-2xl">🦮</span>
+                        <div className="text-xs font-black">Grande</div>
+                        <div className="text-[9px] opacity-80 font-medium">&gt; 25 kg</div>
+                      </button>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep(1)}
+                        className="px-3 py-1.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                      >
+                        ← Anterior
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!selectedBreedSize}
+                        onClick={() => setWizardStep(3)}
+                        className={`px-4 py-2 rounded-full font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
+                          selectedBreedSize
+                            ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-2xs hover:scale-105'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        <span>Siguiente Paso</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-500 font-bold">{product.reviewsCount} opiniones verificadas</div>
-                </div>
-                <div className="flex-1 text-xs space-y-1 font-semibold text-slate-600">
-                  <p>🟢 98% de los dueños notaron mejoras en el pelaje de su mascota a los 14 días.</p>
-                  <p>🟢 100% Aceptación de palatabilidad y sabor en perros y gatos exigentes.</p>
+                )}
+
+                {/* PASO 3: Ingresar Peso de la Mascota */}
+                {wizardStep === 3 && (
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
+                    <div className="space-y-0.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                        Último Paso
+                      </span>
+                      <h4 className="text-sm font-black text-slate-900 tracking-tight">
+                        Ingresa el Peso de tu Mascota
+                      </h4>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-3 py-1">
+                      <div className="flex items-center border-2 border-[#0E8388]/30 rounded-2xl bg-slate-50 p-1.5 shadow-inner">
+                        <button
+                          type="button"
+                          onClick={() => setPetWeight(Math.max(1, (parseFloat(petWeight) || 1) - 1))}
+                          className="w-9 h-9 rounded-xl bg-white text-slate-800 font-black text-base flex items-center justify-center hover:bg-slate-100 shadow-2xs active:scale-95 cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <div className="flex items-center px-3">
+                          <input
+                            type="number"
+                            min="0.5"
+                            max="100"
+                            step="0.5"
+                            value={petWeight}
+                            onChange={(e) => setPetWeight(e.target.value)}
+                            className="w-14 text-center text-xl font-black text-slate-900 focus:outline-hidden"
+                          />
+                          <span className="text-sm font-bold text-slate-600 ml-1">kg</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPetWeight((parseFloat(petWeight) || 0) + 1)}
+                          className="w-9 h-9 rounded-xl bg-white text-slate-800 font-black text-base flex items-center justify-center hover:bg-slate-100 shadow-2xs active:scale-95 cursor-pointer"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Quick weight chips */}
+                      <div className="flex flex-wrap justify-center items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-slate-400 mr-1">Comunes:</span>
+                        {(isDog ? [3, 8, 20, 35] : [2, 4, 6]).map((w) => (
+                          <button
+                            type="button"
+                            key={w}
+                            onClick={() => setPetWeight(w)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all border cursor-pointer ${
+                              parseFloat(petWeight) === w
+                                ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-2xs'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {w} kg
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isDog && selectedLifeStage !== 'cachorro') {
+                            setWizardStep(2);
+                          } else {
+                            setWizardStep(1);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                      >
+                        ← Anterior
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep('result')}
+                        className="px-5 py-2.5 rounded-full font-black text-xs bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white hover:shadow-md hover:scale-105 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                      >
+                        <span>🎯 Calcular Ración</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* VISTA RESULTADO */}
+                {wizardStep === 'result' && (
+                  <div className="space-y-3 animate-in fade-in duration-300">
+                    <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-800">
+                        <span className="text-slate-400">Mascota:</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/15 text-[#0E8388]">
+                          {selectedLifeStage === 'cachorro' ? '🐾 Cachorro' : selectedLifeStage === 'adulto' ? '🐕 Adulto' : '🦴 Senior'}
+                        </span>
+                        {selectedBreedSize && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-[#0A3E40]/15 text-[#0A3E40]">
+                            {selectedBreedSize === 'pequena' ? '🐩 Pequeña' : selectedBreedSize === 'mediana' ? '🐕 Mediana' : '🦮 Grande'}
+                          </span>
+                        )}
+                        <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                          ⚖️ {petWeight} kg
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setWizardStep(1)}
+                        className="px-3 py-1 rounded-full text-xs font-black bg-[#0E8388]/10 text-[#0E8388] hover:bg-[#0E8388] hover:text-white transition-colors cursor-pointer self-start sm:self-auto"
+                      >
+                        ✏️ Modificar
+                      </button>
+                    </div>
+
+                    {/* Highlight Banner */}
+                    {activeFeedingRow && (
+                      <div className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs shadow-2xs transition-all ${
+                        isDog
+                          ? 'bg-[#0E8388]/10 border-[#0E8388]/30 text-[#0A3E40]'
+                          : 'bg-[#C86D39]/10 border-[#C86D39]/30 text-[#692A08]'
+                      }`}>
+                        <div className="flex items-center gap-2.5 font-black text-xs sm:text-sm">
+                          <span className={`p-2 rounded-lg text-white text-xs ${isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'}`}>🎯</span>
+                          <div>
+                            <div>Ración Sugerida ({petWeight} kg):</div>
+                            <div className="text-[10px] font-normal opacity-80">{activeFeedingRow.label}</div>
+                          </div>
+                        </div>
+                        <span className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs text-xs font-black text-emerald-600 self-start sm:self-auto">
+                          🟢 {activeFeedingRow.maint} al día
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Feeding Table */}
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-2xs bg-white">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
+                          <tr>
+                            <th className="px-4 py-2.5">Peso</th>
+                            <th className="px-4 py-2.5">Ración Recomendada</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
+                          {feedingGuide.map((row) => {
+                            const isActive = activeFeedingRow?.id === row.id;
+                            return (
+                              <tr
+                                key={row.id}
+                                className={`transition-all duration-200 ${
+                                  isActive
+                                    ? isDog
+                                      ? 'bg-[#0E8388]/15 font-black text-[#0A3E40]'
+                                      : 'bg-[#C86D39]/15 font-black text-[#692A08]'
+                                    : 'hover:bg-slate-50'
+                                }`}
+                              >
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    <span>{row.label}</span>
+                                    {isActive && (
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black text-white ${
+                                        isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'
+                                      }`}>
+                                        ✓ Mascota
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2.5 font-bold">{row.maint}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: BENEFICIOS DE NUTRICIÓN */}
+            {activeTab === 'beneficios' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-in fade-in duration-200">
+                {product.benefits ? (
+                  product.benefits.map((b, idx) => (
+                    <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">
+                      <div className="p-2 rounded-lg bg-[#10B981]/15 text-[#10B981] shrink-0">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-900 mb-0.5">Beneficio #{idx + 1}</h4>
+                        <p className="text-[11px] text-slate-600 font-medium leading-relaxed">{b}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-500">Receta nutricional holística libre de granos.</p>
+                )}
+              </div>
+            )}
+
+            {/* TAB 4: RESEÑAS DE CLIENTES */}
+            {activeTab === 'resenas' && (
+              <div className="space-y-3 pt-1 animate-in fade-in duration-200">
+                <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-center shrink-0">
+                    <div className="text-3xl font-black text-slate-900">{product.rating}</div>
+                    <div className="flex text-amber-400 justify-center my-0.5 text-xs">
+                      {'★'.repeat(5)}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-bold">{product.reviewsCount} opiniones</div>
+                  </div>
+                  <div className="text-xs space-y-1 font-semibold text-slate-600">
+                    <p>🟢 98% de dueños notaron mejoras en pelaje en 14 días.</p>
+                    <p>🟢 100% aceptación de palatabilidad y sabor en mascotas exigentes.</p>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+
+          </div>
 
         </div>
-      </section>
+      </div>
+    </section>
 
       {/* 4. Related Products Showcase */}
       {relatedProducts.length > 0 && (

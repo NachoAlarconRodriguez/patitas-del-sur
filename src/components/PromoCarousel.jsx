@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Tag, ArrowRight, Sparkles, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Tag, ArrowRight, Sparkles, Check, ChevronDown } from 'lucide-react';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import { PRODUCTS } from '../data/mockData';
 import { isProductOutOfStock } from '../utils/productVariants';
@@ -210,14 +210,23 @@ export default function PromoCarousel({
     }
   }, [promos.length, currentSlide]);
 
-  // Auto-play interval (5 seconds, pauses on hover)
+  // Auto-play interval (3 seconds, pauses on hover)
   useEffect(() => {
     if (promos.length <= 1 || isHovered) return;
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % promos.length);
-    }, 5000);
+    }, 3000);
     return () => clearInterval(timer);
   }, [promos.length, isHovered]);
+
+  const handleScrollDown = () => {
+    const catalogEl = document.getElementById('catalogo-section');
+    if (catalogEl) {
+      catalogEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollBy({ top: 480, behavior: 'smooth' });
+    }
+  };
 
   const handlePrev = () => {
     if (promos.length === 0) return;
@@ -277,13 +286,14 @@ export default function PromoCarousel({
   }
 
   return (
-    <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-      className="relative w-full rounded-3xl overflow-hidden shadow-xl shadow-slate-200/60 border border-slate-200/80 select-none transition-all duration-700 min-h-[380px] md:min-h-[440px] group/carousel"
-    >
+    <div className="w-full space-y-4">
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="relative w-full rounded-3xl overflow-hidden shadow-xl shadow-slate-200/60 border border-slate-200/80 select-none transition-all duration-700 min-h-[380px] md:min-h-[440px] group/carousel"
+      >
       {/* Background Gradient & Full Product Image */}
       <div className={`absolute inset-0 w-full h-full bg-gradient-to-r ${activePromo.bgGradient}`}>
         <img
@@ -297,24 +307,18 @@ export default function PromoCarousel({
 
       {/* Slide Content Box */}
       <div className="relative z-10 p-8 md:p-14 h-full min-h-[380px] md:min-h-[440px] flex flex-col justify-between max-w-2xl">
-        {/* Top Badges */}
+        {/* Top Badge: Destacado del Mes */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <span
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-black uppercase tracking-wider ${activePromo.badgeBg} shadow-md`}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${
+                petType === 'perros'
+                  ? 'bg-[#0E8388] text-white shadow-[#0E8388]/20'
+                  : 'bg-[#C86D39] text-white shadow-[#C86D39]/20'
+              }`}
             >
-              <Tag className="w-3.5 h-3.5" /> {activePromo.badge}
-            </span>
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold bg-white text-slate-800 border border-slate-200 shadow-xs">
-              {activePromo.mascot}
-            </span>
-            {activePromo.format && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-teal-50 text-[#0E8388] border border-teal-200/70 shadow-xs">
-                {activePromo.format}
-              </span>
-            )}
-            <span className="text-xs font-extrabold text-[#0E8388] tracking-widest uppercase">
-              {activePromo.tagline}
+              <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+              Destacado del Mes
             </span>
           </div>
 
@@ -413,6 +417,35 @@ export default function PromoCarousel({
           ))}
         </div>
       )}
+      </div>
+
+      {/* Visual Scroll Down Indicator */}
+      <div className="flex flex-col items-center justify-center pt-1">
+        <button
+          type="button"
+          onClick={handleScrollDown}
+          className={`group inline-flex items-center gap-2.5 px-5 py-2 rounded-full bg-white/95 hover:bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-300 cursor-pointer ${
+            petType === 'perros'
+              ? 'hover:border-[#0E8388]/40 hover:text-[#0E8388]'
+              : 'hover:border-[#C86D39]/40 hover:text-[#C86D39]'
+          }`}
+          title="Ver catálogo completo abajo"
+          aria-label="Desplazarse hacia abajo para ver el catálogo de productos"
+        >
+          <span className="text-[11px] font-black tracking-wider uppercase text-slate-600 group-hover:text-inherit transition-colors">
+            Explorar catálogo abajo
+          </span>
+          <div
+            className={`w-5 h-5 rounded-full flex items-center justify-center ${
+              petType === 'perros'
+                ? 'bg-[#0E8388]/10 text-[#0E8388]'
+                : 'bg-[#C86D39]/10 text-[#C86D39]'
+            }`}
+          >
+            <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
+          </div>
+        </button>
+      </div>
     </div>
   );
 }

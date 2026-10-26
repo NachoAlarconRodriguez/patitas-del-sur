@@ -11,12 +11,14 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   LogOut,
   Plus,
   Minus,
+  Trash2,
   X,
   Check,
   Utensils,
@@ -42,6 +44,7 @@ import {
   FileText,
   User,
   Gift,
+  ShoppingCart,
 } from 'lucide-react';
 import { PRODUCTS, BRANDS } from '../data/mockData';
 import { isProductOutOfStock } from '../utils/productVariants';
@@ -58,12 +61,18 @@ import RedeemPointsModal from '../components/RedeemPointsModal';
 import CustomerMembershipCard from './customer/CustomerMembershipCard';
 import CustomerOrdersTable from './customer/CustomerOrdersTable';
 import {
+  getLoyaltySettings,
+  DEFAULT_LOYALTY_SETTINGS,
+} from '../services/loyaltyService.js';
+import {
   getCustomerProfile,
   upsertCustomerProfile,
   updateCustomerPoints,
   getCustomerPets,
   addPetToSupabase,
   updatePetInSupabase,
+  getCustomerReplenishmentData,
+  saveCustomerReplenishmentData,
 } from '../services/customersService.js';
 import {
   getPetHealthLogs,
@@ -310,6 +319,101 @@ function FeaturedProductsCarousel({ pet, currentProduct, catalogProducts, onAddT
   );
 }
 
+/* Card de Selección de Producto para la Despensa Habitual */
+function HabitualProductCard({ product, onAdd, formatCLP }) {
+  const weights = Array.isArray(product.weights) && product.weights.length > 0
+    ? product.weights
+    : [product.weight || product.format || 'Formato Estándar'];
+
+  const [selectedWeight, setSelectedWeight] = useState(weights[0]);
+  const [quantity, setQuantity] = useState(1);
+
+  // Resolver precio según variante
+  const variant = (product.variants || []).find((v) => v.format === selectedWeight || v.weight === selectedWeight);
+  const currentPrice = variant && typeof variant.price === 'number' ? variant.price : (product.price || 0);
+
+  return (
+    <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 hover:border-[#0E8388]/60 transition-all flex flex-col sm:flex-row items-center sm:items-start justify-between gap-3 shadow-2xs hover:shadow-xs">
+      <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
+        <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center">
+          <img
+            src={product.image || '/images/hero_dog.png'}
+            alt={product.name}
+            className="w-full h-full object-contain"
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          {product.brand && (
+            <span className="block text-[9.5px] font-black uppercase text-slate-400">
+              {product.brand}
+            </span>
+          )}
+          <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate" title={product.name}>
+            {product.name}
+          </h4>
+          <span className="text-xs font-black text-[#0A3E40] block mt-0.5">
+            {formatCLP(currentPrice)}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+        {/* Selector de Formato si tiene más de 1 peso */}
+        {weights.length > 1 ? (
+          <select
+            value={selectedWeight}
+            onChange={(e) => setSelectedWeight(e.target.value)}
+            className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-700 focus:outline-hidden focus:border-[#0E8388] cursor-pointer"
+          >
+            {weights.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
+            {selectedWeight}
+          </span>
+        )}
+
+        {/* Stepper de Cantidad */}
+        <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-0.5 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+            className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-200 font-black text-xs cursor-pointer active:scale-95"
+            title="Disminuir cantidad"
+          >
+            -
+          </button>
+          <span className="text-xs font-black text-slate-900 min-w-[18px] text-center">
+            {quantity}
+          </span>
+          <button
+            type="button"
+            onClick={() => setQuantity(quantity + 1)}
+            className="w-6 h-6 rounded-lg flex items-center justify-center text-[#0E8388] hover:bg-[#E6F4F1] font-black text-xs cursor-pointer active:scale-95"
+            title="Aumentar cantidad"
+          >
+            +
+          </button>
+        </div>
+
+        {/* Botón Agregar */}
+        <button
+          type="button"
+          onClick={() => onAdd(selectedWeight, quantity)}
+          className="px-3.5 py-2 rounded-xl bg-[#0E8388] hover:bg-[#0A3E40] text-white text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+        >
+          <Plus className="w-3.5 h-3.5 stroke-[3]" />
+          <span>Agregar</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function CustomerDashboardView({ user, onLogout, onAddToCart, onSelectProduct, onSwitchRole }) {
 
   const navigate = useNavigate();
@@ -394,7 +498,19 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   
   // Modal for adding a new pet (Multi-step Wizard)
   const [isAddPetModalOpen, setIsAddPetModalOpen] = useState(false);
-  const [petStep, setPetStep] = useState(1); // 1: Especie | 2: Info Mascota | 3: Alimento Habitual
+  const [petStep, setPetStep] = useState(1); // 1: Especie | 2: Info Mascota
+  const hasAutoPromptedPetModal = useRef(false);
+
+  // Replenishment & Despensa Habitual State
+  const [replenishmentData, setReplenishmentData] = useState({
+    frequencyDays: 30,
+    habitualOrder: null,
+    lastOrderDate: null,
+  });
+  const [isEditingReplenishFrequency, setIsEditingReplenishFrequency] = useState(false);
+  const [isAddHabitualProductModalOpen, setIsAddHabitualProductModalOpen] = useState(false);
+  const [habitualSearchQuery, setHabitualSearchQuery] = useState('');
+  const [habitualCategoryFilter, setHabitualCategoryFilter] = useState('todos');
   const [newPetName, setNewPetName] = useState('');
   const [newPetType, setNewPetType] = useState('perro');
   const [newPetBirthdate, setNewPetBirthdate] = useState('');
@@ -770,54 +886,76 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     }
   };
 
-  // Loyalty Points & Coupons State
+  // Loyalty Points & Settings State
   const [userPoints, setUserPoints] = useState(0);
+  const [loyaltySettings, setLoyaltySettings] = useState(DEFAULT_LOYALTY_SETTINGS);
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [redeemSuccessMessage, setRedeemSuccessMessage] = useState(null);
 
-  const REDEEM_REWARDS = [
-    {
-      id: 'reward-100',
-      points: 100,
-      discountLabel: '$3.000 Dcto.',
-      discountAmount: 3000,
-      title: 'Cupón $3.000 CLP de Descuento',
-      validity: 'Válido para 1 compra',
-      description: 'Aplica $3.000 de descuento directo en el total de tu próxima compra.',
-      icon: '💵',
-    },
-    {
-      id: 'reward-200',
-      points: 200,
-      discountLabel: '$7.000 Dcto.',
-      discountAmount: 7000,
-      title: 'Cupón $7.000 CLP de Descuento',
-      validity: 'Válido para 1 compra',
-      description: 'Aplica $7.000 de descuento directo en el total de tu próxima compra.',
-      icon: '💰',
-    },
-    {
-      id: 'reward-350',
-      points: 350,
-      discountLabel: '$14.000 Dcto.',
-      discountAmount: 14000,
-      title: 'Cupón $14.000 CLP de Descuento',
-      validity: 'Válido para 1 compra',
-      description: 'Aplica $14.000 de descuento directo en el total de tu próxima compra.',
-      icon: '🏷️',
-    },
-    {
-      id: 'reward-500',
-      points: 500,
-      discountLabel: '$25.000 Dcto.',
-      discountAmount: 25000,
-      title: 'Cupón $25.000 CLP de Descuento VIP',
-      validity: 'Válido para 1 compra',
-      description: 'Aplica $25.000 de descuento directo en el total de tu próxima compra.',
-      icon: '👑',
-    },
-  ];
+  // Cargar configuración de fidelización (montos configurados en admin)
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLoyalty = async () => {
+      try {
+        const settings = await getLoyaltySettings();
+        if (isMounted && settings) {
+          setLoyaltySettings(settings);
+        }
+      } catch (err) {
+        console.warn('Error loading loyalty settings in customer view:', err);
+      }
+    };
+    fetchLoyalty();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Re-validar cuando se abre el modal para asegurar montos al día
+  useEffect(() => {
+    if (isRedeemModalOpen) {
+      getLoyaltySettings().then((s) => {
+        if (s) setLoyaltySettings(s);
+      });
+    }
+  }, [isRedeemModalOpen]);
+
+  // Beneficios de canje sincronizados dinámicamente con la configuración del Admin
+  const redeemRewards = useMemo(() => {
+    const rawTiers = Array.isArray(loyaltySettings?.tiers) && loyaltySettings.tiers.length > 0
+      ? loyaltySettings.tiers
+      : DEFAULT_LOYALTY_SETTINGS.tiers;
+
+    return rawTiers
+      .filter((t) => t.active !== false)
+      .map((t) => {
+        const dAmount = Number(t.discountAmount) || 0;
+        return {
+          id: t.id || `reward-${t.points}`,
+          points: Number(t.points) || 0,
+          discountLabel: `$${dAmount.toLocaleString('es-CL')} Dcto.`,
+          discountAmount: dAmount,
+          title: t.title || `Cupón $${dAmount.toLocaleString('es-CL')} CLP de Descuento`,
+          validity: t.validity || 'Válido para 1 compra',
+          description: t.description && !t.description.startsWith('Aplica .000')
+            ? t.description
+            : `Aplica $${dAmount.toLocaleString('es-CL')} de descuento directo en el total de tu próxima compra.`,
+          icon: t.icon || '💵',
+          active: t.active !== false,
+        };
+      });
+  }, [loyaltySettings]);
+
+  // Tiers adaptados para la tarjeta de membresía VIP física
+  const membershipTiers = useMemo(() => {
+    return redeemRewards.map((r) => ({
+      points: r.points,
+      discount: r.discountAmount,
+      label: `$${r.discountAmount.toLocaleString('es-CL')} Dcto`,
+      validity: r.validity || 'Válido: 1 compra',
+      icon: r.icon || '💵',
+      id: r.id,
+    }));
+  }, [redeemRewards]);
 
   const handleRedeemReward = async (reward) => {
     if (userPoints < reward.points) return;
@@ -836,7 +974,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       remainingUses: 1,
       code: couponCode,
       date: 'Canjeado hoy',
-      discountAmount: reward.discountAmount || 3000,
+      discountAmount: reward.discountAmount || 1000,
       status: 'activo',
     };
     setActiveCoupons(prev => [newCoupon, ...prev]);
@@ -845,13 +983,22 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     if (customerDbId) {
       try {
         await updateCustomerPoints(customerDbId, -reward.points);
-        await supabase.from('points_redemptions').insert({
+        const { error: insErr } = await supabase.from('points_redemptions').insert({
           customer_id: customerDbId,
           reward_id: reward.id,
           points_spent: reward.points,
           coupon_code: newCoupon.code,
           status: 'activo',
         });
+        if (insErr && insErr.code === '23503') {
+          await supabase.from('points_redemptions').insert({
+            customer_id: customerDbId,
+            reward_id: 'rew-envio-gratis',
+            points_spent: reward.points,
+            coupon_code: newCoupon.code,
+            status: 'activo',
+          });
+        }
       } catch (err) {
         console.error('Error synchronizing points redemption to Supabase:', err);
       }
@@ -1047,16 +1194,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             .order('created_at', { ascending: false });
 
           if (Array.isArray(dbCoupons)) {
+            const currentTiers = loyaltySettings?.tiers || DEFAULT_LOYALTY_SETTINGS.tiers;
             const mapped = dbCoupons.map((c) => {
-              let dAmount = 3000;
-              if (c.points_spent === 200) dAmount = 7000;
-              else if (c.points_spent === 350) dAmount = 14000;
-              else if (c.points_spent === 500) dAmount = 25000;
+              const matchedTier = currentTiers.find(
+                (t) => t.id === c.reward_id || Number(t.points) === Number(c.points_spent)
+              );
+              const dAmount = matchedTier ? matchedTier.discountAmount : Number(c.points_spent) * 10;
               return {
                 id: c.id,
-                title: `Cupón $${dAmount.toLocaleString('es-CL')} CLP Dcto.`,
+                title: matchedTier?.title || `Cupón $${dAmount.toLocaleString('es-CL')} CLP Dcto.`,
                 pointsCost: c.points_spent,
-                validity: 'Válido para 1 compra',
+                validity: matchedTier?.validity || 'Válido para 1 compra',
                 remainingUses: 1,
                 code: c.coupon_code,
                 discountAmount: dAmount,
@@ -1133,7 +1281,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           birthdate: p.birthdate,
           notes: p.notes,
         }));
-        setPets(mappedPets);
+        setPets((currentPets) => {
+          const pendingTempPets = currentPets.filter((p) => typeof p.id === 'string' && p.id.startsWith('pet-'));
+          const stillPending = pendingTempPets.filter((p) => !mappedPets.some((mp) => mp.name === p.name));
+          return [...mappedPets, ...stillPending];
+        });
         if (!mappedPets.some((p) => p.id === selectedPetId)) {
           setSelectedPetId(mappedPets[0].id);
           setCuadernoActivePetId(mappedPets[0].id);
@@ -1164,11 +1316,15 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           }
         }
       } else {
-        // Si el cliente no tiene mascotas registradas en Supabase, iniciar en limpio
-        setPets([]);
-        setSelectedPetId(null);
-        setCuadernoActivePetId(null);
-        setHealthLogs({});
+        // Si el cliente no tiene mascotas registradas en Supabase, iniciar en limpio salvo mascotas en proceso
+        setPets((currentPets) => {
+          const pendingTempPets = currentPets.filter((p) => typeof p.id === 'string' && p.id.startsWith('pet-'));
+          return pendingTempPets;
+        });
+        if (!hasAutoPromptedPetModal.current) {
+          hasAutoPromptedPetModal.current = true;
+          setIsAddPetModalOpen(true);
+        }
       }
     });
 
@@ -1176,6 +1332,33 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       isMounted = false;
     };
   }, [customerDbId]);
+
+  // Cargar datos de reposición inteligente / despensa habitual
+  useEffect(() => {
+    let isMounted = true;
+    const loadReplenishment = async () => {
+      try {
+        const phone = profileData?.phone || user?.phone || '';
+        const data = await getCustomerReplenishmentData(customerDbId, phone);
+        if (isMounted && data) {
+          setReplenishmentData(data);
+        }
+      } catch (e) {
+        console.warn('Error loading replenishment in customer dashboard:', e);
+      }
+    };
+
+    loadReplenishment();
+
+    const handleSync = () => loadReplenishment();
+    window.addEventListener('patitas_replenishment_updated', handleSync);
+    window.addEventListener('patitas_orders_updated', handleSync);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('patitas_replenishment_updated', handleSync);
+      window.removeEventListener('patitas_orders_updated', handleSync);
+    };
+  }, [customerDbId, profileData?.phone, user?.phone]);
 
   const currentUser = {
     name: profileData.name || user?.name || (user?.email ? user.email.split('@')[0] : 'Tutor'),
@@ -1189,9 +1372,10 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   // State for user's registered pets: inicia completamente vacío para nuevas cuentas
   const [pets, setPets] = useState(() => {
-    if (user?.email) {
+    const userKey = (user?.email || profileData?.email || user?.phone || profileData?.phone || '').toLowerCase().trim();
+    if (userKey) {
       try {
-        const saved = localStorage.getItem(`patitas_customer_pets_${user.email}`);
+        const saved = localStorage.getItem(`patitas_customer_pets_${userKey}`);
         if (saved) return JSON.parse(saved);
       } catch (e) {
         console.error('Error loading pets from localStorage:', e);
@@ -1219,14 +1403,15 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   // Persistir mascotas en localStorage con clave por usuario
   useEffect(() => {
-    if (user?.email) {
+    const userKey = (user?.email || profileData?.email || user?.phone || profileData?.phone || '').toLowerCase().trim();
+    if (userKey && pets.length > 0) {
       try {
-        localStorage.setItem(`patitas_customer_pets_${user.email}`, JSON.stringify(pets));
+        localStorage.setItem(`patitas_customer_pets_${userKey}`, JSON.stringify(pets));
       } catch (e) {
         console.error('Error saving pets to localStorage:', e);
       }
     }
-  }, [pets, user?.email]);
+  }, [pets, user?.email, profileData?.email, user?.phone, profileData?.phone]);
 
   // Sincronizar automáticamente el filtro de tienda y cuaderno con la mascota activa
   const handleSelectPet = (pet) => {
@@ -1274,46 +1459,45 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   const handleAddPetSubmit = async (e) => {
     e.preventDefault();
-    if (!newPetName) return;
-
-    const finalFoodName = isCustomFood && customFoodName
-      ? customFoodName
-      : (newPetFood || newPetFoodSearch || (newPetType === 'gato' ? 'Alimento Felino Nutrición Completa' : 'Alimento Canino Nutrición Completa'));
-    
-    // Extraer automáticamente el formato o peso si está disponible
-    const bagMatch = finalFoodName.match(/\(([^)]+)\)/);
-    const resolvedBagSize = bagMatch ? bagMatch[1] : (newPetSelectedProduct?.weights?.[0] || '12 kg');
+    if (!newPetName.trim()) return;
 
     const tempId = `pet-${Date.now()}`;
+    const cleanPetName = newPetName.trim();
+    const cleanPetType = newPetType || 'perro';
+    const cleanBirthdate = newPetBirthdate ? newPetBirthdate.trim() : null;
+    const cleanWeight = newPetWeight ? `${newPetWeight} kg` : '6 kg';
+    const cleanSterilized = newPetSterilized === 'si' ? 'Sí' : 'No';
+
     const createdPet = {
       id: tempId,
-      name: `${newPetName} ${newPetType === 'perro' ? '🐶' : '🐱'}`,
-      type: newPetType,
-      birthdate: newPetBirthdate || 'No especificada',
-      weight: newPetWeight ? `${newPetWeight} kg` : '6 kg',
-      sterilized: newPetSterilized === 'si' ? 'Sí' : 'No',
-      foodName: finalFoodName,
-      bagSize: resolvedBagSize,
-      totalDaysDuration: parseInt(newPetDuration, 10) || 30,
-      daysRemaining: parseInt(newPetDuration, 10) || 30,
-      lastOrderDate: 'Hoy (Registrado)',
-      estimatedDepletionDate: 'En 30 días',
-      isCustomFoodNotice: isCustomFood,
+      name: cleanPetName,
+      type: cleanPetType,
+      birthdate: cleanBirthdate || 'No especificada',
+      weight: cleanWeight,
+      sterilized: cleanSterilized,
+      foodName: 'Alimento Habitual',
+      bagSize: 'Estándar',
+      totalDaysDuration: 30,
+      daysRemaining: 30,
+      lastOrderDate: new Date().toISOString().split('T')[0],
+      estimatedDepletionDate: null,
     };
 
-    setPets([createdPet, ...pets]);
-    setHealthLogs({
-      ...healthLogs,
+    setPets((prev) => [...prev, createdPet]);
+    setSelectedPetId(tempId);
+    setCuadernoActivePetId(tempId);
+    setHealthLogs((prevHl) => ({
+      ...prevHl,
       [tempId]: [
         {
           id: `hl-${Date.now()}`,
           date: 'Hoy',
           category: 'consulta',
-          title: 'Registro Inicial de Salud',
-          notes: `Mascota registrada. Esterilizado/a: ${newPetSterilized === 'si' ? 'Sí' : 'No'}. Peso: ${newPetWeight ? newPetWeight + ' kg' : 'Sin registrar'}. Alimento: ${finalFoodName}.`,
+          title: 'Registro Inicial de Mascota',
+          notes: `Mascota registrada. Especie: ${cleanPetType === 'perro' ? 'Canina' : 'Felina'}. Esterilizado/a: ${cleanSterilized}. Peso: ${cleanWeight}.`,
         }
       ]
-    });
+    }));
 
     setPetStep(1);
     setNewPetName('');
@@ -1321,36 +1505,41 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setNewPetAge('');
     setNewPetWeight('');
     setNewPetSterilized('si');
-    setNewPetFoodSearch('');
-    setNewPetFood('');
-    setNewPetSelectedProduct(null);
-    setIsCustomFood(false);
-    setCustomFoodName('');
-    setIsFoodDropdownOpen(false);
-    setNewPetDuration('30');
     setIsAddPetModalOpen(false);
 
     // Persistir mascota y bitácora en Supabase
-    if (customerDbId) {
-      try {
+    try {
+      let targetCustomerId = customerDbId;
+      if (!targetCustomerId) {
+        const identifier = user?.email || profileData?.email || user?.phone || profileData?.phone;
+        if (identifier) {
+          const profile = await getCustomerProfile(identifier);
+          if (profile?.id) {
+            targetCustomerId = profile.id;
+            setCustomerDbId(profile.id);
+          }
+        }
+      }
+
+      if (targetCustomerId) {
         const res = await addPetToSupabase({
-          customerId: customerDbId,
-          name: createdPet.name,
-          type: createdPet.type,
-          birthdate: newPetBirthdate || null,
-          weight: createdPet.weight,
-          sterilized: createdPet.sterilized,
-          foodName: finalFoodName,
-          bagSize: resolvedBagSize,
-          totalDaysDuration: createdPet.totalDaysDuration,
-          daysRemaining: createdPet.daysRemaining,
-          notes: `Mascota registrada. Alimento: ${finalFoodName}`,
+          customerId: targetCustomerId,
+          name: cleanPetName,
+          type: cleanPetType,
+          birthdate: cleanBirthdate,
+          weight: cleanWeight,
+          sterilized: cleanSterilized,
+          foodName: 'Alimento Habitual',
+          bagSize: 'Estándar',
+          totalDaysDuration: 30,
+          daysRemaining: 30,
+          notes: `Mascota registrada. Especie: ${cleanPetType === 'perro' ? 'Canina' : 'Felina'}. Esterilizado/a: ${cleanSterilized}. Peso: ${cleanWeight}.`,
         });
 
         if (res?.data?.id) {
           const realPetId = res.data.id;
-          setPets(prev => prev.map(p => p.id === tempId ? { ...p, id: realPetId } : p));
-          setHealthLogs(prev => {
+          setPets((prev) => prev.map((p) => (p.id === tempId ? { ...p, id: realPetId } : p)));
+          setHealthLogs((prev) => {
             const nextHl = { ...prev };
             if (nextHl[tempId]) {
               nextHl[realPetId] = nextHl[tempId];
@@ -1358,18 +1547,23 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             }
             return nextHl;
           });
-          if (selectedPetId === tempId) setSelectedPetId(realPetId);
+          setSelectedPetId(realPetId);
+          setCuadernoActivePetId(realPetId);
 
           await addHealthLogToSupabase({
             petId: realPetId,
             category: 'consulta',
-            title: 'Registro Inicial de Salud',
-            notes: `Mascota registrada. Esterilizado/a: ${createdPet.sterilized}. Peso: ${createdPet.weight}. Alimento: ${finalFoodName}.`,
+            title: 'Registro Inicial de Mascota',
+            notes: `Mascota registrada. Especie: ${cleanPetType === 'perro' ? 'Canina' : 'Felina'}. Esterilizado/a: ${cleanSterilized}. Peso: ${cleanWeight}.`,
           });
+
+          setOrderToastMessage(`✓ ¡${cleanPetName} se guardó exitosamente! 🐾`);
+        } else {
+          console.error('Error al guardar mascota en Supabase:', res?.error);
         }
-      } catch (err) {
-        console.error('Error persisting pet to Supabase:', err);
       }
+    } catch (err) {
+      console.error('Error persisting pet to Supabase:', err);
     }
   };
 
@@ -1852,6 +2046,249 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       })
       .reduce((sum, o) => sum + (Number(o.pointsEarned) || 0), 0);
   }, [ordersList]);
+
+  // Productos de la Despensa Habitual (del pedido habitual guardado o derivado de órdenes anteriores)
+  const habitualItems = useMemo(() => {
+    if (Array.isArray(replenishmentData?.habitualOrder) && replenishmentData.habitualOrder.length > 0) {
+      return replenishmentData.habitualOrder;
+    }
+    // Si aún no hay habitualOrder explícito, revisar en las órdenes del cliente si existe alguna compra previa de alimento
+    const foodOrder = ordersList.find((o) => {
+      const cat = (o.category || '').toLowerCase();
+      const prod = (o.product || '').toLowerCase();
+      return cat.includes('alimento') || prod.includes('kg') || prod.includes('alimento');
+    });
+    if (foodOrder) {
+      return [{
+        id: `prev-${foodOrder.id}`,
+        name: foodOrder.product,
+        price: parseInt(String(foodOrder.total).replace(/\D/g, ''), 10) || 45990,
+        quantity: 1,
+        weight: 'Formato Habitual',
+        image: '/images/hero_dog.png',
+        brand: 'Patitas del Sur',
+        category: 'Alimento Seco',
+      }];
+    }
+    return null;
+  }, [replenishmentData?.habitualOrder, ordersList]);
+
+  const hasHabitualItems = Array.isArray(habitualItems) && habitualItems.length > 0;
+
+  // Ciclo de consumo y cálculo de días restantes para reposición
+  const replenishmentCycle = useMemo(() => {
+    const freq = Number(replenishmentData?.frequencyDays) || 30;
+    const lastDateStr = replenishmentData?.lastOrderDate;
+    if (!lastDateStr) {
+      return {
+        frequencyDays: freq,
+        daysElapsed: 0,
+        daysRemaining: freq,
+        percent: 0,
+        isDue: false,
+        statusText: `Frecuencia configurada: cada ${freq} días`,
+      };
+    }
+
+    const lastTime = new Date(lastDateStr).getTime();
+    const nowTime = Date.now();
+    const diffDays = Math.max(0, Math.floor((nowTime - lastTime) / (1000 * 60 * 60 * 24)));
+    const remaining = Math.max(0, freq - diffDays);
+    const percent = Math.min(100, Math.round((diffDays / freq) * 100));
+    const isDue = remaining <= 5;
+
+    return {
+      frequencyDays: freq,
+      daysElapsed: diffDays,
+      daysRemaining: remaining,
+      percent,
+      isDue,
+      statusText: remaining === 0
+        ? '¡Momento de reponer tu despensa!'
+        : `Quedan ${remaining} ${remaining === 1 ? 'día' : 'días'} para tu reposición`,
+    };
+  }, [replenishmentData]);
+
+  // Manejador para actualizar frecuencia de reposición
+  const handleUpdateFrequency = async (newDays) => {
+    const nextData = {
+      ...replenishmentData,
+      frequencyDays: newDays,
+      updatedAt: new Date().toISOString(),
+    };
+    setReplenishmentData(nextData);
+    setIsEditingReplenishFrequency(false);
+    try {
+      await saveCustomerReplenishmentData(customerDbId, profileData?.phone || user?.phone, nextData);
+      setOrderToastMessage(`Frecuencia de reposición actualizada a cada ${newDays} días ✓`);
+    } catch (e) {
+      console.warn('Error updating frequency:', e);
+    }
+  };
+
+  // Manejador para repetir el pedido habitual completo con 1 clic
+  const handleRepeatHabitualOrder = () => {
+    if (!habitualItems || habitualItems.length === 0) {
+      handleSwitchTab('tienda');
+      return;
+    }
+
+    let addedCount = 0;
+    habitualItems.forEach((item) => {
+      const catalogMatch = activeCatalog.find(
+        (p) => p.id === item.id || (p.name && item.name && p.name.toLowerCase() === item.name.toLowerCase())
+      );
+      const productToAdd = catalogMatch || {
+        id: item.id || `custom-${Date.now()}`,
+        name: item.name,
+        price: item.price || 0,
+        image: item.image || '/images/hero_dog.png',
+        brand: item.brand || 'Patitas del Sur',
+        category: item.category || 'Alimento Seco',
+        weights: [item.weight || 'Formato Estándar'],
+      };
+
+      const weightToAdd = item.weight || productToAdd.weights?.[0] || 'Formato Estándar';
+      const qtyToAdd = item.quantity || 1;
+      onAddToCart(productToAdd, weightToAdd, qtyToAdd);
+      addedCount++;
+    });
+
+    setOrderToastMessage(`¡${addedCount} ${addedCount === 1 ? 'producto cargado' : 'productos cargados'} de tu despensa al carrito! 🛒`);
+    window.dispatchEvent(new CustomEvent('patitas_open_cart'));
+  };
+
+  // Actualizar cantidad de un producto específico dentro de la despensa habitual
+  const handleUpdateHabitualItemQuantity = async (index, newQty) => {
+    const currentList = Array.isArray(habitualItems) ? [...habitualItems] : [];
+    if (!currentList[index]) return;
+
+    if (newQty <= 0) {
+      handleRemoveHabitualItem(index);
+      return;
+    }
+
+    currentList[index] = {
+      ...currentList[index],
+      quantity: newQty,
+    };
+
+    const nextData = {
+      ...replenishmentData,
+      habitualOrder: currentList,
+      updatedAt: new Date().toISOString(),
+    };
+    setReplenishmentData(nextData);
+    try {
+      await saveCustomerReplenishmentData(customerDbId, profileData?.phone || user?.phone, nextData);
+    } catch (e) {
+      console.warn('Error saving habitual quantity:', e);
+    }
+  };
+
+  // Quitar un producto de la despensa habitual
+  const handleRemoveHabitualItem = async (index) => {
+    const currentList = Array.isArray(habitualItems) ? [...habitualItems] : [];
+    const removed = currentList.splice(index, 1)[0];
+
+    const nextData = {
+      ...replenishmentData,
+      habitualOrder: currentList,
+      updatedAt: new Date().toISOString(),
+    };
+    setReplenishmentData(nextData);
+    setOrderToastMessage(`"${removed?.name || 'Producto'}" removido de tu despensa`);
+    try {
+      await saveCustomerReplenishmentData(customerDbId, profileData?.phone || user?.phone, nextData);
+    } catch (e) {
+      console.warn('Error removing habitual item:', e);
+    }
+  };
+
+  // Agregar un producto nuevo del catálogo a la despensa habitual
+  const handleAddProductToHabitual = async (product, selectedWeight, quantity = 1) => {
+    if (!product) return;
+    const currentList = Array.isArray(habitualItems) ? [...habitualItems] : [];
+    const chosenWeight = selectedWeight || product.weights?.[0] || 'Formato Estándar';
+
+    const variantMatch = (product.variants || []).find((v) => v.format === chosenWeight || v.weight === chosenWeight);
+    const resolvedPrice = variantMatch && typeof variantMatch.price === 'number' ? variantMatch.price : (product.price || 0);
+
+    const existingIndex = currentList.findIndex(
+      (item) => (item.id === product.id || item.name === product.name) && (item.weight === chosenWeight)
+    );
+
+    if (existingIndex >= 0) {
+      currentList[existingIndex] = {
+        ...currentList[existingIndex],
+        quantity: (currentList[existingIndex].quantity || 1) + quantity,
+        price: resolvedPrice,
+      };
+    } else {
+      currentList.push({
+        id: product.id,
+        name: product.name,
+        brand: product.brand || 'Patitas del Sur',
+        price: resolvedPrice,
+        quantity,
+        weight: chosenWeight,
+        image: product.image || '/images/hero_dog.png',
+        category: product.category || 'Alimento Seco',
+      });
+    }
+
+    const nextData = {
+      ...replenishmentData,
+      habitualOrder: currentList,
+      updatedAt: new Date().toISOString(),
+    };
+    setReplenishmentData(nextData);
+    setIsAddHabitualProductModalOpen(false);
+    setOrderToastMessage(`✓ "${product.name}" agregado a tu despensa habitual 🥫`);
+    try {
+      await saveCustomerReplenishmentData(customerDbId, profileData?.phone || user?.phone, nextData);
+    } catch (e) {
+      console.warn('Error saving habitual product:', e);
+    }
+  };
+
+  // Catálogo filtrado para el modal de agregar producto a la despensa
+  const filteredCatalogForHabitual = useMemo(() => {
+    if (!activeCatalog || activeCatalog.length === 0) return [];
+
+    let pool = activeCatalog.filter((p) => p && p.isActive !== false && p.is_active !== false);
+
+    if (habitualCategoryFilter === 'perro') {
+      pool = pool.filter((p) => {
+        const t = (p.petType || p.pet_type || '').toLowerCase();
+        return t.includes('perro') || t === 'ambos' || t === 'todos';
+      });
+    } else if (habitualCategoryFilter === 'gato') {
+      pool = pool.filter((p) => {
+        const t = (p.petType || p.pet_type || '').toLowerCase();
+        return t.includes('gato') || t === 'ambos' || t === 'todos';
+      });
+    } else if (habitualCategoryFilter === 'alimento') {
+      pool = pool.filter((p) => {
+        const c = (p.category || '').toLowerCase();
+        return c.includes('alimento') || c.includes('seco') || c.includes('húmedo');
+      });
+    } else if (habitualCategoryFilter === 'snacks') {
+      pool = pool.filter((p) => (p.category || '').toLowerCase().includes('snack'));
+    }
+
+    if (habitualSearchQuery.trim()) {
+      const q = habitualSearchQuery.toLowerCase();
+      pool = pool.filter((p) => {
+        const name = (p.name || '').toLowerCase();
+        const brand = (p.brand || '').toLowerCase();
+        const cat = (p.category || '').toLowerCase();
+        return name.includes(q) || brand.includes(q) || cat.includes(q);
+      });
+    }
+
+    return pool;
+  }, [activeCatalog, habitualCategoryFilter, habitualSearchQuery]);
 
   // Filtered Orders Calculation
   const filteredOrders = ordersList.filter((order) => {
@@ -2429,97 +2866,250 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 
                 {/* Columna Izquierda (Desktop 7 cols): Alimento habitual & Carrusel */}
                 <div className="lg:col-span-7 space-y-4">
-                  {/* 1. PRIMERA CARD CON BORDE EN MOVIMIENTO VERDE A NEGRO */}
+                  {/* 1. CARD INTELIGENTE: MI DESPENSA HABITUAL */}
                   <div className="animated-border-card">
-                    <div className="animated-border-card-inner p-4 sm:p-5 flex items-center gap-4">
-                      {/* Foto del Producto al Lado Izquierdo */}
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center relative overflow-hidden">
-                        <img
-                          src={currentProduct?.image || '/images/hero_dog.png'}
-                          alt={pet.foodName}
-                          className={`w-full h-full object-contain duration-300 ${isCurrentFoodOutOfStock ? 'grayscale-[35%] opacity-75' : ''}`}
-                        />
-                        {isCurrentFoodOutOfStock && (
-                          <div className="absolute inset-0 bg-slate-950/20 flex items-center justify-center">
-                            <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm uppercase tracking-wider">
-                              Sin Stock
-                            </span>
+                    <div className="animated-border-card-inner p-4 sm:p-5 space-y-4">
+                      {/* Header de la Despensa */}
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3 gap-2 flex-wrap">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-white flex items-center justify-center text-base shadow-xs">
+                            🥫
                           </div>
-                        )}
-                      </div>
-
-                      {/* Nombre, Valor y 2 Botones Minimalistas */}
-                      <div className="flex-1 min-w-0 space-y-1.5">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {isCurrentFoodOutOfStock ? (
-                            <span className="text-[10px] font-extrabold uppercase text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                              Sin Stock en Bodega
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-black uppercase text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
-                              Nutrición Habitual
-                            </span>
-                          )}
-                          <span className="text-xs text-slate-500 font-bold">
-                            para {pet.name.split(' ')[0]}
-                          </span>
-                        </div>
-                        {(() => {
-                          const { brand: brandUpper, cleanName } = extractBrandAndCleanName({
-                            name: pet.foodName,
-                            brand: currentProduct?.brand,
-                          });
-                          return (
-                            <div>
-                              {brandUpper && (
-                                <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-0.5">
-                                  {brandUpper}
-                                </span>
-                              )}
-                              <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight line-clamp-1" title={pet.foodName}>
-                                {cleanName}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight">
+                                Mi Despensa Habitual
                               </h3>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                Cada {replenishmentCycle.frequencyDays} días
+                              </span>
                             </div>
-                          );
-                        })()}
-                        <div className="text-sm font-black text-[#0A3E40]">
-                          {priceDisplay}
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {pets.length > 1
+                                ? `Reposición unificada para tus ${pets.length} mascotas (${pets.map(p => p.name.split(' ')[0]).join(', ')})`
+                                : 'Tus alimentos se compran juntos para tus regalones'}
+                            </p>
+                          </div>
                         </div>
 
-                        <div className="flex items-center gap-2 pt-1 flex-wrap">
-                          <button
-                            type="button"
-                            disabled={isCurrentFoodOutOfStock}
-                            onClick={() => {
-                              if (isCurrentFoodOutOfStock) {
-                                setIsAlternativeFoodModalOpen(true);
-                                return;
-                              }
-                              handleOpenReplenishModal(pet);
-                            }}
-                            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 ${
-                              isCurrentFoodOutOfStock
-                                ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none'
-                                : 'bg-[#0E8388] hover:bg-[#0A3E40] text-white active:scale-95 cursor-pointer'
-                            }`}
-                            title={isCurrentFoodOutOfStock ? 'Producto agotado en bodega. Haz clic en Buscar otras opciones para ver alternativas disponibles.' : 'Reponer alimento habitual'}
-                          >
-                            {isCurrentFoodOutOfStock ? 'Sin stock' : 'Reponer'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsAlternativeFoodModalOpen(true)}
-                            className={`px-3 py-1.5 rounded-xl text-xs transition-all border active:scale-95 cursor-pointer ${
-                              isCurrentFoodOutOfStock
-                                ? 'bg-[#0E8388] hover:bg-[#0A3E40] text-white border-[#0E8388] shadow-xs font-bold'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 font-semibold'
-                            }`}
-                          >
-                            {isCurrentFoodOutOfStock ? 'Ver alternativas con stock' : 'Buscar otras opciones'}
-                          </button>
-                        </div>
+                        {/* Botón para ajustar frecuencia */}
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingReplenishFrequency(!isEditingReplenishFrequency)}
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-bold text-[#0E8388] hover:bg-[#E6F4F1] border border-transparent hover:border-[#0E8388]/30 transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <span>⚙️ Frecuencia</span>
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isEditingReplenishFrequency ? 'rotate-180' : ''}`} />
+                        </button>
                       </div>
+
+                      {/* Selector inline de frecuencia desplegable */}
+                      {isEditingReplenishFrequency && (
+                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2 animate-in fade-in duration-150">
+                          <div className="text-[11px] font-black text-slate-700">
+                            ¿Cada cuántos días sueles reponer el alimento seco en casa?
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {[15, 21, 30, 45, 60].map((days) => (
+                              <button
+                                key={days}
+                                type="button"
+                                onClick={() => handleUpdateFrequency(days)}
+                                className={`py-1.5 px-1 rounded-xl text-center text-xs transition-all cursor-pointer ${
+                                  replenishmentCycle.frequencyDays === days
+                                    ? 'bg-[#0E8388] text-white font-black shadow-xs'
+                                    : 'bg-white hover:bg-emerald-50 text-slate-700 font-bold border border-slate-200'
+                                }`}
+                              >
+                                <div className="font-extrabold">{days}d</div>
+                                <div className="text-[8.5px] opacity-80">{days === 30 ? '⭐ Habitual' : `${days} días`}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Lista de productos habituales o Empty state */}
+                      {hasHabitualItems ? (
+                        <div className="space-y-3.5">
+                          {/* Productos en la despensa habitual */}
+                          <div className="divide-y divide-slate-100 rounded-2xl bg-slate-50/70 border border-slate-200/80 p-2 sm:p-3 space-y-2">
+                            {habitualItems.map((item, idx) => {
+                              const { brand: brandUpper, cleanName } = extractBrandAndCleanName({
+                                name: item.name,
+                                brand: item.brand,
+                              });
+                              return (
+                                <div key={`${item.id}-${idx}`} className="flex items-center gap-3 pt-2.5 first:pt-0">
+                                  <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 p-1 shrink-0 flex items-center justify-center">
+                                    <img
+                                      src={item.image || '/images/hero_dog.png'}
+                                      alt={item.name}
+                                      className="w-full h-full object-contain"
+                                    />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    {brandUpper && (
+                                      <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400">
+                                        {brandUpper}
+                                      </span>
+                                    )}
+                                    <div className="text-xs font-bold text-slate-900 truncate" title={item.name}>
+                                      {cleanName}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
+                                      {item.weight && <span className="font-bold text-slate-700">{item.weight}</span>}
+                                      {item.price && (
+                                        <span className="text-slate-400">
+                                          • {formatCLP(item.price)} c/u
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Stepper de Cantidad */}
+                                  <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-0.5 shadow-2xs shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateHabitualItemQuantity(idx, (item.quantity || 1) - 1)}
+                                      className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 font-black text-xs cursor-pointer transition-colors active:scale-90"
+                                      title="Reducir cantidad"
+                                    >
+                                      <Minus className="w-3 h-3" />
+                                    </button>
+                                    <span className="text-xs font-black text-slate-900 min-w-[20px] text-center">
+                                      {item.quantity || 1}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateHabitualItemQuantity(idx, (item.quantity || 1) + 1)}
+                                      className="w-6 h-6 rounded-lg flex items-center justify-center text-[#0E8388] hover:bg-[#E6F4F1] font-black text-xs cursor-pointer transition-colors active:scale-90"
+                                      title="Aumentar cantidad"
+                                    >
+                                      <Plus className="w-3 h-3" />
+                                    </button>
+                                  </div>
+
+                                  {/* Subtotal y Botón Eliminar */}
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {item.price && (
+                                      <span className="text-xs font-black text-[#0A3E40] min-w-[55px] text-right">
+                                        {formatCLP((item.price || 0) * (item.quantity || 1))}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveHabitualItem(idx)}
+                                      className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                      title="Quitar de mi despensa"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Botón para agregar otro saco o producto habitual */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setHabitualSearchQuery('');
+                              setHabitualCategoryFilter('todos');
+                              setIsAddHabitualProductModalOpen(true);
+                            }}
+                            className="w-full py-2.5 px-3 rounded-2xl border-2 border-dashed border-[#0E8388]/30 hover:border-[#0E8388] bg-[#0E8388]/5 hover:bg-[#0E8388]/10 text-[#0A3E40] text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer group active:scale-98"
+                          >
+                            <Plus className="w-4 h-4 text-[#0E8388] group-hover:scale-110 transition-transform" />
+                            <span>+ Agregar otro saco o producto habitual</span>
+                          </button>
+
+                          {/* Barra de progreso de ciclo y días restantes */}
+                          <div className="p-3 bg-white rounded-2xl border border-slate-200 space-y-1.5 shadow-2xs">
+                            <div className="flex items-center justify-between text-xs font-bold">
+                              <span className={replenishmentCycle.isDue ? 'text-amber-700 font-black flex items-center gap-1' : 'text-slate-700'}>
+                                {replenishmentCycle.isDue && <span>⚠️</span>}
+                                <span>{replenishmentCycle.statusText}</span>
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                {replenishmentCycle.daysElapsed} de {replenishmentCycle.frequencyDays} días
+                              </span>
+                            </div>
+
+                            <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  replenishmentCycle.isDue
+                                    ? 'bg-gradient-to-r from-amber-500 to-rose-500'
+                                    : 'bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981]'
+                                }`}
+                                style={{ width: `${replenishmentCycle.percent}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Acciones de la despensa */}
+                          <div className="flex items-center gap-2 pt-1 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={handleRepeatHabitualOrder}
+                              className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-[#10B981] text-white text-xs font-black shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                            >
+                              <ShoppingCart className="w-4 h-4 text-emerald-300" />
+                              <span>Repetir este Pedido en 1 Clic 🛒</span>
+                            </button>
+                            
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchTab('tienda')}
+                              className="px-3.5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all border border-slate-200 cursor-pointer"
+                            >
+                              Ver más opciones
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Empty State: aún no hay productos registrados en la despensa */
+                        <div className="p-4 rounded-2xl bg-gradient-to-br from-teal-50/70 to-emerald-50/60 border border-teal-200/80 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-white text-[#0E8388] flex items-center justify-center text-xl shrink-0 shadow-2xs border border-teal-100">
+                              🥘
+                            </div>
+                            <div className="space-y-1">
+                              <h4 className="text-xs font-black text-slate-900">
+                                Tu despensa inteligente se activará con tu primer pedido
+                              </h4>
+                              <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                                Al comprar alimento seco para tus mascotas, guardaremos automáticamente tu pedido habitual para que lo repitas todo junto en 1 solo clic y te recordaremos antes de que se acabe.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setHabitualSearchQuery('');
+                                setHabitualCategoryFilter('todos');
+                                setIsAddHabitualProductModalOpen(true);
+                              }}
+                              className="py-2.5 px-4 rounded-xl bg-[#0E8388] hover:bg-[#0A3E40] text-white text-xs font-black shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Configurar despensa ahora</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSwitchTab('tienda')}
+                              className="py-2.5 px-4 rounded-xl bg-white hover:bg-slate-100 text-slate-700 text-xs font-black border border-slate-200 shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <ShoppingBag className="w-3.5 h-3.5 text-[#0E8388]" />
+                              <span>Explorar en la Tienda 🐾</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -2540,10 +3130,14 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   
                   {/* BARRA DE PROGRESO DE PUNTOS ACUMULADOS */}
                   {(() => {
-                    const nextGoal = userPoints < 1500 ? 1500 : userPoints < 2000 ? 2000 : 2500;
-                    const nextGoalReward = userPoints < 1500 ? 'Envío Gratis 🚚' : userPoints < 2000 ? 'Cupón $20.000 🎁' : 'Premio VIP 👑';
+                    const activeTiers = redeemRewards.filter((r) => r.active !== false);
+                    const nextTierObj = activeTiers.find((r) => userPoints < r.points) || activeTiers[activeTiers.length - 1];
+                    const nextGoal = nextTierObj?.points || 500;
+                    const nextGoalReward = nextTierObj ? `Cupón $${(nextTierObj.discountAmount || 0).toLocaleString('es-CL')} 🎁` : 'Premio VIP 👑';
                     const progressPercent = Math.min(100, Math.round((userPoints / nextGoal) * 100));
                     const pointsRemaining = Math.max(0, nextGoal - userPoints);
+                    const affordableTiers = [...activeTiers].filter((r) => userPoints >= r.points).sort((a, b) => b.points - a.points);
+                    const canjeableValue = affordableTiers[0]?.discountAmount || 0;
 
                     return (
                       <div
@@ -2565,7 +3159,9 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                                   {userPoints.toLocaleString('es-CL')} Pts
                                 </span>
                                 <span className="text-[10px] text-emerald-700 font-bold truncate">
-                                  (${ (userPoints * 10).toLocaleString('es-CL') } CLP en canjes)
+                                  {canjeableValue > 0
+                                    ? `(Canjeable: $${canjeableValue.toLocaleString('es-CL')} CLP)`
+                                    : '(Acumula para canjear)'}
                                 </span>
                               </div>
                             </div>
@@ -2762,6 +3358,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
               pendingPoints={pendingPoints}
               activeCoupons={activeCoupons}
               onOpenRedeemModal={() => setIsRedeemModalOpen(true)}
+              tiers={membershipTiers}
+              pointsPerThousand={loyaltySettings.pointsPerThousand || 1}
             />
 
             {/* Order History Table with Interactive Filters */}
@@ -3680,7 +4278,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-xl font-black text-slate-900">Agregar Nueva Mascota 🐾</h3>
-                <p className="text-xs text-slate-500 font-medium">Asistente de registro en 3 pasos</p>
+                <p className="text-xs text-slate-500 font-medium">Asistente de registro en 2 pasos</p>
               </div>
               <button
                 onClick={resetPetModalForm}
@@ -3694,7 +4292,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden p-0.5 border border-slate-200">
               <div
                 className="bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981] h-full rounded-full transition-all duration-500"
-                style={{ width: `${(petStep / 3) * 100}%` }}
+                style={{ width: `${(petStep / 2) * 100}%` }}
               />
             </div>
 
@@ -3705,10 +4303,10 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 <div className="space-y-6 animate-in fade-in duration-200">
                   <div className="text-center space-y-1">
                     <span className="px-3 py-1 rounded-full text-[11px] font-black bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20 inline-block mb-1">
-                      Paso 1 de 3: Especie 🐾
+                      Paso 1 de 2: Especie 🐾
                     </span>
                     <h4 className="text-lg font-black text-slate-900">¿Tu mascota es Perro o Gato?</h4>
-                    <p className="text-xs text-slate-500 font-medium">Selecciona la especie para adaptar las opciones nutricionales.</p>
+                    <p className="text-xs text-slate-500 font-medium">Selecciona la especie de tu regalón para personalizar su experiencia.</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -3716,13 +4314,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     <button
                       type="button"
                       onClick={() => {
-                        if (newPetType !== 'perro') {
-                          setNewPetFood('');
-                          setNewPetFoodSearch('');
-                          setCustomFoodName('');
-                          setIsCustomFood(false);
-                          setNewPetSelectedProduct(null);
-                        }
                         setNewPetType('perro');
                         setPetStep(2);
                       }}
@@ -3748,13 +4339,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     <button
                       type="button"
                       onClick={() => {
-                        if (newPetType !== 'gato') {
-                          setNewPetFood('');
-                          setNewPetFoodSearch('');
-                          setCustomFoodName('');
-                          setIsCustomFood(false);
-                          setNewPetSelectedProduct(null);
-                        }
                         setNewPetType('gato');
                         setPetStep(2);
                       }}
@@ -3780,7 +4364,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                   <button
                     type="button"
                     onClick={() => setPetStep(2)}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-[#10B981] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-2"
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-[#10B981] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <span>Siguiente: Datos de la Mascota</span>
                     <span>→</span>
@@ -3793,9 +4377,9 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 <div className="space-y-5 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                     <span className="px-3 py-1 rounded-full text-[11px] font-black bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20">
-                      Paso 2 de 3: Datos de {newPetType === 'perro' ? '🐶 Perro' : '🐱 Gato'}
+                      Paso 2 de 2: Datos de {newPetType === 'perro' ? '🐶 Perro' : '🐱 Gato'}
                     </span>
-                    <span className="text-xs font-bold text-slate-500">66% completado</span>
+                    <span className="text-xs font-bold text-emerald-600">100% completado</span>
                   </div>
 
                   {/* Nombre */}
@@ -3811,7 +4395,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     />
                   </div>
 
-                  {/* Fila 1: Fecha de Nacimiento (con amplio espacio) & Edad Calculada (Años y Meses) */}
+                  {/* Fila 1: Fecha de Nacimiento & Edad Calculada */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1">
                       <label className="font-black text-slate-700 uppercase text-[10px] flex items-center justify-between">
@@ -3904,236 +4488,21 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                     <button
                       type="button"
                       onClick={() => setPetStep(1)}
-                      className="w-1/3 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
-                    >
-                      ← Volver
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={!newPetName.trim()}
-                      onClick={() => setPetStep(3)}
-                      className={`w-2/3 py-3 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-1.5 shadow-md cursor-pointer ${
-                        newPetName.trim()
-                          ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white hover:scale-[1.02]'
-                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                      }`}
-                    >
-                      <span>Siguiente: Alimento</span>
-                      <span>→</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 3: ALIMENTO HABITUAL & DURACIÓN */}
-              {petStep === 3 && (
-                <div className="space-y-5 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="px-3 py-1 rounded-full text-[11px] font-black bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20">
-                      Paso 3 de 3: Alimento & Duración 🥣
-                    </span>
-                    <span className="text-xs font-bold text-emerald-600">100% completado</span>
-                  </div>
-
-                  {/* Selection Mode: Live Autocomplete Combobox vs Custom Input */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="font-black text-slate-700 uppercase text-[11px]">
-                        Alimento Habitual de {newPetName}
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextCustom = !isCustomFood;
-                          setIsCustomFood(nextCustom);
-                          if (nextCustom && newPetFoodSearch && !customFoodName) {
-                            setCustomFoodName(newPetFoodSearch);
-                          }
-                          setIsFoodDropdownOpen(false);
-                        }}
-                        className="text-[11px] font-bold text-[#0E8388] underline hover:text-[#0A3E40] cursor-pointer"
-                      >
-                        {isCustomFood ? '← Seleccionar del catálogo' : '➕ No está en la lista'}
-                      </button>
-                    </div>
-
-                    {!isCustomFood ? (
-                      <div ref={foodDropdownRef} className="relative">
-                        {/* Live Search Input */}
-                        <div className="relative">
-                          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" />
-                          <input
-                            type="text"
-                            placeholder={newPetType === 'perro' ? "Buscar alimento para perro (ej. Acana, Fit, Nomade)..." : "Buscar alimento para gato (ej. Fit Gato)..."}
-                            value={newPetFoodSearch}
-                            onFocus={() => setIsFoodDropdownOpen(true)}
-                            onClick={() => setIsFoodDropdownOpen(true)}
-                            onChange={(e) => {
-                              setNewPetFoodSearch(e.target.value);
-                              setNewPetFood(e.target.value);
-                              setIsFoodDropdownOpen(true);
-                            }}
-                            className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-hidden focus:border-[#0E8388] focus:bg-white text-slate-900 shadow-xs"
-                          />
-                          {newPetFoodSearch && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setNewPetFoodSearch('');
-                                setNewPetFood('');
-                                setNewPetSelectedProduct(null);
-                                setIsFoodDropdownOpen(true);
-                              }}
-                              className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 font-bold text-xs"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Floating Live Suggestions Panel */}
-                        {isFoodDropdownOpen && (
-                          <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl p-2 shadow-2xl border border-slate-200 max-h-60 overflow-y-auto space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                            {/* Cabecera descriptiva de especie y conteo */}
-                            <div className="px-2 py-1 text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1">
-                              <span>
-                                {newPetType === 'perro' ? '🐶 Alimentos Caninos' : '🐱 Alimentos Felinos'}
-                              </span>
-                              <span>
-                                {availablePetFoods.length} {availablePetFoods.length === 1 ? 'disponible' : 'disponibles'}
-                              </span>
-                            </div>
-
-                            {availablePetFoods.length > 0 ? (
-                              availablePetFoods.map((product) => {
-                                const weightStr = Array.isArray(product.weights) && product.weights.length > 0
-                                  ? product.weights[0]
-                                  : (product.weight || product.format || '');
-                                const displayName = product.name;
-                                const fullSelectionName = weightStr && !displayName.toLowerCase().includes(weightStr.toLowerCase())
-                                  ? `${displayName} (${weightStr})`
-                                  : displayName;
-
-                                return (
-                                  <button
-                                    key={product.id}
-                                    type="button"
-                                    onClick={() => {
-                                      setNewPetFood(fullSelectionName);
-                                      setNewPetFoodSearch(fullSelectionName);
-                                      setNewPetSelectedProduct(product);
-                                      setIsFoodDropdownOpen(false);
-                                    }}
-                                    className="w-full p-2.5 rounded-xl hover:bg-[#E6F4F1] transition-all text-left flex items-center justify-between group cursor-pointer border border-transparent hover:border-[#0E8388]/20"
-                                  >
-                                    <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                      <span className="text-base shrink-0">{newPetType === 'perro' ? '🐶' : '🐱'}</span>
-                                      <div className="min-w-0">
-                                        <div className="font-extrabold text-slate-900 text-xs group-hover:text-[#0E8388] truncate">
-                                          {product.name}
-                                        </div>
-                                        <div className="text-[10px] text-slate-500 font-medium truncate">
-                                          <span className="font-bold text-slate-700">{product.brand}</span> • {product.category || 'Alimento'}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {weightStr && (
-                                      <span className="px-2 py-0.5 rounded-md bg-slate-100 group-hover:bg-[#0E8388] group-hover:text-white text-[10px] font-black text-slate-700 shrink-0">
-                                        {weightStr}
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })
-                            ) : (
-                              <div className="p-3 text-center text-xs text-slate-500 font-medium bg-slate-50 rounded-xl border border-slate-100">
-                                {newPetFoodSearch ? (
-                                  <>No encontramos alimentos que coincidan con <strong>"{newPetFoodSearch}"</strong> para {newPetType === 'perro' ? 'perros' : 'gatos'}.</>
-                                ) : (
-                                  <>No hay alimentos cargados en el sistema para esta especie.</>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Option for unlisted foods */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsCustomFood(true);
-                                if (newPetFoodSearch && !customFoodName) {
-                                  setCustomFoodName(newPetFoodSearch);
-                                }
-                                setIsFoodDropdownOpen(false);
-                              }}
-                              className="w-full p-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition-all text-left flex items-center gap-2 text-amber-900 cursor-pointer mt-1"
-                            >
-                              <span className="text-base">➕</span>
-                              <div>
-                                <div className="font-black text-xs">¿No encuentras tu alimento?</div>
-                                <div className="text-[10px] text-amber-800 font-medium">Ingresar marca y alimento manualmente</div>
-                              </div>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      /* Manual Custom Food Input with Notice Banner */
-                      <div className="space-y-3">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Escribe el nombre del alimento y marca..."
-                          value={customFoodName}
-                          onChange={(e) => setCustomFoodName(e.target.value)}
-                          className="w-full px-4 py-3 bg-[#FAF9F5] border-2 border-[#0E8388]/40 rounded-xl text-xs font-extrabold text-slate-900 focus:outline-hidden focus:border-[#0E8388]"
-                        />
-
-                        {/* Friendly Notification Banner */}
-                        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
-                          <div className="font-black flex items-center gap-1.5">
-                            <span>💡 ¡Tomamos nota de tu alimento!</span>
-                          </div>
-                          <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
-                            Intentaremos gestionar el stock e incorporar <strong>"{customFoodName || 'esta marca'}"</strong> a nuestro catálogo de Patitas del Sur para tu próximo pedido mensual.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Duración Estimada */}
-                  <div className="space-y-1">
-                    <label className="font-black text-slate-700 uppercase text-[11px]">
-                      Duración Estimada del Saco (Días)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="30"
-                      value={newPetDuration}
-                      onChange={(e) => setNewPetDuration(e.target.value)}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs focus:outline-hidden"
-                    />
-                    <p className="text-[10px] text-slate-500 font-medium">
-                      Te avisaremos automáticamente 5 días antes de agotarse.
-                    </p>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setPetStep(2)}
-                      className="w-1/3 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all"
+                      className="w-1/3 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
                     >
                       ← Volver
                     </button>
 
                     <button
                       type="submit"
-                      className="w-2/3 py-3.5 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-[#10B981] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-2"
+                      disabled={!newPetName.trim()}
+                      className={`w-2/3 py-3.5 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer ${
+                        newPetName.trim()
+                          ? 'bg-gradient-to-r from-[#0A3E40] to-[#0E8388] hover:from-[#0E8388] hover:to-[#10B981] text-white hover:scale-[1.02] shadow-emerald-900/10'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
                     >
-                      <span>Guardar Registro de Mascota 🐾</span>
+                      <span>Guardar Mascota 🐾</span>
                     </button>
                   </div>
                 </div>
@@ -5477,9 +5846,10 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
         isOpen={isRedeemModalOpen}
         onClose={() => setIsRedeemModalOpen(false)}
         userPoints={userPoints}
-        rewards={REDEEM_REWARDS}
+        rewards={redeemRewards}
         onRedeem={handleRedeemReward}
         activeCoupons={activeCoupons}
+        pointsPerThousand={loyaltySettings.pointsPerThousand || 1}
       />
 
           {/* MODAL: SEGUIMIENTO EN VIVO DE DESPACHO PWA CLIENTES */}
@@ -6108,6 +6478,125 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 </span>
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: AGREGAR PRODUCTO A LA DESPENSA HABITUAL */}
+      {isAddHabitualProductModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-xl shadow-inner border border-white/20">
+                  🥫
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
+                    Agregar a tu Despensa Habitual
+                  </h3>
+                  <p className="text-[11px] text-teal-100/90 font-medium">
+                    Elige los sacos de alimento o snacks que compras mes a mes
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddHabitualProductModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+                title="Cerrar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filtros y Buscador */}
+            <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-50/70 space-y-3 shrink-0">
+              {/* Buscador */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre o marca (ej. Acana, Bravery, Hills)..."
+                  value={habitualSearchQuery}
+                  onChange={(e) => setHabitualSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-[#0E8388] shadow-2xs"
+                  autoFocus
+                />
+                {habitualSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHabitualSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Chips de Categoría */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] font-bold">
+                {[
+                  { id: 'todos', label: 'Todos los productos' },
+                  { id: 'perro', label: '🐶 Perros' },
+                  { id: 'gato', label: '🐱 Gatos' },
+                  { id: 'alimento', label: '🥣 Alimento' },
+                  { id: 'snacks', label: '🥩 Snacks' },
+                ].map((chip) => (
+                  <button
+                    key={chip.id}
+                    type="button"
+                    onClick={() => setHabitualCategoryFilter(chip.id)}
+                    className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
+                      habitualCategoryFilter === chip.id
+                        ? 'bg-[#0E8388] text-white shadow-2xs font-black'
+                        : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                    }`}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Listado de Productos */}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
+              {filteredCatalogForHabitual.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <div className="text-3xl">🔍</div>
+                  <p className="text-xs font-black text-slate-700">
+                    No encontramos productos con ese filtro o búsqueda
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Intenta buscar con otra palabra clave o quita los filtros.
+                  </p>
+                </div>
+              ) : (
+                filteredCatalogForHabitual.slice(0, 40).map((prod) => (
+                  <HabitualProductCard
+                    key={prod.id || prod.name}
+                    product={prod}
+                    onAdd={(weight, qty) => handleAddProductToHabitual(prod, weight, qty)}
+                    formatCLP={formatCLP}
+                  />
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
+              <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
+                💡 Los productos agregados se guardarán para reposición cada {replenishmentCycle.frequencyDays} días.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsAddHabitualProductModalOpen(false)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

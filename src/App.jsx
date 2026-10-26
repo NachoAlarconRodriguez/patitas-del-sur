@@ -176,6 +176,13 @@ export default function App() {
     };
   }, []);
 
+  // Listen for global open cart requests (e.g. from Despensa Habitual)
+  useEffect(() => {
+    const handleOpenCart = () => setIsCartOpen(true);
+    window.addEventListener('patitas_open_cart', handleOpenCart);
+    return () => window.removeEventListener('patitas_open_cart', handleOpenCart);
+  }, []);
+
   // Auth Handlers
   const handleLoginSuccess = (userObj) => {
     setUser(userObj);

@@ -1,5 +1,5 @@
 import React, { useId } from 'react';
-import { Sparkles, ShieldCheck, Leaf } from 'lucide-react';
+import { Sparkles, ShieldCheck, Leaf, Wheat } from 'lucide-react';
 import { ANIMAL_SILHOUETTES } from './anatomicalSilhouettes';
 
 /**
@@ -263,49 +263,99 @@ function AnimalLiquidGauge({ animalConfig, percent }) {
 }
 
 /**
- * Componente Silueta Espiga de Trigo (Indicador Grano / Grain Free)
+ * Componente Gráfico Circular para el % de Proteína Animal
  */
-function WheatStalkGauge({ grainPercent = 0, grainStatus = 'free' }) {
-  const isGrainFree = grainPercent === 0 || grainStatus === 'free';
-  const strokeColor = isGrainFree ? '#10B981' : '#D97706';
-  const fillColor = isGrainFree ? 'none' : '#F59E0B';
+function AnimalProteinCircularGauge({ percent = 70, color = '#0E8388', proteinSource = 'Pollo' }) {
+  const numeric = typeof percent === 'number' ? percent : parseInt(percent, 10) || 70;
+  const radius = 17;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (Math.min(100, Math.max(0, numeric)) / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center justify-center">
-      <div className="w-8 h-11 flex items-center justify-center relative">
-        <svg
-          viewBox="0 -3 24 30"
-          className="w-full h-full drop-shadow-xs transition-transform duration-300 hover:scale-105"
-          fill={fillColor}
-          stroke={strokeColor}
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <g transform="rotate(-45 12 12)">
-            <path d="M2 22 16 8" />
-            <path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" />
-            <path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" />
-            <path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" />
-            <path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z" />
-            <path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" />
-            <path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" />
-            <path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" />
-          </g>
+    <div className="flex flex-col items-center justify-center text-center">
+      {/* Gráfico Circular de Progreso */}
+      <div className="relative w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center">
+        <svg className="w-11 h-11 sm:w-12 sm:h-12 -rotate-90 transform" viewBox="0 0 44 44">
+          <circle
+            cx="22"
+            cy="22"
+            r={radius}
+            className="text-slate-200"
+            strokeWidth="3.5"
+            stroke="currentColor"
+            fill="transparent"
+          />
+          <circle
+            cx="22"
+            cy="22"
+            r={radius}
+            strokeWidth="3.5"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            stroke={color}
+            fill="transparent"
+            className="transition-all duration-700 ease-out"
+          />
         </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[11px] sm:text-xs font-black text-slate-900 leading-none tracking-tight">
+            {numeric}%
+          </span>
+        </div>
       </div>
 
-      <span
-        className={`mt-1 text-[9.5px] font-black px-2 py-0.5 rounded-full inline-flex items-center tracking-tight leading-none border shadow-2xs ${
-          isGrainFree
-            ? 'text-emerald-800 bg-emerald-50 border-emerald-200/80'
-            : grainStatus === 'low'
-            ? 'text-amber-800 bg-amber-50 border-amber-200/80'
-            : 'text-slate-700 bg-slate-100 border-slate-200'
-        }`}
-      >
-        {isGrainFree ? 'Grain Free' : `${grainPercent}% Grano`}
+      {/* Etiqueta inferior */}
+      <span className="text-[9.5px] sm:text-[10px] font-black text-slate-800 uppercase tracking-tight mt-1 leading-tight">
+        Proteína Animal
+      </span>
+      {proteinSource && (
+        <span className="text-[8.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none mt-0.5">
+          {proteinSource}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Componente Indicador de Grano: Trigo con círculo tachado cuando es Libre de Grano
+ */
+function GrainStatusGauge({ isGrainFree = true, grainPercent = 0, grainStatus = 'free' }) {
+  const free = isGrainFree || grainPercent === 0 || grainStatus === 'free';
+
+  return (
+    <div className="flex flex-col items-center justify-center text-center">
+      {/* Icono de trigo con círculo tachado encima cuando es libre de grano */}
+      <div className="relative w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center">
+        {/* Espiga de trigo */}
+        <Wheat className={`w-5 h-5 sm:w-6 sm:h-6 transition-transform ${free ? 'text-slate-500' : 'text-amber-500'}`} />
+
+        {/* Círculo tachado rojo/rose arriba del trigo cuando es Libre de Grano */}
+        {free && (
+          <svg
+            viewBox="0 0 24 24"
+            className="absolute inset-0 w-full h-full text-rose-500 pointer-events-none drop-shadow-2xs"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+          </svg>
+        )}
+      </div>
+
+      {/* Etiqueta inferior */}
+      <span className={`text-[9.5px] sm:text-[10px] font-black uppercase tracking-tight mt-1 leading-tight ${
+        free ? 'text-emerald-700' : 'text-amber-800'
+      }`}>
+        {free ? 'Libre de Grano' : 'Con Grano'}
+      </span>
+      <span className="text-[8.5px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none mt-0.5">
+        {free ? 'Grain Free' : `${grainPercent || 15}% Cereales`}
       </span>
     </div>
   );
@@ -361,22 +411,21 @@ export default function AppleNutritionSpecs({ product, activeFlavor = '', classN
   const animalConfig = getAnimalConfig(proteinSource);
 
   return (
-    <div className={`relative rounded-2xl bg-[#F8FAFC]/95 backdrop-blur-md border border-slate-200/80 p-2 sm:p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_-2px_rgba(0,0,0,0.03)] grid grid-cols-2 divide-x divide-slate-200/80 items-center gap-1.5 ${className}`}>
+    <div className={`relative rounded-2xl bg-[#F8FAFC]/95 backdrop-blur-md border border-slate-200/80 p-2 sm:p-2.5 shadow-2xs grid grid-cols-2 divide-x divide-slate-200/80 items-center ${className}`}>
       
-      {/* 1. SECCIÓN PROTEÍNA ANIMAL (SILUETA ANATÓMICA CON MEDIDOR LÍQUIDO) */}
-      <div className="flex flex-col items-center justify-center min-w-0 px-1">
-        <AnimalLiquidGauge
-          animalConfig={animalConfig}
+      {/* 1. SECCIÓN PROTEÍNA ANIMAL: GRÁFICO CIRCULAR CON EL % */}
+      <div className="flex flex-col items-center justify-center text-center px-1">
+        <AnimalProteinCircularGauge
           percent={animalPercent}
+          color={animalConfig?.outlineColor || '#0E8388'}
+          proteinSource={animalConfig?.label || proteinSource}
         />
-        <span className={`mt-1 text-[9.5px] font-black px-2 py-0.5 rounded-full inline-flex items-center tracking-tight leading-none border shadow-2xs ${animalConfig.badgeBg}`}>
-          {animalPercent}% {animalConfig.label}
-        </span>
       </div>
 
-      {/* 2. SECCIÓN NIVEL DE GRANO (SILUETA DE ESPIGA DE TRIGO) */}
-      <div className="flex flex-col items-center justify-center min-w-0 px-1">
-        <WheatStalkGauge
+      {/* 2. SECCIÓN LIBRE DE GRANO: TRIGO CON CÍRCULO TACHADO ARRIBA */}
+      <div className="flex flex-col items-center justify-center text-center px-1">
+        <GrainStatusGauge
+          isGrainFree={grainPercent === 0 || grainStatus === 'free'}
           grainPercent={grainPercent}
           grainStatus={grainStatus}
         />

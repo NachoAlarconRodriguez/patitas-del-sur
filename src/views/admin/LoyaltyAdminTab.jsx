@@ -120,10 +120,19 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
   const handleTierChange = (index, field, value) => {
     setSettings((prev) => {
       const updatedTiers = [...prev.tiers];
-      updatedTiers[index] = {
-        ...updatedTiers[index],
-        [field]: field === 'points' || field === 'discountAmount' ? Number(value) || 0 : value,
+      const currentTier = updatedTiers[index] || {};
+      const parsedValue = field === 'points' || field === 'discountAmount' ? Number(value) || 0 : value;
+      const updatedTier = {
+        ...currentTier,
+        [field]: parsedValue,
       };
+
+      if (field === 'discountAmount') {
+        updatedTier.title = `Cupón $${parsedValue.toLocaleString('es-CL')} CLP Dcto.`;
+        updatedTier.description = `Aplica $${parsedValue.toLocaleString('es-CL')} de descuento directo en el total de tu próxima compra.`;
+      }
+
+      updatedTiers[index] = updatedTier;
       return { ...prev, tiers: updatedTiers };
     });
   };
@@ -582,11 +591,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       min="500"
                       step="500"
                       value={tier.discountAmount}
-                      onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
-                        handleTierChange(idx, 'discountAmount', val);
-                        handleTierChange(idx, 'title', `Cupón $${val.toLocaleString('es-CL')} CLP Dcto.`);
-                      }}
+                      onChange={(e) => handleTierChange(idx, 'discountAmount', e.target.value)}
                       className="w-full pl-7 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-emerald-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">

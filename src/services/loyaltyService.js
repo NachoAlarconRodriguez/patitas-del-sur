@@ -7,40 +7,40 @@ export const DEFAULT_LOYALTY_SETTINGS = {
     {
       id: 'reward-100',
       points: 100,
-      discountAmount: 3000,
-      title: 'Cupón $3.000 CLP Dcto.',
+      discountAmount: 1000,
+      title: 'Cupón $1.000 CLP Dcto.',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $3.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $1.000 de descuento directo en el total de tu próxima compra.',
       icon: '💵',
       active: true,
     },
     {
       id: 'reward-200',
       points: 200,
-      discountAmount: 7000,
-      title: 'Cupón $7.000 CLP Dcto.',
+      discountAmount: 2000,
+      title: 'Cupón $2.000 CLP Dcto.',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $7.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $2.000 de descuento directo en el total de tu próxima compra.',
       icon: '💰',
       active: true,
     },
     {
       id: 'reward-350',
       points: 350,
-      discountAmount: 14000,
-      title: 'Cupón $14.000 CLP Dcto.',
+      discountAmount: 3500,
+      title: 'Cupón $3.500 CLP Dcto.',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $14.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $3.500 de descuento directo en el total de tu próxima compra.',
       icon: '🏷️',
       active: true,
     },
     {
       id: 'reward-500',
       points: 500,
-      discountAmount: 25000,
-      title: 'Cupón $25.000 CLP Dcto.',
+      discountAmount: 5000,
+      title: 'Cupón $5.000 CLP Dcto.',
       validity: 'Válido para 1 compra',
-      description: 'Aplica $25.000 de descuento directo en el total de tu próxima compra.',
+      description: 'Aplica $5.000 de descuento directo en el total de tu próxima compra.',
       icon: '👑',
       active: true,
     },
@@ -82,9 +82,25 @@ export async function getLoyaltySettings() {
  */
 export async function saveLoyaltySettings(newSettings) {
   try {
+    const rawTiers = Array.isArray(newSettings.tiers) ? newSettings.tiers : DEFAULT_LOYALTY_SETTINGS.tiers;
+    const cleanedTiers = rawTiers.map((t) => {
+      const dAmount = Number(t.discountAmount) || 0;
+      const pts = Number(t.points) || 0;
+      return {
+        ...t,
+        points: pts,
+        discountAmount: dAmount,
+        title: t.title || `Cupón $${dAmount.toLocaleString('es-CL')} CLP Dcto.`,
+        description: t.description && !t.description.startsWith('Aplica .000')
+          ? t.description
+          : `Aplica $${dAmount.toLocaleString('es-CL')} de descuento directo en el total de tu próxima compra.`,
+        active: t.active !== false,
+      };
+    });
+
     const payload = {
       pointsPerThousand: Number(newSettings.pointsPerThousand) || 1,
-      tiers: Array.isArray(newSettings.tiers) ? newSettings.tiers : DEFAULT_LOYALTY_SETTINGS.tiers,
+      tiers: cleanedTiers,
     };
 
     const { data, error } = await supabase
@@ -168,7 +184,8 @@ export async function redeemRewardForCustomer(customer, tier) {
     }
 
     // 3. Registrar el canje en points_redemptions
-    const { data: redemptionData, error: redemptionError } = await supabase
+    let redemptionData = null;
+    const { data: rData, error: redemptionError } = await supabase
       .from('points_redemptions')
       .insert({
         customer_id: customer.id,
@@ -178,11 +195,25 @@ export async function redeemRewardForCustomer(customer, tier) {
         status: 'activo',
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (redemptionError) {
-      console.error('Error saving redemption record:', redemptionError);
-      // Puntos ya descontados, retornamos con el código
+      console.warn('First redemption insert attempt notice:', redemptionError);
+      // Fallback a un reward existente en la tabla rewards por si acaso
+      const { data: fallbackData } = await supabase
+        .from('points_redemptions')
+        .insert({
+          customer_id: customer.id,
+          reward_id: 'rew-envio-gratis',
+          points_spent: cost,
+          coupon_code: couponCode,
+          status: 'activo',
+        })
+        .select()
+        .maybeSingle();
+      redemptionData = fallbackData;
+    } else {
+      redemptionData = rData;
     }
 
     const newBalance = updateResult.points ?? (currentPoints - cost);
@@ -261,17 +292,17 @@ export async function getAllRedemptionsWithAudit() {
     // Mapear cada canje enriquecido
     const enriched = redemptions.map((r) => {
       const cust = customerMap.get(r.customer_id) || {};
-      const tier = tiers.find((t) => t.id === r.reward_id) || {};
+      const tier = tiers.find((t) => t.id === r.reward_id || Number(t.points) === Number(r.points_spent)) || {};
       const matchedOrder = r.coupon_code ? orderMap.get(r.coupon_code.trim().toUpperCase()) : null;
 
       // Descuento en dinero: o del tier o por default de acuerdo a los puntos gastados
       let discountAmount = tier.discountAmount;
       if (!discountAmount) {
-        if (r.points_spent === 100) discountAmount = 3000;
-        else if (r.points_spent === 200) discountAmount = 7000;
-        else if (r.points_spent === 350) discountAmount = 14000;
-        else if (r.points_spent === 500) discountAmount = 25000;
-        else discountAmount = r.points_spent * 30;
+        if (r.points_spent === 100) discountAmount = 1000;
+        else if (r.points_spent === 200) discountAmount = 2000;
+        else if (r.points_spent === 350) discountAmount = 3500;
+        else if (r.points_spent === 500) discountAmount = 5000;
+        else discountAmount = r.points_spent * 10;
       }
 
       return {

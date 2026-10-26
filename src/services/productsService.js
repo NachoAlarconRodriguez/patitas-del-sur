@@ -18,14 +18,26 @@ export async function fetchProductsFromSupabase() {
     }
 
     if (data && data.length > 0) {
+      const safeParseJson = (val, fallback = []) => {
+        if (Array.isArray(val)) return val;
+        if (!val) return fallback;
+        if (typeof val === 'object') return val;
+        try {
+          const res = JSON.parse(val);
+          return Array.isArray(res) ? res : [res];
+        } catch {
+          return typeof val === 'string' && val.trim() ? [val.trim()] : fallback;
+        }
+      };
+
       // Normalizar campos JSON y propiedades para que coincidan al 100% con el frontend
       return data.map((item) => ({
         ...item,
-        weights: Array.isArray(item.weights) ? item.weights : JSON.parse(item.weights || '[]'),
-        images: Array.isArray(item.images) ? item.images : JSON.parse(item.images || '[]'),
-        ingredients: Array.isArray(item.ingredients) ? item.ingredients : JSON.parse(item.ingredients || '[]'),
+        weights: safeParseJson(item.weights, ['10 kg']),
+        images: safeParseJson(item.images, []),
+        ingredients: safeParseJson(item.ingredients, []),
         guaranteedAnalysis: item.guaranteed_analysis || item.guaranteedAnalysis || {},
-        benefits: Array.isArray(item.benefits) ? item.benefits : JSON.parse(item.benefits || '[]'),
+        benefits: safeParseJson(item.benefits, []),
         originalPrice: item.original_price || item.originalPrice,
         petType: item.pet_type || item.petType,
         isVeterinary: item.is_veterinary ?? item.isVeterinary,

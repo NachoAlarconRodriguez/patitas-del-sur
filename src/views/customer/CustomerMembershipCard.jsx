@@ -7,24 +7,31 @@ export default function CustomerMembershipCard({
   pendingPoints = 0,
   activeCoupons = [],
   onOpenRedeemModal,
-  tiers = [
-    { points: 100, discount: 3000, label: '$3.000 Dcto', validity: 'Válido: 1 compra', icon: '💵' },
-    { points: 200, discount: 7000, label: '$7.000 Dcto', validity: 'Válido: 1 compra', icon: '💰' },
-    { points: 350, discount: 14000, label: '$14.000 Dcto', validity: 'Válido: 1 compra', icon: '🏷️' },
-    { points: 500, discount: 25000, label: '$25.000 Dcto', validity: 'Válido: 1 compra', icon: '👑' },
-  ],
+  tiers = [],
+  pointsPerThousand = 1,
 }) {
+  const fallbackTiers = [
+    { points: 100, discount: 1000, label: '$1.000 Dcto', validity: 'Válido: 1 compra', icon: '💵' },
+    { points: 200, discount: 2000, label: '$2.000 Dcto', validity: 'Válido: 1 compra', icon: '💰' },
+    { points: 350, discount: 3500, label: '$3.500 Dcto', validity: 'Válido: 1 compra', icon: '🏷️' },
+    { points: 500, discount: 5000, label: '$5.000 Dcto', validity: 'Válido: 1 compra', icon: '👑' },
+  ];
+
+  const activeTiers = Array.isArray(tiers) && tiers.length > 0 ? tiers : fallbackTiers;
+  const getDiscount = (t) => Number(t?.discount ?? t?.discountAmount ?? 0);
+
   // Calcular próximo nivel objetivo
-  const nextTier = tiers.find((t) => userPoints < t.points) || tiers[tiers.length - 1];
-  const isMaxTier = userPoints >= tiers[tiers.length - 1].points;
+  const nextTier = activeTiers.find((t) => userPoints < t.points) || activeTiers[activeTiers.length - 1];
+  const maxTier = activeTiers[activeTiers.length - 1];
+  const isMaxTier = userPoints >= maxTier.points;
   const targetPoints = nextTier.points;
   const progressPercent = isMaxTier
     ? 100
     : Math.min(100, Math.round((userPoints / targetPoints) * 100));
 
   // Calcular valor canjeable actual según el nivel más alto alcanzable
-  const highestAffordableTier = [...tiers].reverse().find((t) => userPoints >= t.points);
-  const redeemableValue = highestAffordableTier ? highestAffordableTier.discount : 0;
+  const highestAffordableTier = [...activeTiers].reverse().find((t) => userPoints >= t.points);
+  const redeemableValue = highestAffordableTier ? getDiscount(highestAffordableTier) : 0;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
@@ -119,11 +126,11 @@ export default function CustomerMembershipCard({
               </span>
               <h3 className="text-xl font-black text-slate-900">
                 {isMaxTier
-                  ? '¡Nivel Máximo VIP! Tienes $25.000 listos para canjear 👑'
-                  : `Próximo Beneficio: Cupón ${nextTier.label} ${nextTier.icon || '🎁'}`}
+                  ? `¡Nivel Máximo VIP! Tienes $${getDiscount(maxTier).toLocaleString('es-CL')} listos para canjear 👑`
+                  : `Próximo Beneficio: Cupón ${nextTier.label || `$${getDiscount(nextTier).toLocaleString('es-CL')} Dcto`} ${nextTier.icon || '🎁'}`}
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Acumula 1 punto por cada $1.000 en tus compras. Al canjear un cupón, se descuentan tus puntos y aplicas el descuento en dinero directo.
+                Acumula {pointsPerThousand} punto{pointsPerThousand > 1 ? 's' : ''} por cada $1.000 en tus compras. Al canjear un cupón, se descuentan tus puntos y aplicas el descuento en dinero directo.
               </p>
             </div>
             <button
@@ -141,8 +148,8 @@ export default function CustomerMembershipCard({
             <div className="flex justify-between text-xs font-black">
               <span className="text-slate-700">
                 {isMaxTier
-                  ? '¡Meta VIP Alcanzada (500 Pts)!'
-                  : `Progreso para ${nextTier.label} (${nextTier.points.toLocaleString('es-CL')} Pts):`}
+                  ? `¡Meta VIP Alcanzada (${maxTier.points.toLocaleString('es-CL')} Pts)!`
+                  : `Progreso para ${nextTier.label || `$${getDiscount(nextTier).toLocaleString('es-CL')} Dcto`} (${nextTier.points.toLocaleString('es-CL')} Pts):`}
               </span>
               <span className="text-[#0E8388]">
                 {isMaxTier
@@ -163,9 +170,11 @@ export default function CustomerMembershipCard({
 
         {/* Milestone Tiers Horizontal List (4 Tiers in Cash Discounts) */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {tiers.map((tier) => {
+          {activeTiers.map((tier) => {
             const isReached = userPoints >= tier.points;
             const isNext = !isReached && tier.points === nextTier.points;
+            const discountVal = getDiscount(tier);
+            const labelText = tier.label || `$${discountVal.toLocaleString('es-CL')} Dcto`;
 
             return (
               <div
@@ -186,10 +195,10 @@ export default function CustomerMembershipCard({
                   >
                     {tier.points} Pts
                   </div>
-                  <span className="text-xs">{tier.icon}</span>
+                  <span className="text-xs">{tier.icon || '💵'}</span>
                 </div>
-                <div className="font-extrabold text-slate-900">{tier.label}</div>
-                <div className="text-[10px] text-slate-600 font-medium">{tier.validity}</div>
+                <div className="font-extrabold text-slate-900">{labelText}</div>
+                <div className="text-[10px] text-slate-600 font-medium">{tier.validity || 'Válido: 1 compra'}</div>
                 <div
                   className={`text-[10px] font-black ${
                     isReached

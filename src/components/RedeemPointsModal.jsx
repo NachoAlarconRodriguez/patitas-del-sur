@@ -8,15 +8,15 @@ export default function RedeemPointsModal({
   rewards = [],
   onRedeem,
   activeCoupons = [],
+  pointsPerThousand = 1,
 }) {
   if (!isOpen) return null;
 
   // Calcular valor canjeable actual según el tramo máximo alcanzable
-  let currentRedeemableAmount = 0;
-  if (userPoints >= 500) currentRedeemableAmount = 25000;
-  else if (userPoints >= 350) currentRedeemableAmount = 14000;
-  else if (userPoints >= 200) currentRedeemableAmount = 7000;
-  else if (userPoints >= 100) currentRedeemableAmount = 3000;
+  const affordableRewards = [...rewards]
+    .filter((r) => r.active !== false && userPoints >= (r.points || 0))
+    .sort((a, b) => (b.points || 0) - (a.points || 0));
+  const currentRedeemableAmount = affordableRewards[0]?.discountAmount || 0;
 
   return (
     <div
@@ -73,7 +73,9 @@ export default function RedeemPointsModal({
 
           <div className="px-2.5 py-1 rounded-xl bg-white border border-emerald-200 shadow-2xs text-right shrink-0">
             <span className="text-[10px] font-black text-amber-600 block">Socio Club 🐾</span>
-            <span className="text-[9.5px] font-bold text-slate-500">1 Pt x cada $1.000</span>
+            <span className="text-[9.5px] font-bold text-slate-500">
+              {pointsPerThousand} Pt{pointsPerThousand > 1 ? 's' : ''} x cada $1.000
+            </span>
           </div>
         </div>
 
@@ -91,6 +93,10 @@ export default function RedeemPointsModal({
           <div className="space-y-2">
             {rewards.map((reward) => {
               const canAfford = userPoints >= reward.points;
+              const displayTitle = (reward.title || `$${(reward.discountAmount || 0).toLocaleString('es-CL')} Dcto.`).replace(/^Cupón\s*/i, '');
+              const displayDesc = reward.description && !reward.description.startsWith('Aplica .000')
+                ? reward.description
+                : `Aplica $${(reward.discountAmount || 0).toLocaleString('es-CL')} de descuento directo en el total de tu próxima compra.`;
 
               return (
                 <div
@@ -108,14 +114,14 @@ export default function RedeemPointsModal({
                     <div className="min-w-0 space-y-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <h4 className="text-xs font-black text-slate-900 leading-tight truncate">
-                          {reward.title.replace('Cupón ', '')}
+                          {displayTitle}
                         </h4>
                         <span className="text-[9px] font-black text-[#0E8388] bg-teal-50 px-1.5 py-0.2 rounded border border-teal-100 shrink-0">
                           {reward.validity?.replace('Válido para ', '') || '1 compra'}
                         </span>
                       </div>
                       <p className="text-[10.5px] text-slate-500 font-medium truncate">
-                        {reward.description || `Descuento directo en tu pedido.`}
+                        {displayDesc}
                       </p>
                     </div>
                   </div>

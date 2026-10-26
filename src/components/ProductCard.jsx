@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Star, ShoppingBag, Eye, Stethoscope } from 'lucide-react';
+import { Star, ShoppingBag, Eye, Stethoscope, Check } from 'lucide-react';
 import { getFlavorSwatchStyle } from '../utils/productVariants';
 import AppleNutritionSpecs from './AppleNutritionSpecs';
 
@@ -25,6 +25,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
   const [selectedVariantIdx, setSelectedVariantIdx] = React.useState(0);
   const [hoveredVariantIdx, setHoveredVariantIdx] = React.useState(null);
   const [lastInteractedIdx, setLastInteractedIdx] = React.useState(null);
+  const [justAdded, setJustAdded] = React.useState(false);
 
   // Toggle de selección para sabores
   const toggleVariantSelection = (idx) => {
@@ -81,18 +82,27 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
     product.brand?.toLowerCase().includes('patagonia') ||
     product.ingredients?.some((i) => i.toLowerCase().includes('grain free'));
 
-  const handleCardClick = () => {
-    navigate(`/producto/${activeVariant?.id || product.id}`);
+  const handleCardClick = (e) => {
+    // Si el usuario hace clic en un botón interactivo (swatches de sabor, formato de kilos o agregar al carrito), no navegar
+    if (e.target.closest('button')) {
+      return;
+    }
+    const targetId = activeVariant?.id || product.id;
+    navigate(`/producto/${targetId}`);
   };
 
   const currentVariantFormat = displayVariant?.format || activeVariant?.format || '';
 
   return (
-    <div className="group relative bg-white rounded-3xl p-4 md:p-5 shadow-sm hover:shadow-2xl transition-all duration-500 border border-slate-100 flex flex-col justify-between hover:-translate-y-1.5 cursor-pointer">
+    <div
+      onClick={handleCardClick}
+      className="group relative bg-white rounded-3xl p-4 md:p-5 shadow-sm hover:shadow-2xl transition-all duration-500 border border-slate-100 flex flex-col justify-between hover:-translate-y-1.5 cursor-pointer"
+    >
       
       {/* Image Container */}
       <Link
         to={`/producto/${activeVariant?.id || product.id}`}
+        onClick={(e) => e.stopPropagation()}
         className="relative w-full aspect-square rounded-2xl overflow-hidden bg-slate-50 mb-3 flex items-center justify-center p-4 border border-slate-100/60 block"
         aria-label={`Ver detalles de ${product.name}`}
       >
@@ -151,6 +161,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         <h3 className="font-heading font-extrabold text-base sm:text-lg text-slate-900 line-clamp-2 leading-snug tracking-tight">
           <Link
             to={`/producto/${activeVariant?.id || product.id}`}
+            onClick={(e) => e.stopPropagation()}
             className="group-hover:text-[#0E8388] transition-colors"
           >
             {product.name}
@@ -379,6 +390,9 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
             e.stopPropagation();
             if (isAddToCartDisabled) return;
 
+            setJustAdded(true);
+            setTimeout(() => setJustAdded(false), 1600);
+
             if (isFlavorFamily && selectedVariants.length > 0) {
               selectedVariants.forEach((v) => {
                 const itemToAdd = {
@@ -411,10 +425,12 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
               onAddToCart(itemToAdd, activeVariant?.format || (product.weights && product.weights[0]));
             }
           }}
-          className={`relative min-w-[44px] min-h-[44px] w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-md cursor-pointer ${
+          className={`inline-flex items-center justify-center gap-1.5 px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs transition-all shadow-xs cursor-pointer ${
             isAddToCartDisabled
-              ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-              : 'bg-[#0E8388] text-white hover:bg-[#0A3E40] hover:scale-105 active:scale-95'
+              ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
+              : justAdded
+              ? 'bg-[#10B981] text-white shadow-md'
+              : 'bg-[#0E8388] text-white hover:bg-[#0A3E40] hover:shadow-md active:scale-95'
           }`}
           title={
             isSelectionEmpty
@@ -427,11 +443,25 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
           }
           aria-label={`Agregar ${product.name} al carrito`}
         >
-          <ShoppingBag className="w-4 h-4" />
-          {isFlavorFamily && selectedVariants.length > 1 && (
-            <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-900 text-[10px] font-black w-4.5 h-4.5 rounded-full border-2 border-white flex items-center justify-center shadow-xs">
-              {selectedVariants.length}
-            </span>
+          {justAdded ? (
+            <>
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              <span>¡Agregado!</span>
+            </>
+          ) : isAllSelectedOutOfStock ? (
+            <span>Agotado</span>
+          ) : isSelectionEmpty ? (
+            <span>Elegir</span>
+          ) : isFlavorFamily && selectedVariants.length > 1 ? (
+            <>
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Agregar ({selectedVariants.length})</span>
+            </>
+          ) : (
+            <>
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Agregar al Carrito</span>
+            </>
           )}
         </button>
       </div>

@@ -283,14 +283,59 @@ export async function getCustomerPets(customerId) {
   }
 }
 
+// Sanitizar y convertir cualquier formato de fecha a ISO YYYY-MM-DD para columnas PostgreSQL DATE
+export function formatIsoDate(dateVal) {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+    return dateVal.toISOString().split('T')[0];
+  }
+  if (typeof dateVal === 'string') {
+    const trimmed = dateVal.trim();
+    if (!trimmed || trimmed.toLowerCase().includes('no especificada') || trimmed.toLowerCase().includes('hoy') || trimmed.toLowerCase().includes('en ')) {
+      return null;
+    }
+    // Formato ya ISO: YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+    // Formato latinoamericano: DD/MM/YYYY o DD-MM-YYYY
+    const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmyMatch) {
+      return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+    }
+
+    // Formato texto en español: ej. "12 de Octubre 2022" o "12 de Octubre de 2022"
+    const spanishMonths = {
+      enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+      julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12'
+    };
+    const spMatch = trimmed.toLowerCase().match(/^(\d{1,2})\s+de\s+([a-záéíóúñ]+)(?:\s+de)?\s+(\d{4})/);
+    if (spMatch && spanishMonths[spMatch[2]]) {
+      return `${spMatch[3]}-${spanishMonths[spMatch[2]]}-${spMatch[1].padStart(2, '0')}`;
+    }
+
+    // Intento de parse nativo con Date
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().split('T')[0];
+    }
+  }
+  return null;
+}
+
 export async function addPetToSupabase(petData) {
   try {
+    let resolvedCustomerId = petData.customerId || petData.customer_id;
+    if (!resolvedCustomerId && (petData.customerEmail || petData.customerPhone)) {
+      const cust = await getCustomerProfile(petData.customerEmail || petData.customerPhone);
+      if (cust?.id) resolvedCustomerId = cust.id;
+    }
+
     const payload = {
-      customer_id: petData.customerId || petData.customer_id,
-      name: petData.name,
+      customer_id: resolvedCustomerId,
+      name: (petData.name || '').trim(),
       type: petData.type || 'perro',
       breed: petData.breed || '',
-      birthdate: petData.birthdate || null,
+      birthdate: formatIsoDate(petData.birthdate),
       age: petData.age || '',
       weight: petData.weight ? String(petData.weight) : '',
       sterilized: petData.sterilized || 'Sí',
@@ -299,8 +344,8 @@ export async function addPetToSupabase(petData) {
       bag_size: petData.bagSize || '',
       total_days_duration: parseInt(petData.totalDaysDuration, 10) || 30,
       days_remaining: parseInt(petData.daysRemaining, 10) || 30,
-      last_order_date: petData.lastOrderDate || new Date().toISOString().split('T')[0],
-      estimated_depletion_date: petData.estimatedDepletionDate || null,
+      last_order_date: formatIsoDate(petData.lastOrderDate) || null,
+      estimated_depletion_date: formatIsoDate(petData.estimatedDepletionDate) || null,
       notes: petData.notes || '',
       vet_clinic: petData.vetClinic || '',
     };
@@ -321,9 +366,16 @@ export async function addPetToSupabase(petData) {
 
 export async function updatePetInSupabase(petId, updates) {
   try {
+    const cleanUpdates = { ...updates };
+    if ('birthdate' in cleanUpdates) cleanUpdates.birthdate = formatIsoDate(cleanUpdates.birthdate);
+    if ('last_order_date' in cleanUpdates) cleanUpdates.last_order_date = formatIsoDate(cleanUpdates.last_order_date);
+    if ('estimated_depletion_date' in cleanUpdates) cleanUpdates.estimated_depletion_date = formatIsoDate(cleanUpdates.estimated_depletion_date);
+    if ('deworming_external' in cleanUpdates) cleanUpdates.deworming_external = formatIsoDate(cleanUpdates.deworming_external);
+    if ('deworming_internal' in cleanUpdates) cleanUpdates.deworming_internal = formatIsoDate(cleanUpdates.deworming_internal);
+
     const { data, error } = await supabase
       .from('pets')
-      .update(updates)
+      .update(cleanUpdates)
       .eq('id', petId)
       .select()
       .single();
@@ -417,4 +469,87 @@ export async function deleteCustomerFromSupabase(customerId) {
     return { success: false, error: err };
   }
 }
+
+/**
+ * Obtener datos de reposición inteligente y pedido habitual del cliente
+ */
+export async function getCustomerReplenishmentData(customerId, phone) {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  let localData = null;
+  if (cleanPhone) {
+    try {
+      const cached = localStorage.getItem(`patitas_replenishment_${cleanPhone}`);
+      if (cached) localData = JSON.parse(cached);
+    } catch (e) {
+      console.warn('Error reading local replenishment cache:', e);
+    }
+  }
+
+  try {
+    const { data } = await supabase
+      .from('store_settings')
+      .select('value')
+      .eq('key', 'replenishment_preferences')
+      .maybeSingle();
+
+    if (data?.value && typeof data.value === 'object') {
+      const remoteData = (customerId && data.value[customerId]) || (cleanPhone ? data.value[cleanPhone] : null);
+      if (remoteData) {
+        return { ...localData, ...remoteData };
+      }
+    }
+  } catch (err) {
+    console.warn('Error reading replenishment data from store_settings:', err);
+  }
+
+  return localData || { frequencyDays: 30, habitualOrder: null, lastOrderDate: null };
+}
+
+/**
+ * Guardar datos de reposición inteligente y pedido habitual del cliente
+ */
+export async function saveCustomerReplenishmentData(customerId, phone, replenishmentData) {
+  const cleanPhone = String(phone || '').replace(/\D/g, '');
+  const dataToSave = {
+    frequencyDays: Number(replenishmentData.frequencyDays) || 30,
+    habitualOrder: Array.isArray(replenishmentData.habitualOrder) ? replenishmentData.habitualOrder : (replenishmentData.habitualOrder || null),
+    lastOrderDate: replenishmentData.lastOrderDate || new Date().toISOString().split('T')[0],
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 1. Guardar en localStorage para respuesta instantánea
+  if (cleanPhone) {
+    try {
+      localStorage.setItem(`patitas_replenishment_${cleanPhone}`, JSON.stringify(dataToSave));
+    } catch (e) {
+      console.warn('Error caching replenishment data:', e);
+    }
+  }
+
+  // 2. Guardar en store_settings en Supabase
+  try {
+    const { data: current } = await supabase
+      .from('store_settings')
+      .select('value')
+      .eq('key', 'replenishment_preferences')
+      .maybeSingle();
+
+    const existingMap = current?.value && typeof current.value === 'object' ? current.value : {};
+    if (customerId) existingMap[customerId] = dataToSave;
+    if (cleanPhone) existingMap[cleanPhone] = dataToSave;
+
+    await supabase
+      .from('store_settings')
+      .upsert({
+        key: 'replenishment_preferences',
+        value: existingMap,
+        updated_at: new Date().toISOString(),
+      });
+  } catch (err) {
+    console.warn('Error saving replenishment data in store_settings:', err);
+  }
+
+  return { success: true, data: dataToSave };
+}
+
 

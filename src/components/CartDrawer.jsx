@@ -27,6 +27,8 @@ import {
   Banknote,
   Globe,
   Home,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { verifyCouponInSupabase, redeemCouponInSupabase } from '../services/conveniosService';
 import { createOrderInSupabase, getNextOrderId } from '../services/ordersService';
@@ -34,9 +36,10 @@ import {
   updateCustomerPoints,
   getCustomerByPhone,
   upsertCustomerProfile,
+  saveCustomerReplenishmentData,
 } from '../services/customersService';
 import { updateProductInSupabase, fetchProductsFromSupabase } from '../services/productsService';
-import { markCouponAsUsed } from '../services/loyaltyService';
+import { markCouponAsUsed, getLoyaltySettings } from '../services/loyaltyService';
 import { supabase } from '../lib/supabase';
 import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
 import CustomDropdown from './CustomDropdown';
@@ -282,6 +285,7 @@ export default function CartDrawer({
   const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponError, setCouponError] = useState(null);
   const [isVerifyingCoupon, setIsVerifyingCoupon] = useState(false);
+  const [isCouponExpanded, setIsCouponExpanded] = useState(false);
 
   // Shipping & Checkout form state (vacíos de forma predeterminada al comprar)
   const [recipientName, setRecipientName] = useState('');
@@ -539,6 +543,8 @@ export default function CartDrawer({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedOrder, setCompletedOrder] = useState(null);
   const [copiedBankData, setCopiedBankData] = useState(false);
+  const [selectedReplenishFrequency, setSelectedReplenishFrequency] = useState(30);
+  const [replenishmentSaved, setReplenishmentSaved] = useState(false);
 
   // Helper para resetear los campos del formulario
   const handleResetForm = () => {
@@ -763,10 +769,27 @@ export default function CartDrawer({
             return;
           }
 
-          let dAmount = 3000;
-          if (redemption.points_spent === 200) dAmount = 7000;
-          else if (redemption.points_spent === 350) dAmount = 14000;
-          else if (redemption.points_spent === 500) dAmount = 25000;
+          let dAmount = 1000;
+          try {
+            const loyaltySettings = await getLoyaltySettings();
+            const matchedTier = (loyaltySettings?.tiers || []).find(
+              (t) => t.id === redemption.reward_id || Number(t.points) === Number(redemption.points_spent)
+            );
+            if (matchedTier && matchedTier.discountAmount) {
+              dAmount = Number(matchedTier.discountAmount);
+            } else if (redemption.points_spent === 200) {
+              dAmount = 2000;
+            } else if (redemption.points_spent === 350) {
+              dAmount = 3500;
+            } else if (redemption.points_spent === 500) {
+              dAmount = 5000;
+            } else {
+              dAmount = Number(redemption.points_spent) * 10;
+            }
+          } catch (e) {
+            console.warn('Error fetching loyalty settings in cart:', e);
+            dAmount = Number(redemption.points_spent) * 10;
+          }
 
           setAppliedCoupon({
             code: cleanCode,
@@ -1078,12 +1101,55 @@ export default function CartDrawer({
       window.dispatchEvent(new Event('patitas_products_updated'));
       window.dispatchEvent(new Event('patitas_convenios_updated'));
 
+      // Identificar si la orden incluye alimento seco o productos nutricionales
+      const orderedItems = cartItems.map((item) => ({
+        id: item.id,
+        name: item.name,
+        brand: item.brand || '',
+        price: item.price,
+        quantity: item.quantity,
+        weight: item.weight || item.format || '',
+        image: resolveProductImage(item),
+        category: item.category || '',
+      }));
+
+      const hasFoodItem = cartItems.some((item) => {
+        const name = (item.name || '').toLowerCase();
+        const cat = (item.category || '').toLowerCase();
+        return (
+          cat.includes('alimento') ||
+          cat.includes('seco') ||
+          cat.includes('nutricion') ||
+          cat.includes('perro') ||
+          cat.includes('gato') ||
+          name.includes('alimento') ||
+          name.includes('perro') ||
+          name.includes('gato') ||
+          name.includes('puppy') ||
+          name.includes('adult') ||
+          name.includes('senior') ||
+          name.includes('kg') ||
+          name.includes('bravery') ||
+          name.includes('acana') ||
+          name.includes('orijen') ||
+          name.includes('taste') ||
+          name.includes('fit') ||
+          name.includes('nomade') ||
+          name.includes('hills') ||
+          name.includes('royal') ||
+          name.includes('pro plan') ||
+          name.includes('eukanuba')
+        );
+      });
+
       // Set order result and switch to modern success screen
       setCompletedOrder({
         id: orderId,
         total,
         pointsEarned,
         recipientName: recipientName.trim(),
+        phone: (phone || user?.phone || '').trim(),
+        customerId: savedCustId,
         address: fullAddress,
         city: effectiveCity,
         deliverySlot,
@@ -1092,7 +1158,22 @@ export default function CartDrawer({
         specificMethod: paymentMethod,
         cashChangeNote: cashChangeNote.trim(),
         itemsCount: cartItems.length,
+        items: orderedItems,
+        hasFoodItem,
       });
+
+      setReplenishmentSaved(false);
+      setSelectedReplenishFrequency(30);
+
+      // Guardar automáticamente como pedido habitual por defecto si tiene alimentos
+      if (hasFoodItem && (savedCustId || phone)) {
+        saveCustomerReplenishmentData(savedCustId, phone, {
+          frequencyDays: 30,
+          habitualOrder: orderedItems,
+          lastOrderDate: new Date().toISOString(),
+          orderId,
+        }).catch((err) => console.warn('Replenishment auto-save warning:', err));
+      }
 
       if (onClearCart) {
         onClearCart();
@@ -1104,6 +1185,26 @@ export default function CartDrawer({
       setFormError('Hubo un inconveniente al procesar tu pedido. Por favor intenta nuevamente.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveReplenishment = async (days) => {
+    setSelectedReplenishFrequency(days);
+    setReplenishmentSaved(true);
+    try {
+      await saveCustomerReplenishmentData(
+        completedOrder?.customerId || autofillCustomer?.id || user?.id,
+        completedOrder?.phone || phone,
+        {
+          frequencyDays: days,
+          habitualOrder: completedOrder?.items || [],
+          lastOrderDate: new Date().toISOString(),
+          orderId: completedOrder?.id,
+        }
+      );
+      window.dispatchEvent(new Event('patitas_replenishment_updated'));
+    } catch (err) {
+      console.warn('Error saving replenishment:', err);
     }
   };
 
@@ -1487,68 +1588,105 @@ Asunto: Pedido ${completedOrder?.id}`;
 
               {/* Footer Cart Summary & Next Step */}
               {cartItems.length > 0 && (
-                <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 space-y-3 pb-safe">
-                  {/* Coupon Input */}
-                  <div className="p-3 bg-white rounded-2xl border border-slate-200/80 shadow-xs space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                        <Ticket className="w-3.5 h-3.5 text-[#0E8388]" />
-                        ¿Tienes un cupón de convenio?
-                      </span>
-                      {appliedCoupon && (
-                        <button
-                          type="button"
-                          onClick={handleRemoveCoupon}
-                          className="text-red-500 hover:underline font-bold text-[11px] cursor-pointer"
-                        >
-                          Quitar
-                        </button>
-                      )}
-                    </div>
-
-                    {appliedCoupon ? (
-                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-lg bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                            <Check className="w-3.5 h-3.5" />
-                          </div>
-                          <div>
-                            <div className="font-black text-emerald-900 flex items-center gap-1.5">
-                              <span>{appliedCoupon.code}</span>
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-200/60 px-1.5 py-0.2 rounded">
-                                -{appliedCoupon.discountPercent}%
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-emerald-700">Convenio {appliedCoupon.convenioName}</p>
-                          </div>
-                        </div>
-                        <span className="font-black text-emerald-800">
-                          -{formatCLP(discountAmount)}
+                <div className="p-3.5 sm:p-4 border-t border-slate-100 bg-slate-50 space-y-2.5 pb-safe">
+                  {/* Collapsible Coupon Section */}
+                  <div className="rounded-xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden transition-all duration-200">
+                    {!isCouponExpanded && !appliedCoupon ? (
+                      /* Compact Collapsed Trigger */
+                      <button
+                        type="button"
+                        onClick={() => setIsCouponExpanded(true)}
+                        className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-600 hover:text-[#0E8388] hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                      >
+                        <span className="flex items-center gap-1.5 font-bold text-[11px] text-slate-700 group-hover:text-[#0E8388] transition-colors">
+                          <Ticket className="w-3.5 h-3.5 text-[#0E8388] group-hover:scale-110 transition-transform" />
+                          <span>¿Tienes un cupón de convenio?</span>
                         </span>
-                      </div>
+                        <span className="text-[11px] font-extrabold text-[#0E8388] flex items-center gap-0.5 group-hover:underline">
+                          <span>Ingresar</span>
+                          <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
+                        </span>
+                      </button>
                     ) : (
-                      <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                        <input
-                          type="text"
-                          placeholder="Ej: SWD-7K9P"
-                          value={couponInput}
-                          onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                          className="flex-1 px-3 py-2 text-xs font-mono font-bold rounded-xl bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
-                        />
-                        <button
-                          type="submit"
-                          disabled={isVerifyingCoupon}
-                          className="px-4 py-2 bg-[#0E8388] hover:bg-[#10B981] text-white font-bold text-xs rounded-xl transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                        >
-                          {isVerifyingCoupon ? '...' : 'Aplicar'}
-                        </button>
-                      </form>
-                    )}
+                      /* Expanded Coupon Form or Applied Badge */
+                      <div className="p-2.5 space-y-2 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-700 flex items-center gap-1.5 text-[11px]">
+                            <Ticket className="w-3.5 h-3.5 text-[#0E8388]" />
+                            <span>Cupón de descuento o convenio</span>
+                          </span>
+                          {appliedCoupon ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleRemoveCoupon();
+                                setIsCouponExpanded(false);
+                              }}
+                              className="text-red-500 hover:underline font-bold text-[11px] cursor-pointer"
+                            >
+                              Quitar
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCouponExpanded(false);
+                                setCouponError(null);
+                              }}
+                              className="text-slate-400 hover:text-slate-600 font-semibold text-[11px] flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>Cerrar</span>
+                              <ChevronUp className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
 
-                    {couponError && (
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 animate-in fade-in">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span>{couponError}</span>
+                        {appliedCoupon ? (
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="w-5 h-5 rounded-md bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                <Check className="w-3 h-3 stroke-[3]" />
+                              </div>
+                              <div>
+                                <div className="font-black text-emerald-900 flex items-center gap-1.5 text-xs">
+                                  <span>{appliedCoupon.code}</span>
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-200/60 px-1 py-0.2 rounded">
+                                    -{appliedCoupon.discountPercent}%
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-emerald-700">Convenio {appliedCoupon.convenioName}</p>
+                              </div>
+                            </div>
+                            <span className="font-black text-emerald-800 text-xs">
+                              -{formatCLP(discountAmount)}
+                            </span>
+                          </div>
+                        ) : (
+                          <form onSubmit={handleApplyCoupon} className="flex gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="Ej: SWD-7K9P"
+                              value={couponInput}
+                              onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                              className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                              autoFocus
+                            />
+                            <button
+                              type="submit"
+                              disabled={isVerifyingCoupon || !couponInput.trim()}
+                              className="px-3 py-1.5 bg-[#0E8388] hover:bg-[#10B981] text-white font-bold text-xs rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            >
+                              {isVerifyingCoupon ? '...' : 'Aplicar'}
+                            </button>
+                          </form>
+                        )}
+
+                        {couponError && (
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-600 animate-in fade-in">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                            <span>{couponError}</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2527,6 +2665,65 @@ Asunto: Pedido ${completedOrder?.id}`;
                     <p className="text-[11px] text-sky-700">
                       Tu pago anticipado con tarjeta fue registrado vía Mercado Pago y tu pedido ya está en preparación.
                     </p>
+                  </div>
+                )}
+
+                {/* 🥫 DESPENSA INTELIGENTE: PREGUNTAR FRECUENCIA SI HAY ALIMENTO */}
+                {completedOrder.hasFoodItem && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/80 to-[#E6F4F1] border-2 border-[#0E8388]/30 shadow-sm space-y-3 animate-in fade-in duration-300">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-[#0E8388] text-white flex items-center justify-center shrink-0 shadow-sm text-lg">
+                        🥫
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                            Despensa Inteligente
+                          </span>
+                          <span className="text-[10px] font-bold text-teal-700">1 solo clic</span>
+                        </div>
+                        <h4 className="text-xs sm:text-sm font-black text-slate-900 mt-1">
+                          ¿Cada cuánto tiempo sueles reponer el alimento seco en casa?
+                        </h4>
+                        <p className="text-[11px] text-slate-600 font-medium">
+                          Así tendremos listo tu próximo pedido habitual para que lo repitas sin complicaciones.
+                        </p>
+                      </div>
+                    </div>
+
+                    {replenishmentSaved ? (
+                      <div className="p-3 bg-white/95 rounded-xl border border-emerald-300 flex items-center gap-2.5 text-xs font-bold text-emerald-800 animate-in zoom-in-95 shadow-2xs">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <span>¡Anotado! Te recordaremos reponer en <strong>{selectedReplenishFrequency} días</strong> y podrás pedir todo junto con 1 clic en tu perfil.</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {[15, 21, 30, 45, 60].map((days) => (
+                            <button
+                              key={days}
+                              type="button"
+                              onClick={() => handleSaveReplenishment(days)}
+                              className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
+                                selectedReplenishFrequency === days
+                                  ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm font-black scale-102'
+                                  : 'bg-white hover:bg-emerald-50/80 text-slate-700 border-slate-200/90 font-bold hover:border-[#0E8388]/40'
+                              }`}
+                            >
+                              <div className="text-xs font-black">{days} días</div>
+                              <div className={`text-[9px] font-semibold ${selectedReplenishFrequency === days ? 'text-emerald-100' : 'text-slate-400'}`}>
+                                {days === 30 ? '⭐ Habitual' : days < 30 ? 'Quincenal' : 'Bimestral'}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-center">
+                          <span className="text-[10px] text-slate-500 font-medium">
+                            Toca los días para activar tu reposición automática sin cálculos manuales
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

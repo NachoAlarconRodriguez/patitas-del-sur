@@ -109,30 +109,53 @@ export default function GatosView({ onSelectProduct, onAddToCart }) {
         }
       }
 
-      // 3. Protein % Filter
+      // 3. Protein % / Source Filter
       if (proteinFilter !== 'Todos') {
         const prot = product.proteinValue || 0;
-        if (proteinFilter === 'high' && (prot < 30 || prot > 40)) return false;
-        if (proteinFilter === 'super' && prot <= 40) return false;
-        if (proteinFilter === 'moderate' && prot >= 30) return false;
+        const mainP = (product.mainProtein || '').toLowerCase();
+        const pName = (product.name || '').toLowerCase();
+        const filterLower = proteinFilter.toLowerCase();
+
+        if (proteinFilter === 'high') {
+          if (prot < 30 || prot > 40) return false;
+        } else if (proteinFilter === 'super') {
+          if (prot <= 40) return false;
+        } else if (proteinFilter === 'moderate') {
+          if (prot >= 30) return false;
+        } else {
+          // Check if proteinFilter is a source (e.g. Pollo, Salmón, Trucha, Pescado, Cordero)
+          const matchesMain = mainP.includes(filterLower);
+          const matchesName = pName.includes(filterLower);
+          const matchesVariants = Array.isArray(product.variants) && product.variants.some((v) =>
+            (v.format || v.name || '').toLowerCase().includes(filterLower)
+          );
+          if (!matchesMain && !matchesName && !matchesVariants) {
+            return false;
+          }
+        }
       }
 
       // 4. Weight / Format Filter
       if (weightFilter !== 'Todos') {
-        const weights = product.weights || [];
-        if (weightFilter === 'snacks') {
-          const isSnackWeight = weights.some((w) => w.includes('g') || w.includes('Pack'));
-          if (!isSnackWeight) return false;
-        } else if (weightFilter === 'standard') {
-          const isStandardWeight = weights.some((w) => w.includes('1.5 kg') || w.includes('3.5 kg'));
-          if (!isStandardWeight) return false;
-        } else if (weightFilter === 'bulk') {
-          const isBulkWeight = weights.some((w) => w.includes('7 kg'));
-          if (!isBulkWeight) return false;
+        const weights = (product.weights || []).map((w) => String(w).toLowerCase());
+        const variantWeights = (product.variants || []).map((v) => String(v.format || '').toLowerCase());
+        const prodFormat = String(product.format || '').toLowerCase();
+        const targetClean = weightFilter.toLowerCase().replace(',', '.').trim();
+
+        const matches = [...weights, ...variantWeights, prodFormat].some((w) => {
+          const wClean = w.replace(',', '.');
+          return wClean.includes(targetClean) || targetClean.includes(wClean);
+        });
+
+        if (!matches) {
+          if (weightFilter === 'snacks' && weights.some((w) => w.includes('g') || w.includes('Pack'))) return true;
+          if (weightFilter === 'standard' && weights.some((w) => w.includes('1.5 kg') || w.includes('3.5 kg'))) return true;
+          if (weightFilter === 'bulk' && weights.some((w) => w.includes('7 kg') || w.includes('10 kg') || w.includes('11 kg'))) return true;
+          return false;
         }
       }
 
-      // 5. Category / Snack filter
+      // 5. Category / Tipo de Alimento filter
       if (categoryFilter !== 'Todos' && product.category !== categoryFilter) {
         return false;
       }
@@ -204,7 +227,7 @@ export default function GatosView({ onSelectProduct, onAddToCart }) {
       )}
 
       {/* Main Catalog Section */}
-      <section className="max-w-7xl mx-auto px-6">
+      <section id="catalogo-section" className="max-w-7xl mx-auto px-6 scroll-mt-24">
         
         {/* Unified Filter Panel (Marca + Proteína + Peso + Tipo + Búsqueda 100%) */}
         <AdvancedFilterPanel
@@ -221,6 +244,7 @@ export default function GatosView({ onSelectProduct, onAddToCart }) {
           onCategoryChange={setCategoryFilter}
           onResetFilters={handleResetFilters}
           totalResultsCount={filteredProducts.length}
+          products={catProducts}
         />
 
         {/* Products Displayed & Grouped by Brands */}
