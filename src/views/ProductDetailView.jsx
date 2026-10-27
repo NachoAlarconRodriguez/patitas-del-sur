@@ -491,6 +491,22 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     return { primaryGuaranteed: primaryList, secondaryGuaranteed: secondaryList };
   }, [product?.guaranteedAnalysis, product?.proteinValue]);
 
+  // Lista normalizada de ingredientes limpios
+  const ingredientList = useMemo(() => {
+    if (Array.isArray(product?.ingredients)) {
+      return product.ingredients
+        .map((i) => cleanIngredientName(i) || (typeof i === 'string' ? i.trim() : ''))
+        .filter(Boolean);
+    }
+    if (typeof product?.ingredients === 'string' && product.ingredients.trim()) {
+      return product.ingredients
+        .split(',')
+        .map((i) => cleanIngredientName(i) || i.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }, [product?.ingredients]);
+
   // Reset al cambiar de producto
   useEffect(() => {
     setActiveImageIndex(0);
@@ -1053,18 +1069,48 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
             {/* TAB 1: INGREDIENTES & ANÁLISIS GARANTIZADO */}
             {activeTab === 'ingredientes' && (
               <div className="space-y-4 pt-1 animate-in fade-in duration-200">
-                {/* Ingredientes Principales */}
-                <div className="space-y-1.5">
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                    Ingredientes Principales:
-                  </h3>
-                  {Array.isArray(product.ingredients) && product.ingredients.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {product.ingredients.map((ing, idx) => (
-                        <span key={idx} className="px-3 py-1 rounded-xl bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200/80">
-                          {cleanIngredientName(ing) || ing}
-                        </span>
-                      ))}
+                {/* Ingredientes en texto fluido continuo con Top 5 destacados */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      Lista de Ingredientes:
+                    </h3>
+                    {ingredientList.length > 5 && (
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#0E8388] mr-1 align-middle"></span>
+                        Primeros 5 destacados
+                      </span>
+                    )}
+                  </div>
+
+                  {ingredientList.length > 0 ? (
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 text-xs sm:text-[13px] leading-relaxed">
+                      <p className="text-slate-600">
+                        {ingredientList.map((name, idx) => {
+                          const isTop5 = idx < 5;
+                          const isLast = idx === ingredientList.length - 1;
+                          return (
+                            <React.Fragment key={idx}>
+                              {isTop5 ? (
+                                <strong className="font-extrabold text-slate-900">
+                                  {name}
+                                </strong>
+                              ) : (
+                                <span>{name}</span>
+                              )}
+                              {!isLast ? ', ' : '.'}
+                            </React.Fragment>
+                          );
+                        })}
+                      </p>
+                      {ingredientList.length >= 5 && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] sm:text-[11px] text-slate-400 italic flex items-center gap-1.5">
+                          <Sparkles className="w-3 h-3 text-[#0E8388] shrink-0" />
+                          <span>
+                            Los primeros 5 ingredientes en negrita constituyen la base principal de mayor concentración del alimento.
+                          </span>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-[11px] text-slate-400 italic">
