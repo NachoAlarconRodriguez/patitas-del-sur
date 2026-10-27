@@ -443,6 +443,54 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     return list;
   }, [product, isDog]);
 
+  // Análisis garantizado clasificado: 4 métricas principales fijas + micronutrientes/otros
+  const { primaryGuaranteed, secondaryGuaranteed } = useMemo(() => {
+    const analysis =
+      product?.guaranteedAnalysis && typeof product.guaranteedAnalysis === 'object'
+        ? product.guaranteedAnalysis
+        : {};
+    const entries = Object.entries(analysis);
+
+    const PRIMARY_SPECS = [
+      {
+        label: 'Proteína Cruda',
+        test: (k) => /prote[ií]na/i.test(k) || /protein/i.test(k),
+        fallback: product?.proteinValue ? `${product.proteinValue}%` : '32%',
+      },
+      {
+        label: 'Grasa Cruda',
+        test: (k) => /grasa/i.test(k) || /fat/i.test(k),
+        fallback: '16%',
+      },
+      {
+        label: 'Fibra Cruda',
+        test: (k) => /fibra/i.test(k) || /fiber/i.test(k),
+        fallback: '4%',
+      },
+      {
+        label: 'Humedad',
+        test: (k) => /humedad/i.test(k) || /moisture/i.test(k),
+        fallback: '10%',
+      },
+    ];
+
+    const matchedKeys = new Set();
+    const primaryList = PRIMARY_SPECS.map((spec) => {
+      const foundEntry = entries.find(([k]) => spec.test(k));
+      if (foundEntry) {
+        matchedKeys.add(foundEntry[0]);
+        return { label: spec.label, value: foundEntry[1] };
+      }
+      return { label: spec.label, value: spec.fallback };
+    });
+
+    const secondaryList = entries
+      .filter(([k]) => !matchedKeys.has(k) && !PRIMARY_SPECS.some((s) => s.test(k)))
+      .map(([k, v]) => ({ label: k, value: v }));
+
+    return { primaryGuaranteed: primaryList, secondaryGuaranteed: secondaryList };
+  }, [product?.guaranteedAnalysis, product?.proteinValue]);
+
   // Reset al cambiar de producto
   useEffect(() => {
     setActiveImageIndex(0);
@@ -1026,45 +1074,57 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 </div>
 
                 {/* Guaranteed Analysis Table */}
-                {product.guaranteedAnalysis && typeof product.guaranteedAnalysis === 'object' && Object.keys(product.guaranteedAnalysis).length > 0 ? (
-                  <div className="space-y-1.5">
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between">
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
                       Análisis Nutricional Garantizado:
                     </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {Object.entries(product.guaranteedAnalysis).map(([key, val]) => (
-                        <div key={key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
-                          <div className="text-lg font-black text-[#0E8388]">{val}</div>
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">{key}</div>
+                  </div>
+
+                  {/* 4 Métricas Principales destacadas */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {primaryGuaranteed.map((item) => (
+                      <div
+                        key={item.label}
+                        className="p-3 rounded-2xl bg-gradient-to-b from-[#0E8388]/5 to-transparent border border-[#0E8388]/20 text-center shadow-xs"
+                      >
+                        <div className="text-xl sm:text-2xl font-black text-[#0E8388] font-mono tracking-tight">
+                          {item.value}
                         </div>
-                      ))}
-                    </div>
+                        <div className="text-[10px] sm:text-[11px] font-black text-slate-700 uppercase tracking-wider mt-1">
+                          {item.label}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                      Análisis Nutricional Garantizado:
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
-                        <div className="text-lg font-black text-[#0E8388]">{product.proteinValue ? `${product.proteinValue}%` : '32%'}</div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">Proteína Cruda</div>
+
+                  {/* Otros Componentes / Micronutrientes en formato más pequeño */}
+                  {secondaryGuaranteed.length > 0 && (
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-100">
+                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                        Otros Componentes Garantizados:
                       </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
-                        <div className="text-lg font-black text-[#0E8388]">16%</div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">Grasa Cruda</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
-                        <div className="text-lg font-black text-[#0E8388]">4%</div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">Fibra Cruda</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 text-center">
-                        <div className="text-lg font-black text-[#0E8388]">10%</div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">Humedad</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                        {secondaryGuaranteed.map((item) => (
+                          <div
+                            key={item.label}
+                            className="p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 text-center hover:bg-slate-100/60 transition-colors"
+                          >
+                            <div className="text-xs sm:text-sm font-black text-slate-800 font-mono">
+                              {item.value}
+                            </div>
+                            <div
+                              className="text-[9px] font-bold text-slate-500 uppercase tracking-tight truncate mt-0.5"
+                              title={item.label}
+                            >
+                              {item.label}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             )}
 
