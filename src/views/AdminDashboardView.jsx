@@ -19637,43 +19637,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           >
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0 relative z-20">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20">
+              <div className="flex items-center gap-3 min-w-0 pr-3">
+                <div className="p-2.5 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20 shrink-0">
                   <Edit2 className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-base font-black text-slate-900">Editar Producto 📝</h3>
-                    {/* Etiqueta Multi-Formato con Tooltip al pasar el mouse */}
-                    <div className="relative group inline-flex items-center">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-50 text-teal-800 border border-teal-200/90 shadow-2xs hover:bg-teal-100 hover:border-teal-300 transition-all cursor-help select-none">
-                        <span>🔗</span>
-                        <span>Multi-Formato</span>
-                        <span className="w-3.5 h-3.5 rounded-full bg-teal-200/80 text-teal-900 flex items-center justify-center text-[9px] font-black">?</span>
+                <div className="min-w-0">
+                  <h3
+                    className="text-base sm:text-lg font-black text-slate-900 truncate tracking-tight"
+                    title={editingProduct.name}
+                  >
+                    {editingProduct.name || 'Editar Producto'}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    {editingProduct.brand && (
+                      <span className="text-[11px] font-black text-[#0E8388] bg-teal-50 px-2.5 py-0.5 rounded-lg border border-teal-200">
+                        {editingProduct.brand}
                       </span>
-
-                      {/* Tooltip flotante explicativo */}
-                      <div className="absolute left-0 top-full mt-2 w-80 p-3.5 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 text-[11px] leading-relaxed opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none transform -translate-y-1 group-hover:translate-y-0">
-                        <div className="flex items-center justify-between font-bold text-teal-300 text-xs mb-1.5">
-                          <span className="flex items-center gap-1.5">
-                            <span>🔗</span>
-                            <span>Publicación Web Inteligente</span>
-                          </span>
-                          <span className="text-[9px] font-black uppercase tracking-wider text-teal-200 bg-teal-950/80 px-2 py-0.5 rounded-full border border-teal-400/40">
-                            Multi-Formato
-                          </span>
-                        </div>
-                        <p className="text-slate-200 text-[11px] leading-snug font-normal">
-                          En la tienda web pública, los productos con el mismo nombre y marca se publican juntos en una sola tarjeta con selector interactivo de kilos (ej: <span className="font-bold text-teal-300 underline">3 kg</span> y <span className="font-bold text-teal-300 underline">10 kg</span>). En bodega se mantiene el stock físico individual por SKU.
-                        </p>
-                        {/* Flecha indicadora superior */}
-                        <div className="absolute -top-1.5 left-5 w-3 h-3 bg-slate-900 border-t border-l border-slate-700/80 rotate-45"></div>
-                      </div>
-                    </div>
+                    )}
+                    {editingProduct.format && (
+                      <span className="text-[11px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-lg">
+                        {editingProduct.format}
+                      </span>
+                    )}
+                    {editingProduct.sku && (
+                      <span className="text-[10px] font-mono text-slate-400">
+                        SKU: {editingProduct.sku}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    {editingProduct.sku ? `SKU: ${editingProduct.sku} • ` : ''}{editingProduct.brand}
-                  </p>
                 </div>
               </div>
               <button
