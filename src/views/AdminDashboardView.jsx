@@ -113,6 +113,7 @@ import {
   createProductInSupabase,
   deleteProductFromSupabase,
 } from '../services/productsService.js';
+import { compressImageFile } from '../utils/imageCompressor.js';
 import {
   fetchOrdersFromSupabase,
   createOrderInSupabase,
@@ -1768,7 +1769,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [isSavingProduct, setIsSavingProduct] = useState(false); // Estado de guardado backend Supabase
   const [editProductStep, setEditProductStep] = useState(1); // 1: Datos & Precios, 2: Imágenes, 3: Descripción, 4: Datos Técnicos
   const [newBenefitInput, setNewBenefitInput] = useState('');
-  const [newGalleryUrlInput, setNewGalleryUrlInput] = useState('');
+  const [isProcessingImage, setIsProcessingImage] = useState(false); // Estado de compresión y carga de imágenes
   const [newIngredientInput, setNewIngredientInput] = useState('');
   const [customNutrientKey, setCustomNutrientKey] = useState('');
   const [customNutrientVal, setCustomNutrientVal] = useState('');
@@ -19978,11 +19979,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
                         Imagen de Portada Principal
                       </span>
-                      {editingProduct.image && (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                          ✓ Foto cargada
-                        </span>
-                      )}
+                      {editingProduct.image ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingProduct((prev) => ({ ...prev, image: '' }))}
+                            className="text-[10px] text-rose-600 hover:text-rose-700 font-bold hover:underline cursor-pointer"
+                          >
+                            Eliminar portada
+                          </button>
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            ✓ Foto cargada
+                          </span>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -20010,43 +20020,53 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
 
                       {/* Controles de carga */}
-                      <div className="flex-1 w-full space-y-2.5">
+                      <div className="flex-1 w-full space-y-3">
                         <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1.5">
                             Subir desde tu equipo:
                           </label>
-                          <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-bold text-xs cursor-pointer shadow-xs transition-colors">
-                            <Upload className="w-4 h-4" />
-                            <span>Seleccionar archivo local</span>
+                          <label className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs shadow-xs transition-all ${
+                            isProcessingImage
+                              ? 'bg-slate-200 text-slate-500 cursor-wait'
+                              : 'bg-[#0E8388] hover:bg-[#0c7276] text-white cursor-pointer active:scale-95'
+                          }`}>
+                            {isProcessingImage ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin text-[#0E8388]" />
+                                <span>Optimizando foto...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Upload className="w-4 h-4" />
+                                <span>Seleccionar archivo local</span>
+                              </>
+                            )}
                             <input
                               type="file"
                               accept="image/*"
+                              disabled={isProcessingImage}
                               className="hidden"
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setEditingProduct((prev) => ({ ...prev, image: reader.result }));
-                                };
-                                reader.readAsDataURL(file);
+                                try {
+                                  setIsProcessingImage(true);
+                                  const compressed = await compressImageFile(file, 1200, 1200, 0.82);
+                                  setEditingProduct((prev) => ({ ...prev, image: compressed }));
+                                } catch (err) {
+                                  console.error('Error al procesar foto de portada:', err);
+                                  alert('Error al procesar la imagen: ' + (err.message || 'Error desconocido'));
+                                } finally {
+                                  setIsProcessingImage(false);
+                                  e.target.value = '';
+                                }
                               }}
                             />
                           </label>
                         </div>
-
-                        <div>
-                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                            O pegar URL web de la imagen:
-                          </label>
-                          <input
-                            type="url"
-                            placeholder="https://images.unsplash.com/..."
-                            value={editingProduct.image || ''}
-                            onChange={(e) => setEditingProduct((prev) => ({ ...prev, image: e.target.value }))}
-                            className="w-full p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-mono focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                          />
-                        </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          Formatos compatibles: JPG, PNG, WebP. La imagen se optimiza y comprime automáticamente para guardarse seguro en el backend y cargar a máxima velocidad en la web.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -20113,67 +20133,60 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       ))}
 
                       {/* Card para subir archivo adicional */}
-                      <label className="aspect-square rounded-xl border-2 border-dashed border-slate-200 hover:border-[#0E8388] bg-slate-50/60 hover:bg-teal-50/40 transition-colors flex flex-col items-center justify-center p-2 text-center cursor-pointer group">
-                        <Upload className="w-5 h-5 text-slate-400 group-hover:text-[#0E8388] transition-colors mb-1" />
-                        <span className="text-[10px] font-bold text-slate-500 group-hover:text-[#0E8388] leading-tight">
-                          Subir foto
-                        </span>
+                      <label className={`aspect-square rounded-xl border-2 border-dashed ${
+                        isProcessingImage
+                          ? 'border-teal-400 bg-teal-50/50 cursor-wait'
+                          : 'border-slate-200 hover:border-[#0E8388] bg-slate-50/60 hover:bg-teal-50/40 cursor-pointer'
+                      } transition-colors flex flex-col items-center justify-center p-2 text-center group`}>
+                        {isProcessingImage ? (
+                          <>
+                            <Loader2 className="w-5 h-5 text-[#0E8388] animate-spin mb-1" />
+                            <span className="text-[10px] font-bold text-[#0E8388]">Optimizando...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5 text-slate-400 group-hover:text-[#0E8388] transition-colors mb-1" />
+                            <span className="text-[10px] font-bold text-slate-500 group-hover:text-[#0E8388] leading-tight">
+                              Subir foto(s)
+                            </span>
+                            <span className="text-[9px] text-slate-400 mt-0.5">desde tu equipo</span>
+                          </>
+                        )}
                         <input
                           type="file"
                           accept="image/*"
+                          multiple
+                          disabled={isProcessingImage}
                           className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            const reader = new FileReader();
-                            reader.onloadend = () => {
-                              setEditingProduct((prev) => ({
-                                ...prev,
-                                images: [...(prev.images || []), reader.result],
-                              }));
-                            };
-                            reader.readAsDataURL(file);
+                          onChange={async (e) => {
+                            const files = Array.from(e.target.files || []);
+                            if (files.length === 0) return;
+                            try {
+                              setIsProcessingImage(true);
+                              const compressedList = [];
+                              for (const f of files) {
+                                try {
+                                  const comp = await compressImageFile(f, 1200, 1200, 0.82);
+                                  compressedList.push(comp);
+                                } catch (err) {
+                                  console.warn('Error al procesar archivo de galería:', f.name, err);
+                                }
+                              }
+                              if (compressedList.length > 0) {
+                                setEditingProduct((prev) => ({
+                                  ...prev,
+                                  images: [...(prev.images || []), ...compressedList],
+                                }));
+                              }
+                            } catch (err) {
+                              console.error('Error al cargar fotos a galería:', err);
+                            } finally {
+                              setIsProcessingImage(false);
+                              e.target.value = '';
+                            }
                           }}
                         />
                       </label>
-                    </div>
-
-                    {/* Agregar por URL directa */}
-                    <div className="pt-1 flex items-center gap-2">
-                      <input
-                        type="url"
-                        placeholder="O pegar URL directa de foto adicional..."
-                        value={newGalleryUrlInput}
-                        onChange={(e) => setNewGalleryUrlInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (newGalleryUrlInput.trim()) {
-                              setEditingProduct((prev) => ({
-                                ...prev,
-                                images: [...(prev.images || []), newGalleryUrlInput.trim()],
-                              }));
-                              setNewGalleryUrlInput('');
-                            }
-                          }
-                        }}
-                        className="flex-1 p-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-mono focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (newGalleryUrlInput.trim()) {
-                            setEditingProduct((prev) => ({
-                              ...prev,
-                              images: [...(prev.images || []), newGalleryUrlInput.trim()],
-                            }));
-                            setNewGalleryUrlInput('');
-                          }
-                        }}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
-                      >
-                        + Añadir
-                      </button>
                     </div>
                   </div>
                 </div>
