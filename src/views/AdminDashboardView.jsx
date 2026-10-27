@@ -112,6 +112,7 @@ import {
   updateProductInSupabase,
   createProductInSupabase,
   deleteProductFromSupabase,
+  cleanIngredientName,
 } from '../services/productsService.js';
 import { compressImageFile } from '../utils/imageCompressor.js';
 import {
@@ -4079,6 +4080,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const updatedCost = Number(editingProduct.unitCostNeto) || undefined;
       const updatedMin = Number(editingProduct.minStock) || 5;
 
+      // Sanitizar ingredientes para eliminar cualquier emoji o caracter decorativo
+      const cleanedIngredients = (editingProduct.ingredients || [])
+        .map(cleanIngredientName)
+        .filter(Boolean);
+
       setInventory((prev) =>
         prev.map((item) =>
           item.id === editingProduct.id
@@ -4101,7 +4107,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 tagline: editingProduct.tagline !== undefined ? editingProduct.tagline : item.tagline,
                 badge: editingProduct.badge !== undefined ? editingProduct.badge : item.badge,
                 benefits: Array.isArray(editingProduct.benefits) ? editingProduct.benefits : (item.benefits || []),
-                ingredients: Array.isArray(editingProduct.ingredients) ? editingProduct.ingredients : (item.ingredients || []),
+                ingredients: cleanedIngredients,
                 guaranteedAnalysis: editingProduct.guaranteedAnalysis || item.guaranteedAnalysis || {},
                 animalPercent: editingProduct.animalPercent !== undefined ? editingProduct.animalPercent : item.animalPercent,
                 proteinValue: editingProduct.proteinValue !== undefined ? editingProduct.proteinValue : item.proteinValue,
@@ -4137,7 +4143,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         tagline: editingProduct.tagline,
         badge: editingProduct.badge,
         benefits: editingProduct.benefits || [],
-        ingredients: editingProduct.ingredients || [],
+        ingredients: cleanedIngredients,
         guaranteedAnalysis: editingProduct.guaranteedAnalysis || {},
         animalPercent: editingProduct.animalPercent,
         proteinValue: editingProduct.proteinValue,
@@ -9420,7 +9426,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         description: prod.description || prod.tagline || '',
                                         badge: prod.badge || '',
                                         benefits: Array.isArray(prod.benefits) ? prod.benefits : [],
-                                        ingredients: Array.isArray(prod.ingredients) ? prod.ingredients : [],
+                                        ingredients: Array.isArray(prod.ingredients) ? prod.ingredients.map(cleanIngredientName).filter(Boolean) : [],
                                         guaranteedAnalysis: (prod.guaranteedAnalysis && typeof prod.guaranteedAnalysis === 'object' && Object.keys(prod.guaranteedAnalysis).length > 0)
                                           ? { ...prod.guaranteedAnalysis }
                                           : { 'Proteína Cruda': '32%', 'Grasa Cruda': '16%', 'Fibra Cruda': '4%', 'Humedad': '10%' },
@@ -20347,9 +20353,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
-                          <span>🌿</span>
-                          <span>Ingredientes Principales (Ficha Técnica & Pestaña Web)</span>
+                        <label className="text-[10px] font-bold uppercase text-slate-700 tracking-wider block">
+                          Ingredientes Principales (Ficha Técnica & Pestaña Web)
                         </label>
                         <p className="text-[10px] text-slate-500">
                           Se mostrarán como etiquetas destacadas en la pestaña "Ingredientes & Análisis". Puedes separar por comas o agregar uno a uno.
@@ -20362,27 +20367,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                     {/* Chips de Ingredientes */}
                     <div className="flex flex-wrap gap-1.5">
-                      {(editingProduct.ingredients || []).map((ing, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200"
-                        >
-                          <span>🌿 {ing}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingProduct((prev) => ({
-                                ...prev,
-                                ingredients: prev.ingredients.filter((_, i) => i !== idx),
-                              }))
-                            }
-                            className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Eliminar ingrediente"
+                      {(editingProduct.ingredients || []).map((ing, idx) => {
+                        const clean = cleanIngredientName(ing) || ing;
+                        return (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200 shadow-2xs hover:bg-slate-200/70 transition-colors"
                           >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
+                            <span>{clean}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingProduct((prev) => ({
+                                  ...prev,
+                                  ingredients: prev.ingredients.filter((_, i) => i !== idx),
+                                }))
+                              }
+                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="Eliminar ingrediente"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
                       {(!editingProduct.ingredients || editingProduct.ingredients.length === 0) && (
                         <p className="text-[11px] text-slate-400 italic">No hay ingredientes registrados aún.</p>
                       )}
@@ -20401,7 +20409,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             if (newIngredientInput.trim()) {
                               const items = newIngredientInput
                                 .split(',')
-                                .map((s) => s.trim())
+                                .map(cleanIngredientName)
                                 .filter(Boolean);
                               setEditingProduct((prev) => ({
                                 ...prev,
@@ -20419,7 +20427,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           if (newIngredientInput.trim()) {
                             const items = newIngredientInput
                               .split(',')
-                              .map((s) => s.trim())
+                              .map(cleanIngredientName)
                               .filter(Boolean);
                             setEditingProduct((prev) => ({
                               ...prev,

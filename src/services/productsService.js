@@ -5,6 +5,18 @@ import { PRODUCTS } from '../data/mockData';
  * Servicio de Productos con sincronización a Supabase y fallback a catálogo local
  */
 
+/**
+ * Limpia y normaliza el nombre de un ingrediente eliminando emojis (ej: 🌿, 🌱)
+ * y caracteres decorativos al inicio o final.
+ */
+export function cleanIngredientName(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F1E0}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{2388}-\u{2B55}]/gu, '')
+    .replace(/^[\s•\-\*\,\.]+/g, '')
+    .trim();
+}
+
 export async function fetchProductsFromSupabase() {
   try {
     const { data, error } = await supabase
@@ -46,7 +58,7 @@ export async function fetchProductsFromSupabase() {
         ...item,
         weights: safeParseJson(item.weights, ['10 kg']),
         images: safeParseJson(item.images, []),
-        ingredients: safeParseJson(item.ingredients, []),
+        ingredients: safeParseJson(item.ingredients, []).map(cleanIngredientName).filter(Boolean),
         guaranteedAnalysis: safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {}),
         benefits: safeParseJson(item.benefits, []),
         animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
@@ -136,7 +148,8 @@ export async function updateProductInSupabase(productId, updates) {
       } else if (key === 'images') {
         payload.images = Array.isArray(value) ? value : (value ? [value] : []);
       } else if (key === 'ingredients') {
-        payload.ingredients = Array.isArray(value) ? value : (value ? [value] : []);
+        const raw = Array.isArray(value) ? value : (value ? [value] : []);
+        payload.ingredients = raw.map(cleanIngredientName).filter(Boolean);
       } else if (key === 'guaranteedAnalysis' || key === 'guaranteed_analysis') {
         payload.guaranteed_analysis = (typeof value === 'object' && value !== null) ? value : {};
       } else if (key === 'animalPercent' || key === 'animal_percent') {
@@ -252,7 +265,7 @@ export async function createProductInSupabase(productData) {
       is_veterinary: Boolean(productData.isVeterinary),
       vet_detail: productData.vetDetail || null,
       life_stage: productData.lifeStage || 'adulto',
-      ingredients: Array.isArray(productData.ingredients) ? productData.ingredients : [],
+      ingredients: (Array.isArray(productData.ingredients) ? productData.ingredients : []).map(cleanIngredientName).filter(Boolean),
       guaranteed_analysis: (typeof productData.guaranteedAnalysis === 'object' && productData.guaranteedAnalysis !== null)
         ? productData.guaranteedAnalysis
         : (productData.guaranteed_analysis || {}),

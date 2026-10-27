@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
-import { fetchProductsFromSupabase, updateProductInSupabase } from '../services/productsService';
+import { fetchProductsFromSupabase, updateProductInSupabase, cleanIngredientName } from '../services/productsService';
 import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import AppleNutritionSpecs from '../components/AppleNutritionSpecs';
@@ -1014,7 +1014,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     <div className="flex flex-wrap gap-1.5">
                       {product.ingredients.map((ing, idx) => (
                         <span key={idx} className="px-3 py-1 rounded-xl bg-slate-100 text-slate-800 text-[11px] font-bold border border-slate-200/80">
-                          🌿 {ing}
+                          {cleanIngredientName(ing) || ing}
                         </span>
                       ))}
                     </div>
