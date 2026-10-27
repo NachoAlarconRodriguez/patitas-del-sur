@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js';
-import { PRODUCTS } from '../data/mockData';
+import { PRODUCTS } from '../data/mockData.js';
 
 /**
  * Servicio de Productos con sincronización a Supabase y fallback a catálogo local

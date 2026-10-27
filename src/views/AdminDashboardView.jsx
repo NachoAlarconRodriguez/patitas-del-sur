@@ -1095,6 +1095,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         if (dbProds && dbProds.length > 0) {
           const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
           const mapped = dbProds.map((p) => ({
+            ...p,
             id: p.id,
             name: p.name,
             brand: p.brand || 'Patitas del Sur',
@@ -1126,6 +1127,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             isVeterinary: Boolean(p.is_veterinary || p.isVeterinary),
             vetDetail: p.vet_detail || p.vetDetail || '',
             lifeStage: p.life_stage || p.lifeStage || 'adulto',
+            ingredients: Array.isArray(p.ingredients) ? p.ingredients.map(cleanIngredientName).filter(Boolean) : [],
+            guaranteedAnalysis: p.guaranteedAnalysis || p.guaranteed_analysis || {},
+            animalPercent: p.animalPercent ?? p.animal_percent ?? null,
+            weights: Array.isArray(p.weights) ? p.weights : [p.weights || '12 kg'],
           }));
 
           setInventory(mapped);
@@ -9426,7 +9431,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         description: prod.description || prod.tagline || '',
                                         badge: prod.badge || '',
                                         benefits: Array.isArray(prod.benefits) ? prod.benefits : [],
-                                        ingredients: Array.isArray(prod.ingredients) ? prod.ingredients.map(cleanIngredientName).filter(Boolean) : [],
+                                        ingredients: Array.isArray(prod.ingredients)
+                                          ? prod.ingredients.map(cleanIngredientName).filter(Boolean)
+                                          : (typeof prod.ingredients === 'string' && prod.ingredients.trim()
+                                            ? prod.ingredients.split(',').map(cleanIngredientName).filter(Boolean)
+                                            : []),
                                         guaranteedAnalysis: (prod.guaranteedAnalysis && typeof prod.guaranteedAnalysis === 'object' && Object.keys(prod.guaranteedAnalysis).length > 0)
                                           ? { ...prod.guaranteedAnalysis }
                                           : { 'Proteína Cruda': '32%', 'Grasa Cruda': '16%', 'Fibra Cruda': '4%', 'Humedad': '10%' },
