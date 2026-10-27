@@ -1769,6 +1769,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [editProductStep, setEditProductStep] = useState(1); // 1: Datos & Precios, 2: Imágenes, 3: Descripción, 4: Datos Técnicos
   const [newBenefitInput, setNewBenefitInput] = useState('');
   const [newGalleryUrlInput, setNewGalleryUrlInput] = useState('');
+  const [newIngredientInput, setNewIngredientInput] = useState('');
+  const [customNutrientKey, setCustomNutrientKey] = useState('');
+  const [customNutrientVal, setCustomNutrientVal] = useState('');
   const [selectedProductSalesModal, setSelectedProductSalesModal] = useState(null); // Producto para ver detalle de ventas y gráficos
   const [productSalesPeriod, setProductSalesPeriod] = useState('7d'); // '7d' | '30d' | 'mes'
 
@@ -4097,6 +4100,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 tagline: editingProduct.tagline !== undefined ? editingProduct.tagline : item.tagline,
                 badge: editingProduct.badge !== undefined ? editingProduct.badge : item.badge,
                 benefits: Array.isArray(editingProduct.benefits) ? editingProduct.benefits : (item.benefits || []),
+                ingredients: Array.isArray(editingProduct.ingredients) ? editingProduct.ingredients : (item.ingredients || []),
+                guaranteedAnalysis: editingProduct.guaranteedAnalysis || item.guaranteedAnalysis || {},
+                animalPercent: editingProduct.animalPercent !== undefined ? editingProduct.animalPercent : item.animalPercent,
                 proteinValue: editingProduct.proteinValue !== undefined ? editingProduct.proteinValue : item.proteinValue,
                 mainProtein: editingProduct.mainProtein || item.mainProtein,
                 grainLevel: editingProduct.grainLevel || item.grainLevel,
@@ -4130,6 +4136,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         tagline: editingProduct.tagline,
         badge: editingProduct.badge,
         benefits: editingProduct.benefits || [],
+        ingredients: editingProduct.ingredients || [],
+        guaranteedAnalysis: editingProduct.guaranteedAnalysis || {},
+        animalPercent: editingProduct.animalPercent,
         proteinValue: editingProduct.proteinValue,
         mainProtein: editingProduct.mainProtein,
         grainLevel: editingProduct.grainLevel,
@@ -9410,6 +9419,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         description: prod.description || prod.tagline || '',
                                         badge: prod.badge || '',
                                         benefits: Array.isArray(prod.benefits) ? prod.benefits : [],
+                                        ingredients: Array.isArray(prod.ingredients) ? prod.ingredients : [],
+                                        guaranteedAnalysis: (prod.guaranteedAnalysis && typeof prod.guaranteedAnalysis === 'object' && Object.keys(prod.guaranteedAnalysis).length > 0)
+                                          ? { ...prod.guaranteedAnalysis }
+                                          : { 'Proteína Cruda': '32%', 'Grasa Cruda': '16%', 'Fibra Cruda': '4%', 'Humedad': '10%' },
+                                        animalPercent: prod.animalPercent ?? (prod.brand?.toLowerCase().includes('acana') ? 65 : (prod.brand?.toLowerCase().includes('bravery') ? 85 : 70)),
                                         proteinValue: prod.proteinValue || 30,
                                         mainProtein: prod.mainProtein || 'Pollo',
                                         grainLevel: prod.grainLevel || 'free',
@@ -20324,6 +20338,203 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </button>
                     </div>
                   </div>
+
+                  {/* Ingredientes Principales (Pestaña "Ingredientes & Análisis") */}
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                          <span>🌿</span>
+                          <span>Ingredientes Principales (Ficha Técnica & Pestaña Web)</span>
+                        </label>
+                        <p className="text-[10px] text-slate-500">
+                          Se mostrarán como etiquetas destacadas en la pestaña "Ingredientes & Análisis". Puedes separar por comas o agregar uno a uno.
+                        </p>
+                      </div>
+                      <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                        {Array.isArray(editingProduct.ingredients) ? editingProduct.ingredients.length : 0} ingredientes
+                      </span>
+                    </div>
+
+                    {/* Chips de Ingredientes */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {(editingProduct.ingredients || []).map((ing, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200"
+                        >
+                          <span>🌿 {ing}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                ingredients: prev.ingredients.filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Eliminar ingrediente"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {(!editingProduct.ingredients || editingProduct.ingredients.length === 0) && (
+                        <p className="text-[11px] text-slate-400 italic">No hay ingredientes registrados aún.</p>
+                      )}
+                    </div>
+
+                    {/* Input para agregar ingrediente */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Ej: Pollo fresco deshidratado, Arvejas, Aceite de salmón..."
+                        value={newIngredientInput}
+                        onChange={(e) => setNewIngredientInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newIngredientInput.trim()) {
+                              const items = newIngredientInput
+                                .split(',')
+                                .map((s) => s.trim())
+                                .filter(Boolean);
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                ingredients: [...(prev.ingredients || []), ...items],
+                              }));
+                              setNewIngredientInput('');
+                            }
+                          }
+                        }}
+                        className="flex-1 p-2 rounded-xl border border-slate-200 bg-slate-50 font-medium text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newIngredientInput.trim()) {
+                            const items = newIngredientInput
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            setEditingProduct((prev) => ({
+                              ...prev,
+                              ingredients: [...(prev.ingredients || []), ...items],
+                            }));
+                            setNewIngredientInput('');
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                      >
+                        + Añadir
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Análisis Nutricional Garantizado (Pestaña "Ingredientes & Análisis") */}
+                  <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
+                          <span>📊</span>
+                          <span>Análisis Nutricional Garantizado (Pestaña Web)</span>
+                        </label>
+                        <p className="text-[10px] text-slate-500">
+                          Valores garantizados de la fórmula (Proteína, Grasa, Fibra, Humedad).
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Grid de 4 Métricas Clásicas */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {[
+                        { key: 'Proteína Cruda', placeholder: 'ej: 32%' },
+                        { key: 'Grasa Cruda', placeholder: 'ej: 16%' },
+                        { key: 'Fibra Cruda', placeholder: 'ej: 4%' },
+                        { key: 'Humedad', placeholder: 'ej: 10%' },
+                      ].map((item) => (
+                        <div key={item.key} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 text-center space-y-1">
+                          <span className="text-[10px] font-black uppercase text-slate-600 block">{item.key}</span>
+                          <input
+                            type="text"
+                            placeholder={item.placeholder}
+                            value={editingProduct.guaranteedAnalysis?.[item.key] ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setEditingProduct((prev) => ({
+                                ...prev,
+                                guaranteedAnalysis: {
+                                  ...(prev.guaranteedAnalysis || {}),
+                                  [item.key]: val,
+                                },
+                              }));
+                            }}
+                            className="w-full text-center p-1.5 rounded-lg border border-slate-200 bg-white font-black text-[#0E8388] text-sm focus:border-[#0E8388] focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Nutrientes Adicionales si existen */}
+                    {Object.entries(editingProduct.guaranteedAnalysis || {})
+                      .filter(([k]) => !['Proteína Cruda', 'Grasa Cruda', 'Fibra Cruda', 'Humedad'].includes(k))
+                      .map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                          <span className="font-bold text-slate-700">{k}:</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-[#0E8388]">{v}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const copy = { ...(editingProduct.guaranteedAnalysis || {}) };
+                                delete copy[k];
+                                setEditingProduct((prev) => ({ ...prev, guaranteedAnalysis: copy }));
+                              }}
+                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                    {/* Agregar Nutriente Personalizado */}
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <input
+                        type="text"
+                        placeholder="Nutriente adicional (ej: Calcio, Omega-3)"
+                        value={customNutrientKey}
+                        onChange={(e) => setCustomNutrientKey(e.target.value)}
+                        className="flex-1 p-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium focus:bg-white focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Valor (ej: 1.5%)"
+                        value={customNutrientVal}
+                        onChange={(e) => setCustomNutrientVal(e.target.value)}
+                        className="w-24 p-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-bold text-center focus:bg-white focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (customNutrientKey.trim() && customNutrientVal.trim()) {
+                            setEditingProduct((prev) => ({
+                              ...prev,
+                              guaranteedAnalysis: {
+                                ...(prev.guaranteedAnalysis || {}),
+                                [customNutrientKey.trim()]: customNutrientVal.trim(),
+                              },
+                            }));
+                            setCustomNutrientKey('');
+                            setCustomNutrientVal('');
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs cursor-pointer"
+                      >
+                        + Añadir
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -20434,10 +20645,114 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </span>
                       </div>
                     </div>
+
+                    {/* Live Preview de los Sellos AppleNutritionSpecs (Ficha de Detalle) */}
+                    <div className="pt-2 border-t border-slate-200/80">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block text-center mb-1.5">
+                        Vista Previa Sellos en Ficha de Detalle:
+                      </span>
+                      <div className="rounded-2xl bg-slate-50/90 border border-slate-200 p-2.5 max-w-sm mx-auto grid grid-cols-2 divide-x divide-slate-200 items-center text-center">
+                        {/* 1: Sello Proteína Animal */}
+                        <div className="flex flex-col items-center justify-center px-2">
+                          <div className="relative w-11 h-11 flex items-center justify-center">
+                            <svg className="w-11 h-11 -rotate-90 transform" viewBox="0 0 44 44">
+                              <circle cx="22" cy="22" r="17" className="text-slate-200" strokeWidth="3.5" stroke="currentColor" fill="transparent" />
+                              <circle
+                                cx="22"
+                                cy="22"
+                                r="17"
+                                strokeWidth="3.5"
+                                strokeDasharray={2 * Math.PI * 17}
+                                strokeDashoffset={(2 * Math.PI * 17) * (1 - (Math.min(100, Math.max(0, Number(editingProduct.animalPercent ?? 70))) / 100))}
+                                strokeLinecap="round"
+                                stroke="#0E8388"
+                                fill="transparent"
+                                className="transition-all duration-500"
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs font-black text-slate-900 leading-none">
+                                {editingProduct.animalPercent ?? 70}%
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[9.5px] font-black text-slate-800 uppercase tracking-tight mt-1 leading-tight">
+                            Proteína Animal
+                          </span>
+                          <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider leading-none mt-0.5">
+                            {editingProduct.mainProtein || 'Pollo'}
+                          </span>
+                        </div>
+
+                        {/* 2: Sello Libre de Grano */}
+                        <div className="flex flex-col items-center justify-center px-2">
+                          <div className="relative w-11 h-11 flex items-center justify-center">
+                            <Wheat className={`w-5 h-5 ${editingProduct.grainLevel === 'free' || !editingProduct.grainLevel ? 'text-slate-500' : 'text-amber-500'}`} />
+                            {(editingProduct.grainLevel === 'free' || !editingProduct.grainLevel) && (
+                              <svg viewBox="0 0 24 24" className="absolute inset-0 w-full h-full text-rose-500 pointer-events-none" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="9" />
+                                <line x1="5.6" y1="5.6" x2="18.4" y2="18.4" />
+                              </svg>
+                            )}
+                          </div>
+                          <span className={`text-[9.5px] font-black uppercase tracking-tight mt-1 leading-tight ${
+                            editingProduct.grainLevel === 'free' || !editingProduct.grainLevel ? 'text-emerald-700' : 'text-amber-800'
+                          }`}>
+                            {editingProduct.grainLevel === 'free' || !editingProduct.grainLevel ? 'Libre de Grano' : editingProduct.grainLevel === 'low' ? 'Bajo en Grano' : 'Con Grano'}
+                          </span>
+                          <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wider leading-none mt-0.5">
+                            {editingProduct.grainLevel === 'free' || !editingProduct.grainLevel ? 'Grain Free' : 'Cereales'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* FORMULARIO DE EDICIÓN DE CADA MÉTRICA */}
                   <div className="space-y-3.5">
+                    {/* Métrica 0: Porcentaje de Proteína Animal Real (Sello Circular Ficha de Detalle) */}
+                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-[10px] font-bold uppercase text-slate-700 flex items-center gap-1.5">
+                            <span>🥩</span>
+                            <span>Porcentaje de Proteína Animal Real (Sello Ficha de Detalle)</span>
+                          </label>
+                          <span className="text-[11px] text-slate-500 block">
+                            Define el % que se muestra en el gráfico circular de la ficha de detalle (ej: 65% Acana, 85% Bravery).
+                          </span>
+                        </div>
+                        <span className="font-mono font-black text-[#0E8388] text-base">
+                          {editingProduct.animalPercent ?? 70}% Proteína Animal
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={editingProduct.animalPercent ?? 70}
+                          onChange={(e) => setEditingProduct((prev) => ({ ...prev, animalPercent: e.target.value === '' ? '' : Number(e.target.value) }))}
+                          className="w-24 p-2 rounded-xl border border-slate-200 bg-slate-50 font-mono font-black text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none text-center"
+                        />
+                        <div className="flex flex-wrap gap-1.5 flex-1">
+                          {[50, 60, 65, 70, 75, 85, 92, 100].map((val) => (
+                            <button
+                              key={val}
+                              type="button"
+                              onClick={() => setEditingProduct((prev) => ({ ...prev, animalPercent: val }))}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                Number(editingProduct.animalPercent) === val
+                                  ? 'bg-[#0E8388] text-white shadow-xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {val}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
                     {/* Métrica 1: Porcentaje de Proteína */}
                     <div className="p-3.5 rounded-2xl bg-white border border-slate-200 space-y-2">
                       <div className="flex items-center justify-between">

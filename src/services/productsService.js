@@ -30,14 +30,29 @@ export async function fetchProductsFromSupabase() {
         }
       };
 
+      const safeParseJsonObject = (val, fallback = {}) => {
+        if (typeof val === 'object' && val !== null && !Array.isArray(val)) return val;
+        if (!val) return fallback;
+        try {
+          const res = JSON.parse(val);
+          return typeof res === 'object' && res !== null && !Array.isArray(res) ? res : fallback;
+        } catch {
+          return fallback;
+        }
+      };
+
       // Normalizar campos JSON y propiedades para que coincidan al 100% con el frontend
       return data.map((item) => ({
         ...item,
         weights: safeParseJson(item.weights, ['10 kg']),
         images: safeParseJson(item.images, []),
         ingredients: safeParseJson(item.ingredients, []),
-        guaranteedAnalysis: item.guaranteed_analysis || item.guaranteedAnalysis || {},
+        guaranteedAnalysis: safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {}),
         benefits: safeParseJson(item.benefits, []),
+        animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
+          ? (Number(item.animal_percent) || item.animal_percent)
+          : (item.animalPercent ? (Number(item.animalPercent) || item.animalPercent) : null),
+        animal_percent: item.animal_percent || item.animalPercent || null,
         originalPrice: item.original_price || item.originalPrice,
         petType: item.pet_type || item.petType,
         isVeterinary: item.is_veterinary ?? item.isVeterinary,
@@ -120,6 +135,12 @@ export async function updateProductInSupabase(productId, updates) {
         payload.image = value;
       } else if (key === 'images') {
         payload.images = Array.isArray(value) ? value : (value ? [value] : []);
+      } else if (key === 'ingredients') {
+        payload.ingredients = Array.isArray(value) ? value : (value ? [value] : []);
+      } else if (key === 'guaranteedAnalysis' || key === 'guaranteed_analysis') {
+        payload.guaranteed_analysis = (typeof value === 'object' && value !== null) ? value : {};
+      } else if (key === 'animalPercent' || key === 'animal_percent') {
+        payload.animal_percent = value !== '' && value !== null && !isNaN(value) ? String(value) : (value || null);
       }
       // Note: Unknown fields like inCarousel are intentionally kept in localStorage/UI state
       // to avoid PGRST204 errors in Supabase.
@@ -169,6 +190,9 @@ export async function updateProductInSupabase(productId, updates) {
         tagline: payload.tagline || null,
         badge: payload.badge || null,
         benefits: payload.benefits || [],
+        ingredients: payload.ingredients || [],
+        guaranteed_analysis: payload.guaranteed_analysis || {},
+        animal_percent: payload.animal_percent || null,
         protein_value: payload.protein_value || null,
         protein_percent: payload.protein_percent || null,
         main_protein: payload.main_protein || null,
@@ -228,6 +252,11 @@ export async function createProductInSupabase(productData) {
       is_veterinary: Boolean(productData.isVeterinary),
       vet_detail: productData.vetDetail || null,
       life_stage: productData.lifeStage || 'adulto',
+      ingredients: Array.isArray(productData.ingredients) ? productData.ingredients : [],
+      guaranteed_analysis: (typeof productData.guaranteedAnalysis === 'object' && productData.guaranteedAnalysis !== null)
+        ? productData.guaranteedAnalysis
+        : (productData.guaranteed_analysis || {}),
+      animal_percent: productData.animalPercent ? String(productData.animalPercent) : (productData.animal_percent || null),
     };
 
     let { data, error } = await supabase

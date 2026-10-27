@@ -105,10 +105,9 @@ export function getProductNutritionalSpecs(product, activeFlavor = '') {
 
   // 1. Porcentaje de Proteína Animal Real
   let animalPercent = 70;
-  if (typeof product.animalPercent === 'number' && product.animalPercent > 0) {
-    animalPercent = product.animalPercent;
-  } else if (typeof product.animal_percent === 'number' && product.animal_percent > 0) {
-    animalPercent = product.animal_percent;
+  const rawAnimalPercent = product.animalPercent ?? product.animal_percent;
+  if (rawAnimalPercent !== null && rawAnimalPercent !== undefined && rawAnimalPercent !== '' && !isNaN(Number(rawAnimalPercent)) && Number(rawAnimalPercent) > 0) {
+    animalPercent = Number(rawAnimalPercent);
   } else if (brandLower.includes('alpha spirit') || nameLower.includes('alpha spirit')) {
     // Latas húmedas Alpha Spirit: 92% a 96% carnes frescas nobles
     animalPercent = 92;
@@ -130,15 +129,15 @@ export function getProductNutritionalSpecs(product, activeFlavor = '') {
   let grainPercent = 0;
   let grainStatus = 'free'; // 'free' (0%), 'low' (15%), 'with' (35%)
   
-  if (product.grainLevel === 'with' || product.gama === 'with') {
+  const gLevel = product.grainLevel || product.grain_level || product.gama;
+  if (gLevel === 'with') {
     grainStatus = 'with';
     grainPercent = 35;
-  } else if (product.grainLevel === 'low' || product.gama === 'low' || tagLower.includes('arroz') || tagLower.includes('bajo en grano')) {
+  } else if (gLevel === 'low' || tagLower.includes('arroz') || tagLower.includes('bajo en grano')) {
     grainStatus = 'low';
     grainPercent = 15;
   } else if (
-    product.grainLevel === 'free' ||
-    product.gama === 'free' ||
+    gLevel === 'free' ||
     tagLower.includes('grain free') ||
     tagLower.includes('libre de grano') ||
     brandLower.includes('alpha spirit') ||
@@ -165,7 +164,7 @@ export function getProductNutritionalSpecs(product, activeFlavor = '') {
     return null;
   }
 
-  const proteinSource = matchProtein(activeFlavor) || matchProtein(product.mainProtein) || matchProtein(product.name) || 'Pollo';
+  const proteinSource = matchProtein(activeFlavor) || matchProtein(product.mainProtein) || matchProtein(product.main_protein) || matchProtein(product.name) || 'Pollo';
 
   return {
     isNonFood: false,
