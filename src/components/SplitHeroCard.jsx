@@ -8,31 +8,59 @@ export default function SplitHeroCard() {
   const [touchStartX, setTouchStartX] = useState(0);
 
   const videoRef = useRef(null);
-  const targetTimeRef = useRef(0);
+  const targetTimeRef = useRef(4.0);
+  const shownTimeRef = useRef(4.0);
+  const lastMoveRef = useRef(performance.now());
+  const prevTimeRef = useRef(performance.now());
+
+  // Precarga del video en RAM como Blob (cero latencia de disco/red)
+  useEffect(() => {
+    let objectUrl = null;
+    let isCancelled = false;
+
+    fetch('/Kira_fast.mp4')
+      .then((res) => res.blob())
+      .then((blob) => {
+        if (!isCancelled && videoRef.current) {
+          objectUrl = URL.createObjectURL(blob);
+          videoRef.current.src = objectUrl;
+          videoRef.current.load();
+        }
+      })
+      .catch((err) => {
+        console.warn('Fallback to direct video URL', err);
+        if (videoRef.current) videoRef.current.src = '/Kira_fast.mp4';
+      });
+
+    return () => {
+      isCancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, []);
 
   useEffect(() => {
     const updateTargetTime = (clientX) => {
       const video = videoRef.current;
       if (!video) return;
 
-      // Center of Kira's video on the screen
+      // Centro del video de Kira en pantalla
       const rect = video.getBoundingClientRect();
       const videoCenterX = rect.left + rect.width / 2;
 
-      // Keyframes discovered in Kira.mp4:
-      // - 2.0s: Looking Left
-      // - 4.0s: Looking Center (Forward)
-      // - 6.5s: Looking Right
-      const maxDistance = Math.max(280, window.innerWidth * 0.35);
-      const offset = clientX - videoCenterX; // negative = left of Kira, positive = right of Kira
-      const factor = Math.max(-1, Math.min(1, offset / maxDistance)); // -1 (left) to +1 (right)
+      // Keyframes de Kira:
+      // - 2.0s: Mirando hacia la Izquierda
+      // - 4.0s: Mirando hacia el Centro (Frente)
+      // - 6.5s: Mirando hacia la Derecha
+      const maxDistance = Math.max(260, rect.width * 0.75);
+      const offset = clientX - videoCenterX; // negativo = izquierda, positivo = derecha
+      const factor = Math.max(-1, Math.min(1, offset / maxDistance));
 
       let targetTime;
       if (factor < 0) {
-        // Easing towards Left (factor = -1 -> 2.0s, factor = 0 -> 4.0s)
+        // Hacia la izquierda (2.0s a 4.0s)
         targetTime = 4.0 + factor * (4.0 - 2.0);
       } else {
-        // Easing towards Right (factor = 0 -> 4.0s, factor = 1 -> 6.5s)
+        // Hacia la derecha (4.0s a 6.5s)
         targetTime = 4.0 + factor * (6.5 - 4.0);
       }
 
@@ -40,11 +68,13 @@ export default function SplitHeroCard() {
     };
 
     const handleMouseMove = (e) => {
+      lastMoveRef.current = performance.now();
       updateTargetTime(e.clientX);
     };
 
     const handleTouchMove = (e) => {
       if (e.touches && e.touches[0]) {
+        lastMoveRef.current = performance.now();
         updateTargetTime(e.touches[0].clientX);
       }
     };
@@ -53,17 +83,33 @@ export default function SplitHeroCard() {
     window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     let rafId;
-    const updateVideo = () => {
+    const updateVideo = (now) => {
+      // Delta time en segundos (independiente de si la pantalla es 60Hz o 120Hz)
+      const dt = Math.min((now - prevTimeRef.current) / 1000, 0.1);
+      prevTimeRef.current = now;
+
+      let target = targetTimeRef.current;
+      const idle = now - lastMoveRef.current - 2500; // Al estar inactivo 2.5s
+
+      // Respiración / mirada viva sutil cuando el cursor no se mueve
+      if (idle > 0) {
+        const k = Math.min(1, idle / 2000);
+        const idleSway = 4.0 + 0.35 * Math.sin((idle / 1000) * 1.1);
+        target = target * (1 - k) + idleSway * k;
+      }
+
+      // Suavizado por decaimiento exponencial físico (tau = 0.055s)
+      shownTimeRef.current += (target - shownTimeRef.current) * (1 - Math.exp(-dt / 0.055));
+
       const video = videoRef.current;
       if (video && video.readyState >= 2 && !video.seeking) {
-        const diff = targetTimeRef.current - video.currentTime;
-        if (Math.abs(diff) > 0.02) {
-          // LERP smooth interpolation (16% per frame)
-          const nextTime = video.currentTime + diff * 0.16;
+        const diff = Math.abs(video.currentTime - shownTimeRef.current);
+        if (diff > 0.003) {
           const duration = video.duration || 7.9;
-          video.currentTime = Math.max(0, Math.min(duration, nextTime));
+          video.currentTime = Math.max(0, Math.min(duration - 0.01, shownTimeRef.current));
         }
       }
+
       rafId = requestAnimationFrame(updateVideo);
     };
 
@@ -78,8 +124,9 @@ export default function SplitHeroCard() {
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      videoRef.current.currentTime = 4.0; // Initial posture: looking straight forward
+      videoRef.current.currentTime = 4.0; // Postura inicial: mirando al frente
       targetTimeRef.current = 4.0;
+      shownTimeRef.current = 4.0;
     }
   };
 
@@ -158,7 +205,7 @@ export default function SplitHeroCard() {
           <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
             <video
               ref={videoRef}
-              src="/Kira.mp4"
+              src="/Kira_fast.mp4"
               muted
               playsInline
               preload="auto"
@@ -169,7 +216,7 @@ export default function SplitHeroCard() {
             <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-[#E6F4F1]/90 via-[#E6F4F1]/40 to-transparent pointer-events-none" />
             
             {/* Bottom gradient for crisp text legibility */}
-            <div className="absolute bottom-0 inset-x-0 h-[60%] sm:h-[55%] bg-gradient-to-t from-[#FAF9F5] via-[#FAF9F5]/85 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 inset-x-0 h-[42%] sm:h-[35%] bg-gradient-to-t from-[#FAF9F5] via-[#FAF9F5]/80 to-transparent pointer-events-none" />
           </div>
 
           {/* Top Mascot Name Tag */}
@@ -186,32 +233,16 @@ export default function SplitHeroCard() {
           <div className="relative flex-1 min-h-0 pointer-events-none" />
 
           {/* Content Box (Bottom) */}
-          <div className="relative z-20 pb-20 sm:pb-20 md:pb-8 px-6 md:px-10 flex flex-col items-start gap-1.5 sm:gap-2">
+          <div className="relative z-20 pb-20 sm:pb-20 md:pb-8 px-6 md:px-10 flex flex-col items-start gap-3 sm:gap-4">
             
-            <div className="space-y-0.5">
-              <span className="text-[#0E8388] text-[10px] sm:text-xs font-black tracking-widest uppercase">
-                Nutrición Pura de la Patagonia
-              </span>
+            <div>
               <h2 className="font-molen font-bold text-3xl sm:text-4xl md:text-6xl lg:text-7xl text-[#0A3E40] tracking-tight drop-shadow-xs leading-none">
-                PERROS <span className="text-[#10B981] font-serif italic text-2xl sm:text-3xl md:text-5xl">.</span>
+                PELUDOS <span className="text-[#10B981] font-serif italic text-2xl sm:text-3xl md:text-5xl">.</span>
               </h2>
             </div>
 
-            <p className="text-slate-700 text-xs sm:text-sm max-w-md font-medium leading-relaxed line-clamp-2">
-              Alimento seco libre de granos, snacks deshidratados 100% de pradera y suplementos naturales para Kira y tu perro.
-            </p>
-
-            <div className="flex flex-wrap gap-1.5 pt-0.5">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-white text-[#0A3E40] border border-slate-200/80 shadow-xs">
-                100% Salmón Austral
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-white text-[#0A3E40] border border-slate-200/80 shadow-xs">
-                Sin Rellenos Artificiales
-              </span>
-            </div>
-
-            <div className="mt-1 sm:mt-2 group/btn inline-flex items-center gap-2.5 px-6 py-2.5 sm:py-3 rounded-full bg-[#0E8388] group-hover/dog:bg-[#10B981] text-white font-extrabold text-xs sm:text-sm transition-all duration-300 shadow-xl shadow-[#0E8388]/25 group-hover/dog:scale-105 active:scale-95">
-              <span>EXPLORAR PERROS</span>
+            <div className="group/btn inline-flex items-center gap-2.5 px-6 py-2.5 sm:py-3 rounded-full bg-[#0E8388] group-hover/dog:bg-[#10B981] text-white font-extrabold text-xs sm:text-sm transition-all duration-300 shadow-xl shadow-[#0E8388]/25 group-hover/dog:scale-105 active:scale-95">
+              <span>EXPLORAR PELUDOS</span>
               <ArrowRight className="w-4 h-4 group-hover/dog:translate-x-1.5 transition-transform" />
             </div>
           </div>
