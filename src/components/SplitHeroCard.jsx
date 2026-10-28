@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 
@@ -6,6 +6,82 @@ export default function SplitHeroCard() {
   const navigate = useNavigate();
   const [activeMobileTab, setActiveMobileTab] = useState('perros'); // 'perros' | 'gatos'
   const [touchStartX, setTouchStartX] = useState(0);
+
+  const videoRef = useRef(null);
+  const targetTimeRef = useRef(0);
+
+  useEffect(() => {
+    const updateTargetTime = (clientX) => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // Center of Kira's video on the screen
+      const rect = video.getBoundingClientRect();
+      const videoCenterX = rect.left + rect.width / 2;
+
+      // Keyframes discovered in Kira.mp4:
+      // - 2.0s: Looking Left
+      // - 4.0s: Looking Center (Forward)
+      // - 6.5s: Looking Right
+      const maxDistance = Math.max(280, window.innerWidth * 0.35);
+      const offset = clientX - videoCenterX; // negative = left of Kira, positive = right of Kira
+      const factor = Math.max(-1, Math.min(1, offset / maxDistance)); // -1 (left) to +1 (right)
+
+      let targetTime;
+      if (factor < 0) {
+        // Easing towards Left (factor = -1 -> 2.0s, factor = 0 -> 4.0s)
+        targetTime = 4.0 + factor * (4.0 - 2.0);
+      } else {
+        // Easing towards Right (factor = 0 -> 4.0s, factor = 1 -> 6.5s)
+        targetTime = 4.0 + factor * (6.5 - 4.0);
+      }
+
+      targetTimeRef.current = targetTime;
+    };
+
+    const handleMouseMove = (e) => {
+      updateTargetTime(e.clientX);
+    };
+
+    const handleTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        updateTargetTime(e.touches[0].clientX);
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+
+    let rafId;
+    const updateVideo = () => {
+      const video = videoRef.current;
+      if (video && video.readyState >= 2 && !video.seeking) {
+        const diff = targetTimeRef.current - video.currentTime;
+        if (Math.abs(diff) > 0.02) {
+          // LERP smooth interpolation (16% per frame)
+          const nextTime = video.currentTime + diff * 0.16;
+          const duration = video.duration || 7.9;
+          video.currentTime = Math.max(0, Math.min(duration, nextTime));
+        }
+      }
+      rafId = requestAnimationFrame(updateVideo);
+    };
+
+    rafId = requestAnimationFrame(updateVideo);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = 4.0; // Initial posture: looking straight forward
+      targetTimeRef.current = 4.0;
+    }
+  };
 
   const handleTouchStart = (e) => {
     setTouchStartX(e.touches[0].clientX);
@@ -75,9 +151,27 @@ export default function SplitHeroCard() {
         {/* LEFT CARD: PERROS (KIRA) */}
         <div
           onClick={() => navigate('/perros')}
-          className="w-1/2 md:w-auto split-card group/dog border-r border-slate-200/80 bg-gradient-to-br from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1] flex flex-col justify-between cursor-pointer h-full"
+          className="relative w-1/2 md:w-auto split-card group/dog border-r border-slate-200/80 bg-gradient-to-br from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1] flex flex-col justify-between cursor-pointer h-full overflow-hidden"
         >
           
+          {/* Background Video Layer (Full Bleed Card) */}
+          <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            <video
+              ref={videoRef}
+              src="/Kira.mp4"
+              muted
+              playsInline
+              preload="auto"
+              onLoadedMetadata={handleLoadedMetadata}
+              className="w-full h-full object-cover object-[center_35%]"
+            />
+            {/* Top gradient for tag contrast */}
+            <div className="absolute top-0 inset-x-0 h-40 bg-gradient-to-b from-[#E6F4F1]/90 via-[#E6F4F1]/40 to-transparent pointer-events-none" />
+            
+            {/* Bottom gradient for crisp text legibility */}
+            <div className="absolute bottom-0 inset-x-0 h-[60%] sm:h-[55%] bg-gradient-to-t from-[#FAF9F5] via-[#FAF9F5]/85 to-transparent pointer-events-none" />
+          </div>
+
           {/* Top Mascot Name Tag */}
           <div className="relative z-20 pt-28 sm:pt-28 md:pt-18 px-6 md:px-10 flex items-center justify-between">
             <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-white/90 text-slate-800 border border-slate-200/80 shadow-xs backdrop-blur-md">
@@ -88,22 +182,8 @@ export default function SplitHeroCard() {
             </span>
           </div>
 
-          {/* Mascot Kira Image */}
-          <div className="relative flex-1 min-h-0 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
-            <div className="absolute w-60 h-60 md:w-80 md:h-80 rounded-full bg-[#10B981]/15 blur-3xl group-hover/dog:bg-[#10B981]/25 transition-all duration-700 pointer-events-none" />
-            
-            <div className="relative h-full max-h-[30vh] sm:max-h-[34vh] md:max-h-[38vh] aspect-square group-hover/dog:scale-105 transition-transform duration-700 ease-out flex items-center justify-center">
-              <img
-                src="/images/kira_dog.jpg"
-                alt="Kira Mascota Perro"
-                className="w-full h-full object-contain drop-shadow-xl opacity-95"
-                style={{
-                  maskImage: 'radial-gradient(circle at center, black 60%, transparent 88%)',
-                  WebkitMaskImage: 'radial-gradient(circle at center, black 60%, transparent 88%)',
-                }}
-              />
-            </div>
-          </div>
+          {/* Middle Spacer */}
+          <div className="relative flex-1 min-h-0 pointer-events-none" />
 
           {/* Content Box (Bottom) */}
           <div className="relative z-20 pb-20 sm:pb-20 md:pb-8 px-6 md:px-10 flex flex-col items-start gap-1.5 sm:gap-2">
