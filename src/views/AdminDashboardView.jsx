@@ -3032,47 +3032,26 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // Helper para consultar stock en tiempo real cruzando inventario y catálogo
   const getProductStock = useCallback((prod) => {
     if (!prod) return 0;
-    // 1. Prioridad: inventario real del sistema (por ID, SKU o coincidencia de nombre)
+    // 1. Prioridad: inventario real de la base de datos (por ID, SKU o coincidencia de nombre)
     const inv = inventory.find(
       (item) =>
         item.id === prod.id ||
-        item.sku === prod.sku ||
-        (item.name && prod.name && (
-          item.name.toLowerCase().includes(prod.name.toLowerCase().slice(0, 15)) ||
-          prod.name.toLowerCase().includes(item.name.toLowerCase().slice(0, 15))
-        ))
+        (item.sku && prod.sku && item.sku === prod.sku) ||
+        (item.name && prod.name && item.name.toLowerCase() === prod.name.toLowerCase())
     );
     if (inv && typeof inv.stock === 'number') {
       return inv.stock;
     }
-    // 2. Productos designados sin stock (Agotados) para demostración y catálogo realista
-    const outOfStockIds = ['bravery-herring-cat', 'perros-cordero-5kg', 'simparica-trio-dog', 'revolution-plus-cat'];
-    if (outOfStockIds.includes(prod.id)) {
-      return 0;
+    if (typeof prod.stock === 'number') {
+      return prod.stock;
     }
-    // 3. Stock disponible por defecto en catálogo
-    const stockMap = {
-      'bravery-salmon-adult': 24,
-      'bravery-lamb-adult': 18,
-      'bravery-chicken-adult': 14,
-      'perros-salmon-2kg': 16,
-      'perros-snack-res': 45,
-      'perros-suplemento-articulaciones': 28,
-      'nexgard-spectra-dog': 12,
-      'bravecto-dog-medium': 9,
-      'bravery-salmon-cat': 15,
-      'bravery-chicken-cat': 11,
-      'gatos-trucha-catnip': 8,
-      'gatos-pate-salmon': 20,
-      'gatos-snacks-atun': 32,
-      'bravecto-plus-cat': 14,
-    };
-    return stockMap[prod.id] !== undefined ? stockMap[prod.id] : 12;
+    return 0;
   }, [inventory]);
 
   // Handlers para agregar pedido manual
   const handleAddProductToManualOrder = (prodToAdd, weightToAdd, qtyToAdd) => {
-    const prod = prodToAdd || PRODUCTS.find((p) => p.id === selectedProductToAdd) || PRODUCTS[0];
+    const activeCatalog = inventory && inventory.length > 0 ? inventory : PRODUCTS;
+    const prod = prodToAdd || activeCatalog.find((p) => p.id === selectedProductToAdd) || activeCatalog[0];
     if (!prod) return;
 
     const currentStock = getProductStock(prod);
@@ -3081,8 +3060,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return;
     }
 
-    const chosenWeight = weightToAdd || selectedWeightToAdd || (prod.weights && prod.weights[0]) || 'Estándar';
+    const chosenWeight =
+      weightToAdd ||
+      selectedWeightToAdd ||
+      (Array.isArray(prod.weights) && prod.weights[0]) ||
+      prod.format ||
+      'Estándar';
     const chosenQty = qtyToAdd || quantityToAdd || 1;
+    const unitPrice = Number(prod.price ?? prod.salePrice ?? 0);
+    const prodImg = prod.image || (Array.isArray(prod.images) && prod.images[0]) || getProductImage(prod.name);
 
     const existingIndex = manualOrderItems.findIndex(
       (it) => it.productId === prod.id && it.weight === chosenWeight
@@ -3099,9 +3085,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           productId: prod.id,
           name: prod.name,
           weight: chosenWeight,
-          price: prod.price,
+          price: unitPrice,
           quantity: chosenQty,
-          image: prod.image,
+          image: prodImg,
         },
       ]);
     }
@@ -3119,8 +3105,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const stock = getProductStock(product);
       if (stock <= 0) return;
 
-      const chosenWeight = weight || (product.weights && product.weights[0]) || 'Estándar';
+      const chosenWeight =
+        weight ||
+        (Array.isArray(product.weights) && product.weights[0]) ||
+        product.format ||
+        'Estándar';
       const chosenQty = quantity || 1;
+      const unitPrice = Number(product.price ?? product.salePrice ?? 0);
+      const prodImg = product.image || (Array.isArray(product.images) && product.images[0]) || getProductImage(product.name);
 
       const existingIndex = updated.findIndex(
         (it) => it.productId === product.id && it.weight === chosenWeight
@@ -3133,9 +3125,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           productId: product.id,
           name: product.name,
           weight: chosenWeight,
-          price: product.price,
+          price: unitPrice,
           quantity: chosenQty,
-          image: product.image,
+          image: prodImg,
         });
       }
       addedCount++;
@@ -3203,11 +3195,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       petType: manualOrderCustomer.petType || '🐶 Perro',
       petBreed: 'Mascota regalona',
       items: manualOrderItems.map((it) => ({
+        id: it.productId,
+        productId: it.productId,
         name: it.name,
         weight: it.weight || '',
         quantity: it.quantity,
         price: it.price,
-        code: `SKU-${it.productId?.toUpperCase().slice(0, 8) || 'PROD'}`,
+        code: `SKU-${String(it.productId || '').toUpperCase().slice(0, 8) || 'PROD'}`,
       })),
       subtotal,
       shippingCost: shipping,
@@ -3228,12 +3222,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     setOrders([newOrder, ...orders]);
     setInventory((prevInv) =>
       prevInv.map((p) => {
-        const itemOrdered = (newOrder.items || []).find(
-          (it) => it.id === p.id || String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase()
+        const matchingItems = (newOrder.items || []).filter(
+          (it) =>
+            it.id === p.id ||
+            it.productId === p.id ||
+            String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase()
         );
-        if (itemOrdered) {
-          const qty = Number(itemOrdered.quantity || 1);
+        if (matchingItems.length > 0) {
+          const qty = matchingItems.reduce((sum, it) => sum + Number(it.quantity || 1), 0);
           const newStock = Math.max(0, (Number(p.stock) || 0) - qty);
+          updateProductInSupabase(p.id, { stock: newStock, name: p.name, sku: p.sku }).catch(() => {});
           return {
             ...p,
             stock: newStock,
@@ -7832,22 +7830,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <button
                       type="button"
                       onClick={() => {
-                        if (manualOrderItems.length === 0 && PRODUCTS.length > 0) {
-                          setManualOrderItems([
-                            {
-                              productId: PRODUCTS[0].id,
-                              name: PRODUCTS[0].name,
-                              weight: PRODUCTS[0].weights?.[0] || '12 kg',
-                              price: PRODUCTS[0].price,
-                              quantity: 1,
-                              image: PRODUCTS[0].image,
-                            },
-                          ]);
-                        }
                         setManualOrderStep(1);
                         setIsAddOrderModalOpen(true);
                       }}
-                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-2xl bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 shrink-0"
+                      className="flex-1 sm:flex-none px-3.5 py-2.5 rounded-2xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-black transition-all flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 shrink-0"
                     >
                       <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                       <span className="truncate">Pedido Manual</span>
@@ -13777,7 +13763,40 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const subtotal = manualOrderItems.reduce((acc, it) => acc + (it.price * it.quantity), 0);
         const shipping = parseInt(manualOrderCustomer.shippingCost, 10) || 0;
         const total = subtotal + shipping;
-        const currentSelectedProduct = PRODUCTS.find((p) => p.id === selectedProductToAdd) || PRODUCTS[0];
+
+        // Catálogo real conectado al inventario de la base de datos (Supabase)
+        const catalogProducts = (inventory && inventory.length > 0 ? inventory : PRODUCTS)
+          .filter(Boolean)
+          .map((p) => ({
+            ...p,
+            price: Number(p.price ?? p.salePrice ?? 0),
+            weights:
+              Array.isArray(p.weights) && p.weights.length > 0
+                ? p.weights
+                : [p.format || p.weights || 'Estándar'],
+            image: p.image || (Array.isArray(p.images) && p.images[0]) || getProductImage(p.name),
+          }));
+
+        const matchesOrderPetType = (p, filter) => {
+          if (!filter || filter === 'todos') return true;
+          const raw = String(
+            p.petType ||
+              p.pet_type ||
+              (p.category?.toLowerCase().includes('gato') ||
+              p.name?.toLowerCase().includes('gato') ||
+              p.name?.toLowerCase().includes('cat')
+                ? 'gatos'
+                : 'perros')
+          )
+            .toLowerCase()
+            .trim();
+          if (raw === 'ambos' || raw === 'todos') return true;
+          if (filter === 'perros') return raw.includes('perro') || raw === 'dog' || raw === 'dogs';
+          if (filter === 'gatos') return raw.includes('gato') || raw === 'cat' || raw === 'cats';
+          return true;
+        };
+
+        const currentSelectedProduct = catalogProducts.find((p) => p.id === selectedProductToAdd) || catalogProducts[0];
 
         const phoneDigits = (manualOrderCustomer.phone || '').replace(/\D/g, '').slice(0, 9);
         const isPhoneTooShort = phoneDigits.length < 9;
@@ -13837,9 +13856,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           for (const ord of pastOrders) {
             if (ord.items && ord.items.length > 0) {
               for (const it of ord.items) {
-                const prod = PRODUCTS.find((p) => {
-                  const pName = p.name.toLowerCase();
-                  const itName = it.name.toLowerCase();
+                const prod = catalogProducts.find((p) => {
+                  const pName = (p.name || '').toLowerCase();
+                  const itName = (it.name || '').toLowerCase();
                   return (
                     pName.includes(itName) ||
                     itName.includes(pName) ||
@@ -13852,7 +13871,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                        (itName.includes('arenque') && pName.includes('arenque'))))
                   );
                 });
-                if (prod && (!targetPetType || prod.petType === targetPetType)) {
+                if (prod && (!targetPetType || matchesOrderPetType(prod, targetPetType))) {
                   return {
                     product: prod,
                     weight: it.weight || prod.weights?.[0] || 'Estándar',
@@ -13875,8 +13894,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             const fav = pet?.favoriteFood;
             if (fav) {
               const favLower = fav.toLowerCase();
-              const prod = PRODUCTS.find((p) => {
-                const pName = p.name.toLowerCase();
+              const prod = catalogProducts.find((p) => {
+                const pName = (p.name || '').toLowerCase();
                 return (
                   pName.includes(favLower) ||
                   favLower.includes(pName) ||
@@ -13889,7 +13908,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 );
               });
 
-              if (prod && (!targetPetType || prod.petType === targetPetType)) {
+              if (prod && (!targetPetType || matchesOrderPetType(prod, targetPetType))) {
                 const weightMatch = fav.match(/\d+\s*(kg|g)/i);
                 const weight = weightMatch ? weightMatch[0] : (prod.weights?.[0] || 'Estándar');
                 return {
@@ -13907,23 +13926,26 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
         // Marcas dinámicas según la especie seleccionada
         const availableBrands = ['todas', ...Array.from(new Set(
-          PRODUCTS.filter((p) => !orderPetTypeFilter || p.petType === orderPetTypeFilter)
+          catalogProducts
+            .filter((p) => !orderPetTypeFilter || matchesOrderPetType(p, orderPetTypeFilter))
             .map((p) => p.brand)
             .filter(Boolean)
         ))];
 
         // Productos filtrados según especie, marca y palabra clave
-        const filteredOrderProducts = PRODUCTS.filter((p) => {
-          if (orderPetTypeFilter && p.petType !== orderPetTypeFilter) return false;
-          if (orderBrandFilter !== 'todas' && p.brand !== orderBrandFilter) return false;
+        const filteredOrderProducts = catalogProducts.filter((p) => {
+          if (orderPetTypeFilter && !matchesOrderPetType(p, orderPetTypeFilter)) return false;
+          if (orderBrandFilter !== 'todas' && (p.brand || '').toLowerCase() !== orderBrandFilter.toLowerCase()) return false;
           if (orderProductSearch.trim()) {
             const q = orderProductSearch.toLowerCase().trim();
             const matchName = p.name?.toLowerCase().includes(q);
             const matchBrand = p.brand?.toLowerCase().includes(q);
             const matchCategory = p.category?.toLowerCase().includes(q);
+            const matchFormat = p.format?.toLowerCase().includes(q) || p.weights?.some((w) => String(w).toLowerCase().includes(q));
+            const matchSku = p.sku?.toLowerCase().includes(q);
             const matchTagline = p.tagline?.toLowerCase().includes(q);
             const matchIngredients = p.ingredients?.some((ing) => ing.toLowerCase().includes(q));
-            if (!matchName && !matchBrand && !matchCategory && !matchTagline && !matchIngredients) {
+            if (!matchName && !matchBrand && !matchCategory && !matchFormat && !matchSku && !matchTagline && !matchIngredients) {
               return false;
             }
           }
@@ -13986,21 +14008,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="bg-[#F8F9FA] border border-slate-200/90 rounded-[28px] max-w-2xl w-full shadow-2xl max-h-[92vh] flex flex-col text-slate-900 overflow-hidden font-sans"
+              className="bg-[#FAF8F4] border border-amber-200/80 rounded-[28px] max-w-2xl w-full shadow-2xl max-h-[92vh] flex flex-col text-[#1D1D1F] overflow-hidden font-sans"
             >
               
               {/* Apple Window Header */}
-              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-slate-200/60 bg-white/70 backdrop-blur-md">
+              <div className="px-6 pt-5 pb-3 flex items-center justify-between border-b border-amber-200/60 bg-white/85 backdrop-blur-md">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] border border-[#0E8388]/20 flex items-center justify-center shrink-0 shadow-xs">
+                  <div className="w-10 h-10 rounded-2xl bg-[#F5BA13]/15 text-[#D97706] border border-[#F5BA13]/35 flex items-center justify-center shrink-0 shadow-xs">
                     <ShoppingBag className="w-5 h-5 stroke-[2.2]" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base sm:text-lg font-bold tracking-tight text-slate-900">
+                      <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-[#1D1D1F]">
                         Crear Pedido
                       </h3>
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200/70">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-[#92400E] border border-amber-200/80">
                         Paso {manualOrderStep} de 3
                       </span>
                     </div>
@@ -14013,7 +14035,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  className="w-8 h-8 rounded-full bg-slate-100/80 hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-amber-50/80 hover:bg-amber-100 text-slate-500 hover:text-[#92400E] border border-amber-200/60 flex items-center justify-center transition-colors cursor-pointer"
                   title="Cerrar"
                 >
                   <X className="w-4 h-4" />
@@ -14021,8 +14043,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </div>
 
               {/* Apple Segmented Step Indicator */}
-              <div className="px-6 pt-4 pb-2 bg-[#F8F9FA]">
-                <div className="bg-slate-200/70 p-1 rounded-2xl grid grid-cols-3 gap-1 shadow-inner select-none">
+              <div className="px-6 pt-4 pb-2 bg-[#FAF8F4]">
+                <div className="bg-amber-100/60 border border-amber-200/70 p-1 rounded-2xl grid grid-cols-3 gap-1 shadow-inner select-none">
                   {steps.map((st) => {
                     const isActive = manualOrderStep === st.id;
                     const isPassed = manualOrderStep > st.id;
@@ -14045,19 +14067,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         }}
                         className={`py-2 px-2 sm:px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                           isActive
-                            ? 'bg-white text-slate-900 shadow-sm font-bold scale-[1.01]'
+                            ? 'bg-white text-[#1D1D1F] shadow-sm ring-1 ring-[#F5BA13]/35 font-extrabold scale-[1.01]'
                             : isPassed
-                            ? 'text-[#0E8388] hover:text-[#0c7276] hover:bg-white/50'
-                            : 'text-slate-500 hover:text-slate-700'
+                            ? 'text-[#B45309] hover:text-[#78350F] hover:bg-white/60 font-bold'
+                            : 'text-[#78350F]/70 hover:text-[#78350F]'
                         }`}
                       >
                         <div
                           className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
                             isActive
-                              ? 'bg-[#0E8388] text-white'
+                              ? 'bg-[#F5BA13] text-[#1D1D1F] shadow-2xs'
                               : isPassed
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-slate-300/80 text-slate-600'
+                              ? 'bg-amber-200 text-[#78350F]'
+                              : 'bg-amber-200/60 text-[#92400E]'
                           }`}
                         >
                           {isPassed ? <Check className="w-3 h-3 stroke-[3]" /> : st.id}
@@ -14077,24 +14099,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {/* Inset Group 1: Cliente */}
                     <div>
                       <div className="px-1 mb-1.5 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span className="text-[11px] font-extrabold text-[#92400E]/80 uppercase tracking-wider">
                           Datos del Cliente
                         </span>
-                        <span className="text-[11px] font-medium text-slate-400">
+                        <span className="text-[11px] font-semibold text-[#B45309]/80">
                           * Campo obligatorio
                         </span>
                       </div>
-                      <div className="bg-white rounded-2xl border border-slate-200/80 divide-y divide-slate-100 shadow-xs overflow-hidden">
+                      <div className="bg-white rounded-2xl border border-amber-200/80 divide-y divide-amber-100/80 shadow-xs overflow-hidden focus-within:border-[#F5BA13] focus-within:ring-2 focus-within:ring-[#F5BA13]/20 transition-all">
                         {/* 1. Teléfono (Primero, con lista desplegable inteligente de clientes registrados) */}
                         <div className="flex flex-col px-4 py-2.5 bg-white">
                           <div className="flex items-center">
-                            <label className="w-28 sm:w-36 text-xs font-semibold text-slate-700 shrink-0 flex items-center gap-1.5">
-                              <Phone className="w-3.5 h-3.5 text-[#0E8388]" />
-                              <span>Teléfono <span className="text-rose-500">*</span></span>
+                            <label className="w-28 sm:w-36 text-xs font-bold text-[#1D1D1F] shrink-0 flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5 text-[#D97706]" />
+                              <span>Teléfono <span className="text-[#D97706]">*</span></span>
                             </label>
                             <div className="flex-1 flex items-center gap-1.5">
                               {/* Prefijo Fijo +56 */}
-                              <div className="px-2 py-0.5 bg-slate-100 border border-slate-200/80 rounded-md text-slate-700 font-bold text-xs select-none flex items-center gap-1 shrink-0 font-mono">
+                              <div className="px-2 py-0.5 bg-amber-50 border border-amber-200/80 rounded-md text-[#78350F] font-bold text-xs select-none flex items-center gap-1 shrink-0 font-mono">
                                 <span>🇨🇱</span>
                                 <span>+56</span>
                               </div>
@@ -14122,13 +14144,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 onBlur={() => {
                                   if (phoneDigits.length > 0) setManualOrderPhoneTouched(true);
                                 }}
-                                className="w-full text-xs text-slate-900 font-mono font-medium placeholder-slate-400 bg-transparent focus:outline-none"
+                                className="w-full text-xs text-[#1D1D1F] font-mono font-medium placeholder-slate-400 bg-transparent focus:outline-none"
                               />
                               {phoneDigits.length > 0 && (
                                 <span
                                   className={`text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded-full ${
                                     phoneDigits.length === 9
-                                      ? 'bg-emerald-50 text-emerald-600'
+                                      ? 'bg-amber-100 text-[#92400E] border border-amber-300/70'
                                       : 'bg-rose-50 text-rose-500'
                                   }`}
                                 >
@@ -14152,7 +14174,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                           {/* Lista Desplegable Minimalista de Clientes Registrados */}
                           {showPhoneSuggestions && phoneDigits.length >= 1 && matchingPhoneCustomers.length > 0 && (
-                            <div className="mt-2 rounded-xl border border-slate-200/90 bg-white shadow-xs divide-y divide-slate-100 overflow-hidden animate-in fade-in duration-150">
+                            <div className="mt-2 rounded-xl border border-amber-200/90 bg-white shadow-xs divide-y divide-amber-100/70 overflow-hidden animate-in fade-in duration-150">
                               {matchingPhoneCustomers.map((cust) => {
                                 const custPhoneDigits = (cust.phone || '').replace(/\D/g, '').slice(-9);
                                 const formattedPhone = custPhoneDigits.length === 9
@@ -14179,9 +14201,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                       setManualOrderPhoneTouched(false);
                                       showToast(`✨ Datos de ${cust.name} autocompletados`);
                                     }}
-                                    className="px-3.5 py-2.5 hover:bg-teal-50/50 active:bg-teal-50 transition-colors cursor-pointer select-none"
+                                    className="px-3.5 py-2.5 hover:bg-amber-50/70 active:bg-amber-100/60 transition-colors cursor-pointer select-none"
                                   >
-                                    <div className="font-mono text-xs font-bold text-slate-800">
+                                    <div className="font-mono text-xs font-bold text-[#1D1D1F]">
                                       {formattedPhone}
                                     </div>
                                     <div className="text-[11px] font-medium text-slate-500 mt-0.5">
@@ -14196,9 +14218,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                         {/* 2. Nombre (Segundo) */}
                         <div className="flex items-center px-4 py-3 bg-white">
-                          <label className="w-28 sm:w-36 text-xs font-semibold text-slate-700 shrink-0 flex items-center gap-1.5">
-                            <Users className="w-3.5 h-3.5 text-[#0E8388]" />
-                            <span>Nombre <span className="text-rose-500">*</span></span>
+                          <label className="w-28 sm:w-36 text-xs font-bold text-[#1D1D1F] shrink-0 flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-[#D97706]" />
+                            <span>Nombre <span className="text-[#D97706]">*</span></span>
                           </label>
                           <input
                             type="text"
@@ -14206,14 +14228,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             placeholder="Ej: Camila Silva"
                             value={manualOrderCustomer.name}
                             onChange={(e) => setManualOrderCustomer({ ...manualOrderCustomer, name: e.target.value })}
-                            className="w-full text-xs text-slate-900 font-medium placeholder-slate-400 bg-transparent focus:outline-none"
+                            className="w-full text-xs text-[#1D1D1F] font-medium placeholder-slate-400 bg-transparent focus:outline-none"
                           />
                         </div>
 
                         {/* 3. Email (Tercero) */}
                         <div className="flex items-center px-4 py-3 bg-white">
-                          <label className="w-28 sm:w-36 text-xs font-semibold text-slate-700 shrink-0 flex items-center gap-1.5">
-                            <Mail className="w-3.5 h-3.5 text-slate-400" />
+                          <label className="w-28 sm:w-36 text-xs font-bold text-[#1D1D1F] shrink-0 flex items-center gap-1.5">
+                            <Mail className="w-3.5 h-3.5 text-[#D97706]/80" />
                             <span>Email</span>
                           </label>
                           <input
@@ -14221,16 +14243,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             placeholder="cliente@gmail.com"
                             value={manualOrderCustomer.email}
                             onChange={(e) => setManualOrderCustomer({ ...manualOrderCustomer, email: e.target.value })}
-                            className="w-full text-xs text-slate-900 font-medium placeholder-slate-400 bg-transparent focus:outline-none"
+                            className="w-full text-xs text-[#1D1D1F] font-medium placeholder-slate-400 bg-transparent focus:outline-none"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Apple Info Pill */}
-                    <div className="p-3.5 rounded-2xl bg-slate-100/90 border border-slate-200/70 flex items-center gap-2.5 text-slate-600">
-                      <Sparkles className="w-4 h-4 text-[#0E8388] shrink-0" />
-                      <p className="text-[11px] leading-relaxed">
+                    <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/80 flex items-center gap-2.5 text-[#78350F]">
+                      <Sparkles className="w-4 h-4 text-[#D97706] shrink-0" />
+                      <p className="text-[11px] font-medium leading-relaxed">
                         Los datos ingresados se vincularán automáticamente al historial del cliente en el CRM.
                       </p>
                     </div>
@@ -14244,11 +14266,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="space-y-3">
                       {/* 1. SELECCIÓN DE ESPECIE (PERRO / GATO) */}
                       {!orderPetTypeFilter ? (
-                        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 text-center shadow-xs animate-in fade-in">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                        <div className="bg-white rounded-2xl border border-amber-200/80 p-5 text-center shadow-xs animate-in fade-in">
+                          <span className="text-[10px] font-black text-[#D97706] uppercase tracking-wider block mb-1">
                             Paso 1: Selecciona la mascota
                           </span>
-                          <h4 className="text-sm sm:text-base font-black text-slate-900 mb-1">
+                          <h4 className="text-sm sm:text-base font-black text-[#1D1D1F] mb-1">
                             ¿Para qué mascota buscas productos?
                           </h4>
                           <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
@@ -14262,25 +14284,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 setOrderPetTypeFilter('perros');
                                 setOrderBrandFilter('todas');
                                 setOrderProductSearch('');
-                                const firstDog = PRODUCTS.find((p) => p.petType === 'perros' && getProductStock(p) > 0);
+                                const firstDog = catalogProducts.find((p) => matchesOrderPetType(p, 'perros') && getProductStock(p) > 0);
                                 if (firstDog) {
                                   setSelectedProductToAdd(firstDog.id);
                                   setSelectedWeightToAdd(firstDog.weights?.[0] || '12 kg');
                                 }
                               }}
-                              className="p-4 rounded-2xl border-2 border-slate-200 hover:border-[#0E8388] hover:bg-teal-50/20 transition-all text-center group cursor-pointer active:scale-98 shadow-xs bg-slate-50/50"
+                              className="p-4 rounded-2xl border-2 border-amber-200/80 hover:border-[#F5BA13] hover:bg-amber-50/40 transition-all text-center group cursor-pointer active:scale-98 shadow-xs bg-amber-50/20"
                             >
-                              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-50 text-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-2xs">
+                              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100/80 text-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-2xs">
                                 🐶
                               </div>
-                              <span className="text-xs sm:text-sm font-black text-slate-900 block group-hover:text-[#0E8388]">
+                              <span className="text-xs sm:text-sm font-black text-[#1D1D1F] block group-hover:text-[#D97706]">
                                 Perros
                               </span>
                               <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">
                                 Alimento, snacks y suplementos
                               </span>
-                              <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-slate-600">
-                                {PRODUCTS.filter((p) => p.petType === 'perros').length} productos
+                              <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-amber-200 text-[#92400E]">
+                                {catalogProducts.filter((p) => matchesOrderPetType(p, 'perros')).length} productos
                               </span>
                             </button>
 
@@ -14290,25 +14312,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 setOrderPetTypeFilter('gatos');
                                 setOrderBrandFilter('todas');
                                 setOrderProductSearch('');
-                                const firstCat = PRODUCTS.find((p) => p.petType === 'gatos' && getProductStock(p) > 0);
+                                const firstCat = catalogProducts.find((p) => matchesOrderPetType(p, 'gatos') && getProductStock(p) > 0);
                                 if (firstCat) {
                                   setSelectedProductToAdd(firstCat.id);
                                   setSelectedWeightToAdd(firstCat.weights?.[0] || '7 kg');
                                 }
                               }}
-                              className="p-4 rounded-2xl border-2 border-slate-200 hover:border-[#0E8388] hover:bg-teal-50/20 transition-all text-center group cursor-pointer active:scale-98 shadow-xs bg-slate-50/50"
+                              className="p-4 rounded-2xl border-2 border-amber-200/80 hover:border-[#F5BA13] hover:bg-amber-50/40 transition-all text-center group cursor-pointer active:scale-98 shadow-xs bg-amber-50/20"
                             >
-                              <div className="w-12 h-12 mx-auto rounded-2xl bg-purple-50 text-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-2xs">
+                              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100/80 text-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-2xs">
                                 🐱
                               </div>
-                              <span className="text-xs sm:text-sm font-black text-slate-900 block group-hover:text-[#0E8388]">
+                              <span className="text-xs sm:text-sm font-black text-[#1D1D1F] block group-hover:text-[#D97706]">
                                 Gatos
                               </span>
                               <span className="text-[10px] text-slate-500 font-semibold block mt-0.5">
                                 Fórmulas secas, patés y snacks
                               </span>
-                              <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-slate-200 text-slate-600">
-                                {PRODUCTS.filter((p) => p.petType === 'gatos').length} productos
+                              <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white border border-amber-200 text-[#92400E]">
+                                {catalogProducts.filter((p) => matchesOrderPetType(p, 'gatos')).length} productos
                               </span>
                             </button>
                           </div>
@@ -14317,21 +14339,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <div className="space-y-3 animate-in fade-in">
                           {/* Switcher de Especie en la cabecera */}
                           <div className="flex items-center justify-between gap-2 px-1">
-                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider flex items-center gap-1.5">
                               <span>Mascota:</span>
-                              <strong className="text-slate-700 capitalize">
-                                {orderPetTypeFilter === 'perros' ? '🐶 Perros' : '🐱 Gatos'}
+                              <strong className="text-[#1D1D1F] capitalize">
+                                {orderPetTypeFilter === 'perros'
+                                  ? '🐶 Perros'
+                                  : orderPetTypeFilter === 'gatos'
+                                    ? '🐱 Gatos'
+                                    : '🐾 Todos'}
                               </strong>
                             </span>
 
-                            <div className="flex items-center bg-slate-200/80 p-0.5 rounded-xl text-xs font-bold shadow-inner">
+                            <div className="flex items-center bg-amber-100/60 border border-amber-200/70 p-0.5 rounded-xl text-xs font-bold shadow-inner">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setOrderPetTypeFilter('perros');
                                   setOrderBrandFilter('todas');
                                   setOrderProductSearch('');
-                                  const firstDog = PRODUCTS.find((p) => p.petType === 'perros' && getProductStock(p) > 0);
+                                  const firstDog = catalogProducts.find((p) => matchesOrderPetType(p, 'perros') && getProductStock(p) > 0);
                                   if (firstDog) {
                                     setSelectedProductToAdd(firstDog.id);
                                     setSelectedWeightToAdd(firstDog.weights?.[0] || '12 kg');
@@ -14339,8 +14365,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 }}
                                 className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 text-[11px] cursor-pointer ${
                                   orderPetTypeFilter === 'perros'
-                                    ? 'bg-white text-slate-900 shadow-xs font-black'
-                                    : 'text-slate-600 hover:text-slate-900'
+                                    ? 'bg-[#F5BA13] text-[#1D1D1F] shadow-xs font-black'
+                                    : 'text-[#78350F] hover:text-[#1D1D1F]'
                                 }`}
                               >
                                 <span>🐶 Perros</span>
@@ -14351,7 +14377,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   setOrderPetTypeFilter('gatos');
                                   setOrderBrandFilter('todas');
                                   setOrderProductSearch('');
-                                  const firstCat = PRODUCTS.find((p) => p.petType === 'gatos' && getProductStock(p) > 0);
+                                  const firstCat = catalogProducts.find((p) => matchesOrderPetType(p, 'gatos') && getProductStock(p) > 0);
                                   if (firstCat) {
                                     setSelectedProductToAdd(firstCat.id);
                                     setSelectedWeightToAdd(firstCat.weights?.[0] || '7 kg');
@@ -14359,25 +14385,51 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 }}
                                 className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 text-[11px] cursor-pointer ${
                                   orderPetTypeFilter === 'gatos'
-                                    ? 'bg-white text-slate-900 shadow-xs font-black'
-                                    : 'text-slate-600 hover:text-slate-900'
+                                    ? 'bg-[#F5BA13] text-[#1D1D1F] shadow-xs font-black'
+                                    : 'text-[#78350F] hover:text-[#1D1D1F]'
                                 }`}
                               >
                                 <span>🐱 Gatos</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOrderPetTypeFilter('todos');
+                                  setOrderBrandFilter('todas');
+                                  setOrderProductSearch('');
+                                  const firstAny = catalogProducts.find((p) => getProductStock(p) > 0);
+                                  if (firstAny) {
+                                    setSelectedProductToAdd(firstAny.id);
+                                    setSelectedWeightToAdd(firstAny.weights?.[0] || '12 kg');
+                                  }
+                                }}
+                                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 text-[11px] cursor-pointer ${
+                                  orderPetTypeFilter === 'todos'
+                                    ? 'bg-[#F5BA13] text-[#1D1D1F] shadow-xs font-black'
+                                    : 'text-[#78350F] hover:text-[#1D1D1F]'
+                                }`}
+                              >
+                                <span>🐾 Todos</span>
                               </button>
                             </div>
                           </div>
 
                           {/* 2. BARRA DE BÚSQUEDA POR PALABRA CLAVE */}
                           <div className="relative">
-                            <div className="flex items-center gap-2 bg-white rounded-2xl border-2 border-slate-200/90 focus-within:border-[#0E8388] focus-within:ring-4 focus-within:ring-[#0E8388]/10 px-3.5 py-2.5 shadow-2xs transition-all">
-                              <Search className="w-4 h-4 text-[#0E8388] shrink-0" />
+                            <div className="flex items-center gap-2 bg-white rounded-2xl border-2 border-amber-200/90 focus-within:border-[#F5BA13] focus-within:ring-4 focus-within:ring-[#F5BA13]/15 px-3.5 py-2.5 shadow-2xs transition-all">
+                              <Search className="w-4 h-4 text-[#D97706] shrink-0" />
                               <input
                                 type="text"
-                                placeholder={`Buscar producto en ${orderPetTypeFilter === 'perros' ? 'perros' : 'gatos'} por palabra clave (ej: Pollo, Salmón, 12kg)...`}
+                                placeholder={`Buscar producto en ${
+                                  orderPetTypeFilter === 'perros'
+                                    ? 'perros'
+                                    : orderPetTypeFilter === 'gatos'
+                                      ? 'gatos'
+                                      : 'todo el catálogo'
+                                } por palabra clave (ej: Fit, Pollo, Salmón, 12kg)...`}
                                 value={orderProductSearch}
                                 onChange={(e) => setOrderProductSearch(e.target.value)}
-                                className="w-full text-xs font-semibold text-slate-900 placeholder:text-slate-400 bg-transparent focus:outline-none"
+                                className="w-full text-xs font-semibold text-[#1D1D1F] placeholder:text-slate-400 bg-transparent focus:outline-none"
                               />
                               {orderProductSearch && (
                                 <button
@@ -14395,15 +14447,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           {/* 3. FILTROS POR MARCAS */}
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between px-1">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                                <Filter className="w-3 h-3 text-[#0E8388]" />
+                              <span className="text-[10px] font-bold text-[#92400E]/80 uppercase tracking-wider flex items-center gap-1">
+                                <Filter className="w-3 h-3 text-[#D97706]" />
                                 <span>Marcas ({availableBrands.length - 1})</span>
                               </span>
                               {orderBrandFilter !== 'todas' && (
                                 <button
                                   type="button"
                                   onClick={() => setOrderBrandFilter('todas')}
-                                  className="text-[10px] font-bold text-[#0E8388] hover:underline cursor-pointer"
+                                  className="text-[10px] font-bold text-[#D97706] hover:underline cursor-pointer"
                                 >
                                   Ver todas las marcas
                                 </button>
@@ -14420,8 +14472,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                     onClick={() => setOrderBrandFilter(brandName)}
                                     className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer border shrink-0 ${
                                       isSelected
-                                        ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-xs'
-                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+                                        ? 'bg-[#F5BA13] text-[#1D1D1F] border-[#F5BA13] shadow-xs font-extrabold'
+                                        : 'bg-white text-slate-600 border-amber-200/80 hover:bg-amber-50/60 hover:text-[#1D1D1F]'
                                     }`}
                                   >
                                     {brandName === 'todas' ? 'Todas las Marcas' : brandName}
@@ -14433,17 +14485,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                           {/* SECCIÓN DESTACADA: Alimento Habitual / Última Compra del Cliente */}
                           {customerFrequentFood && (
-                            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-emerald-500/10 border-2 border-amber-300/80 shadow-xs space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-400/10 to-yellow-500/10 border-2 border-[#F5BA13]/70 shadow-xs space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-400 text-amber-950 text-xs font-black shadow-2xs">
+                                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#F5BA13] text-[#1D1D1F] text-xs font-black shadow-2xs">
                                     ⭐
                                   </span>
                                   <span className="text-xs font-extrabold text-amber-950 uppercase tracking-tight">
                                     Alimento habitual de {customerFrequentFood.petName}
                                   </span>
                                 </div>
-                                <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-200">
+                                <span className="text-[10px] font-extrabold text-amber-900 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300">
                                   {customerFrequentFood.source === 'order' ? 'Última compra habitual' : 'Alimento frecuente'}
                                 </span>
                               </div>
@@ -14451,7 +14503,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               {/* Tarjeta del Producto Habitual */}
                               <div className="bg-white rounded-xl p-3 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                                  <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center shrink-0 overflow-hidden border border-slate-100 p-0.5 shadow-2xs">
+                                  <div className="w-12 h-12 rounded-xl bg-amber-50/50 flex items-center justify-center shrink-0 overflow-hidden border border-amber-100 p-0.5 shadow-2xs">
                                     {customerFrequentFood.product.image ? (
                                       <img
                                         src={customerFrequentFood.product.image}
@@ -14471,20 +14523,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         ✓ Stock: {getProductStock(customerFrequentFood.product)} un.
                                       </span>
                                       {manualOrderItems.some((it) => it.productId === customerFrequentFood.product.id) && (
-                                        <span className="text-[10px] font-black text-[#0E8388] bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded-full flex items-center gap-1">
+                                        <span className="text-[10px] font-black text-[#92400E] bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-full flex items-center gap-1">
                                           <Check className="w-2.5 h-2.5 stroke-[3]" />
                                           <span>En el pedido</span>
                                         </span>
                                       )}
                                     </div>
-                                    <p className="font-bold text-slate-900 text-xs mt-1 truncate" title={customerFrequentFood.product.name}>
+                                    <p className="font-bold text-[#1D1D1F] text-xs mt-1 truncate" title={customerFrequentFood.product.name}>
                                       {customerFrequentFood.product.name}
                                     </p>
                                     <div className="flex items-center gap-2 mt-0.5">
-                                      <span className="text-xs font-black text-[#0E8388] font-mono">
+                                      <span className="text-xs font-black text-[#D97706] font-mono">
                                         {formatCLP(customerFrequentFood.product.price)}
                                       </span>
-                                      <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded">
+                                      <span className="text-[10px] font-bold text-[#78350F] bg-amber-50 border border-amber-200/70 px-1.5 py-0.2 rounded">
                                         Formato: {customerFrequentFood.weight}
                                       </span>
                                     </div>
@@ -14492,7 +14544,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </div>
 
                                 {/* Botón 1-tap para añadir al pedido */}
-                                <div className="flex items-center gap-2 justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                                <div className="flex items-center gap-2 justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-amber-100">
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -14503,7 +14555,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                       );
                                     }}
                                     disabled={getProductStock(customerFrequentFood.product) <= 0}
-                                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#093C3E] hover:opacity-95 active:scale-95 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="px-3.5 py-2 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white active:scale-95 font-extrabold text-xs flex items-center gap-1.5 shadow-xs shadow-[#F5BA13]/25 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     <Plus className="w-3.5 h-3.5 stroke-[3]" />
                                     <span>
@@ -14520,7 +14572,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           {/* 4. CATÁLOGO DE PRODUCTOS (CON STOCK Y SIN STOCK) */}
                           <div className="space-y-2">
                             <div className="flex items-center justify-between px-1">
-                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              <span className="text-[10px] font-bold text-[#92400E]/80 uppercase tracking-wider">
                                 Catálogo ({filteredOrderProducts.length} productos)
                               </span>
                               <div className="flex items-center gap-2 text-[10px] font-semibold">
@@ -14536,8 +14588,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
 
                             {filteredOrderProducts.length === 0 ? (
-                              <div className="text-center py-6 px-4 bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 text-xs">
-                                <Search className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                              <div className="text-center py-6 px-4 bg-white rounded-2xl border border-dashed border-amber-200 text-slate-400 text-xs">
+                                <Search className="w-6 h-6 mx-auto mb-1 text-amber-300" />
                                 <p className="font-bold text-slate-600">No se encontraron productos</p>
                                 <p className="text-[11px] text-slate-400">Intenta con otra palabra clave o marca</p>
                               </div>
@@ -14545,9 +14597,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <div className="space-y-2">
                                 {/* Barra de Acción Masiva si hay productos seleccionados */}
                                 {selectedMultiProductIds.length > 0 && (
-                                  <div className="p-3 rounded-2xl bg-slate-900 text-white flex items-center justify-between shadow-lg animate-in slide-in-from-top-2 duration-150">
+                                  <div className="p-3 rounded-2xl bg-[#1D1D1F] text-white flex items-center justify-between shadow-lg animate-in slide-in-from-top-2 duration-150">
                                     <div className="flex items-center gap-2">
-                                      <span className="w-5 h-5 rounded-full bg-[#0E8388] text-white flex items-center justify-center font-black text-[11px]">
+                                      <span className="w-5 h-5 rounded-full bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center font-black text-[11px]">
                                         {selectedMultiProductIds.length}
                                       </span>
                                       <span className="text-xs font-bold">
@@ -14560,7 +14612,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                       <button
                                         type="button"
                                         onClick={() => setSelectedMultiProductIds([])}
-                                        className="text-[11px] text-slate-300 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                                        className="text-[11px] text-slate-300 hover:text-white px-2 py-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
                                       >
                                         Limpiar
                                       </button>
@@ -14568,17 +14620,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         type="button"
                                         onClick={() => {
                                           const toAdd = selectedMultiProductIds.map((id) => {
-                                            const prod = PRODUCTS.find((pr) => pr.id === id);
+                                            const prod = catalogProducts.find((pr) => pr.id === id);
                                             const conf = orderProductCardConfigs[id] || {
                                               weight: prod?.weights?.[0] || 'Estándar',
                                               quantity: 1,
                                             };
                                             return { product: prod, weight: conf.weight, quantity: conf.quantity };
-                                          });
+                                          }).filter((entry) => entry.product);
                                           handleAddMultipleProductsToManualOrder(toAdd);
                                           setSelectedMultiProductIds([]);
                                         }}
-                                        className="px-3 py-1.5 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                                        className="px-3 py-1.5 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white font-black text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
                                       >
                                         <Plus className="w-3.5 h-3.5 stroke-[3]" />
                                         <span>Añadir Seleccionados ({selectedMultiProductIds.length})</span>
@@ -14677,10 +14729,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         key={p.id}
                                         className={`p-3 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${
                                           isMultiSelected
-                                            ? 'bg-teal-50/40 border-[#0E8388] ring-2 ring-[#0E8388]/20 shadow-xs'
+                                            ? 'bg-amber-50/50 border-[#F5BA13] ring-2 ring-[#F5BA13]/25 shadow-xs'
                                             : totalInOrder > 0
-                                            ? 'bg-emerald-50/25 border-emerald-300 shadow-2xs'
-                                            : 'bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs'
+                                            ? 'bg-amber-50/30 border-amber-300 shadow-2xs'
+                                            : 'bg-white border-amber-200/70 hover:border-amber-300 shadow-2xs'
                                         }`}
                                       >
                                         {/* Información y Checkbox */}
@@ -14691,15 +14743,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                             onClick={toggleMultiSelect}
                                             className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition-all cursor-pointer ${
                                               isMultiSelected
-                                                ? 'bg-[#0E8388] border-[#0E8388] text-white shadow-xs'
-                                                : 'border-slate-300 bg-white hover:border-[#0E8388]'
+                                                ? 'bg-[#F5BA13] border-[#F5BA13] text-[#1D1D1F] shadow-xs'
+                                                : 'border-amber-300 bg-white hover:border-[#F5BA13]'
                                             }`}
                                             title={isMultiSelected ? 'Deseleccionar' : 'Seleccionar para añadir varios'}
                                           >
                                             {isMultiSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                           </button>
 
-                                          <div className="w-11 h-11 rounded-xl bg-slate-50 flex items-center justify-center shrink-0 overflow-hidden border border-slate-100">
+                                          <div className="w-11 h-11 rounded-xl bg-amber-50/40 flex items-center justify-center shrink-0 overflow-hidden border border-amber-100">
                                             {p.image ? (
                                               <img src={p.image} alt={p.name} className="w-full h-full object-contain p-0.5" />
                                             ) : (
@@ -14709,7 +14761,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                                           <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                              <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-slate-100 text-slate-700">
+                                              <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-amber-50 text-[#78350F] border border-amber-200/60">
                                                 {p.brand}
                                               </span>
                                               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
@@ -14717,23 +14769,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                                 <span>Stock: {stock} un.</span>
                                               </span>
                                               {totalInOrder > 0 && (
-                                                <span className="text-[10px] font-black text-[#0E8388] bg-teal-50 border border-teal-200 px-1.5 py-0.2 rounded-full flex items-center gap-1">
+                                                <span className="text-[10px] font-black text-[#92400E] bg-amber-100 border border-amber-300 px-1.5 py-0.2 rounded-full flex items-center gap-1">
                                                   <ShoppingBag className="w-2.5 h-2.5" />
                                                   <span>En pedido: {totalInOrder} un.</span>
                                                 </span>
                                               )}
                                             </div>
-                                            <p className="font-bold text-slate-900 truncate text-xs mt-0.5" title={p.name}>
+                                            <p className="font-bold text-[#1D1D1F] truncate text-xs mt-0.5" title={p.name}>
                                               {p.name}
                                             </p>
-                                            <p className="text-[11px] font-black text-[#0E8388] font-mono">
+                                            <p className="text-[11px] font-black text-[#D97706] font-mono">
                                               {formatCLP(p.price)}
                                             </p>
                                           </div>
                                         </div>
 
                                         {/* Controles de Formato, Cantidad y Botón Añadir */}
-                                        <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 justify-end">
+                                        <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-amber-100 justify-end">
                                           {p.weights && p.weights.length > 1 ? (
                                             <div className="w-24 sm:w-28 shrink-0">
                                               <CustomDropdown
@@ -14743,31 +14795,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                                 usePortal={true}
                                                 align="right"
                                                 minMenuWidth={115}
-                                                buttonClassName="h-8 px-2.5 rounded-xl border border-slate-200 text-[11px] text-slate-800 bg-slate-50 hover:bg-white hover:border-[#0E8388] font-bold cursor-pointer transition-all flex items-center justify-between gap-1 w-full"
-                                                popoverClassName="p-1 rounded-xl shadow-xl border border-slate-200"
+                                                buttonClassName="h-8 px-2.5 rounded-xl border border-amber-200 text-[11px] text-[#1D1D1F] bg-amber-50/40 hover:bg-white hover:border-[#F5BA13] font-bold cursor-pointer transition-all flex items-center justify-between gap-1 w-full"
+                                                popoverClassName="p-1 rounded-xl shadow-xl border border-amber-200"
                                               />
                                             </div>
                                           ) : (
-                                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-xl border border-slate-200/60 shrink-0">
+                                            <span className="text-[10px] font-bold text-[#78350F] bg-amber-50/70 px-2.5 py-1.5 rounded-xl border border-amber-200/70 shrink-0">
                                               {p.weights?.[0] || 'Estándar'}
                                             </span>
                                           )}
 
-                                          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200/80">
+                                          <div className="flex items-center bg-amber-50/80 rounded-xl p-0.5 border border-amber-200/80">
                                             <button
                                               type="button"
                                               onClick={() => handleUpdateCardQty(-1)}
-                                              className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold hover:bg-slate-200/80 text-xs cursor-pointer shadow-xs flex items-center justify-center transition-colors"
+                                              className="w-7 h-7 rounded-lg bg-white text-[#78350F] font-bold hover:bg-amber-100/80 text-xs cursor-pointer shadow-xs flex items-center justify-center transition-colors"
                                             >
                                               -
                                             </button>
-                                            <span className="w-6 text-center text-xs font-black text-slate-900 font-mono">
+                                            <span className="w-6 text-center text-xs font-black text-[#1D1D1F] font-mono">
                                               {cardConfig.quantity}
                                             </span>
                                             <button
                                               type="button"
                                               onClick={() => handleUpdateCardQty(1)}
-                                              className="w-7 h-7 rounded-lg bg-white text-slate-700 font-bold hover:bg-slate-200/80 text-xs cursor-pointer shadow-xs flex items-center justify-center transition-colors"
+                                              className="w-7 h-7 rounded-lg bg-white text-[#78350F] font-bold hover:bg-amber-100/80 text-xs cursor-pointer shadow-xs flex items-center justify-center transition-colors"
                                             >
                                               +
                                             </button>
@@ -14776,7 +14828,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                           <button
                                             type="button"
                                             onClick={() => handleAddProductToManualOrder(p, cardConfig.weight, cardConfig.quantity)}
-                                            className="h-8 px-3 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-black transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 shrink-0"
+                                            className="h-8 px-3 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-black transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 shrink-0"
                                             title="Añadir al pedido"
                                           >
                                             <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -14797,24 +14849,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {/* Lista de Productos Añadidos */}
                     <div>
                       <div className="px-1 mb-1.5 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider">
                           Productos en la Orden ({manualOrderItems.length})
                         </span>
                         {manualOrderItems.length > 0 && (
-                          <span className="text-[11px] font-semibold text-slate-500">
-                            Subtotal: <strong className="text-slate-900 font-mono">{formatCLP(subtotal)}</strong>
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            Subtotal: <strong className="text-[#1D1D1F] font-mono">{formatCLP(subtotal)}</strong>
                           </span>
                         )}
                       </div>
 
                       {manualOrderItems.length === 0 ? (
-                        <div className="text-center py-7 px-4 border border-dashed border-slate-300/80 rounded-2xl bg-white text-slate-400 text-xs">
-                          <ShoppingBag className="w-7 h-7 mx-auto mb-1.5 text-slate-300" />
+                        <div className="text-center py-7 px-4 border border-dashed border-amber-300/80 rounded-2xl bg-white text-slate-400 text-xs">
+                          <ShoppingBag className="w-7 h-7 mx-auto mb-1.5 text-amber-300" />
                           <p className="font-bold text-slate-600">Aún no has agregado productos</p>
                           <p className="text-[11px] text-slate-400">Selecciona un producto arriba y pulsa "Añadir" para agregarlo a la orden.</p>
                         </div>
                       ) : (
-                        <div className="bg-white rounded-2xl border border-slate-200/80 divide-y divide-slate-100 overflow-hidden shadow-xs">
+                        <div className="bg-white rounded-2xl border border-amber-200/80 divide-y divide-amber-100/70 overflow-hidden shadow-xs">
                           {manualOrderItems.map((item, idx) => (
                             <div key={`${item.productId}-${item.weight}-${idx}`} className="p-3 flex items-center justify-between gap-3 text-xs">
                               <div className="flex items-center gap-3 min-w-0">
@@ -14822,17 +14874,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   <img
                                     src={item.image}
                                     alt={item.name}
-                                    className="w-9 h-9 object-contain rounded-xl border border-slate-100 bg-slate-50 shrink-0"
+                                    className="w-9 h-9 object-contain rounded-xl border border-amber-100 bg-amber-50/40 shrink-0"
                                   />
                                 ) : (
-                                  <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#0E8388] flex items-center justify-center font-bold text-xs shrink-0">
+                                  <div className="w-9 h-9 rounded-xl bg-amber-50 text-[#D97706] flex items-center justify-center font-bold text-xs shrink-0">
                                     📦
                                   </div>
                                 )}
                                 <div className="min-w-0">
-                                  <div className="font-bold text-slate-900 truncate">{item.name}</div>
+                                  <div className="font-bold text-[#1D1D1F] truncate">{item.name}</div>
                                   <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-[10px] font-semibold text-slate-600">
+                                    <span className="bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded text-[10px] font-semibold text-[#78350F]">
                                       {item.weight}
                                     </span>
                                     <span>{formatCLP(item.price)} c/u</span>
@@ -14841,10 +14893,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </div>
 
                               <div className="flex items-center gap-3 shrink-0">
-                                <span className="font-bold text-slate-700 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-lg text-[11px]">
+                                <span className="font-bold text-[#78350F] bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-lg text-[11px]">
                                   x{item.quantity}
                                 </span>
-                                <span className="font-black text-slate-900 font-mono w-20 text-right">
+                                <span className="font-black text-[#1D1D1F] font-mono w-20 text-right">
                                   {formatCLP(item.price * item.quantity)}
                                 </span>
                                 <button
@@ -14886,7 +14938,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                         <div className="text-right shrink-0">
                           <span className="text-[10px] uppercase font-bold text-slate-400 block">Subtotal</span>
-                          <span className="font-mono font-black text-sm text-slate-900">{formatCLP(subtotal)}</span>
+                          <span className="font-mono font-black text-sm text-[#1D1D1F]">{formatCLP(subtotal)}</span>
                         </div>
                       </div>
                     )}
@@ -14897,12 +14949,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 {manualOrderStep === 3 && (
                   <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
                     {/* Header Resumen del Valor del Pedido */}
-                    <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-3">
+                    <div className="p-3.5 rounded-2xl bg-white border border-amber-200/80 shadow-xs flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block truncate">
+                        <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider block truncate">
                           Valor del Pedido ({manualOrderItems.length} {manualOrderItems.length === 1 ? 'producto' : 'productos'})
                         </span>
-                        <span className="text-sm sm:text-base font-black text-slate-900 font-mono whitespace-nowrap">
+                        <span className="text-sm sm:text-base font-black text-[#1D1D1F] font-mono whitespace-nowrap">
                           Subtotal: {formatCLP(subtotal)}
                         </span>
                       </div>
@@ -14912,7 +14964,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <span>Despacho Gratis Aplicable</span>
                         </span>
                       ) : (
-                        <span className="px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold whitespace-nowrap shrink-0">
+                        <span className="px-3 py-1.5 rounded-full bg-amber-50 text-[#92400E] border border-amber-200 text-[11px] font-semibold whitespace-nowrap shrink-0">
                           Despacho estándar
                         </span>
                       )}
@@ -14921,20 +14973,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {/* Inset Group: Dirección con Google Maps */}
                     <div>
                       <div className="px-1 mb-1.5 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#0E8388]" />
+                        <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#D97706]" />
                           <span>Lugar de Entrega</span>
                         </span>
                         <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#F5BA13] animate-pulse"></span>
                           Google Maps
                         </span>
                       </div>
 
                       {/* Barra de Búsqueda Google Maps */}
                       <div className="relative mb-3">
-                        <div className="flex items-center gap-2.5 bg-white rounded-2xl border-2 border-[#0E8388]/30 hover:border-[#0E8388]/70 focus-within:border-[#0E8388] focus-within:ring-4 focus-within:ring-[#0E8388]/10 px-3.5 py-2.5 shadow-sm transition-all">
-                          <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-emerald-500 to-[#0E8388] text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <div className="flex items-center gap-2.5 bg-white rounded-2xl border-2 border-[#F5BA13]/40 hover:border-[#F5BA13]/80 focus-within:border-[#F5BA13] focus-within:ring-4 focus-within:ring-[#F5BA13]/15 px-3.5 py-2.5 shadow-sm transition-all">
+                          <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#D97706] to-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-xs">
                             <Search className="w-3.5 h-3.5 stroke-[2.5]" />
                           </div>
                           <input
@@ -14948,10 +15000,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             onFocus={() => {
                               if (mapsSearchQuery.length >= 2) setShowMapsDropdown(true);
                             }}
-                            className="w-full text-xs font-semibold text-slate-900 placeholder:text-slate-400 bg-transparent focus:outline-none"
+                            className="w-full text-xs font-semibold text-[#1D1D1F] placeholder:text-slate-400 bg-transparent focus:outline-none"
                           />
                           {isSearchingMaps && (
-                            <div className="w-3.5 h-3.5 border-2 border-[#0E8388] border-t-transparent rounded-full animate-spin shrink-0"></div>
+                            <div className="w-3.5 h-3.5 border-2 border-[#F5BA13] border-t-transparent rounded-full animate-spin shrink-0"></div>
                           )}
                           {mapsSearchQuery && !isSearchingMaps && (
                             <button
@@ -14972,30 +15024,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                         {/* Dropdown de resultados de Google Maps */}
                         {showMapsDropdown && mapsSearchResults.length > 0 && (
-                          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200/90 rounded-2xl shadow-xl overflow-hidden z-30 divide-y divide-slate-100 max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
-                            <div className="px-3 py-1.5 bg-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-amber-200/90 rounded-2xl shadow-xl overflow-hidden z-30 divide-y divide-amber-100/70 max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
+                            <div className="px-3 py-1.5 bg-amber-50/70 flex items-center justify-between text-[10px] font-bold text-[#92400E]/80 uppercase tracking-wider">
                               <span>Direcciones en Google Maps</span>
-                              <span className="text-[#0E8388] font-bold">Dirección Exacta</span>
+                              <span className="text-[#D97706] font-bold">Dirección Exacta</span>
                             </div>
                             {mapsSearchResults.map((res, idx) => (
                               <button
                                 key={idx}
                                 type="button"
                                 onClick={() => handleSelectMapsAddress(res)}
-                                className="w-full text-left px-3.5 py-2.5 hover:bg-slate-50 transition-colors flex items-start gap-2.5 cursor-pointer group"
+                                className="w-full text-left px-3.5 py-2.5 hover:bg-amber-50/60 transition-colors flex items-start gap-2.5 cursor-pointer group"
                               >
-                                <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
-                                  <MapPin className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
+                                <div className="w-6 h-6 rounded-lg bg-amber-100 text-[#D97706] flex items-center justify-center shrink-0 mt-0.5 group-hover:scale-110 transition-transform">
+                                  <MapPin className="w-3.5 h-3.5 fill-[#F5BA13] text-[#D97706]" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-bold text-slate-900 truncate group-hover:text-[#0E8388] transition-colors">
+                                  <p className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-[#D97706] transition-colors">
                                     {res.address}
                                   </p>
                                   <p className="text-[11px] text-slate-500 font-medium truncate">
                                     {res.city}, {res.region || 'Región de Los Lagos'}
                                   </p>
                                 </div>
-                                <span className="text-[10px] font-bold text-[#0E8388] bg-[#0E8388]/10 px-2 py-0.5 rounded-full shrink-0">
+                                <span className="text-[10px] font-bold text-[#92400E] bg-[#F5BA13]/25 px-2 py-0.5 rounded-full shrink-0">
                                   Fijar
                                 </span>
                               </button>
@@ -15006,16 +15058,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                       {/* Tarjeta de dirección exacta fijada desde Maps */}
                       {(manualOrderCustomer.address || selectedFromMaps) && (
-                        <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 text-emerald-900 flex items-center justify-between gap-3 text-xs animate-in fade-in shadow-2xs">
+                        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-amber-950 flex items-center justify-between gap-3 text-xs animate-in fade-in shadow-2xs">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <div className="w-7 h-7 rounded-xl bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-xs">
                               <MapPin className="w-3.5 h-3.5" />
                             </div>
                             <div className="min-w-0">
-                              <p className="font-extrabold text-slate-900 truncate text-xs">
+                              <p className="font-extrabold text-[#1D1D1F] truncate text-xs">
                                 {manualOrderCustomer.address}
                               </p>
-                              <p className="text-[11px] text-emerald-700 font-semibold truncate">
+                              <p className="text-[11px] text-[#92400E] font-semibold truncate">
                                 {manualOrderCustomer.city || 'Puerto Varas'}, Región de Los Lagos
                               </p>
                             </div>
@@ -15024,7 +15076,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             href={getSingleOrderNavigationUrl(manualOrderCustomer)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[10px] font-black text-[#0E8388] hover:text-[#0A3E40] bg-white px-2.5 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1 shrink-0 shadow-2xs hover:shadow-xs transition-all"
+                            className="text-[10px] font-black text-[#D97706] hover:text-[#92400E] bg-white px-2.5 py-1.5 rounded-xl border border-amber-200 flex items-center gap-1 shrink-0 shadow-2xs hover:shadow-xs transition-all"
                           >
                             <span>Abrir Maps</span>
                             <ExternalLink className="w-3 h-3" />
@@ -15046,11 +15098,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         />
                       </div>
                       <div>
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                        <span className="block text-[10px] font-bold text-[#92400E]/80 uppercase tracking-wider mb-1">
                           Período Contable Asignado
                         </span>
-                        <div className="h-[38px] px-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2 text-xs font-bold text-slate-800">
-                          <Calendar className="w-3.5 h-3.5 text-[#0E8388]" />
+                        <div className="h-[38px] px-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-center gap-2 text-xs font-bold text-[#1D1D1F]">
+                          <Calendar className="w-3.5 h-3.5 text-[#D97706]" />
                           <span>{formatPeriodLabel(getYearMonthFromDate(manualOrderCustomer.date))}</span>
                         </div>
                       </div>
@@ -15058,10 +15110,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                     {/* Selector de Tipo de Pago Conectado a Pedidos */}
                     <div>
-                      <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">
+                      <span className="block text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider px-1 mb-1.5">
                         Tipo de Pago
                       </span>
-                      <div className="bg-white rounded-2xl border border-slate-200/80 p-1.5 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                      <div className="bg-white rounded-2xl border border-amber-200/80 p-1.5 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                         {[
                           { id: 'Web', label: 'Web', icon: Globe },
                           { id: 'Tarjeta', label: 'Tarjeta', icon: CreditCard },
@@ -15077,8 +15129,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               onClick={() => setManualOrderCustomer({ ...manualOrderCustomer, paymentMethod: pm.id })}
                               className={`py-2 px-1 rounded-xl text-[11px] font-extrabold transition-all text-center border cursor-pointer flex items-center justify-center gap-1.5 ${
                                 isSelected
-                                  ? 'bg-[#0E8388] border-[#0E8388] text-white shadow-xs'
-                                  : 'bg-slate-50 border-slate-200/60 text-slate-600 hover:bg-slate-100'
+                                  ? 'bg-[#F5BA13] border-[#F5BA13] text-[#1D1D1F] shadow-xs'
+                                  : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50 hover:text-[#1D1D1F]'
                               }`}
                             >
                               <Icon className="w-3.5 h-3.5 shrink-0" />
@@ -15092,17 +15144,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                       {/* Estado */}
                       <div>
-                        <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">
+                        <span className="block text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider px-1 mb-1.5">
                           Estado Inicial
                         </span>
-                        <div className="bg-white rounded-2xl border border-slate-200/80 p-2 shadow-xs grid grid-cols-3 gap-1.5">
+                        <div className="bg-white rounded-2xl border border-amber-200/80 p-2 shadow-xs grid grid-cols-3 gap-1.5">
                           <button
                             type="button"
                             onClick={() => setManualOrderCustomer({ ...manualOrderCustomer, status: 'en_preparacion' })}
                             className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all text-center border cursor-pointer ${
                               manualOrderCustomer.status === 'en_preparacion'
-                                ? 'bg-amber-400/90 border-amber-500 text-slate-950 shadow-xs'
-                                : 'bg-slate-50 border-slate-200/60 text-slate-600 hover:bg-slate-100'
+                                ? 'bg-[#F5BA13] border-[#D97706] text-[#1D1D1F] shadow-xs font-extrabold'
+                                : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50'
                             }`}
                           >
                             En Prep. ⏳
@@ -15113,7 +15165,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all text-center border cursor-pointer ${
                               manualOrderCustomer.status === 'en_camino'
                                 ? 'bg-blue-600 border-blue-700 text-white shadow-xs'
-                                : 'bg-slate-50 border-slate-200/60 text-slate-600 hover:bg-slate-100'
+                                : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50'
                             }`}
                           >
                             En Camino 🚚
@@ -15124,7 +15176,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all text-center border cursor-pointer ${
                               manualOrderCustomer.status === 'entregado'
                                 ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs'
-                                : 'bg-slate-50 border-slate-200/60 text-slate-600 hover:bg-slate-100'
+                                : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50'
                             }`}
                           >
                             Entregado ✓
@@ -15134,13 +15186,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                       {/* Resumen Financiero */}
                       <div>
-                        <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">
+                        <span className="block text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider px-1 mb-1.5">
                           Resumen Total
                         </span>
-                        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs space-y-1.5 text-xs">
+                        <div className="bg-white rounded-2xl border border-amber-200/80 p-3.5 shadow-xs space-y-1.5 text-xs">
                           <div className="flex justify-between text-slate-500">
                             <span>Subtotal:</span>
-                            <span className="font-mono text-slate-900 font-bold">{formatCLP(subtotal)}</span>
+                            <span className="font-mono text-[#1D1D1F] font-bold">{formatCLP(subtotal)}</span>
                           </div>
                           <div className="flex justify-between text-slate-500">
                             <span>Despacho:</span>
@@ -15148,9 +15200,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               {shipping === 0 ? 'GRATIS' : formatCLP(shipping)}
                             </span>
                           </div>
-                          <div className="flex justify-between text-sm font-black text-slate-900 pt-2 border-t border-slate-100">
+                          <div className="flex justify-between text-sm font-black text-[#1D1D1F] pt-2 border-t border-amber-100">
                             <span>Total a Pagar:</span>
-                            <span className="text-[#0E8388] text-base font-mono">{formatCLP(total)}</span>
+                            <span className="text-[#D97706] text-base font-mono">{formatCLP(total)}</span>
                           </div>
                         </div>
                       </div>
@@ -15160,13 +15212,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </div>
 
               {/* Apple Sheet Action Bar / Footer */}
-              <div className="px-6 py-4 bg-white/80 backdrop-blur-md border-t border-slate-200/70 flex items-center justify-between">
+              <div className="px-6 py-4 bg-white/85 backdrop-blur-md border-t border-amber-200/60 flex items-center justify-between">
                 <div>
                   {manualOrderStep === 1 ? (
                     <button
                       type="button"
                       onClick={handleCloseModal}
-                      className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-slate-600 text-xs font-semibold hover:bg-amber-50 hover:text-[#78350F] transition-colors cursor-pointer"
                     >
                       Cancelar
                     </button>
@@ -15174,7 +15226,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <button
                       type="button"
                       onClick={goToPrevStep}
-                      className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-[#78350F] text-xs font-semibold hover:bg-amber-50 transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Atrás</span>
@@ -15184,12 +15236,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                 <div className="flex items-center gap-3">
                   {manualOrderStep === 2 && manualOrderItems.length > 0 && (
-                    <div className="hidden sm:flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/80">
-                      <ShoppingBag className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <div className="hidden sm:flex items-center gap-1.5 text-xs text-[#78350F] bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/80">
+                      <ShoppingBag className="w-3.5 h-3.5 text-[#D97706]" />
                       <span>
                         <strong>{manualOrderItems.length}</strong> {manualOrderItems.length === 1 ? 'producto' : 'productos'}:
                       </span>
-                      <strong className="text-slate-900 font-mono">{formatCLP(subtotal)}</strong>
+                      <strong className="text-[#1D1D1F] font-mono">{formatCLP(subtotal)}</strong>
                     </div>
                   )}
 
@@ -15197,16 +15249,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <button
                       type="button"
                       onClick={goToNextStep}
-                      className="px-5 py-2.5 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm hover:shadow active:scale-95"
+                      className="px-5 py-2.5 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-extrabold transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-[#F5BA13]/25 hover:shadow active:scale-95"
                     >
                       <span>Continuar</span>
-                      <ChevronRight className="w-4 h-4" />
+                      <ChevronRight className="w-4 h-4 stroke-[2.5]" />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={handleSaveManualOrder}
-                      className="px-6 py-2.5 rounded-xl bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm hover:shadow active:scale-95"
+                      className="px-6 py-2.5 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-[#F5BA13]/25 hover:shadow active:scale-95"
                     >
                       <Check className="w-4 h-4 stroke-[3]" />
                       <span>Confirmar Pedido ✓</span>
@@ -23091,21 +23143,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         <button
           type="button"
           onClick={() => {
-            if (manualOrderItems.length === 0 && PRODUCTS.length > 0) {
-              setManualOrderItems([
-                {
-                  productId: PRODUCTS[0].id,
-                  name: PRODUCTS[0].name,
-                  weight: PRODUCTS[0].weights ? PRODUCTS[0].weights[0] : 'Formato Estándar',
-                  price: PRODUCTS[0].price,
-                  quantity: 1,
-                  image: PRODUCTS[0].image,
-                },
-              ]);
-            }
+            setManualOrderStep(1);
             setIsAddOrderModalOpen(true);
           }}
-          className="-mt-7 w-14 h-14 rounded-full bg-gradient-to-tr from-[#0A3E40] via-[#0E8388] to-[#10B981] text-white shadow-xl shadow-[#0E8388]/30 ring-4 ring-white flex items-center justify-center cursor-pointer active:scale-90 hover:scale-105 transition-all shrink-0"
+          className="-mt-7 w-14 h-14 rounded-full bg-gradient-to-tr from-[#D97706] via-[#F5BA13] to-[#FBBF24] text-[#1D1D1F] shadow-xl shadow-[#F5BA13]/30 ring-4 ring-white flex items-center justify-center cursor-pointer active:scale-90 hover:scale-105 transition-all shrink-0"
           title="Ingresar Nuevo Pedido"
         >
           <Plus className="w-7 h-7 stroke-[3]" />

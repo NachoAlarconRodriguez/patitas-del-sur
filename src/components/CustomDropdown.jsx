@@ -192,10 +192,10 @@ export default function CustomDropdown({
           buttonClassName
             ? (typeof buttonClassName === 'function'
                 ? buttonClassName(isOpen)
-                : `${buttonClassName} ${isOpen ? 'border-[#0E8388] ring-3 ring-[#0E8388]/15 bg-white shadow-sm' : ''}`)
+                : `${buttonClassName} ${isOpen ? 'border-[#F5BA13] ring-3 ring-[#F5BA13]/20 bg-white shadow-sm' : ''}`)
             : `px-3.5 py-3 rounded-2xl bg-white border ${
                 isOpen
-                  ? 'border-[#0E8388] ring-4 ring-[#0E8388]/10 bg-white shadow-md'
+                  ? 'border-[#F5BA13] ring-4 ring-[#F5BA13]/15 bg-white shadow-md'
                   : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50/70'
               }`
         }`}
@@ -204,10 +204,10 @@ export default function CustomDropdown({
           {getLabel(selectedOption)}
         </span>
 
-        <div className={`w-4 h-4 rounded-md flex items-center justify-center transition-all shrink-0 ${isOpen ? 'bg-[#0E8388]/10 text-[#0E8388]' : 'text-slate-400'}`}>
+        <div className={`w-4 h-4 rounded-md flex items-center justify-center transition-all shrink-0 ${isOpen ? 'bg-[#F5BA13]/15 text-[#D97706]' : 'text-slate-400'}`}>
           <ChevronDown
             className={`w-3.5 h-3.5 transition-transform duration-300 ${
-              isOpen ? 'rotate-180 text-[#0E8388]' : ''
+              isOpen ? 'rotate-180 text-[#D97706]' : ''
             }`}
           />
         </div>
