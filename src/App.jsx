@@ -9,7 +9,6 @@ import GatosView from './views/GatosView';
 // Code-split Views loaded on demand (dramatically reduces initial JS bundle)
 const ProductDetailView = lazy(() => import('./views/ProductDetailView'));
 const NosotrosView = lazy(() => import('./views/NosotrosView'));
-const ContactoView = lazy(() => import('./views/ContactoView'));
 const LoginView = lazy(() => import('./views/LoginView'));
 const CustomerDashboardView = lazy(() => import('./views/CustomerDashboardView'));
 const AdminDashboardView = lazy(() => import('./views/AdminDashboardView'));
@@ -24,6 +23,7 @@ import AuthModal from './components/AuthModal';
 import Preloader from './components/Preloader';
 import BottomNavBar from './components/BottomNavBar';
 import PWAInstallBanner from './components/PWAInstallBanner';
+import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
 
 import { supabase } from './lib/supabase';
@@ -329,7 +329,15 @@ export default function App() {
                 )
               }
             />
-            <Route path="/" element={<HomeView />} />
+            <Route
+              path="/"
+              element={
+                <HomeView
+                  onSelectProduct={handleSelectProduct}
+                  onAddToCart={handleAddToCart}
+                />
+              }
+            />
             <Route
               path="/perros"
               element={
@@ -358,7 +366,7 @@ export default function App() {
               }
             />
             <Route path="/nosotros" element={<NosotrosView />} />
-            <Route path="/contacto" element={<ContactoView />} />
+            <Route path="/contacto" element={<Navigate to="/" replace />} />
             <Route path="/legal" element={<LegalView />} />
             <Route path="/terminos-y-condiciones" element={<LegalView />} />
             <Route path="/politicas-de-privacidad" element={<LegalView />} />
@@ -444,6 +452,9 @@ export default function App() {
 
       {/* Progressive Web App Install Banner (iOS & Android) */}
       {!isLoginPage && <PWAInstallBanner />}
+
+      {/* Botón Flotante Oficial de WhatsApp */}
+      <FloatingWhatsAppButton phoneNumber="56953332492" />
     </div>
   );
 }

@@ -134,6 +134,14 @@ export async function getCustomerByPhone(phoneQuery) {
 
 export async function upsertCustomerProfile(profile) {
   try {
+    const isWhatsappAllowed = profile.notifyWhatsapp !== undefined
+      ? Boolean(profile.notifyWhatsapp)
+      : (profile.whatsappNotifications ?? profile.whatsapp_notifications ?? true);
+
+    const isEmailAllowed = profile.notifyEmail !== undefined
+      ? Boolean(profile.notifyEmail)
+      : (profile.emailNotifications ?? profile.email_notifications ?? true);
+
     const payload = {
       full_name: profile.fullName || profile.name || profile.full_name || 'Tutor Patitas',
       email: (profile.email || '').toLowerCase().trim(),
@@ -142,7 +150,7 @@ export async function upsertCustomerProfile(profile) {
       address: profile.address || '',
       depto: (profile.depto || profile.dept || '').trim(),
       delivery_reference: (profile.delivery_reference || profile.deliveryReference || profile.notes || '').trim(),
-      whatsapp_notifications: profile.whatsappNotifications ?? profile.whatsapp_notifications ?? true,
+      whatsapp_notifications: isWhatsappAllowed,
       role: profile.role || 'cliente',
     };
 
@@ -198,12 +206,12 @@ export async function upsertCustomerProfile(profile) {
         .select()
         .single();
 
-      // Si la columna saved_addresses aún no ha sido migrada en Supabase (error 42703), reintentar sin ella
-      if (updateRes.error && updateRes.error.code === '42703' && payload.saved_addresses) {
-        const { saved_addresses: _, ...payloadWithoutSaved } = payload;
+      // Si alguna columna aún no existe en Supabase (error 42703), reintentar sin ella
+      if (updateRes.error && (updateRes.error.code === '42703' || updateRes.error.message?.includes('column'))) {
+        const { saved_addresses: _s, email_notifications: _e, ...cleanPayload } = payload;
         updateRes = await supabase
           .from('customers')
-          .update(payloadWithoutSaved)
+          .update(cleanPayload)
           .eq('id', existingId)
           .select()
           .single();
@@ -218,18 +226,26 @@ export async function upsertCustomerProfile(profile) {
         .select()
         .single();
 
-      // Si la columna saved_addresses aún no ha sido migrada en Supabase (error 42703), reintentar sin ella
-      if (insertRes.error && insertRes.error.code === '42703' && payload.saved_addresses) {
-        const { saved_addresses: _, ...payloadWithoutSaved } = payload;
+      // Si alguna columna aún no existe en Supabase (error 42703), reintentar sin ella
+      if (insertRes.error && (insertRes.error.code === '42703' || insertRes.error.message?.includes('column'))) {
+        const { saved_addresses: _s, email_notifications: _e, ...cleanPayload } = payload;
         insertRes = await supabase
           .from('customers')
-          .insert(payloadWithoutSaved)
+          .insert(cleanPayload)
           .select()
           .single();
       }
 
       if (insertRes.error) throw insertRes.error;
       resultData = insertRes.data;
+    }
+
+    // Asegurar que las preferencias de recordatorios queden adjuntas al objeto devuelto
+    if (resultData) {
+      resultData.whatsapp_notifications = isWhatsappAllowed;
+      resultData.email_notifications = isEmailAllowed;
+      resultData.whatsappNotifications = isWhatsappAllowed;
+      resultData.emailNotifications = isEmailAllowed;
     }
 
     return { success: true, data: normalizeCustomerAddresses(resultData) };
@@ -438,13 +454,32 @@ export async function updateCustomerInSupabase(customerId, updates) {
     }
     if (updates.points !== undefined) payload.points = parseInt(updates.points, 10) || 0;
     if (updates.role !== undefined) payload.role = updates.role;
+    if (updates.whatsappNotifications !== undefined || updates.whatsapp_notifications !== undefined) {
+      payload.whatsapp_notifications = updates.whatsappNotifications ?? updates.whatsapp_notifications;
+    }
+    if (updates.emailNotifications !== undefined || updates.email_notifications !== undefined) {
+      payload.email_notifications = updates.emailNotifications ?? updates.email_notifications;
+    }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('customers')
       .update(payload)
       .eq('id', customerId)
       .select()
       .single();
+
+    // Si la columna email_notifications aún no ha sido agregada en Supabase (error 42703), reintentar sin ella
+    if (error && (error.code === '42703' || error.message?.includes('column'))) {
+      const { email_notifications: _e, ...cleanPayload } = payload;
+      const retry = await supabase
+        .from('customers')
+        .update(cleanPayload)
+        .eq('id', customerId)
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) throw error;
     return { success: true, data };

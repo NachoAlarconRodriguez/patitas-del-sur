@@ -240,3 +240,69 @@ export function getSlotsForCity(city, schedules = DEFAULT_DELIVERY_SCHEDULES) {
     { value: 'Tarde (14:30 - 19:30 hrs)', label: 'Tarde (14:30 - 19:30 hrs)', desc: 'Lunes a Sábado' },
   ];
 }
+
+export const WEEKDAYS = [
+  { id: 1, label: 'Lun', name: 'Lunes' },
+  { id: 2, label: 'Mar', name: 'Martes' },
+  { id: 3, label: 'Mié', name: 'Miércoles' },
+  { id: 4, label: 'Jue', name: 'Jueves' },
+  { id: 5, label: 'Vie', name: 'Viernes' },
+  { id: 6, label: 'Sáb', name: 'Sábado' },
+  { id: 0, label: 'Dom', name: 'Domingo' },
+];
+
+export function formatDeliveryDaysSummary(days = [1, 2, 3, 4, 5, 6]) {
+  if (!days || !Array.isArray(days) || days.length === 0) return 'Sin días configurados';
+  if (days.length === 7) return 'Todos los días (Lun a Dom)';
+  const sorted = [...days].sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b));
+  const isLunVie = sorted.length === 5 && sorted.every((d, i) => d === i + 1);
+  if (isLunVie) return 'Lunes a Viernes';
+  const isLunSab = sorted.length === 6 && sorted.every((d, i) => d === i + 1);
+  if (isLunSab) return 'Lunes a Sábado';
+  const names = { 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 0: 'Dom' };
+  return sorted.map((d) => names[d] || d).join(', ');
+}
+
+/**
+ * Retorna las próximas fechas disponibles de entrega según los días habilitados de la zona
+ */
+export function getUpcomingDeliveryDates(allowedDays = [1, 2, 3, 4, 5, 6], maxDays = 6) {
+  const dates = [];
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Si hoy ya pasó de las 18:00 hrs, no se permite agendar para hoy
+  const startOffset = currentHour >= 18 ? 1 : 0;
+
+  for (let i = startOffset; i < 21 && dates.length < maxDays; i++) {
+    const d = new Date();
+    d.setDate(now.getDate() + i);
+    const dayOfWeek = d.getDay(); // 0 = Domingo, 1 = Lunes, etc.
+
+    if (allowedDays.includes(dayOfWeek)) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const isoDate = `${yyyy}-${mm}-${dd}`;
+
+      const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+      let relativePrefix = '';
+      if (i === 0) relativePrefix = 'Hoy - ';
+      else if (i === 1) relativePrefix = 'Mañana - ';
+
+      const label = `${relativePrefix}${dayNames[dayOfWeek]} ${d.getDate()} de ${monthNames[d.getMonth()]}`;
+
+      dates.push({
+        isoDate,
+        dayOfWeek,
+        label,
+        isToday: i === 0,
+        isTomorrow: i === 1,
+      });
+    }
+  }
+
+  return dates;
+}

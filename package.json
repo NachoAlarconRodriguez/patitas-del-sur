@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
+    "design:lint": "echo y | npx impeccable detect src/",
+    "design:audit": "npx impeccable detect http://localhost:5173",
     "preview": "vite preview"
   },
   "dependencies": {

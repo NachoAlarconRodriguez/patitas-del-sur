@@ -50,6 +50,7 @@ import {
   Check,
   Loader2,
   X,
+  XCircle,
   ChevronRight,
   ChevronLeft,
   ChevronUp,
@@ -1067,6 +1068,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const todayOrders = useMemo(() => {
     return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
       if (!o.date && !o.created_at) return false;
       if (o.date === todayFormattedDate || o.date === 'Hoy') return true;
       if (o.created_at) {
@@ -1460,11 +1462,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const prepCount = orders.filter((o) => o.status === 'en_preparacion').length;
     const caminoCount = orders.filter((o) => o.status === 'en_camino').length;
     const entregadoCount = orders.filter((o) => o.status === 'entregado').length;
+    const canceladoCount = orders.filter((o) => o.status === 'cancelado').length;
     return [
       { value: 'todos', label: `Todos los estados (${orders.length})` },
       { value: 'en_preparacion', label: `⏳ En Preparación (${prepCount})` },
       { value: 'en_camino', label: `🚚 En Camino (${caminoCount})` },
       { value: 'entregado', label: `✓ Entregados (${entregadoCount})` },
+      { value: 'cancelado', label: `✕ Cancelados (${canceladoCount})` },
     ];
   }, [orders]);
 
@@ -1785,6 +1789,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // Modals & Drawers
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
   const [paymentDeliveryConfirmModal, setPaymentDeliveryConfirmModal] = useState(null); // { order, paymentMethod: 'Transferencia' | 'Efectivo' }
+  const [cancelOrderConfirmModal, setCancelOrderConfirmModal] = useState(null); // order object to cancel
   const [orderBoletas, setOrderBoletas] = useState(() => {
     try {
       const stored = localStorage.getItem('patitas_order_boletas_map');
@@ -1941,7 +1946,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const activeOrders = orders.filter(
       (o) => o.status === 'en_preparacion' || o.status === 'en_camino'
     );
-    const candidateOrders = activeOrders.length > 0 ? activeOrders : orders.slice(0, 8);
+    const candidateOrders = activeOrders.length > 0 ? activeOrders : orders.filter((o) => o.status !== 'cancelado').slice(0, 8);
 
     if (candidateOrders.length === 0) {
       showToast('⚠️ No hay pedidos registrados para calcular una ruta de despacho.');
@@ -2657,11 +2662,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     showToast('Sesión de administrador cerrada con éxito.');
   };
 
-  // Order status updater con verificación de pago en entregas
+  // Order status updater con verificación de pago en entregas y confirmación de cancelación
   const handleUpdateOrderStatus = (orderId, newStatus) => {
+    const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
+
+    // Si se intenta cancelar el pedido, solicitar confirmación modal
+    if (newStatus === 'cancelado') {
+      if (targetOrder?.status === 'cancelado') {
+        showToast(`El pedido ${orderId} ya está cancelado.`);
+        return;
+      }
+      if (targetOrder) {
+        setCancelOrderConfirmModal(targetOrder);
+      }
+      return;
+    }
+
     // Si se intenta marcar como entregado y el pedido aún no está pagado:
     if (newStatus === 'entregado') {
-      const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
       const isPaid = String(targetOrder?.paymentStatus || '').toLowerCase() === 'pagado';
       if (!isPaid && targetOrder) {
         const currentMethod = String(targetOrder.paymentMethod || '').toLowerCase();
@@ -2678,7 +2696,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
   const applyOrderStatusUpdate = (orderId, newStatus) => {
+    const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
+    const prevStatus = targetOrder?.status;
     const isDelivery = newStatus === 'entregado';
+    const isCancelling = newStatus === 'cancelado';
+    const wasCancelled = prevStatus === 'cancelado';
     const deliveryTimestamp = isDelivery ? new Date().toISOString() : null;
     const adminName = currentAdminName;
 
@@ -2690,6 +2712,158 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           deliveredAt: deliveryTimestamp,
         }));
       } catch (e) {}
+    }
+
+    // 1. Manejo de Stock en Bodega:
+    // Caso A: Se cancela el pedido (y antes no estaba cancelado) -> REINTEGRAR stock a bodega
+    if (isCancelling && !wasCancelled && targetOrder) {
+      const orderItems = targetOrder.items && targetOrder.items.length > 0
+        ? targetOrder.items
+        : (targetOrder.product ? [{ name: targetOrder.product, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
+
+      // Reintegrar stock en inventario local de React
+      setInventory((prevInv) =>
+        prevInv.map((p) => {
+          const matchItem = orderItems.find(
+            (it) =>
+              (it.productId && String(it.productId) === String(p.id)) ||
+              (it.id && String(it.id) === String(p.id)) ||
+              (it.name && p.name && String(it.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+          );
+          if (matchItem) {
+            const qty = Number(matchItem.quantity || matchItem.qty || 1);
+            const restoredStock = (Number(p.stock) || 0) + qty;
+            return {
+              ...p,
+              stock: restoredStock,
+              status: restoredStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+            };
+          }
+          return p;
+        })
+      );
+
+      // Reintegrar stock en Supabase
+      (async () => {
+        try {
+          for (const it of orderItems) {
+            const qty = Number(it.quantity || it.qty || 1);
+            let prodId = it.productId || it.product_id || it.id || null;
+
+            if (!prodId && it.name) {
+              const { data: matched } = await supabase
+                .from('products')
+                .select('id, stock')
+                .ilike('name', `%${String(it.name).trim()}%`)
+                .limit(1)
+                .maybeSingle();
+              if (matched) prodId = matched.id;
+            }
+
+            if (prodId) {
+              const { data: freshProd } = await supabase
+                .from('products')
+                .select('stock')
+                .eq('id', prodId)
+                .maybeSingle();
+
+              if (freshProd) {
+                const newStock = (Number(freshProd.stock) || 0) + qty;
+                await supabase
+                  .from('products')
+                  .update({ stock: newStock })
+                  .eq('id', prodId);
+              }
+            }
+          }
+          window.dispatchEvent(new Event('patitas_products_updated'));
+        } catch (stockRestoreErr) {
+          console.warn('Error restaurando stock en Supabase:', stockRestoreErr);
+        }
+      })();
+
+      // Revertir puntos Club Patitas acumulados si aplica
+      try {
+        const custId = targetOrder.customerId || targetOrder.customer_id;
+        const pts = targetOrder.pointsEarned ?? Math.floor((targetOrder.total || 0) / 1000);
+        if (pts > 0) {
+          if (custId) {
+            updateCustomerPoints(custId, -pts).catch(() => {});
+          } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
+            getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail).then((cust) => {
+              if (cust?.id) updateCustomerPoints(cust.id, -pts).catch(() => {});
+            });
+          }
+          window.dispatchEvent(new Event('patitas_customers_updated'));
+        }
+      } catch (ptsErr) {
+        console.warn('Error revirtiendo puntos al cancelar:', ptsErr);
+      }
+    }
+    // Caso B: El pedido estaba cancelado y se reactiva a otro estado -> volver a descontar stock
+    else if (wasCancelled && !isCancelling && targetOrder) {
+      const orderItems = targetOrder.items && targetOrder.items.length > 0
+        ? targetOrder.items
+        : (targetOrder.product ? [{ name: targetOrder.product, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
+
+      setInventory((prevInv) =>
+        prevInv.map((p) => {
+          const matchItem = orderItems.find(
+            (it) =>
+              (it.productId && String(it.productId) === String(p.id)) ||
+              (it.id && String(it.id) === String(p.id)) ||
+              (it.name && p.name && String(it.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
+          );
+          if (matchItem) {
+            const qty = Number(matchItem.quantity || matchItem.qty || 1);
+            const deductedStock = Math.max(0, (Number(p.stock) || 0) - qty);
+            return {
+              ...p,
+              stock: deductedStock,
+              status: deductedStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+            };
+          }
+          return p;
+        })
+      );
+
+      (async () => {
+        try {
+          for (const it of orderItems) {
+            const qty = Number(it.quantity || it.qty || 1);
+            let prodId = it.productId || it.product_id || it.id || null;
+
+            if (!prodId && it.name) {
+              const { data: matched } = await supabase
+                .from('products')
+                .select('id, stock')
+                .ilike('name', `%${String(it.name).trim()}%`)
+                .limit(1)
+                .maybeSingle();
+              if (matched) prodId = matched.id;
+            }
+
+            if (prodId) {
+              const { data: freshProd } = await supabase
+                .from('products')
+                .select('stock')
+                .eq('id', prodId)
+                .maybeSingle();
+
+              if (freshProd) {
+                const newStock = Math.max(0, (Number(freshProd.stock) || 0) - qty);
+                await supabase
+                  .from('products')
+                  .update({ stock: newStock })
+                  .eq('id', prodId);
+              }
+            }
+          }
+          window.dispatchEvent(new Event('patitas_products_updated'));
+        } catch (stockDeductErr) {
+          console.warn('Error descontando stock al reactivar pedido:', stockDeductErr);
+        }
+      })();
     }
 
     setOrders((prev) =>
@@ -2709,7 +2883,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           : o
       )
     );
-    showToast(`Pedido ${orderId} actualizado a: ${newStatus.replace('_', ' ').toUpperCase()}`);
+
+    if (isCancelling) {
+      showToast(`✕ Pedido ${orderId} cancelado. Stock reintegrado a bodega.`);
+    } else {
+      showToast(`Pedido ${orderId} actualizado a: ${newStatus.replace('_', ' ').toUpperCase()}`);
+    }
+
     if (selectedOrderModal && selectedOrderModal.id === orderId) {
       setSelectedOrderModal((prev) => ({
         ...prev,
@@ -4733,10 +4913,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
   };
 
-  // Colecciones filtradas por período contable para el Control Financiero & Flujo de Caja
+  // Colecciones filtradas por período contable para el Control Financiero & Flujo de Caja (excluye pedidos cancelados)
   const periodFilteredOrders = useMemo(() => {
-    if (financesPeriodFilter === 'todos') return orders;
-    return orders.filter((o) => getYearMonthFromDate(o.date, o.created_at) === financesPeriodFilter);
+    const validOrders = orders.filter((o) => o.status !== 'cancelado');
+    if (financesPeriodFilter === 'todos') return validOrders;
+    return validOrders.filter((o) => getYearMonthFromDate(o.date, o.created_at) === financesPeriodFilter);
   }, [orders, financesPeriodFilter]);
 
   const periodFilteredInvoices = useMemo(() => {
@@ -4796,7 +4977,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Helper para calcular costo, despacho y repartición financiera exacta por pedido
   const calculateOrderFinancialDistribution = useCallback((order) => {
-    if (!order) {
+    if (!order || order.status === 'cancelado') {
       return {
         orderTotal: 0,
         productCostWithIva: 0,
@@ -5157,11 +5338,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     return m.charAt(0).toUpperCase() + m.slice(1);
   }, []);
 
-  // Pedidos de los últimos 7 días
+  // Pedidos de los últimos 7 días (excluye cancelados)
   const weekOrders = useMemo(() => {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
       if (o.created_at) {
         return new Date(o.created_at) >= sevenDaysAgo;
       }
@@ -5172,9 +5354,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Dynamic values depending on selected period: 'dia' | 'semana' | 'mes'
   const salesPeriodData = useMemo(() => {
+    const validMonthOrders = orders.filter((o) => o.status !== 'cancelado');
     const todayOrdersTotal = todayOrders.reduce((acc, o) => acc + (o.total || 0), 0);
     const weekOrdersTotal = weekOrders.reduce((acc, o) => acc + (o.total || 0), 0);
-    const monthOrdersTotal = orders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const monthOrdersTotal = validMonthOrders.reduce((acc, o) => acc + (o.total || 0), 0);
 
     return {
       dia: {
@@ -5195,7 +5378,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         title: 'Ventas del Mes Actual',
         amount: monthOrdersTotal,
         growth: monthOrdersTotal > 0 ? '+0% vs mes ant.' : '0% vs mes ant.',
-        detail: `${orders.length} ${orders.length === 1 ? 'pedido este mes' : 'pedidos este mes'}`,
+        detail: `${validMonthOrders.length} ${validMonthOrders.length === 1 ? 'pedido este mes' : 'pedidos este mes'}`,
         periodLabel: 'Mes Actual',
       },
     };
@@ -5203,6 +5386,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Dynamic values depending on selected period for orders: 'dia' | 'semana' | 'mes'
   const ordersPeriodData = useMemo(() => {
+    const validMonthOrders = orders.filter((o) => o.status !== 'cancelado');
     const enCaminoCount = todayOrders.filter((o) => o.status === 'en_camino').length;
     const enPrepCount = todayOrders.filter((o) => o.status === 'en_preparacion').length;
     const todayStatusText = `${enPrepCount} en prep. • ${enCaminoCount} en camino`;
@@ -5211,8 +5395,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const weekPending = weekOrders.length - weekDelivered;
     const weekStatusText = `${weekDelivered} entregados • ${weekPending} en ruta`;
 
-    const monthDelivered = orders.filter((o) => o.status === 'entregado').length;
-    const monthPending = orders.length - monthDelivered;
+    const monthDelivered = validMonthOrders.filter((o) => o.status === 'entregado').length;
+    const monthPending = validMonthOrders.length - monthDelivered;
     const monthStatusText = `${monthDelivered} completados • ${monthPending} en proc.`;
 
     return {
@@ -5232,7 +5416,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       },
       mes: {
         title: 'Pedidos del Mes Actual',
-        count: `${orders.length} ${orders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        count: `${validMonthOrders.length} ${validMonthOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
         statusText: monthStatusText,
         detail: 'Mes en curso',
         periodLabel: 'Mes Actual',
@@ -5274,12 +5458,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Chart, KPIs and Pet breakdown synced with global filter: 'dia' | 'semana' | 'mes'
   const dashboardAnalyticsData = useMemo(() => {
+    const validOrders = orders.filter((o) => o.status !== 'cancelado');
     const activeOrders =
       globalTimeFilter === 'dia'
         ? todayOrders
         : globalTimeFilter === 'semana'
         ? weekOrders
-        : orders;
+        : validOrders;
 
     const periodSales = activeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const periodOrdersCount = activeOrders.length;
@@ -7552,7 +7737,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <td className="py-3.5 px-3 font-black text-slate-900 whitespace-nowrap">{formatCLP(o.total)}</td>
                           <td className="py-3.5 px-3 whitespace-nowrap">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                              o.status === 'entregado'
+                              o.status === 'cancelado'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : o.status === 'entregado'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : o.status === 'en_camino'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
@@ -7809,13 +7996,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <div className="flex flex-col items-end">
                             <span
                               className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 ${
-                                order.status === 'entregado'
+                                order.status === 'cancelado'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : order.status === 'entregado'
                                   ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   : order.status === 'en_camino'
                                   ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                   : 'bg-amber-50 text-amber-700 border border-amber-200'
                               }`}
                             >
+                              {order.status === 'cancelado' && <X className="w-3 h-3 stroke-[2.5]" />}
                               {order.status === 'entregado' && <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />}
                               {order.status === 'en_camino' && <Truck className="w-3 h-3 stroke-[2.5]" />}
                               {order.status === 'en_preparacion' && <Clock className="w-3 h-3 stroke-[2.5]" />}
@@ -8198,12 +8388,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </td>
                           <td className="py-3.5 px-3 whitespace-nowrap">
                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tight ${
-                              order.status === 'entregado'
+                              order.status === 'cancelado'
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : order.status === 'entregado'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : order.status === 'en_camino'
                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
                             }`}>
+                              {order.status === 'cancelado' && <X className="w-2.5 h-2.5 shrink-0" />}
                               {order.status === 'entregado' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
                               {order.status === 'en_camino' && <Truck className="w-2.5 h-2.5 shrink-0" />}
                               {order.status === 'en_preparacion' && <Clock className="w-2.5 h-2.5 shrink-0" />}
@@ -12859,12 +13052,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       Pedido {selectedOrderModal.id}
                     </h3>
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      selectedOrderModal.status === 'entregado'
+                      selectedOrderModal.status === 'cancelado'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : selectedOrderModal.status === 'entregado'
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         : selectedOrderModal.status === 'en_camino'
                         ? 'bg-blue-50 text-blue-700 border border-blue-200'
                         : 'bg-amber-50 text-amber-700 border border-amber-200'
                     }`}>
+                      {selectedOrderModal.status === 'cancelado' && <X className="w-3 h-3" />}
                       {selectedOrderModal.status === 'entregado' && <CheckCircle2 className="w-3 h-3" />}
                       {selectedOrderModal.status === 'en_camino' && <Truck className="w-3 h-3" />}
                       {selectedOrderModal.status === 'en_preparacion' && <Clock className="w-3 h-3" />}
@@ -12889,6 +13085,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
             {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Badge de Pedido Cancelado */}
+              {selectedOrderModal.status === 'cancelado' && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/90 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                      ✕
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-rose-800 font-extrabold uppercase tracking-wider block">
+                        Pedido Cancelado
+                      </span>
+                      <p className="text-xs text-rose-900 font-medium">
+                        El stock fue devuelto a bodega y este pedido no suma a los ingresos ni finanzas.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Badge de Entrega & Repartidor Responsable */}
               {selectedOrderModal.status === 'entregado' && (
                 <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 flex items-center justify-between shadow-2xs">
@@ -13285,8 +13500,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                         Resumen Financiero del Pedido
                       </span>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Rentabilidad neta calculada
+                      <span className={`text-[10px] font-medium ${selectedOrderModal.status === 'cancelado' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
+                        {selectedOrderModal.status === 'cancelado' ? 'Pedido cancelado · Sin efecto en finanzas' : 'Rentabilidad neta calculada'}
                       </span>
                     </div>
 
@@ -13476,7 +13691,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5 block">
                   Actualizar Estado de Despacho
                 </span>
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-2.5 shadow-xs grid grid-cols-3 gap-1.5">
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-2.5 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleUpdateOrderStatus(selectedOrderModal.id, 'en_preparacion')}
@@ -13509,6 +13724,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     }`}
                   >
                     Entregado ✓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateOrderStatus(selectedOrderModal.id, 'cancelado')}
+                    className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all text-center border cursor-pointer ${
+                      selectedOrderModal.status === 'cancelado'
+                        ? 'bg-rose-600 border-rose-700 text-white font-black shadow-xs'
+                        : 'bg-rose-50/70 border-rose-200/80 text-rose-700 hover:bg-rose-100 hover:border-rose-300'
+                    }`}
+                  >
+                    Cancelar ✕
                   </button>
                 </div>
               </div>
@@ -15555,8 +15781,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </div>
                                 <div className="text-right">
                                   <div className="font-mono font-bold text-slate-900">{formatCLP(ord.total)}</div>
-                                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
-                                    {ord.status === 'en_camino' ? 'En Camino 🚚' : ord.status === 'entregado' ? 'Entregado ✓' : 'En Prep.'}
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                    ord.status === 'cancelado'
+                                      ? 'text-rose-700 bg-rose-50'
+                                      : ord.status === 'entregado'
+                                      ? 'text-emerald-700 bg-emerald-50'
+                                      : ord.status === 'en_camino'
+                                      ? 'text-blue-700 bg-blue-50'
+                                      : 'text-amber-700 bg-amber-50'
+                                  }`}>
+                                    {ord.status === 'cancelado' ? 'Cancelado ✕' : ord.status === 'en_camino' ? 'En Camino 🚚' : ord.status === 'entregado' ? 'Entregado ✓' : 'En Prep.'}
                                   </span>
                                 </div>
                               </div>
@@ -19572,7 +19806,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </span>
                               </td>
                               <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                                {ord.status === 'entregado' ? (
+                                {ord.status === 'cancelado' ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
+                                    <X className="w-3 h-3 stroke-[2.5]" />
+                                    Cancelado
+                                  </span>
+                                ) : ord.status === 'entregado' ? (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
                                     <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
                                     Entregado
@@ -22701,6 +22940,126 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 >
                   <Check className="w-4 h-4 stroke-[3]" />
                   <span>Confirmar Pago y Entregar</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ======================================================= */}
+      {/* MODAL: CONFIRMACIÓN DE CANCELACIÓN DE PEDIDO             */}
+      {/* ======================================================= */}
+      {cancelOrderConfirmModal && (() => {
+        const order = cancelOrderConfirmModal;
+        const totalFormatted = formatCLP(order.total || 0);
+        const orderItems = order.items && order.items.length > 0
+          ? order.items
+          : (order.product ? [{ name: order.product, quantity: order.qty || 1 }] : []);
+
+        return (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
+              
+              {/* Header */}
+              <div className="p-6 bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border-b border-slate-100 flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-700 shadow-xs shrink-0">
+                    <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight">
+                      ¿Cancelar Pedido?
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Pedido <strong>{order.id}</strong> · {order.customer || order.customerName || 'Cliente'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCancelOrderConfirmModal(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  title="Cerrar"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4">
+                {/* Total box */}
+                <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/80 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-rose-800 tracking-wider block">
+                      Monto del Pedido
+                    </span>
+                    <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
+                      {totalFormatted}
+                    </span>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-200 text-rose-900 border border-rose-300 flex items-center gap-1 shadow-2xs">
+                    <X className="w-3 h-3 text-rose-700" />
+                    Se marcará como Cancelado
+                  </span>
+                </div>
+
+                {/* Explicación de impacto */}
+                <div className="space-y-2 text-xs text-slate-600 font-medium">
+                  <p className="font-bold text-slate-800">
+                    Al confirmar la cancelación de este pedido:
+                  </p>
+                  <ul className="space-y-1.5 list-disc list-inside text-slate-600 text-[11px]">
+                    <li>
+                      <strong>Stock en Bodega:</strong> Se reintegrará automáticamente el inventario de los productos de este pedido ({orderItems.length} {orderItems.length === 1 ? 'producto' : 'productos'}).
+                    </li>
+                    <li>
+                      <strong>Finanzas y Ganancias:</strong> No se sumará a las ventas totales, flujo de caja ni distribución a socios.
+                    </li>
+                    <li>
+                      <strong>Despachos:</strong> No figurará en rutas de entrega activas ni pendientes.
+                    </li>
+                  </ul>
+                </div>
+
+                {orderItems.length > 0 && (
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Productos a devolver al stock:
+                    </span>
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {orderItems.map((it, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-slate-700 font-semibold text-[11px]">
+                          <span className="truncate pr-2">{it.name}</span>
+                          <span className="font-mono font-bold text-emerald-700 shrink-0">+{it.quantity || it.qty || 1} un.</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 sm:px-6 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCancelOrderConfirmModal(null)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Volver / No Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const orderId = order.id;
+                    setCancelOrderConfirmModal(null);
+                    applyOrderStatusUpdate(orderId, 'cancelado');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <X className="w-4 h-4 stroke-[3]" />
+                  <span>Sí, Cancelar Pedido</span>
                 </button>
               </div>
 

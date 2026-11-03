@@ -367,8 +367,8 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     const el = document.getElementById('crm-adjustment-tool');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-4', 'ring-[#0E8388]/30');
-      setTimeout(() => el.classList.remove('ring-4', 'ring-[#0E8388]/30'), 2500);
+      el.classList.add('ring-4', 'ring-[#F5BA13]/30');
+      setTimeout(() => el.classList.remove('ring-4', 'ring-[#F5BA13]/30'), 2500);
     }
   };
 
@@ -383,7 +383,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 block">
               Puntos en Clientes
             </span>
-            <span className="text-2xl font-black text-[#0A3E40] block mt-1">
+            <span className="text-2xl font-black text-amber-950 block mt-1">
               {totalCustomerPoints.toLocaleString('es-CL')} PTS
             </span>
             <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
@@ -454,7 +454,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#0A3E40] text-white flex items-center justify-center shadow-md">
+            <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shadow-md">
               <Sparkles className="w-5 h-5 text-amber-300" />
             </div>
             <div>
@@ -482,7 +482,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               type="button"
               onClick={handleSaveSettings}
               disabled={isSavingSettings}
-              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white font-black text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white font-black text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4 text-amber-300" />
               <span>{isSavingSettings ? 'Guardando...' : 'Guardar Cambios'}</span>
@@ -493,7 +493,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         {/* Regla de Acumulación Base */}
         <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/60 via-emerald-50/40 to-slate-50 border border-teal-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
-            <span className="text-xs font-black text-[#0A3E40] uppercase tracking-wider block">
+            <span className="text-xs font-black text-amber-950 uppercase tracking-wider block">
               Regla de Acumulación Base
             </span>
             <p className="text-xs text-slate-600 font-medium">
@@ -515,7 +515,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                     pointsPerThousand: val <= 500 ? 2 : 1,
                   }));
                 }}
-                className="w-20 px-2 py-1 text-xs font-mono font-black text-center text-[#0A3E40] bg-slate-50 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+                className="w-20 px-2 py-1 text-xs font-mono font-black text-center text-amber-950 bg-slate-50 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
               />
               <span className="text-xs font-bold text-slate-600">CLP</span>
             </div>
@@ -535,7 +535,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             {settings.tiers?.map((tier, idx) => (
               <div
                 key={tier.id || idx}
-                className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-[#0E8388]/60 transition-all space-y-3"
+                className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-[#F5BA13]/60 transition-all space-y-3"
               >
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
@@ -549,7 +549,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       type="checkbox"
                       checked={tier.active !== false}
                       onChange={(e) => handleTierChange(idx, 'active', e.target.checked)}
-                      className="rounded text-[#0E8388] focus:ring-[#0E8388]"
+                      className="rounded text-amber-700 focus:ring-[#F5BA13]"
                     />
                     <span className="text-[10px] font-bold text-slate-500">
                       {tier.active !== false ? 'Activo' : 'Pausado'}
@@ -569,7 +569,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       step="10"
                       value={tier.points}
                       onChange={(e) => handleTierChange(idx, 'points', e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
                       PTS
@@ -592,7 +592,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       step="500"
                       value={tier.discountAmount}
                       onChange={(e) => handleTierChange(idx, 'discountAmount', e.target.value)}
-                      className="w-full pl-7 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-emerald-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+                      className="w-full pl-7 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-emerald-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
                       CLP
@@ -617,7 +617,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-white flex items-center justify-center shadow-md">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white flex items-center justify-center shadow-md">
               <Trophy className="w-5 h-5 text-amber-300" />
             </div>
             <div>
@@ -640,7 +640,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388] cursor-pointer"
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13] cursor-pointer"
             >
               <option value="points_desc">⭐ Mayor Saldo de Puntos</option>
               <option value="points_asc">Menor Saldo de Puntos</option>
@@ -659,7 +659,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               placeholder="Buscar por tutor, teléfono, email o mascota..."
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
             />
             {customerSearch && (
               <button
@@ -747,7 +747,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               return (
                 <div
                   key={c.id || index}
-                  className="bg-white hover:bg-slate-50/60 p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-2xs hover:shadow-md hover:border-[#0E8388]/30 transition-all space-y-4"
+                  className="bg-white hover:bg-slate-50/60 p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-2xs hover:shadow-md hover:border-[#F5BA13]/30 transition-all space-y-4"
                 >
                   {/* Fila Superior: Nombre del Cliente primero + Badges + Saldo + Botón Ajustar */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -759,7 +759,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                           c.points >= 350
                             ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-bold'
                             : c.points >= 100
-                            ? 'bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-white'
+                            ? 'bg-gradient-to-br from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white'
                             : 'bg-slate-100 text-slate-600 border border-slate-200'
                         }`}
                       >
@@ -815,7 +815,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                     <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200">
                         <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Saldo:</span>
-                        <span className="font-mono font-black text-sm text-[#0A3E40]">
+                        <span className="font-mono font-black text-sm text-amber-950">
                           {c.points.toLocaleString('es-CL')}
                         </span>
                         <span className="text-[11px] font-bold text-slate-500">PTS</span>
@@ -824,7 +824,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       <button
                         type="button"
                         onClick={() => handleSelectCustomerForAdjustment(c.id)}
-                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#0A3E40] text-slate-700 hover:text-white font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#1D1D1F] hover:text-[#F5BA13] text-slate-700 hover:text-white font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
                         title="Ajustar saldo en herramienta CRM"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -867,7 +867,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       <div className="h-2.5 bg-slate-200/80 rounded-full relative overflow-hidden">
                         {/* Línea Llena con Gradiente */}
                         <div
-                          className="h-full bg-gradient-to-r from-[#0E8388] via-emerald-400 to-amber-400 rounded-full transition-all duration-500 ease-out"
+                          className="h-full bg-gradient-to-r from-[#F5BA13] via-amber-400 to-[#D97706] rounded-full transition-all duration-500 ease-out"
                           style={{ width: `${progressPct}%` }}
                         />
                       </div>
@@ -894,7 +894,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                                     <span>${tier.discountAmount.toLocaleString('es-CL')}</span>
                                   </span>
                                 ) : isNext ? (
-                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300 shadow-2xs animate-bounce">
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300 shadow-2xs animate-pulse">
                                     <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
                                     <span>${tier.discountAmount.toLocaleString('es-CL')}</span>
                                   </span>
@@ -1016,7 +1016,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               placeholder="Buscar por cliente, teléfono o código (ej. PTS-)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
             />
           </div>
 
@@ -1149,7 +1149,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       <td className="px-4 py-3">
                         {r.usedInOrderId ? (
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-black text-[#0A3E40] bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                            <span className="font-mono font-black text-amber-950 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
                               {r.usedInOrderId}
                             </span>
                             {r.usedInOrderTotal && (
@@ -1210,7 +1210,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <select
               value={selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
             >
               <option value="">-- Elige un tutor / cliente --</option>
               {customers.map((c) => (
@@ -1231,7 +1231,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               placeholder="Ej. +50 ó -30"
               value={pointsAdjustment}
               onChange={(e) => setPointsAdjustment(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
             />
           </div>
 
@@ -1245,7 +1245,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               placeholder="Ej. Cortesía por demora / Fidelización"
               value={adjustmentReason}
               onChange={(e) => setAdjustmentReason(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]"
+              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
             />
           </div>
 
@@ -1254,7 +1254,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <button
               type="submit"
               disabled={isAdjusting}
-              className="w-full py-2.5 rounded-xl bg-[#0A3E40] hover:bg-[#0E8388] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl bg-[#0A3E40] hover:bg-[#F5BA13] text-[#1D1D1F] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{isAdjusting ? 'Aplicando...' : 'Aplicar Puntos'}</span>
@@ -1272,7 +1272,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                 (Tel: {selectedCustomerObj.phone || 'N/A'})
               </span>
             </div>
-            <div className="font-mono font-black text-[#0A3E40]">
+            <div className="font-mono font-black text-amber-950">
               Saldo actual: {selectedCustomerObj.points || 0} PTS
             </div>
           </div>

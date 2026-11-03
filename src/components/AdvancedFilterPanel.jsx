@@ -24,18 +24,18 @@ function FilterDropdown({
       <button
         type="button"
         onClick={onToggle}
-        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border shadow-xs cursor-pointer select-none ${
+        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border shadow-xs cursor-pointer select-none active:scale-95 ${
           isSelected
-            ? 'bg-[#0E8388]/10 text-[#0E8388] border-[#0E8388] shadow-sm ring-2 ring-[#0E8388]/15'
+            ? 'bg-amber-100 text-[#78350F] border-[#F5BA13] shadow-sm ring-2 ring-[#F5BA13]/25'
             : isOpen
             ? 'bg-slate-100 text-slate-900 border-slate-300'
-            : 'bg-white text-slate-700 border-slate-200/90 hover:bg-slate-50 hover:border-slate-300'
+            : 'bg-white text-slate-700 border-slate-200/90 hover:bg-amber-50/50 hover:border-amber-200'
         }`}
         aria-expanded={isOpen}
       >
         <div
           className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs shrink-0 ${
-            isSelected ? 'bg-[#0E8388] text-white' : 'bg-slate-100 text-slate-500'
+            isSelected ? 'bg-[#F5BA13] text-[#1D1D1F]' : 'bg-slate-100 text-slate-500'
           }`}
         >
           <Icon className="w-3.5 h-3.5" />
@@ -43,7 +43,7 @@ function FilterDropdown({
 
         <span className="truncate max-w-[140px] sm:max-w-[180px]">
           {isSelected ? `${label}: ` : ''}
-          <strong className={isSelected ? 'text-[#0E8388]' : 'text-slate-800'}>
+          <strong className={isSelected ? 'text-[#78350F]' : 'text-slate-800'}>
             {displayLabel}
           </strong>
         </span>
@@ -54,7 +54,7 @@ function FilterDropdown({
               e.stopPropagation();
               onChange(defaultValues[0]);
             }}
-            className="w-4 h-4 rounded-full bg-[#0E8388]/20 hover:bg-[#0E8388]/30 text-[#0E8388] flex items-center justify-center text-[10px] ml-0.5 transition-colors cursor-pointer"
+            className="w-4 h-4 rounded-full bg-[#F5BA13]/30 hover:bg-[#F5BA13]/50 text-[#78350F] flex items-center justify-center text-[10px] ml-0.5 transition-colors cursor-pointer"
             title="Quitar filtro"
           >
             ×
@@ -88,12 +88,11 @@ function FilterDropdown({
                   }}
                   className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-left transition-colors cursor-pointer ${
                     isActive
-                      ? 'bg-[#0E8388]/10 text-[#0E8388] font-black'
-                      : 'hover:bg-slate-50 text-slate-700 font-semibold'
+                      ? 'bg-amber-100 text-[#78350F] font-black'
+                      : 'hover:bg-amber-50/50 text-slate-700 font-semibold'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate pr-2">
-                    {opt.emoji && <span className="text-sm shrink-0">{opt.emoji}</span>}
                     <span className="truncate">{opt.label}</span>
                   </div>
 
@@ -101,13 +100,13 @@ function FilterDropdown({
                     {typeof opt.count === 'number' && (
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                          isActive ? 'bg-[#0E8388] text-white' : 'bg-slate-100 text-slate-500'
+                          isActive ? 'bg-[#F5BA13] text-[#1D1D1F]' : 'bg-slate-100 text-slate-500'
                         }`}
                       >
                         {opt.count}
                       </span>
                     )}
-                    {isActive && <Check className="w-3.5 h-3.5 text-[#0E8388]" />}
+                    {isActive && <Check className="w-3.5 h-3.5 text-[#D97706]" />}
                   </div>
                 </button>
               );
@@ -134,6 +133,8 @@ export default function AdvancedFilterPanel({
   onResetFilters,
   totalResultsCount,
   products = [],
+  isLoading = false,
+  petType = 'perros',
 }) {
   const [openDropdown, setOpenDropdown] = useState(null); // 'brand' | 'protein' | 'weight' | 'category' | null
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
@@ -225,22 +226,18 @@ export default function AdvancedFilterPanel({
     }
 
     const proteinItems = Object.entries(sourceCounts)
-      .map(([name, count]) => {
-        let emoji = '🥩';
-        const lower = name.toLowerCase();
-        if (lower.includes('pollo') || lower.includes('pavo')) emoji = '🍗';
-        else if (lower.includes('salmón') || lower.includes('pescado') || lower.includes('trucha')) emoji = '🐟';
-        else if (lower.includes('conejo')) emoji = '🥕';
-        else if (lower.includes('pato')) emoji = '🦆';
-        return { value: name, label: name, count, emoji };
-      })
+      .map(([name, count]) => ({
+        value: name,
+        label: name,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
 
     return [
-      { value: 'Todos', label: 'Todas las proteínas', count: products.length, emoji: '✨' },
+      { value: 'Todos', label: 'Todas las proteínas', count: products.length },
       ...proteinItems,
-      { value: 'high', label: 'Alta Proteína (30%-40%)', count: products.filter((p) => (p.proteinValue || 0) >= 30 && (p.proteinValue || 0) <= 40).length || null, emoji: '💪' },
-      { value: 'super', label: 'Súper Proteína (>40%)', count: products.filter((p) => (p.proteinValue || 0) > 40).length || null, emoji: '⚡' },
+      { value: 'high', label: 'Alta Proteína (30%-40%)', count: products.filter((p) => (p.proteinValue || 0) >= 30 && (p.proteinValue || 0) <= 40).length || null },
+      { value: 'super', label: 'Súper Proteína (>40%)', count: products.filter((p) => (p.proteinValue || 0) > 40).length || null },
     ];
   }, [products]);
 
@@ -301,19 +298,15 @@ export default function AdvancedFilterPanel({
     }
 
     const items = Object.entries(counts)
-      .map(([name, count]) => {
-        let emoji = '🥣';
-        const lower = name.toLowerCase();
-        if (lower.includes('húmedo') || lower.includes('humedo') || lower.includes('lata')) emoji = '🥫';
-        else if (lower.includes('snack') || lower.includes('premio')) emoji = '🍖';
-        else if (lower.includes('suplemento')) emoji = '🧪';
-        else if (lower.includes('arena')) emoji = '🐱';
-        return { value: name, label: name, count, emoji };
-      })
+      .map(([name, count]) => ({
+        value: name,
+        label: name,
+        count,
+      }))
       .sort((a, b) => b.count - a.count);
 
     return [
-      { value: 'Todos', label: 'Todos los tipos', count: products.length, emoji: '✨' },
+      { value: 'Todos', label: 'Todos los tipos', count: products.length },
       ...items,
     ];
   }, [products]);
@@ -321,148 +314,143 @@ export default function AdvancedFilterPanel({
   return (
     <div
       ref={containerRef}
-      className="bg-white rounded-3xl p-5 md:p-6 shadow-sm border border-slate-200/80 mb-8 space-y-4 select-none overflow-visible"
+      className="bg-white/90 backdrop-blur-xl rounded-2xl md:rounded-full px-4 sm:px-6 py-3 sm:py-3.5 shadow-sm border border-slate-200/80 mb-8 select-none overflow-visible transition-all"
     >
-      {/* 1. Full-Width Search Input Bar */}
-      <div className="w-full">
-        <div className="relative w-full">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#0E8388]" />
-          <input
-            type="text"
-            placeholder="Buscar por palabra clave (ej. salmón, maqui, cordero, glucosamina...)"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-slate-50 border border-slate-200/90 text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#0E8388] focus:bg-white focus:ring-2 focus:ring-[#0E8388]/10 transition-all shadow-xs"
-          />
-          {searchQuery && (
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        {/* Left Side: Clean Category Identifier & Live Recipe Count */}
+        <div className="flex items-center justify-between md:justify-start gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-sm shrink-0">
+              {petType === 'gatos' ? '🐱' : '🐶'}
+            </div>
+            <div>
+              <div className="font-heading font-black text-sm text-slate-900 tracking-tight leading-none">
+                {petType === 'gatos' ? 'Nutrición para Gatos' : 'Nutrición para Perros'}
+              </div>
+              <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
+                {isLoading ? (
+                  <span className="text-[#D97706] flex items-center gap-1.5">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#F5BA13] opacity-75" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#D97706]" />
+                    </span>
+                    Sincronizando recetas...
+                  </span>
+                ) : (
+                  <span>
+                    {totalResultsCount} {totalResultsCount === 1 ? 'receta disponible' : 'recetas disponibles'}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Filter Button */}
+          <div className="md:hidden flex items-center gap-2">
             <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-              title="Borrar búsqueda"
+              type="button"
+              onClick={() => setIsMobileDrawerOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs active:scale-95 cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <Layers className="w-3.5 h-3.5 text-[#F5BA13]" />
+              <span>Filtros</span>
+              {activeFiltersCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-[#F5BA13] text-[#1D1D1F] font-black text-[10px]">
+                  {activeFiltersCount}
+                </span>
+              )}
+            </button>
+
+            {activeFiltersCount > 0 && (
+              <button
+                type="button"
+                onClick={onResetFilters}
+                className="p-2 rounded-xl bg-red-50 text-red-600 border border-red-100 active:scale-95 cursor-pointer"
+                title="Limpiar filtros"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop Filter Dropdowns Row */}
+        <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+          {/* DROPDOWN 1: MARCA */}
+          <FilterDropdown
+            id="brand"
+            label="Marca"
+            icon={Layers}
+            currentValue={selectedBrand}
+            options={brandOptions}
+            onChange={(val) => {
+              onBrandChange(val);
+              setOpenDropdown(null);
+            }}
+            isOpen={openDropdown === 'brand'}
+            onToggle={() => setOpenDropdown((prev) => (prev === 'brand' ? null : 'brand'))}
+            defaultValues={['Todas']}
+          />
+
+          {/* DROPDOWN 2: PROTEÍNA */}
+          <FilterDropdown
+            id="protein"
+            label="Proteína"
+            icon={Dumbbell}
+            currentValue={proteinFilter}
+            options={proteinOptions}
+            onChange={(val) => {
+              onProteinChange(val);
+              setOpenDropdown(null);
+            }}
+            isOpen={openDropdown === 'protein'}
+            onToggle={() => setOpenDropdown((prev) => (prev === 'protein' ? null : 'protein'))}
+            defaultValues={['Todos']}
+          />
+
+          {/* DROPDOWN 3: FORMATO (PESO) */}
+          <FilterDropdown
+            id="weight"
+            label="Formato"
+            icon={Scale}
+            currentValue={weightFilter}
+            options={weightOptions}
+            onChange={(val) => {
+              onWeightChange(val);
+              setOpenDropdown(null);
+            }}
+            isOpen={openDropdown === 'weight'}
+            onToggle={() => setOpenDropdown((prev) => (prev === 'weight' ? null : 'weight'))}
+            defaultValues={['Todos']}
+          />
+
+          {/* DROPDOWN 4: TIPO DE ALIMENTO */}
+          <FilterDropdown
+            id="category"
+            label="Tipo de Alimento"
+            icon={Bone}
+            currentValue={categoryFilter}
+            options={categoryOptions}
+            onChange={(val) => {
+              onCategoryChange(val);
+              setOpenDropdown(null);
+            }}
+            isOpen={openDropdown === 'category'}
+            onToggle={() => setOpenDropdown((prev) => (prev === 'category' ? null : 'category'))}
+            defaultValues={['Todos']}
+          />
+
+          {/* Reset Filters Button (When active) */}
+          {activeFiltersCount > 0 && (
+            <button
+              onClick={onResetFilters}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-red-50 text-red-600 hover:bg-red-100 font-extrabold text-xs transition-all border border-red-100 active:scale-95 shadow-xs cursor-pointer ml-1"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Limpiar ({activeFiltersCount})</span>
             </button>
           )}
         </div>
-      </div>
-
-      {/* 2. Mobile Filter Trigger Button (Only on Mobile) */}
-      <div className="md:hidden flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setIsMobileDrawerOpen(true)}
-          className="flex-1 flex items-center justify-between px-5 py-3 rounded-2xl bg-slate-900 text-white font-extrabold text-xs shadow-md active:scale-95 cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-[#10B981]" />
-            <span>Filtros Desplegables</span>
-          </div>
-          {activeFiltersCount > 0 ? (
-            <span className="px-2.5 py-0.5 rounded-full bg-[#10B981] text-slate-950 font-black text-[10px]">
-              {activeFiltersCount} activos
-            </span>
-          ) : (
-            <span className="text-slate-400 text-[10px]">Todos</span>
-          )}
-        </button>
-
-        {activeFiltersCount > 0 && (
-          <button
-            type="button"
-            onClick={onResetFilters}
-            className="p-3 rounded-2xl bg-red-50 text-red-600 border border-red-100 active:scale-95 cursor-pointer"
-            title="Limpiar filtros"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
-      {/* 3. Counter & Reset Active Filters Header */}
-      <div className="flex items-center justify-between pt-1 pb-2 border-b border-slate-100 flex-wrap gap-2 text-xs">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-[#10B981]" />
-          <span className="font-black text-slate-800 uppercase tracking-wider text-xs">
-            {totalResultsCount} {totalResultsCount === 1 ? 'producto disponible' : 'productos disponibles'}
-          </span>
-        </div>
-
-        {activeFiltersCount > 0 && (
-          <button
-            onClick={onResetFilters}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 font-extrabold transition-all border border-red-100 active:scale-95 shadow-xs cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Limpiar Filtros ({activeFiltersCount})</span>
-          </button>
-        )}
-      </div>
-
-      {/* 4. Listas Desplegables (Dropdown Filters Row) */}
-      <div className="flex items-center gap-3 overflow-visible pb-1 pt-1 flex-wrap">
-        {/* DROPDOWN 1: MARCA */}
-        <FilterDropdown
-          id="brand"
-          label="Marca"
-          icon={Layers}
-          currentValue={selectedBrand}
-          options={brandOptions}
-          onChange={(val) => {
-            onBrandChange(val);
-            setOpenDropdown(null);
-          }}
-          isOpen={openDropdown === 'brand'}
-          onToggle={() => setOpenDropdown((prev) => (prev === 'brand' ? null : 'brand'))}
-          defaultValues={['Todas']}
-        />
-
-        {/* DROPDOWN 2: PROTEÍNA */}
-        <FilterDropdown
-          id="protein"
-          label="Proteína"
-          icon={Dumbbell}
-          currentValue={proteinFilter}
-          options={proteinOptions}
-          onChange={(val) => {
-            onProteinChange(val);
-            setOpenDropdown(null);
-          }}
-          isOpen={openDropdown === 'protein'}
-          onToggle={() => setOpenDropdown((prev) => (prev === 'protein' ? null : 'protein'))}
-          defaultValues={['Todos']}
-        />
-
-        {/* DROPDOWN 3: FORMATO (PESO) */}
-        <FilterDropdown
-          id="weight"
-          label="Formato (Peso)"
-          icon={Scale}
-          currentValue={weightFilter}
-          options={weightOptions}
-          onChange={(val) => {
-            onWeightChange(val);
-            setOpenDropdown(null);
-          }}
-          isOpen={openDropdown === 'weight'}
-          onToggle={() => setOpenDropdown((prev) => (prev === 'weight' ? null : 'weight'))}
-          defaultValues={['Todos']}
-        />
-
-        {/* DROPDOWN 4: TIPO DE ALIMENTO */}
-        <FilterDropdown
-          id="category"
-          label="Tipo de Alimento"
-          icon={Bone}
-          currentValue={categoryFilter}
-          options={categoryOptions}
-          onChange={(val) => {
-            onCategoryChange(val);
-            setOpenDropdown(null);
-          }}
-          isOpen={openDropdown === 'category'}
-          onToggle={() => setOpenDropdown((prev) => (prev === 'category' ? null : 'category'))}
-          defaultValues={['Todos']}
-        />
       </div>
 
       {/* 5. Mobile Bottom Sheet Filter Drawer */}
@@ -474,7 +462,7 @@ export default function AdvancedFilterPanel({
               <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto mb-3" />
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-[#0E8388]" />
+                  <Layers className="w-5 h-5 text-[#D97706]" />
                   <h3 className="text-base font-black text-slate-900">Filtros Desplegables</h3>
                 </div>
                 <button
@@ -493,7 +481,7 @@ export default function AdvancedFilterPanel({
               {/* Section 1: Marca */}
               <div className="space-y-2.5">
                 <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-[#0E8388]" />
+                  <Layers className="w-4 h-4 text-[#D97706]" />
                   <span>Marca</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -504,14 +492,14 @@ export default function AdvancedFilterPanel({
                       onClick={() => onBrandChange(b.value)}
                       className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 flex items-center gap-1.5 ${
                         selectedBrand === b.value
-                          ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm'
+                          ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-sm font-black'
                           : 'bg-slate-50 text-slate-700 border-slate-200'
                       }`}
                     >
                       <span>{b.label}</span>
                       {typeof b.count === 'number' && (
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          selectedBrand === b.value ? 'bg-white/20 text-white' : 'bg-slate-200/70 text-slate-600'
+                          selectedBrand === b.value ? 'bg-white/20 text-[#F5BA13]' : 'bg-slate-200/70 text-slate-600'
                         }`}>
                           {b.count}
                         </span>
@@ -524,7 +512,7 @@ export default function AdvancedFilterPanel({
               {/* Section 2: Proteína */}
               <div className="space-y-2.5">
                 <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Dumbbell className="w-4 h-4 text-[#0E8388]" />
+                  <Dumbbell className="w-4 h-4 text-[#D97706]" />
                   <span>Proteína</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -535,15 +523,14 @@ export default function AdvancedFilterPanel({
                       onClick={() => onProteinChange(opt.value)}
                       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
                         proteinFilter === opt.value
-                          ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm'
+                          ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-sm font-black'
                           : 'bg-slate-50 text-slate-700 border-slate-200'
                       }`}
                     >
-                      {opt.emoji && <span>{opt.emoji}</span>}
                       <span>{opt.label}</span>
                       {typeof opt.count === 'number' && (
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          proteinFilter === opt.value ? 'bg-white/20 text-white' : 'bg-slate-200/70 text-slate-600'
+                          proteinFilter === opt.value ? 'bg-white/20 text-[#F5BA13]' : 'bg-slate-200/70 text-slate-600'
                         }`}>
                           {opt.count}
                         </span>
@@ -556,7 +543,7 @@ export default function AdvancedFilterPanel({
               {/* Section 3: Formato / Peso */}
               <div className="space-y-2.5">
                 <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Scale className="w-4 h-4 text-[#0E8388]" />
+                  <Scale className="w-4 h-4 text-[#D97706]" />
                   <span>Formato (Peso)</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -567,14 +554,14 @@ export default function AdvancedFilterPanel({
                       onClick={() => onWeightChange(opt.value)}
                       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
                         weightFilter === opt.value
-                          ? 'bg-[#0E8388] text-white font-black border-[#0E8388] shadow-sm'
+                          ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-sm font-black'
                           : 'bg-slate-50 text-slate-700 border-slate-200'
                       }`}
                     >
                       <span>{opt.label}</span>
                       {typeof opt.count === 'number' && (
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          weightFilter === opt.value ? 'bg-white/20 text-white' : 'bg-slate-200/70 text-slate-600'
+                          weightFilter === opt.value ? 'bg-white/20 text-[#F5BA13]' : 'bg-slate-200/70 text-slate-600'
                         }`}>
                           {opt.count}
                         </span>
@@ -587,7 +574,7 @@ export default function AdvancedFilterPanel({
               {/* Section 4: Tipo de Alimento */}
               <div className="space-y-2.5">
                 <label className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Bone className="w-4 h-4 text-[#0E8388]" />
+                  <Bone className="w-4 h-4 text-[#D97706]" />
                   <span>Tipo de Alimento</span>
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -598,15 +585,14 @@ export default function AdvancedFilterPanel({
                       onClick={() => onCategoryChange(opt.value)}
                       className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
                         categoryFilter === opt.value
-                          ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm'
+                          ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-sm font-black'
                           : 'bg-slate-50 text-slate-700 border-slate-200'
                       }`}
                     >
-                      {opt.emoji && <span>{opt.emoji}</span>}
                       <span>{opt.label}</span>
                       {typeof opt.count === 'number' && (
                         <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                          categoryFilter === opt.value ? 'bg-white/20 text-white' : 'bg-slate-200/70 text-slate-600'
+                          categoryFilter === opt.value ? 'bg-white/20 text-[#F5BA13]' : 'bg-slate-200/70 text-slate-600'
                         }`}>
                           {opt.count}
                         </span>
@@ -631,7 +617,7 @@ export default function AdvancedFilterPanel({
               <button
                 type="button"
                 onClick={() => setIsMobileDrawerOpen(false)}
-                className="flex-1 py-3.5 px-6 rounded-2xl bg-[#0E8388] text-white font-black text-xs shadow-lg shadow-[#0E8388]/25 cursor-pointer active:scale-95"
+                className="flex-1 py-3.5 px-6 rounded-2xl bg-[#F5BA13] text-[#1D1D1F] font-black text-xs shadow-lg shadow-[#F5BA13]/25 cursor-pointer active:scale-95"
               >
                 Ver {totalResultsCount} {totalResultsCount === 1 ? 'Producto' : 'Productos'}
               </button>

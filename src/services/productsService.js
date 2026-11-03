@@ -17,6 +17,32 @@ export function cleanIngredientName(str) {
     .trim();
 }
 
+let memoryCachedProducts = null;
+
+/**
+ * Obtiene los productos en caché de memoria o almacenamiento si ya fueron consultados previamente.
+ */
+export function getCachedProducts() {
+  if (memoryCachedProducts && Array.isArray(memoryCachedProducts) && memoryCachedProducts.length > 0) {
+    return memoryCachedProducts;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = sessionStorage.getItem('patitas_cached_products') || localStorage.getItem('patitas_cached_products');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          memoryCachedProducts = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignorar error de deserialización
+    }
+  }
+  return null;
+}
+
 export async function fetchProductsFromSupabase() {
   try {
     const { data, error } = await supabase
@@ -26,7 +52,7 @@ export async function fetchProductsFromSupabase() {
 
     if (error) {
       console.warn('Supabase products fetch failed, using local mock data:', error.message);
-      return PRODUCTS;
+      return memoryCachedProducts || PRODUCTS;
     }
 
     if (data && data.length > 0) {
@@ -79,12 +105,24 @@ export async function fetchProductsFromSupabase() {
         unitCostNeto: item.unit_cost_neto ?? item.unitCostNeto ?? 0,
         minStock: item.min_stock ?? item.minStock ?? 5,
       }));
+
+      memoryCachedProducts = normalized;
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('patitas_cached_products', JSON.stringify(normalized));
+          localStorage.setItem('patitas_cached_products', JSON.stringify(normalized));
+        } catch {
+          // Ignorar errores de quota en almacenamiento
+        }
+      }
+
+      return normalized;
     }
 
-    return PRODUCTS;
+    return memoryCachedProducts || PRODUCTS;
   } catch (err) {
     console.error('Error fetching products from Supabase:', err);
-    return PRODUCTS;
+    return memoryCachedProducts || PRODUCTS;
   }
 }
 

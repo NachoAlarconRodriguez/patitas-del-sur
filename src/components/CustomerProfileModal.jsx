@@ -8,8 +8,6 @@ import {
   X,
   Bell,
   ChevronDown,
-  Navigation,
-  Search,
 } from 'lucide-react';
 import { WhatsAppIcon } from './OfficialIcons';
 import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
@@ -100,6 +98,26 @@ export default function CustomerProfileModal({
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Cerrar con Escape (Apple HIG)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Bloquear scroll de fondo
+  useEffect(() => {
+    if (!isOpen) return;
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = origOverflow;
+    };
+  }, [isOpen]);
 
   // Sincronizar datos al abrir el modal
   useEffect(() => {
@@ -199,6 +217,12 @@ export default function CustomerProfileModal({
       notes: cleanNotes,
       delivery_reference: cleanNotes,
       deliveryReference: cleanNotes,
+      notifyWhatsapp: formData.notifyWhatsapp !== false,
+      notifyEmail: formData.notifyEmail !== false,
+      whatsappNotifications: formData.notifyWhatsapp !== false,
+      whatsapp_notifications: formData.notifyWhatsapp !== false,
+      emailNotifications: formData.notifyEmail !== false,
+      email_notifications: formData.notifyEmail !== false,
     };
 
     setIsSaving(true);
@@ -220,51 +244,56 @@ export default function CustomerProfileModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-[#1D1D1F]/50 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="customer-profile-modal-title"
     >
-      <div className="bg-white rounded-3xl w-full max-w-2xl sm:max-w-3xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-200 my-auto">
+      <div className="bg-white rounded-3xl w-full max-w-2xl sm:max-w-3xl max-h-[92dvh] flex flex-col shadow-[0_32px_70px_-20px_rgba(29,29,31,0.28)] border border-amber-500/20 overflow-hidden animate-in zoom-in-95 duration-200 my-auto relative">
         
-        {/* HEADER */}
-        <div className="bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-700 text-white p-4 sm:p-5 relative shrink-0">
+        {/* HEADER VIBRANTE EN COLOR PRINCIPAL PATITAS DEL SUR */}
+        <div className="bg-gradient-to-br from-[#F5BA13] via-[#FBBF24] to-[#F59E0B] text-[#1D1D1F] p-4 sm:p-5 relative shrink-0 border-b border-amber-400/40 overflow-hidden">
+          {/* Acentos de luz sutil para mayor profundidad visual */}
+          <div className="absolute -top-12 -right-12 w-44 h-44 rounded-full bg-white/30 blur-2xl pointer-events-none" />
+          <div className="absolute -bottom-8 -left-8 w-36 h-36 rounded-full bg-amber-600/15 blur-xl pointer-events-none" />
+
           <div className="flex items-center justify-between gap-3 relative z-10">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white border border-white/30 shadow-xs shrink-0">
-                <User className="w-5 h-5" />
+              <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shadow-md shadow-black/10 shrink-0 border border-black/10">
+                <User className="w-5 h-5 text-[#F5BA13]" />
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-200 bg-white/15 px-2 py-0.5 rounded-full border border-white/20">
-                    Cuenta Cliente
-                  </span>
+                <div className="flex items-center gap-2">
+                  <h2 id="customer-profile-modal-title" className="text-lg sm:text-xl font-black text-[#1D1D1F] font-heading leading-tight truncate">
+                    Mi Perfil
+                  </h2>
                   {profileData?.memberSince && (
-                    <span className="text-[10px] text-white/70 font-semibold hidden sm:inline">
+                    <span className="text-[10px] text-[#1D1D1F]/70 font-semibold bg-black/5 px-2 py-0.5 rounded-full hidden sm:inline">
                       • Miembro desde {profileData.memberSince}
                     </span>
                   )}
                 </div>
-                <h2 className="text-base sm:text-lg font-black text-white leading-tight truncate pt-0.5">
-                  Mi Perfil & Datos Personales
-                </h2>
               </div>
             </div>
 
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all cursor-pointer shrink-0 border border-white/20 active:scale-95"
+              className="w-8 h-8 rounded-full bg-[#1D1D1F]/10 hover:bg-[#1D1D1F]/20 text-[#1D1D1F] flex items-center justify-center transition-all cursor-pointer shrink-0 border border-[#1D1D1F]/15 active:scale-95"
               title="Cerrar ventana"
+              aria-label="Cerrar"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>
 
-          <p className="text-xs text-emerald-100 font-medium pt-2 relative z-10">
+          <p className="text-xs text-[#1D1D1F]/80 font-medium pt-2 relative z-10">
             Mantén tus datos al día para que tus despachos y recordatorios lleguen sin demoras.
           </p>
         </div>
 
         {/* BODY (SCROLLABLE FORM) */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto p-4 sm:p-5 space-y-4 text-xs font-semibold">
+        <form onSubmit={handleSubmit} className="overflow-y-auto p-4 sm:p-6 space-y-4 text-xs font-semibold">
           
           {errorMsg && (
             <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2 animate-in fade-in">
@@ -276,15 +305,15 @@ export default function CustomerProfileModal({
           {/* SECCIÓN 1: IDENTIFICACIÓN Y CONTACTO */}
           <div className="space-y-3">
             <div className="flex items-center gap-1.5 text-slate-800 font-black text-xs uppercase tracking-wider px-1">
-              <User className="w-3.5 h-3.5 text-[#0E8388]" />
+              <User className="w-3.5 h-3.5 text-amber-600" />
               <span>Datos de Contacto</span>
             </div>
 
             <div className="space-y-3">
               {/* Nombre completo */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 block">
-                  Nombre y Apellidos <span className="text-rose-500">*</span>
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Nombre y Apellidos <span className="text-amber-600 font-bold">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -293,16 +322,16 @@ export default function CustomerProfileModal({
                     required
                     value={formData.name}
                     onChange={(e) => handleChange('name', e.target.value)}
-                    placeholder="Ej. Felipe Soto"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
+                    placeholder="Ej. Bárbara Frías"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all"
                   />
                 </div>
               </div>
 
-              {/* Teléfono / WhatsApp con Prefijo Fijo (+56) y Selector Desplegable a Medida */}
+              {/* Teléfono / WhatsApp con Selector Desplegable */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 block">
-                  Teléfono / WhatsApp <span className="text-rose-500">*</span>
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Teléfono / WhatsApp <span className="text-amber-600 font-bold">*</span>
                 </label>
                 
                 <div className="flex items-center gap-2">
@@ -313,14 +342,14 @@ export default function CustomerProfileModal({
                       onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
                       className={`h-10 px-2.5 sm:px-3 rounded-xl border flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
                         isCountryDropdownOpen
-                          ? 'bg-white border-[#0E8388] ring-2 ring-[#0E8388]/20'
+                          ? 'bg-white border-[#F5BA13] ring-2 ring-[#F5BA13]/25'
                           : 'bg-slate-50/80 hover:bg-white border-slate-200 text-slate-800'
                       }`}
                       title="Cambiar código de país"
                     >
                       <span className="text-base leading-none">{selectedCountry.flag}</span>
                       <span className="text-xs font-black text-slate-800">{selectedCountry.code}</span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isCountryDropdownOpen ? 'rotate-180 text-[#0E8388]' : ''}`} />
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isCountryDropdownOpen ? 'rotate-180 text-amber-600' : ''}`} />
                     </button>
 
                     {/* Menú Desplegable Flotante Elegante */}
@@ -340,7 +369,7 @@ export default function CustomerProfileModal({
                               }}
                               className={`px-2.5 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-between text-xs ${
                                 isSelected
-                                  ? 'bg-[#0E8388]/10 text-[#0A3E40] font-black'
+                                  ? 'bg-amber-500/10 text-amber-950 font-black'
                                   : 'hover:bg-slate-50 text-slate-700'
                               }`}
                             >
@@ -348,7 +377,7 @@ export default function CustomerProfileModal({
                                 <span className="text-base">{country.flag}</span>
                                 <span className="font-semibold text-slate-800">{country.country}</span>
                               </div>
-                              <span className="font-black text-[11px] text-[#0E8388]">{country.code}</span>
+                              <span className="font-black text-[11px] text-amber-700">{country.code}</span>
                             </div>
                           );
                         })}
@@ -371,20 +400,20 @@ export default function CustomerProfileModal({
                         setPhoneDigits(selectedCountry.code === '+56' ? formatChileanPhone(val) : val);
                         if (errorMsg) setErrorMsg('');
                       }}
-                      placeholder={selectedCountry.code === '+56' ? "Ej. 9 5333 2492" : "Ej. 1234 5678"}
-                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-mono font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
+                      placeholder={selectedCountry.code === '+56' ? "Ej. 9 8923 4733" : "Ej. 1234 5678"}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-mono font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all"
                     />
                   </div>
                 </div>
 
-                <span className="text-[10px] text-slate-400 block pl-1">
-                  Código fijo 🇨🇱 <strong>{selectedCountry.code}</strong> para avisos de entrega y despachos
+                <span className="text-[10.5px] text-slate-400 block pl-1">
+                  Código fijo <strong>{selectedCountry.code}</strong> para avisos de entrega y despachos prioritarios
                 </span>
               </div>
 
               {/* Correo Electrónico */}
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 block">
+                <label className="text-[11px] font-bold text-slate-700 block">
                   Correo Electrónico
                 </label>
                 <div className="relative">
@@ -394,7 +423,7 @@ export default function CustomerProfileModal({
                     value={formData.email}
                     onChange={(e) => handleChange('email', e.target.value)}
                     placeholder="tu-correo@ejemplo.com"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all"
                   />
                 </div>
               </div>
@@ -403,24 +432,25 @@ export default function CustomerProfileModal({
 
           <div className="border-t border-slate-100 my-1" />
 
-          {/* SECCIÓN 2: DIRECCIÓN Y DESPACHO (GOOGLE MAPS RESTRINGIDO A REGIÓN DE LOS LAGOS) */}
+          {/* SECCIÓN 2: DIRECCIÓN Y DESPACHO (GOOGLE MAPS) */}
           <div className="space-y-3">
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-1.5 text-slate-800 font-black text-xs uppercase tracking-wider">
-                <MapPin className="w-3.5 h-3.5 text-[#0E8388]" />
+                <MapPin className="w-3.5 h-3.5 text-amber-600" />
                 <span>Dirección Habitual de Despacho</span>
               </div>
-              <span className="text-[9.5px] font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full border border-emerald-300">
-                📍 Región de Los Lagos
+              <span className="text-[10px] font-bold text-amber-900 bg-amber-100/90 px-2.5 py-0.5 rounded-full border border-amber-300/80 flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-amber-600" />
+                <span>Región de Los Lagos</span>
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               
-              {/* Campo Calle y Número con Autocomplete de Google Maps (Ancho completo para ver sugerencias íntegras) */}
+              {/* Campo Calle y Número con Autocomplete de Google Maps */}
               <div className="space-y-1 sm:col-span-3">
-                <label className="text-[11px] font-bold text-slate-600 block">
-                  Calle y Número <span className="text-rose-500">*</span>
+                <label className="text-[11px] font-bold text-slate-700 block">
+                  Calle y Número <span className="text-amber-600 font-bold">*</span>
                 </label>
                 
                 <GoogleAddressAutocomplete
@@ -445,14 +475,14 @@ export default function CustomerProfileModal({
                       city: autoCity || prev.city,
                     }));
                   }}
-                  placeholder="Escribe tu calle y número (ej. Av. Los Colonos 1420...)"
+                  placeholder="Escribe tu calle y número (ej. espacio frutillar parcela 110...)"
                   required
                 />
               </div>
 
               {/* Depto / Casa */}
               <div className="space-y-1 sm:col-span-1">
-                <label className="text-[11px] font-bold text-slate-600 block">
+                <label className="text-[11px] font-bold text-slate-700 block">
                   Depto / Block / Casa
                 </label>
                 <div className="relative">
@@ -461,20 +491,20 @@ export default function CustomerProfileModal({
                     type="text"
                     value={formData.dept || ''}
                     onChange={(e) => handleChange('dept', e.target.value)}
-                    placeholder="Ej. Depto 402"
-                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all"
+                    placeholder="Ej. Parcela 115"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all"
                   />
                 </div>
               </div>
 
-              {/* Comuna / Ciudad (Sincronizada automáticamente con Google Maps) */}
+              {/* Comuna / Ciudad */}
               <div className="space-y-1 sm:col-span-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-bold text-slate-600 block">
+                  <label className="text-[11px] font-bold text-slate-700 block">
                     Comuna / Ciudad (Zona de Despacho)
                   </label>
                   {formData.city && (
-                    <span className="text-[9.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                    <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-md flex items-center gap-1">
                       <Check className="w-3 h-3 text-emerald-600" /> Auto-detectada
                     </span>
                   )}
@@ -483,7 +513,7 @@ export default function CustomerProfileModal({
                   <select
                     value={formData.city || ''}
                     onChange={(e) => handleChange('city', e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all cursor-pointer"
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all cursor-pointer"
                   >
                     <option value="">Selecciona tu comuna...</option>
                     {ALLOWED_COMMUNES.map((comuna) => (
@@ -497,7 +527,7 @@ export default function CustomerProfileModal({
 
               {/* Instrucciones de Entrega */}
               <div className="space-y-1 sm:col-span-3">
-                <label className="text-[11px] font-bold text-slate-600 block">
+                <label className="text-[11px] font-bold text-slate-700 block">
                   Indicaciones para el Repartidor (Opcional)
                 </label>
                 <div className="relative">
@@ -506,7 +536,7 @@ export default function CustomerProfileModal({
                     value={formData.notes || ''}
                     onChange={(e) => handleChange('notes', e.target.value)}
                     placeholder="Ej. Dejar en conserjería si no contesto, timbre blanco portón derecho..."
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all resize-none"
+                    className="w-full p-2.5 rounded-xl border border-slate-200/90 bg-slate-50/50 hover:border-slate-300 text-slate-900 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all resize-none"
                   />
                 </div>
               </div>
@@ -516,18 +546,18 @@ export default function CustomerProfileModal({
           <div className="border-t border-slate-100 my-1" />
 
           {/* SECCIÓN 3: PREFERENCIAS DE RECORDATORIOS */}
-          <div className="space-y-2.5 bg-slate-50/70 p-3 rounded-2xl border border-slate-200/80">
+          <div className="space-y-2.5 bg-amber-50/30 p-3.5 rounded-2xl border border-amber-200/60">
             <div className="flex items-center gap-1.5 text-slate-800 font-black text-xs">
-              <Bell className="w-3.5 h-3.5 text-[#0E8388]" />
+              <Bell className="w-3.5 h-3.5 text-amber-600" />
               <span>Notificaciones Automáticas</span>
             </div>
 
-            <label className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white border border-slate-200/60 cursor-pointer hover:bg-slate-50 transition-colors">
+            <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-amber-200/50 cursor-pointer hover:border-amber-300 transition-colors">
               <div className="min-w-0">
                 <span className="text-xs font-bold text-slate-800 block">
                   Avisos de reposición por WhatsApp
                 </span>
-                <span className="text-[10px] text-slate-500 font-medium">
+                <span className="text-[10.5px] text-slate-500 font-medium">
                   Te avisamos cuando queden pocos días de alimento para tu mascota.
                 </span>
               </div>
@@ -535,16 +565,16 @@ export default function CustomerProfileModal({
                 type="checkbox"
                 checked={formData.notifyWhatsapp}
                 onChange={(e) => handleChange('notifyWhatsapp', e.target.checked)}
-                className="w-4 h-4 rounded text-[#0E8388] focus:ring-[#0E8388] cursor-pointer"
+                className="w-4 h-4 rounded text-amber-600 focus:ring-[#F5BA13] accent-[#F5BA13] cursor-pointer"
               />
             </label>
 
-            <label className="flex items-center justify-between gap-3 p-2 rounded-xl bg-white border border-slate-200/60 cursor-pointer hover:bg-slate-50 transition-colors">
+            <label className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-amber-200/50 cursor-pointer hover:border-amber-300 transition-colors">
               <div className="min-w-0">
                 <span className="text-xs font-bold text-slate-800 block">
                   Recordatorios de antiparasitario y vacunas
                 </span>
-                <span className="text-[10px] text-slate-500 font-medium">
+                <span className="text-[10.5px] text-slate-500 font-medium">
                   Notificaciones cuando corresponda la próxima dosis o control.
                 </span>
               </div>
@@ -552,17 +582,17 @@ export default function CustomerProfileModal({
                 type="checkbox"
                 checked={formData.notifyEmail}
                 onChange={(e) => handleChange('notifyEmail', e.target.checked)}
-                className="w-4 h-4 rounded text-[#0E8388] focus:ring-[#0E8388] cursor-pointer"
+                className="w-4 h-4 rounded text-amber-600 focus:ring-[#F5BA13] accent-[#F5BA13] cursor-pointer"
               />
             </label>
           </div>
 
           {/* FOOTER ACTIONS */}
-          <div className="pt-2 flex items-center justify-end gap-2">
+          <div className="pt-2 flex items-center justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-all cursor-pointer"
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition-all cursor-pointer active:scale-95"
             >
               Cancelar
             </button>
@@ -570,16 +600,16 @@ export default function CustomerProfileModal({
             <button
               type="submit"
               disabled={isSaving}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-teal-600 hover:opacity-95 text-white font-extrabold text-xs shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#F5BA13] hover:bg-[#e2aa10] text-[#1D1D1F] font-black text-xs shadow-md shadow-[#F5BA13]/25 transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {isSaving ? (
                 <>
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="w-3.5 h-3.5 border-2 border-[#1D1D1F]/30 border-t-[#1D1D1F] rounded-full animate-spin" />
                   <span>Guardando...</span>
                 </>
               ) : showSuccess ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-300 stroke-[3]" />
+                  <Check className="w-4 h-4 text-emerald-800 stroke-[3]" />
                   <span>¡Guardado con éxito!</span>
                 </>
               ) : (

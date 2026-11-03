@@ -8,7 +8,7 @@ export default function BrandFilterBar({ selectedBrand, onSelectBrand, productCo
       
       {/* Header Label */}
       <div className="flex items-center gap-2 mb-3">
-        <Layers className="w-4 h-4 text-[#0E8388]" />
+        <Layers className="w-4 h-4 text-[#D97706]" />
         <span className="text-xs font-black uppercase tracking-wider text-slate-700">
           Nuestras Líneas & Marcas Patagónicas:
         </span>
@@ -20,13 +20,13 @@ export default function BrandFilterBar({ selectedBrand, onSelectBrand, productCo
         {/* All Brands Tab */}
         <button
           onClick={() => onSelectBrand('Todas')}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all shrink-0 border ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all shrink-0 border cursor-pointer active:scale-95 ${
             selectedBrand === 'Todas'
-              ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-lg shadow-[#0A3E40]/20 scale-105'
-              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+              ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-lg shadow-black/20 scale-105'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50/60'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+          <Sparkles className="w-3.5 h-3.5 text-[#F5BA13]" />
           <span>Todas las Marcas</span>
         </button>
 
@@ -39,16 +39,16 @@ export default function BrandFilterBar({ selectedBrand, onSelectBrand, productCo
             <button
               key={brand.id}
               onClick={() => onSelectBrand(brand.name)}
-              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all shrink-0 border ${
+              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-2xl text-xs font-extrabold transition-all shrink-0 border cursor-pointer active:scale-95 ${
                 isSelected
-                  ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-lg shadow-[#0E8388]/20 scale-105'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-[#0E8388]/40'
+                  ? 'bg-[#F5BA13] text-[#1D1D1F] border-[#F5BA13] shadow-lg shadow-[#F5BA13]/25 scale-105'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-amber-50/60 hover:border-[#F5BA13]/40'
               }`}
             >
               <span className="text-base">{brand.logo}</span>
               <div className="text-left">
                 <div>{brand.name}</div>
-                <div className={`text-[10px] font-normal ${isSelected ? 'text-emerald-200' : 'text-slate-400'}`}>
+                <div className={`text-[10px] font-normal ${isSelected ? 'text-[#78350F] font-bold' : 'text-slate-400'}`}>
                   {brand.badge} ({count})
                 </div>
               </div>

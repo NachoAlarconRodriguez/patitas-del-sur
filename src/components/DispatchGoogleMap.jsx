@@ -253,6 +253,14 @@ export default function DispatchGoogleMap({
                    </div>`
                 : ''
             }
+            ${
+              zone.hasSpecialDayPricing && zone.specialDayFee
+                ? `<div style="font-size: 10px; color: #b45309; margin-top: 3px; font-weight: 700;">
+                     Tarifa especial (${(zone.specialDays || []).length > 0 ? (zone.specialDays || []).map(d => ({6:'Sáb',0:'Dom',1:'Lun',2:'Mar',3:'Mié',4:'Jue',5:'Vie'}[d] || d)).join('/') : 'Especial'}): ${formatCLP(zone.specialDayFee)}
+                     ${zone.specialDayNoFreeShipping ? '<span style="color:#b91c1c;"> (sin envío gratis)</span>' : ''}
+                   </div>`
+                : ''
+            }
           </div>
         `,
       });

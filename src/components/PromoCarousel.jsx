@@ -1,51 +1,85 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Tag, ArrowRight, Sparkles, Check, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, ArrowRight, Check, ChevronDown } from 'lucide-react';
 import { fetchProductsFromSupabase } from '../services/productsService';
-import { PRODUCTS } from '../data/mockData';
-import { isProductOutOfStock } from '../utils/productVariants';
 
-// Custom Vector Paw Print Icon for indicators
-function PawPrintIcon({ active = false, activeColor = '#10B981' }) {
+// Vector Paw Print Icon for discrete indicators
+function PawIndicator({ active = false, activeColor = '#10B981', onClick, label }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={`w-5 h-5 transition-all duration-300 cursor-pointer ${
-        active
-          ? 'scale-125 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]'
-          : 'opacity-40 hover:opacity-100 hover:scale-110'
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-current={active ? 'true' : undefined}
+      className={`p-1.5 rounded-full transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/60 ${
+        active ? 'scale-125 drop-shadow-[0_0_8px_rgba(255,255,255,0.7)]' : 'opacity-40 hover:opacity-100 hover:scale-110'
       }`}
-      fill={active ? activeColor : '#0F383A'}
     >
-      {/* Main Bottom Pad */}
-      <ellipse cx="12" cy="16" rx="4.5" ry="3.5" />
-      {/* 4 Top Toes */}
-      <circle cx="6.5" cy="11.5" r="2" />
-      <circle cx="10" cy="8.5" r="2" />
-      <circle cx="14" cy="8.5" r="2" />
-      <circle cx="17.5" cy="11.5" r="2" />
+      <svg
+        viewBox="0 0 24 24"
+        className="w-5 h-5 transition-transform duration-300"
+        fill={active ? activeColor : '#FFFFFF'}
+      >
+        <ellipse cx="12" cy="16" rx="4.5" ry="3.5" />
+        <circle cx="6.5" cy="11.5" r="2" />
+        <circle cx="10" cy="8.5" r="2" />
+        <circle cx="14" cy="8.5" r="2" />
+        <circle cx="17.5" cy="11.5" r="2" />
+      </svg>
+    </button>
+  );
+}
+
+// Huella de Perro (Dog Paw Print)
+function DogPawPrint({ className = '' }) {
+  return (
+    <svg viewBox="0 0 100 100" className={className} fill="currentColor" aria-hidden="true">
+      {/* 4 dedos superiores */}
+      <ellipse cx="26" cy="30" rx="8" ry="12" transform="rotate(-18 26 30)" />
+      <ellipse cx="42" cy="18" rx="8.5" ry="13" transform="rotate(-5 42 18)" />
+      <ellipse cx="58" cy="18" rx="8.5" ry="13" transform="rotate(5 58 18)" />
+      <ellipse cx="74" cy="30" rx="8" ry="12" transform="rotate(18 74 30)" />
+      {/* Almohadilla central de perro */}
+      <path d="M50 42 C40 42, 28 47, 24 58 C20 68, 25 79, 36 82 C43 84, 47 80, 50 82 C53 80, 57 84, 64 82 C75 79, 80 68, 76 58 C72 47, 60 42, 50 42 Z" />
     </svg>
   );
 }
 
-// Fallback image resolver matching product category and name
-function resolveProductImage(prod) {
-  if (prod.image && (prod.image.startsWith('/') || prod.image.startsWith('http'))) {
-    return prod.image;
-  }
-  if (Array.isArray(prod.images) && prod.images.length > 0 && typeof prod.images[0] === 'string') {
-    return prod.images[0];
-  }
-  const lower = (prod.name || '').toLowerCase();
-  if (lower.includes('pollo') || lower.includes('chicken')) return '/images/bravery_chicken.jpg';
-  if (lower.includes('cordero') || lower.includes('lamb')) return '/images/bravery_lamb.jpg';
-  if (lower.includes('salmón') || lower.includes('salmon') || lower.includes('bravery')) return '/images/bravery_salmon.jpg';
-  if (lower.includes('trucha') || lower.includes('patagonia') || lower.includes('gato')) return '/images/cat_food_tuna.png';
-  if (lower.includes('urinary') || lower.includes('dr. pet') || lower.includes('dr pet')) return '/images/cat_food_tuna.png';
-  if (lower.includes('ciervo') || lower.includes('deshidratado')) return '/images/dog_food_ingredients.png';
-  if (lower.includes('hueso') || lower.includes('recreativo')) return '/images/dog_kibble_detail.png';
-  if (lower.includes('omega') || lower.includes('suplemento')) return '/images/dog_food_salmon.png';
-  return (prod.petType || prod.pet_type) === 'gatos' ? '/images/cat_food_tuna.png' : '/images/bravery_salmon.jpg';
+// Huella de Gato (Cat Paw Print)
+function CatPawPrint({ className = '' }) {
+  return (
+    <svg viewBox="0 0 100 100" className={className} fill="currentColor" aria-hidden="true">
+      {/* 4 dedos redondeados */}
+      <circle cx="24" cy="32" r="9" />
+      <circle cx="41" cy="19" r="9.5" />
+      <circle cx="59" cy="19" r="9.5" />
+      <circle cx="76" cy="32" r="9" />
+      {/* Almohadilla felina con 3 lóbulos suaves en la base */}
+      <path d="M50 44 C38 44, 27 51, 25 63 C23 73, 29 82, 38 82 C42 82, 46 76, 50 76 C54 76, 58 82, 62 82 C71 82, 77 73, 75 63 C73 51, 62 44, 50 44 Z" />
+    </svg>
+  );
+}
+
+// Huellas decorativas de perro y gato en el fondo de la vitrina (tono uniforme que no altera el color de fondo)
+function DecorativeShapes() {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-5" aria-hidden="true">
+      {/* Huella 1 - Perro (Izquierda flotante) */}
+      <div className="absolute top-[18%] left-[4%] sm:left-[8%] lg:left-[10%] text-white/10 transition-all duration-700">
+        <DogPawPrint className="w-36 h-36 sm:w-48 sm:h-48 -rotate-12" />
+      </div>
+
+      {/* Huella 2 - Gato (Superior Derecha) */}
+      <div className="absolute top-[8%] right-[6%] sm:right-[12%] lg:right-[14%] text-white/10 transition-all duration-700">
+        <CatPawPrint className="w-28 h-28 sm:w-36 sm:h-36 rotate-15" />
+      </div>
+
+      {/* Huella 3 - Perro (Inferior Derecha) */}
+      <div className="absolute bottom-[10%] right-[5%] sm:right-[9%] lg:right-[11%] text-white/10 transition-all duration-700">
+        <DogPawPrint className="w-32 h-32 sm:w-44 sm:h-44 rotate-25" />
+      </div>
+    </div>
+  );
 }
 
 export default function PromoCarousel({
@@ -53,204 +87,372 @@ export default function PromoCarousel({
   onAddToCart,
   onSelectProduct,
   products = null,
+  fullWidth = false,
+  onColorChange,
+  showScrollIndicator = false,
 }) {
   const navigate = useNavigate();
+
+  // Active scene indices for double-buffered layer retention (no gap/flash)
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [touchStartX, setTouchStartX] = useState(0);
+  const [previousSlide, setPreviousSlide] = useState(null);
+
+  // Reset slide when switching pet category (dogs / cats)
+  useEffect(() => {
+    setCurrentSlide(0);
+    setPreviousSlide(null);
+  }, [petType]);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
   const [justAddedId, setJustAddedId] = useState(null);
 
-  // Real inventory products and selected carousel IDs from localStorage
-  const [inventoryProducts, setInventoryProducts] = useState(PRODUCTS);
-  const [carouselIds, setCarouselIds] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  // Queue to prevent chaotic transitions when user clicks rapidly
+  const queuedIndexRef = useRef(null);
+  const transitionTimerRef = useRef(null);
+  const retainTimerRef = useRef(null);
 
-  const loadRealProducts = useCallback(async () => {
-    try {
-      const items = await fetchProductsFromSupabase();
-      if (items && items.length > 0) {
-        setInventoryProducts(items);
-      }
-      const savedIds = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
-      setCarouselIds(savedIds);
-    } catch (err) {
-      console.error('Error loading inventory products for carousel:', err);
-    }
+  // Touch gesture coordinates
+  const touchStartRef = useRef({ x: 0, y: 0 });
+
+  // Real inventory products from Supabase
+  const [inventoryProducts, setInventoryProducts] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchProductsFromSupabase()
+      .then((items) => {
+        if (isMounted && items && items.length > 0) {
+          setInventoryProducts(items);
+        }
+      })
+      .catch((err) => console.error('Error fetching promo products:', err));
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  useEffect(() => {
-    loadRealProducts();
-    const handleSync = () => loadRealProducts();
-    window.addEventListener('patitas_products_updated', handleSync);
-    window.addEventListener('storage', handleSync);
-    return () => {
-      window.removeEventListener('patitas_products_updated', handleSync);
-      window.removeEventListener('storage', handleSync);
-    };
-  }, [loadRealProducts]);
-
-  // Combine prop products with loaded inventory
-  const sourceProducts = useMemo(() => {
-    if (products && products.length > 0) return products;
-    return inventoryProducts;
-  }, [products, inventoryProducts]);
-
-  // Generate dynamic slides from real products
+  // Pre-configured Luxury Coordinated Variants according to the user specification
   const promos = useMemo(() => {
     const isDog = petType === 'perros';
-    const petTarget = isDog ? 'perros' : 'gatos';
 
-    // Filter by pet type, ensure active, not paused, and strictly IN STOCK (> 0)
-    const candidates = sourceProducts.filter((p) => {
-      const type = (p.petType || p.pet_type || 'perros').toLowerCase();
-      const matchesPet = type === petTarget || type === 'ambos';
-      const isNotPaused = !p.isPaused && !p.is_paused;
-      const isActive = p.isActive !== false && p.is_active !== false;
-
-      // Check stock strictly across simple products and variants
-      const outOfStock =
-        isProductOutOfStock(p) ||
-        p.isOutOfStock ||
-        (typeof p.stock === 'number' && p.stock <= 0) ||
-        (Array.isArray(p.variants) &&
-          p.variants.length > 0 &&
-          p.variants.every((v) => (typeof v.stock === 'number' ? v.stock : 0) <= 0 || v.isPaused));
-
-      return matchesPet && isNotPaused && isActive && !outOfStock;
-    });
-
-    // Pick products explicitly selected for carousel in the admin panel (only among in-stock candidates!)
-    let selected = candidates.filter((p) => {
-      return (
-        carouselIds.includes(p.id) ||
-        carouselIds.includes(p.sku) ||
-        carouselIds.includes(p.name) ||
-        Boolean(p.inCarousel || p.in_carousel)
+    if (isDog) {
+      const realFreshwater = inventoryProducts.find(
+        (p) => (p.name || '').toLowerCase().includes('freshwater') || p.id === 'PROD-15'
       );
-    });
+      const realLightFit = inventoryProducts.find(
+        (p) => (p.name || '').toLowerCase().includes('light & fit') || (p.name || '').toLowerCase().includes('light') || p.id === 'PROD-18'
+      );
+      const realPoultry = inventoryProducts.find(
+        (p) => (p.name || '').toLowerCase().includes('poultry') || p.id === 'PROD-14'
+      );
 
-    // If none are explicitly selected yet, default to first 3-4 real in-stock products of that pet type
-    if (selected.length === 0) {
-      selected = candidates.slice(0, 4);
+      return [
+        {
+          id: 'dog-freshwater',
+          rawProduct: realFreshwater || {
+            id: 'PROD-15',
+            name: 'Acana Freshwater Fish Recipe',
+            price: 75000,
+            originalPrice: 86250,
+            format: '11,35 kg',
+            petType: 'perros',
+          },
+          productId: realFreshwater ? realFreshwater.id : 'PROD-15',
+          brand: 'ACANA',
+          oversizedWord: 'FRESHWATER',
+          badge: 'NUTRICIÓN HOLÍSTICA',
+          title: 'Acana Freshwater Fish',
+          subheading: 'Trucha arcoíris, bagre azul & perca de agua dulce',
+          format: '11,35 kg & 2 kg',
+          price: realFreshwater ? realFreshwater.price : 75000,
+          originalPrice: realFreshwater ? realFreshwater.originalPrice || 86250 : 86250,
+          productImg: '/images/acana_freshwater_fish.png',
+          // Coordinated Color Pair
+          bgColor: '#244F46',       // Deep Forest Sage
+          inkColor: '#102722',      // Deep forest ink behind product
+          accentColor: '#10B981',   // Emerald
+          btnGradient: 'from-[#0E8388] to-[#10B981]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#10B981] text-slate-950',
+        },
+        {
+          id: 'dog-light-fit',
+          rawProduct: realLightFit || {
+            id: 'PROD-18',
+            name: 'Acana Light & Fit Recipe',
+            price: 75000,
+            originalPrice: 86250,
+            format: '11,35 kg',
+            petType: 'perros',
+          },
+          productId: realLightFit ? realLightFit.id : 'PROD-18',
+          brand: 'ACANA',
+          oversizedWord: 'LIGHT & FIT',
+          badge: 'CONTROL DE PESO',
+          title: 'Acana Light & Fit',
+          subheading: 'Pollo de corral, pavo & platija silvestre',
+          format: '11,35 kg & 2 kg',
+          price: realLightFit ? realLightFit.price : 75000,
+          originalPrice: realLightFit ? realLightFit.originalPrice || 86250 : 86250,
+          productImg: '/images/acana_light_fit.png',
+          // Coordinated Color Pair
+          bgColor: '#33414D',       // Cool Slate & Charcoal
+          inkColor: '#171E24',      // Charcoal ink behind product
+          accentColor: '#38BDF8',   // Sky Cyan
+          btnGradient: 'from-[#0284C7] to-[#0EA5E9]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#38BDF8] text-slate-950',
+        },
+        {
+          id: 'dog-poultry',
+          rawProduct: realPoultry || {
+            id: 'PROD-14',
+            name: 'Acana Free-Run Poultry Recipe',
+            price: 73000,
+            originalPrice: 83900,
+            format: '11,35 kg',
+            petType: 'perros',
+          },
+          productId: realPoultry ? realPoultry.id : 'PROD-14',
+          brand: 'ACANA',
+          oversizedWord: 'POULTRY',
+          badge: 'AVES DE CORRAL',
+          title: 'Acana Free-Run Poultry',
+          subheading: 'Pollo fresco de granja, pavo & huevos camperos',
+          format: '11,35 kg & 2 kg',
+          price: realPoultry ? realPoultry.price : 73000,
+          originalPrice: realPoultry ? realPoultry.originalPrice || 83900 : 83900,
+          productImg: '/images/acana_poultry.png',
+          // Coordinated Color Pair
+          bgColor: '#6B3E19',       // Warm Roasted Honey & Amber
+          inkColor: '#361E0B',      // Deep roasted amber ink
+          accentColor: '#F59E0B',   // Warm Amber
+          btnGradient: 'from-[#D97706] to-[#F59E0B]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#F59E0B] text-slate-950',
+        },
+      ];
+    } else {
+      // Felinos (Gatos) Coordinated Variants
+      const realCat1 = inventoryProducts.find(
+        (p) => (p.petType === 'gatos' || p.pet_type === 'gatos') && p.id === 'PROD-07'
+      );
+
+      return [
+        {
+          id: 'cat-salmon',
+          rawProduct: realCat1 || {
+            id: 'PROD-07',
+            name: 'Feline Choice Salmon & Sweet Potato',
+            price: 34000,
+            originalPrice: 39900,
+            format: '3 kg',
+            petType: 'gatos',
+          },
+          productId: realCat1 ? realCat1.id : 'PROD-07',
+          brand: 'FELINE',
+          oversizedWord: 'SALMÓN',
+          badge: 'GRAIN FREE FELINO',
+          title: 'Salmon & Sweet Potato',
+          subheading: 'Salmón fresco patagónico & camote digestivo',
+          format: '3 kg & 7 kg',
+          price: 34000,
+          originalPrice: 39900,
+          productImg: '/images/cat_salmon_bag.png',
+          // Coordinated Color Pair
+          bgColor: '#254439',       // Eucalyptus & Deep Mint
+          inkColor: '#0E1C17',      // Deep green ink
+          accentColor: '#10B981',   // Emerald
+          btnGradient: 'from-[#059669] to-[#10B981]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#10B981] text-slate-950',
+        },
+        {
+          id: 'cat-poultry',
+          rawProduct: realCat1 || {
+            id: 'PROD-07',
+            name: 'Feline Nourish Free-Run Poultry',
+            price: 32000,
+            originalPrice: 37500,
+            format: '2 kg',
+            petType: 'gatos',
+          },
+          productId: realCat1 ? realCat1.id : 'PROD-07',
+          brand: 'NOURISH',
+          oversizedWord: 'POULTRY',
+          badge: 'RECETA CAMPERA',
+          title: 'Free-Run Poultry Blend',
+          subheading: 'Pollo de campo criado en libertad & pavo noble',
+          format: '2 kg & 5 kg',
+          price: 32000,
+          originalPrice: 37500,
+          productImg: '/images/cat_poultry_bag.png',
+          // Coordinated Color Pair
+          bgColor: '#4A3B2C',       // Roasted Chestnut & Sand
+          inkColor: '#201811',      // Espresso ink
+          accentColor: '#F59E0B',   // Warm Amber
+          btnGradient: 'from-[#C86D39] to-[#D97706]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#F59E0B] text-slate-950',
+        },
+        {
+          id: 'cat-ocean',
+          rawProduct: realCat1 || {
+            id: 'PROD-07',
+            name: "Ocean's Harvest Fish & Cranberry",
+            price: 30000,
+            originalPrice: 35000,
+            format: '2 kg',
+            petType: 'gatos',
+          },
+          productId: realCat1 ? realCat1.id : 'PROD-07',
+          brand: "OCEAN'S",
+          oversizedWord: 'OCEAN',
+          badge: 'CUIDADO URINARIO',
+          title: 'Fish & Cranberry Feast',
+          subheading: 'Pescados azules silvestres & arándanos rojos',
+          format: '2 kg & 4.4 lb',
+          price: 30000,
+          originalPrice: 35000,
+          productImg: '/images/cat_ocean_bag.png',
+          // Coordinated Color Pair
+          bgColor: '#1D354D',       // Fjord Mist & Ocean Navy
+          inkColor: '#0A1521',      // Deep abyss ink
+          accentColor: '#38BDF8',   // Sky Cyan
+          btnGradient: 'from-[#0284C7] to-[#38BDF8]',
+          textColor: '#FFFFFF',
+          badgeBg: 'bg-[#38BDF8] text-slate-950',
+        },
+      ];
     }
+  }, [petType, inventoryProducts]);
 
-    const gradientsDog = [
-      'from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1]',
-      'from-[#ECF7F3] via-[#FAF9F5] to-[#D5EFE9]',
-      'from-[#E8F5F1] via-[#FAF9F5] to-[#D2EAE4]',
-      'from-[#E0F2F1] via-[#FAF9F5] to-[#B2DFDB]',
-    ];
+  // Pre-decode all images locally to eliminate any missing-image flash
+  useEffect(() => {
+    promos.forEach((p) => {
+      const img = new Image();
+      img.src = p.productImg;
+      if (img.decode) {
+        img.decode().catch(() => {});
+      }
+    });
+  }, [promos]);
 
-    const gradientsCat = [
-      'from-[#FFF4EB] via-[#FAF9F6] to-[#FCE6D5]',
-      'from-[#FFF6EE] via-[#FAF9F6] to-[#FDE8D3]',
-      'from-[#FFF8F0] via-[#FAF9F6] to-[#FEEAD9]',
-      'from-[#FBE9E7] via-[#FAF9F6] to-[#FFCCBC]',
-    ];
+  // Coordinated Transition Handler with queuing & double-buffered retention
+  const changeToSlide = useCallback(
+    (targetIndex) => {
+      if (targetIndex === currentSlide) return;
 
-    const gradients = isDog ? gradientsDog : gradientsCat;
+      const prefersReduced =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    return selected.map((prod, idx) => {
-      const price = Number(prod.price || prod.salePrice || 0);
-      const originalPrice = prod.originalPrice || prod.original_price || (price > 0 ? Math.round(price * 1.15) : null);
-      const discountPercent =
-        originalPrice && originalPrice > price
-          ? Math.round(((originalPrice - price) / originalPrice) * 100)
-          : 0;
-
-      let badgeText = prod.badge;
-      if (!badgeText) {
-        if (discountPercent > 0) badgeText = `${discountPercent}% DCTO`;
-        else if (prod.stock && prod.stock <= 3) badgeText = `¡ÚLTIMAS ${prod.stock} U.!`;
-        else badgeText = 'OFERTA DESTACADA';
+      if (prefersReduced) {
+        setCurrentSlide(targetIndex);
+        setPreviousSlide(null);
+        setIsTransitioning(false);
+        return;
       }
 
-      const formatStr = prod.format || (Array.isArray(prod.weights) ? prod.weights[0] : null);
-      const taglineText = prod.tagline || (prod.brand ? `${prod.brand} • ${prod.category || 'Nutrición Natural'}` : 'PROMO DESTACADA');
+      if (isTransitioning) {
+        queuedIndexRef.current = targetIndex;
+        return;
+      }
 
-      const desc =
-        prod.tagline ||
-        (formatStr
-          ? `Disponible en formato ${formatStr}. Nutrición 100% balanceada de alta digestibilidad con despacho rápido en Puerto Varas y Llanquihue.`
-          : 'Alimento y nutrición seleccionada para tu mascota en la Patagonia.');
+      setIsTransitioning(true);
+      setPreviousSlide(currentSlide);
+      setCurrentSlide(targetIndex);
 
-      return {
-        id: `promo-real-${prod.id}`,
-        rawProduct: prod,
-        productId: prod.id,
-        badge: badgeText,
-        tagline: taglineText.toUpperCase(),
-        title: prod.name,
-        description: desc,
-        format: formatStr,
-        price,
-        originalPrice,
-        stock: prod.stock,
-        mascot: isDog ? 'Kira 🐶' : 'Jack 🐱',
-        productImg: resolveProductImage(prod),
-        bgGradient: gradients[idx % gradients.length],
-        textColor: isDog ? 'text-[#0A3E40]' : 'text-[#59260E]',
-        badgeBg: isDog ? 'bg-[#10B981] text-slate-950' : 'bg-[#C86D39] text-white',
-        btnBg: isDog
-          ? 'bg-[#0E8388] hover:bg-[#10B981] text-white'
-          : 'bg-[#C86D39] hover:bg-[#D97706] text-white',
-      };
-    });
-  }, [sourceProducts, carouselIds, petType]);
+      if (retainTimerRef.current) clearTimeout(retainTimerRef.current);
+      retainTimerRef.current = setTimeout(() => {
+        setPreviousSlide(null);
+      }, 300);
 
-  // Adjust slide index if length changed
-  useEffect(() => {
-    if (promos.length > 0 && currentSlide >= promos.length) {
-      setCurrentSlide(0);
-    }
-  }, [promos.length, currentSlide]);
+      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = setTimeout(() => {
+        setIsTransitioning(false);
+        if (queuedIndexRef.current !== null) {
+          const nextQueued = queuedIndexRef.current;
+          queuedIndexRef.current = null;
+          changeToSlide(nextQueued);
+        }
+      }, 950);
+    },
+    [currentSlide, isTransitioning]
+  );
 
-  // Auto-play interval (3 seconds, pauses on hover)
-  useEffect(() => {
-    if (promos.length <= 1 || isHovered) return;
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % promos.length);
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [promos.length, isHovered]);
-
-  const handleScrollDown = () => {
-    const catalogEl = document.getElementById('catalogo-section');
-    if (catalogEl) {
-      catalogEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else {
-      window.scrollBy({ top: 480, behavior: 'smooth' });
-    }
-  };
-
-  const handlePrev = () => {
+  const handleNext = useCallback(() => {
     if (promos.length === 0) return;
-    setCurrentSlide((prev) => (prev - 1 + promos.length) % promos.length);
-  };
+    const nextIdx = (currentSlide + 1) % promos.length;
+    changeToSlide(nextIdx);
+  }, [currentSlide, promos.length, changeToSlide]);
 
-  const handleNext = () => {
+  const handlePrev = useCallback(() => {
     if (promos.length === 0) return;
-    setCurrentSlide((prev) => (prev + 1) % promos.length);
-  };
+    const prevIdx = (currentSlide - 1 + promos.length) % promos.length;
+    changeToSlide(prevIdx);
+  }, [currentSlide, promos.length, changeToSlide]);
 
+  const handleReplay = useCallback(() => {
+    changeToSlide(0);
+  }, [changeToSlide]);
+
+  // Keyboard navigation (ArrowLeft / ArrowRight)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target && ['input', 'textarea', 'select'].includes(e.target.tagName.toLowerCase())) {
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        handleNext();
+      } else if (e.key === 'ArrowLeft') {
+        handlePrev();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleNext, handlePrev]);
+
+  // Auto-play timer (4.5s loop), paused on hover or document hidden
+  useEffect(() => {
+    if (!isAutoPlaying || isHovered || isTransitioning) return;
+    const interval = setInterval(() => {
+      if (document.hidden) return;
+      handleNext();
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [isAutoPlaying, isHovered, isTransitioning, handleNext]);
+
+  // Touch swipe handling with passive listener support (>55px travel)
   const handleTouchStart = (e) => {
-    setTouchStartX(e.touches[0].clientX);
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
   };
 
   const handleTouchEnd = (e) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
-    if (diff > 45) {
-      handleNext();
-    } else if (diff < -45) {
-      handlePrev();
+    const touch = e.changedTouches[0];
+    const dx = touchStartRef.current.x - touch.clientX;
+    const dy = touchStartRef.current.y - touch.clientY;
+
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx > 0) {
+        handleNext();
+      } else {
+        handlePrev();
+      }
     }
   };
+
+  const activePromo = promos[currentSlide] || promos[0];
+  const oldPromo = previousSlide !== null ? promos[previousSlide] : null;
+
+  // Notificar al componente padre cuando el color del producto cambia
+  useEffect(() => {
+    if (activePromo && onColorChange) {
+      onColorChange(activePromo.bgColor);
+    }
+  }, [activePromo, onColorChange]);
 
   const formatCLP = (val) => {
     if (!val || isNaN(val)) return '$0';
@@ -260,8 +462,6 @@ export default function PromoCarousel({
       maximumFractionDigits: 0,
     }).format(val);
   };
-
-  const activePromo = promos[currentSlide] || null;
 
   const handleAction = (e) => {
     if (e) e.stopPropagation();
@@ -279,173 +479,213 @@ export default function PromoCarousel({
     }
   };
 
-  const activeColor = petType === 'perros' ? '#10B981' : '#C86D39';
+  const handleScrollDown = () => {
+    const catalogEl = document.getElementById('catalogo-section');
+    if (catalogEl) {
+      catalogEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollBy({ top: 500, behavior: 'smooth' });
+    }
+  };
 
-  if (!activePromo) {
-    return null;
-  }
+  if (!activePromo) return null;
 
   return (
-    <div className="w-full space-y-4">
-      <div
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="relative w-full rounded-3xl overflow-hidden shadow-xl shadow-slate-200/60 border border-slate-200/80 select-none transition-all duration-700 min-h-[380px] md:min-h-[440px] group/carousel"
-      >
-      {/* Background Gradient & Full Product Image */}
-      <div className={`absolute inset-0 w-full h-full bg-gradient-to-r ${activePromo.bgGradient}`}>
-        <img
-          src={activePromo.productImg}
-          alt={activePromo.title}
-          className="w-full h-full object-contain object-right md:object-right opacity-90 p-4 md:p-8 transition-all duration-1000 group-hover/carousel:scale-105"
-        />
-        {/* Soft Radial Fade for text readability */}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#FAF9F5] via-[#FAF9F5]/90 to-transparent w-full md:w-3/4" />
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      className="relative w-full flex flex-col items-center select-none"
+      aria-label="Vitrina de alimentos destacados"
+    >
+      {/* 1. ESCENARIO CENTRAL DEL SACO HEROICO (Con palabra monumental detrás) */}
+      <div className="relative w-full h-[280px] sm:h-[340px] md:h-[380px] lg:h-[400px] flex items-center justify-center overflow-hidden">
+        {/* Decorative Dog & Cat Paw Prints Layer */}
+        <DecorativeShapes />
+
+        {/* OVERSIZED VARIANT NAME BEHIND PRODUCT */}
+        <div
+          key={`oversized-${currentSlide}`}
+          className="absolute inset-0 flex items-center justify-center z-10 text-center font-heading font-black uppercase whitespace-nowrap select-none pointer-events-none"
+          style={{
+            color: activePromo.inkColor,
+            fontSize: 'clamp(2.8rem, 10.5vw, 8rem)',
+            letterSpacing: '-0.04em',
+            animation: 'oversizedEntrance 1.0s cubic-bezier(0.165, 0.84, 0.44, 1) forwards',
+          }}
+        >
+          {activePromo.oversizedWord}
+        </div>
+
+        {/* OLD PRODUCT LAYER (Retained 0.3s to avoid blank gap) */}
+        {oldPromo && (
+          <div
+            className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none opacity-0 transition-opacity duration-300 ease-out"
+            aria-hidden="true"
+          >
+            <img
+              src={oldPromo.productImg}
+              alt={oldPromo.title}
+              className="h-[88%] sm:h-[92%] w-auto max-w-[85%] sm:max-w-[48%] object-contain filter drop-shadow-[0_20px_35px_rgba(0,0,0,0.6)]"
+            />
+          </div>
+        )}
+
+        {/* NEW PRODUCT LAYER (Centrado 100%, Saco Grande y Proporcional) */}
+        <div
+          key={`product-entrance-${currentSlide}`}
+          className="absolute inset-0 flex items-center justify-center z-20 pointer-events-auto"
+          style={{
+            animation: 'productEntrance 0.85s cubic-bezier(0.165, 0.84, 0.44, 1) forwards',
+          }}
+        >
+          <img
+            src={activePromo.productImg}
+            alt={activePromo.title}
+            className="h-[88%] sm:h-[92%] w-auto max-w-[85%] sm:max-w-[48%] object-contain filter drop-shadow-[0_24px_45px_rgba(0,0,0,0.65)] hover:scale-105 transition-transform duration-500 cursor-pointer"
+            onClick={() => navigate(`/producto/${activePromo.productId}`)}
+          />
+        </div>
+
+        {/* FLECHAS DE NAVEGACIÓN EN LOS EXTREMOS DEL ESCENARIO */}
+        <button
+          type="button"
+          onClick={handlePrev}
+          aria-label="Ver producto anterior"
+          className="absolute left-1 sm:left-3 md:left-6 lg:left-8 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/65 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer"
+        >
+          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleNext}
+          aria-label="Ver siguiente producto"
+          className="absolute right-1 sm:right-3 md:right-6 lg:right-8 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full bg-black/35 hover:bg-black/65 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all hover:scale-110 active:scale-95 cursor-pointer"
+        >
+          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+        </button>
       </div>
 
-      {/* Slide Content Box */}
-      <div className="relative z-10 p-8 md:p-14 h-full min-h-[380px] md:min-h-[440px] flex flex-col justify-between max-w-2xl">
-        {/* Top Badge: Destacado del Mes */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${
-                petType === 'perros'
-                  ? 'bg-[#0E8388] text-white shadow-[#0E8388]/20'
-                  : 'bg-[#C86D39] text-white shadow-[#C86D39]/20'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-              Destacado del Mes
+      {/* 2. DETALLES DEL PRODUCTO, PRECIO Y BOTÓN TOTALMENTE INTEGRADOS (Sin caja negra aislada) */}
+      <div className="relative z-30 w-full max-w-2xl mx-auto flex flex-col items-center text-center px-4 pt-1.5 sm:pt-2 pb-1">
+        {/* Título en grande del producto */}
+        <h2
+          className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-heading font-black text-white tracking-tight cursor-pointer hover:text-amber-200 transition-colors drop-shadow-sm leading-tight"
+          onClick={() => navigate(`/producto/${activePromo.productId}`)}
+        >
+          {activePromo.title}
+        </h2>
+
+        {/* Fila de Precio y Botón de Comprar (Limpio, directo y compacto) */}
+        <div className="mt-2.5 sm:mt-3 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
+          {/* Precio */}
+          <div className="flex items-baseline">
+            <span className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight drop-shadow-xs">
+              {formatCLP(activePromo.price)}
             </span>
           </div>
 
-          {/* Title - Clean & 100% Legible typography */}
-          <h2
-            className={`font-heading font-extrabold text-2xl sm:text-3xl md:text-4xl lg:text-5xl ${activePromo.textColor} tracking-tight leading-tight max-w-xl cursor-pointer hover:opacity-90 transition-opacity`}
-            onClick={() => navigate(`/producto/${activePromo.productId}`)}
+          {/* Botón de Comprar */}
+          <button
+            type="button"
+            onClick={handleAction}
+            className="px-6 sm:px-8 py-2.5 sm:py-3 rounded-full bg-white hover:bg-[#F5BA13] text-[#1D1D1F] font-black text-xs sm:text-sm transition-all duration-300 shadow-xl hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
           >
-            {activePromo.title}
-          </h2>
-
-          {/* Description */}
-          <p className="text-slate-600 text-sm md:text-base leading-relaxed max-w-xl font-medium">
-            {activePromo.description}
-          </p>
-        </div>
-
-        {/* Pricing & CTA Button */}
-        <div className="flex items-center gap-6 pt-4 flex-wrap sm:flex-nowrap">
-          <div>
-            <div className={`text-3xl md:text-4xl font-black ${activePromo.textColor}`}>
-              {formatCLP(activePromo.price)}
-            </div>
-            {activePromo.originalPrice && activePromo.originalPrice > activePromo.price && (
-              <div className="text-xs text-slate-400 line-through font-semibold">
-                {formatCLP(activePromo.originalPrice)}
-              </div>
+            {justAddedId === activePromo.productId ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span>¡AGREGADO AL CARRO!</span>
+              </>
+            ) : (
+              <>
+                <span>COMPRAR AHORA</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
             )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleAction}
-              className={`px-7 py-3.5 rounded-full ${activePromo.btnBg} font-extrabold text-sm transition-all shadow-xl flex items-center gap-2 active:scale-95 shrink-0 cursor-pointer`}
-            >
-              {justAddedId === activePromo.productId ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>¡AGREGADO AL CARRO!</span>
-                </>
-              ) : (
-                <>
-                  <span>APROVECHAR OFERTA</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-
-            <Link
-              to={`/producto/${activePromo.productId}`}
-              className="text-xs font-bold text-slate-500 hover:text-[#0E8388] transition-colors underline decoration-slate-300 underline-offset-4"
-            >
-              Ver ficha completa
-            </Link>
-          </div>
+          </button>
         </div>
-      </div>
 
-      {/* Manual Arrow Controls (only if more than 1 slide) */}
-      {promos.length > 1 && (
-        <>
-          <button
-            type="button"
-            onClick={handlePrev}
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-white/90 text-slate-800 hover:bg-[#0E8388] hover:text-white transition-all border border-slate-200 shadow-lg backdrop-blur-md cursor-pointer"
-            aria-label="Anterior oferta"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={handleNext}
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-white/90 text-slate-800 hover:bg-[#0E8388] hover:text-white transition-all border border-slate-200 shadow-lg backdrop-blur-md cursor-pointer"
-            aria-label="Siguiente oferta"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </>
-      )}
-
-      {/* Paw Print Vector Indicators 🐾 */}
-      {promos.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-5 py-2 rounded-full bg-white/90 backdrop-blur-md border border-slate-200 shadow-lg">
-          {promos.map((_, idx) => (
-            <button
-              type="button"
-              key={idx}
-              onClick={() => setCurrentSlide(idx)}
-              title={`Ir a oferta ${idx + 1}`}
-              className="text-slate-400 focus:outline-none cursor-pointer"
-            >
-              <PawPrintIcon active={currentSlide === idx} activeColor={activeColor} />
-            </button>
+        {/* Huellitas indicadoras flotantes (🐾) */}
+        <div className="flex items-center justify-center gap-2 mt-2 sm:mt-2.5">
+          {promos.map((p, idx) => (
+            <PawIndicator
+              key={p.id}
+              active={currentSlide === idx}
+              activeColor={activePromo.accentColor}
+              onClick={() => changeToSlide(idx)}
+              label={`Ir a ${p.title}`}
+            />
           ))}
         </div>
-      )}
       </div>
 
-      {/* Visual Scroll Down Indicator */}
-      <div className="flex flex-col items-center justify-center pt-1">
-        <button
-          type="button"
-          onClick={handleScrollDown}
-          className={`group inline-flex items-center gap-2.5 px-5 py-2 rounded-full bg-white/95 hover:bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-300 cursor-pointer ${
-            petType === 'perros'
-              ? 'hover:border-[#0E8388]/40 hover:text-[#0E8388]'
-              : 'hover:border-[#C86D39]/40 hover:text-[#C86D39]'
-          }`}
-          title="Ver catálogo completo abajo"
-          aria-label="Desplazarse hacia abajo para ver el catálogo de productos"
-        >
-          <span className="text-[11px] font-black tracking-wider uppercase text-slate-600 group-hover:text-inherit transition-colors">
-            Explorar catálogo abajo
-          </span>
-          <div
-            className={`w-5 h-5 rounded-full flex items-center justify-center ${
+      {/* Visual Scroll Down Indicator (Optional) */}
+      {showScrollIndicator && (
+        <div className="flex flex-col items-center justify-center pt-4 pb-1">
+          <button
+            type="button"
+            onClick={handleScrollDown}
+            className={`group inline-flex items-center gap-2.5 px-5 py-2 rounded-full bg-white/95 hover:bg-white border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-300 cursor-pointer ${
               petType === 'perros'
-                ? 'bg-[#0E8388]/10 text-[#0E8388]'
-                : 'bg-[#C86D39]/10 text-[#C86D39]'
+                ? 'hover:border-[#0E8388]/40 hover:text-[#0E8388]'
+                : 'hover:border-[#C86D39]/40 hover:text-[#C86D39]'
             }`}
+            title="Ver catálogo completo abajo"
+            aria-label="Desplazarse hacia abajo para ver el catálogo de productos"
           >
-            <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
-          </div>
-        </button>
-      </div>
+            <span className="text-[11px] font-black tracking-wider uppercase text-slate-600 group-hover:text-inherit transition-colors">
+              Explorar catálogo abajo
+            </span>
+            <div
+              className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                petType === 'perros'
+                  ? 'bg-amber-500/10 text-amber-600'
+                  : 'bg-[#C86D39]/10 text-[#C86D39]'
+              }`}
+            >
+              <ChevronDown className="w-3.5 h-3.5 group-hover:translate-y-0.5 transition-transform duration-300" />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Scoped CSS Keyframes for power3.out physics choreography */}
+      <style>{`
+        @keyframes productEntrance {
+          0% {
+            transform: translateY(50px) rotate(-5deg);
+            opacity: 0;
+          }
+          100% {
+            transform: translateY(0) rotate(0deg);
+            opacity: 1;
+          }
+        }
+
+        @keyframes oversizedEntrance {
+          0% {
+            transform: translateX(45px);
+            opacity: 0;
+          }
+          100% {
+            transform: translateX(0);
+            opacity: 0.88;
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes productEntrance {
+            0% { opacity: 1; transform: none; }
+            100% { opacity: 1; transform: none; }
+          }
+          @keyframes oversizedEntrance {
+            0% { opacity: 0.88; transform: none; }
+            100% { opacity: 0.88; transform: none; }
+          }
+        }
+      `}</style>
     </div>
   );
 }

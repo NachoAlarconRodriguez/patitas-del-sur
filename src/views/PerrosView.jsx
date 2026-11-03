@@ -1,9 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import ProductCard from '../components/ProductCard';
-import PromoCarousel from '../components/PromoCarousel';
 import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
 import { PRODUCTS as FALLBACK_PRODUCTS, BRANDS } from '../data/mockData';
-import { fetchProductsFromSupabase } from '../services/productsService';
+import { fetchProductsFromSupabase, getCachedProducts } from '../services/productsService';
 import { supabase } from '../lib/supabase';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 import { groupProductsForStore } from '../utils/productVariants';
@@ -11,18 +10,29 @@ import SEOHead from '../components/SEOHead';
 import { getBreadcrumbSchema, getFAQPageSchema } from '../utils/schemaGenerators';
 import LocalDeliveryZones from '../components/LocalDeliveryZones';
 import FAQSection, { PERROS_FAQS, GENERAL_FAQS } from '../components/FAQSection';
+import DogLoadingSpinner from '../components/DogLoadingSpinner';
 
 export default function PerrosView({ onSelectProduct, onAddToCart }) {
-  const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
+  const cached = getCachedProducts();
+  const [allProducts, setAllProducts] = useState(cached || FALLBACK_PRODUCTS);
+  const [isLoading, setIsLoading] = useState(!cached || cached.length === 0);
   const [hiddenProducts, setHiddenProducts] = useState(getHiddenProductIdentifiers);
 
   // Carga en vivo desde Supabase
   useEffect(() => {
     let isMounted = true;
     const loadProducts = async () => {
-      const data = await fetchProductsFromSupabase();
-      if (isMounted && data && data.length > 0) {
-        setAllProducts(data);
+      try {
+        const data = await fetchProductsFromSupabase();
+        if (isMounted && data && data.length > 0) {
+          setAllProducts(data);
+        }
+      } catch (err) {
+        console.error('Error al cargar productos de perros:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -184,7 +194,7 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
   };
 
   return (
-    <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900">
+    <div className="pt-24 sm:pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900">
       <SEOHead
         title="Alimento y Snacks Naturales para Perros en Puerto Varas"
         description="Catálogo de alimento super premium 100% Grain Free, antiparasitarios y premios deshidratados para perros. Despacho express en Puerto Varas, Llanquihue y Frutillar."
@@ -199,37 +209,14 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
         ]}
       />
 
-      {/* Main Catalog Header */}
-      <header className="max-w-7xl mx-auto px-6 mb-6">
-        <div className="space-y-1">
-          <span className="text-[11px] font-black uppercase tracking-wider text-[#0E8388] bg-[#0E8388]/10 px-3 py-1 rounded-full inline-block">
-            Catálogo Canino Holístico
-          </span>
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-            Alimento y Snacks Naturales para Perros 🐶
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-600 max-w-2xl">
-            Nutrición de alta digestibilidad, fórmulas sin cereales con salmón y cordero de la Patagonia. Despacho rápido en Puerto Varas y la cuenca del Lago Llanquihue.
-          </p>
-        </div>
-      </header>
-      
-      {/* Promo Carousel Banner (Máximo 5 Ofertas) */}
-      {dogProducts.length > 0 && (
-        <section className="max-w-7xl mx-auto px-6 mb-10">
-          <PromoCarousel
-            petType="perros"
-            products={dogProducts}
-            onSelectProduct={onSelectProduct}
-            onAddToCart={onAddToCart}
-          />
-        </section>
-      )}
+      <h1 className="sr-only">
+        Alimento y Nutrición Super Premium para Perros en Puerto Varas, Llanquihue y Frutillar
+      </h1>
 
       {/* Main Catalog Section */}
-      <section id="catalogo-section" className="max-w-7xl mx-auto px-6 scroll-mt-24">
+      <section id="catalogo-section" className="max-w-7xl mx-auto px-4 sm:px-6 scroll-mt-24">
         
-        {/* Unified Filter Panel (Marca + Proteína + Peso + Tipo + Búsqueda 100%) */}
+        {/* Unified Filter Panel (Marca + Proteína + Formato + Tipo) */}
         <AdvancedFilterPanel
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -245,16 +232,20 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
           onResetFilters={handleResetFilters}
           totalResultsCount={filteredProducts.length}
           products={dogProducts}
+          isLoading={isLoading}
+          petType="perros"
         />
 
         {/* Products Displayed & Grouped by Brands */}
-        {filteredProducts.length === 0 ? (
+        {isLoading ? (
+          <DogLoadingSpinner showSkeletons={true} />
+        ) : filteredProducts.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center text-slate-500 space-y-3 border border-slate-200">
             <p className="text-lg font-bold text-slate-800">No encontramos productos con los filtros seleccionados</p>
-            <p className="text-xs">Prueba cambiando la marca, el porcentaje de proteína o limpiando la búsqueda.</p>
+            <p className="text-xs">Prueba cambiando la marca, el porcentaje de proteína o limpiando los filtros.</p>
             <button
               onClick={handleResetFilters}
-              className="px-6 py-2.5 rounded-full bg-[#0E8388] text-white text-xs font-bold hover:bg-[#10B981] transition-colors shadow-md"
+              className="px-6 py-2.5 rounded-full bg-[#1D1D1F] hover:bg-[#F5BA13] text-white hover:text-[#1D1D1F] text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
             >
               Restablecer Todos los Filtros
             </button>
@@ -281,18 +272,27 @@ export default function PerrosView({ onSelectProduct, onAddToCart }) {
               return (
                 <div key={brandName} className="space-y-4">
                   {/* Brand Group Header */}
-                  <div className="flex items-center justify-between pb-3 border-b-2 border-[#0E8388]/20">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200/90">
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl">{brandMeta ? brandMeta.logo : '🏔️'}</span>
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-xl shrink-0">
+                        {brandMeta ? brandMeta.logo : '🐶'}
+                      </div>
                       <div>
-                        <h2 className="text-xl md:text-2xl font-black text-slate-900">{brandName}</h2>
-                        <p className="text-xs text-slate-500 font-semibold">
+                        <div className="flex items-center gap-2">
+                          <h2 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">{brandName}</h2>
+                          {brandMeta?.badge && (
+                            <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200/80 text-[10px] font-bold">
+                              {brandMeta.badge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 font-medium">
                           {brandMeta ? brandMeta.tagline : 'Nutrición Natural de la Patagonia'}
                         </p>
                       </div>
                     </div>
-                    <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-[#0E8388]/10 text-[#0E8388]">
-                      {items.length} {items.length === 1 ? 'producto' : 'productos'}
+                    <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-[#92400E]">
+                      {items.length} {items.length === 1 ? 'receta' : 'recetas'}
                     </span>
                   </div>
 

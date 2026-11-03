@@ -17,62 +17,106 @@
 }
 
 :root {
-  --color-teal-primary: #0E8388;
-  --color-teal-dark: #0B5558;
-  --color-teal-light: #2E9A9E;
-  --color-emerald-primary: #10B981;
-  --color-emerald-light: #34D399;
-  --color-terracotta-primary: #C86D39;
-  --color-terracotta-dark: #A35127;
-  --color-cream-bg: #FAF9F6;
-  --color-dark-slate: #0F172A;
+  /* ==========================================================================
+     Apple Design System Tokens: Warm Golden Amber Palette
+     ========================================================================== */
+  --color-amber-50: #FFFBEB;
+  --color-amber-100: #FEF3C7;
+  --color-amber-200: #FDE68A;
+  --color-amber-300: #FCD34D;
+  --color-amber-400: #FBBF24;
+  --color-amber-500: #F5BA13;
+  --color-amber-600: #D97706;
+  --color-amber-700: #B45309;
+  --color-amber-800: #92400E;
+  --color-amber-900: #78350F;
 
-  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  /* Primary Brand Identifiers */
+  --color-primary: #F5BA13;
+  --color-primary-dark: #D97706;
+  --color-primary-light: #FDE68A;
+  --color-primary-glow: #FFD452;
+
+  /* Aliases for backwards compatibility with existing UI */
+  --color-teal-primary: #F5BA13;
+  --color-teal-dark: #D97706;
+  --color-teal-light: #FDE68A;
+  --color-emerald-primary: #F5BA13;
+  --color-emerald-light: #FDE68A;
+  --color-terracotta-primary: #D97706;
+  --color-terracotta-dark: #B45309;
+
+  /* Apple Dark & Surface Neutrals */
+  --color-charcoal: #1D1D1F;
+  --color-charcoal-muted: #4B5563;
+  --color-dark-slate: #1D1D1F;
+  --color-cream-bg: #FAF8F4;
+
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   color-scheme: light;
   background-color: var(--color-cream-bg);
+}
+
+::selection {
+  background-color: #FDE68A;
+  color: #1D1D1F;
 }
 
 body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background-color: #0d131a;
-  color: #0F172A;
-  font-family: 'Plus Jakarta Sans', sans-serif;
+  background-color: #FAF8F4;
+  color: #1D1D1F;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4, .font-heading {
-  font-family: 'Outfit', sans-serif;
+/* Zero-latency tap response for Apple-feel interactions */
+button, a, [role="button"] {
+  touch-action: manipulation;
 }
 
-/* Glassmorphism Utilities */
+h1, h2, h3, h4, .font-heading {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+/* Apple Frosted Glass Materials with 180% Saturation */
 .glass-panel {
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(29, 29, 31, 0.06);
 }
 
 .glass-panel-dark {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(29, 29, 31, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
 }
 
-/* Ocultar flechas/spinners nativos en inputs de tipo number en todos los navegadores */
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-input[type="number"] {
-  -moz-appearance: textfield;
-  appearance: textfield;
+.glass-panel-amber {
+  background: rgba(254, 243, 199, 0.75);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(245, 186, 19, 0.35);
+  box-shadow: 0 8px 24px 0 rgba(217, 119, 6, 0.12);
 }
 
-/* Custom Scrollbar */
+/* Apple Golden Ambient Glow Utilities */
+.bg-golden-glow {
+  background: radial-gradient(circle at 60% 30%, #FFD452 0%, #F5BA13 55%, #E69D00 100%);
+}
+
+.bg-golden-glow-subtle {
+  background: radial-gradient(circle at 50% 20%, #FFFBEB 0%, #FEF3C7 60%, #FDE68A 100%);
+}
+
+/* Custom Scrollbar with Warm Amber Hover */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -81,11 +125,11 @@ input[type="number"] {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #E2E8F0;
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #0E8388;
+  background: #F5BA13;
 }
 
 /* Ocultar barra de scroll manteniendo el desplazamiento */
@@ -109,16 +153,15 @@ input[type="number"] {
 .split-hero-container {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  min-height: 100dvh;
-  width: 100vw;
-  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  position: relative;
 }
 
 @media (min-width: 768px) {
   .split-hero-container {
     flex-direction: row;
-    height: 100vh;
+    height: 100%;
   }
 }
 
@@ -160,12 +203,12 @@ input[type="number"] {
   border-radius: 1.25rem;
   overflow: hidden;
   background: transparent;
-  box-shadow: 0 6px 20px -2px rgba(14, 131, 136, 0.22), 0 2px 8px -2px rgba(5, 24, 25, 0.12);
+  box-shadow: 0 6px 20px -2px rgba(245, 186, 19, 0.25), 0 2px 8px -2px rgba(29, 29, 31, 0.08);
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .animated-border-card:hover {
-  box-shadow: 0 10px 28px -2px rgba(14, 131, 136, 0.32), 0 0 16px -2px rgba(16, 185, 129, 0.25);
+  box-shadow: 0 10px 28px -2px rgba(245, 186, 19, 0.38), 0 0 16px -2px rgba(251, 191, 36, 0.3);
 }
 
 .animated-border-card::before {
@@ -177,16 +220,16 @@ input[type="number"] {
   height: 800%;
   background: conic-gradient(
     from 0deg,
-    #051819 0deg,
-    #082426 35deg,
-    #0A3E40 75deg,
-    #0E8388 120deg,
-    #10B981 170deg,
-    #34D399 195deg,
-    #10B981 220deg,
-    #0E8388 270deg,
-    #0A3E40 315deg,
-    #051819 360deg
+    #1D1D1F 0deg,
+    #2D1F0E 35deg,
+    #78350F 75deg,
+    #D97706 120deg,
+    #F5BA13 170deg,
+    #FDE68A 195deg,
+    #F5BA13 220deg,
+    #D97706 270deg,
+    #2D1F0E 315deg,
+    #1D1D1F 360deg
   );
   animation: rotate-conic-border 3.6s linear infinite;
   pointer-events: none;
@@ -199,6 +242,45 @@ input[type="number"] {
   background: #ffffff;
   border-radius: calc(1.25rem - 2.5px);
   width: 100%;
+}
+
+/* Modern Mouse Scroll Indicator Animations */
+@keyframes mouse-wheel-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+
+.animate-mouse-wheel {
+  animation: mouse-wheel-drop 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes scroll-chevron-pulse {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateY(3px);
+    opacity: 1;
+  }
+}
+
+.animate-scroll-chevron {
+  animation: scroll-chevron-pulse 1.8s ease-in-out infinite;
 }
 
 /* High-level Smooth Motion Transitions for Featured Carousel */
@@ -300,6 +382,270 @@ input[type="number"] {
   margin-top: 3px !important;
 }
 
+/* ==========================================================================
+   Pet Loading Spinners (Dog & Cat) Keyframes & Animations
+   ========================================================================== */
+@keyframes dogTailWag {
+  0%, 100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(22deg);
+  }
+}
 
+@keyframes dogEarLeft {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-10deg) translateY(-3px);
+  }
+}
+
+@keyframes dogEarRight {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(10deg) translateY(-3px);
+  }
+}
+
+@keyframes dogSniff {
+  0%, 100% {
+    transform: scale(1) translateY(0);
+  }
+  20% {
+    transform: scale(1.15) translateY(-1.5px);
+  }
+  40% {
+    transform: scale(0.92) translateY(1px);
+  }
+  70% {
+    transform: scale(1.1) translateY(-1px);
+  }
+}
+
+@keyframes dogTonguePant {
+  0%, 100% {
+    transform: scaleY(1) translateY(0);
+  }
+  50% {
+    transform: scaleY(1.3) translateY(3px);
+  }
+}
+
+@keyframes boneFloat {
+  0%, 100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(8deg);
+  }
+}
+
+@keyframes radarWave {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+@keyframes pawWalk {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.85) translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) translateY(-4px);
+  }
+}
+
+@keyframes catTailSwish {
+  0%, 100% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(16deg);
+  }
+}
+
+@keyframes catEarTwitch {
+  0%, 85%, 100% {
+    transform: rotate(0deg);
+  }
+  90% {
+    transform: rotate(-6deg);
+  }
+  95% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes shimmerGlow {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-dog-tail {
+  transform-origin: 42px 110px;
+  animation: dogTailWag 0.55s ease-in-out infinite;
+}
+
+.animate-dog-ear-left {
+  transform-origin: 52px 58px;
+  animation: dogEarLeft 1.2s ease-in-out infinite;
+}
+
+.animate-dog-ear-right {
+  transform-origin: 108px 58px;
+  animation: dogEarRight 1.2s ease-in-out infinite;
+}
+
+.animate-dog-sniff {
+  transform-origin: 80px 76px;
+  animation: dogSniff 0.85s ease-in-out infinite;
+}
+
+.animate-dog-tongue {
+  transform-origin: 80px 84px;
+  animation: dogTonguePant 0.55s ease-in-out infinite;
+}
+
+.animate-bone-float {
+  animation: boneFloat 2.2s ease-in-out infinite;
+}
+
+.animate-radar-wave {
+  animation: radarWave 2s cubic-bezier(0.1, 0.7, 0.1, 1) infinite;
+}
+
+.animate-paw-step-1 {
+  animation: pawWalk 1.6s ease-in-out infinite;
+  animation-delay: 0s;
+}
+
+.animate-paw-step-2 {
+  animation: pawWalk 1.6s ease-in-out infinite;
+  animation-delay: 0.4s;
+}
+
+.animate-paw-step-3 {
+  animation: pawWalk 1.6s ease-in-out infinite;
+  animation-delay: 0.8s;
+}
+
+.animate-paw-step-4 {
+  animation: pawWalk 1.6s ease-in-out infinite;
+  animation-delay: 1.2s;
+}
+
+.animate-cat-tail {
+  transform-origin: 110px 115px;
+  animation: catTailSwish 1.4s ease-in-out infinite;
+}
+
+.animate-cat-ear-left {
+  transform-origin: 60px 65px;
+  animation: catEarTwitch 2.6s ease-in-out infinite;
+}
+
+.animate-cat-ear-right {
+  transform-origin: 100px 65px;
+  animation: catEarTwitch 2.6s ease-in-out infinite;
+  animation-delay: 0.3s;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
+  background-size: 200% 100%;
+  animation: shimmerGlow 1.8s infinite;
+}
+
+/* Modern Pet Loading Animations */
+@keyframes pawStepAlternatingDog {
+  0%, 100% {
+    transform: translateY(0) scale(0.96);
+    opacity: 0.55;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.08);
+    opacity: 1;
+    filter: drop-shadow(0 6px 14px rgba(245, 186, 19, 0.45));
+  }
+}
+
+@keyframes pawStepAlternatingCat {
+  0%, 100% {
+    transform: translateY(0) scale(0.96);
+    opacity: 0.55;
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.08);
+    opacity: 1;
+    filter: drop-shadow(0 6px 14px rgba(14, 131, 136, 0.45));
+  }
+}
+
+@keyframes phraseSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modernShimmerProgress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-paw-dog {
+  animation: pawStepAlternatingDog 1.8s ease-in-out infinite;
+}
+
+.animate-paw-cat {
+  animation: pawStepAlternatingCat 1.8s ease-in-out infinite;
+  animation-delay: 0.9s;
+}
+
+.animate-phrase-slide {
+  animation: phraseSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modern-shimmer {
+  animation: modernShimmerProgress 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* ==========================================================================
+   Mobile Responsive & iOS Safari Optimizations
+   Prevents iOS WebKit forced auto-zoom on input focus (< 16px font-size)
+   ========================================================================== */
+@media screen and (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
 
 

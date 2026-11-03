@@ -25,13 +25,13 @@ export default function AdminConveniosManager({
         </div>
         <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
           <span className="text-slate-500 text-[10px] uppercase font-bold">Comisiones Aliados</span>
-          <div className="text-2xl font-black text-purple-700 mt-1">
+          <div className="text-2xl font-black text-amber-800 mt-1">
             ${Math.round(convenios.reduce((acc, c) => acc + (c.redemptionsCount || 0), 0) * 65000 * 0.08).toLocaleString('es-CL')}
           </div>
         </div>
         <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
           <span className="text-slate-500 text-[10px] uppercase font-bold">Canjes Realizados</span>
-          <div className="text-2xl font-black text-amber-700 mt-1">
+          <div className="text-2xl font-black text-slate-800 mt-1">
             {convenios.reduce((acc, c) => acc + (c.redemptionsCount || 0), 0)} canjes
           </div>
         </div>
@@ -40,8 +40,8 @@ export default function AdminConveniosManager({
       {/* Convenios Table / Cards */}
       {convenios.length === 0 ? (
         <div className="bg-white border border-slate-200/80 rounded-3xl p-12 text-center shadow-xs">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#0E8388]/10 border border-[#0E8388]/20 flex items-center justify-center text-2xl text-[#0E8388]">
-            🤝
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700">
+            <Ticket className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-black text-slate-900">No hay convenios creados</h3>
           <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto mt-1 mb-6">
@@ -50,7 +50,7 @@ export default function AdminConveniosManager({
           <button
             type="button"
             onClick={() => setIsAddAgreementModalOpen(true)}
-            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#0E8388] to-[#10B981] text-white text-xs font-extrabold shadow-md shadow-[#0E8388]/20 hover:opacity-95 transition-all inline-flex items-center gap-2 cursor-pointer"
+            className="px-5 py-2.5 rounded-2xl bg-[#1D1D1F] hover:bg-[#F5BA13] text-white hover:text-[#1D1D1F] text-xs font-extrabold transition-all shadow-md inline-flex items-center gap-2 cursor-pointer active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>Crear Nuevo Convenio</span>
@@ -120,7 +120,7 @@ export default function AdminConveniosManager({
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Prefijo Cupones:</span>
-                      <span className="font-mono font-black text-[#0E8388] bg-[#0E8388]/10 px-2.5 py-0.5 rounded border border-[#0E8388]/20">
+                      <span className="font-mono font-black text-amber-700 bg-amber-100/70 px-2.5 py-0.5 rounded border border-amber-400/30">
                         {conv.codePrefix || 'SWD-'}XXXX
                       </span>
                     </div>
@@ -144,7 +144,7 @@ export default function AdminConveniosManager({
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Código Promocional:</span>
-                      <span className="font-mono font-black text-[#0E8388] bg-[#0E8388]/10 px-2.5 py-0.5 rounded border border-[#0E8388]/20">
+                      <span className="font-mono font-black text-amber-700 bg-amber-100/70 px-2.5 py-0.5 rounded border border-amber-400/30">
                         {conv.code}
                       </span>
                     </div>
@@ -175,7 +175,7 @@ export default function AdminConveniosManager({
                   <button
                     type="button"
                     onClick={() => setSelectedConvenioForCoupons(conv)}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#0E8388] to-[#10B981] hover:opacity-95 text-white font-extrabold text-xs shadow-md shadow-[#0E8388]/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-[#1D1D1F] hover:opacity-95 text-white font-extrabold text-xs shadow-md shadow-[#F5BA13]/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
                     <Ticket className="w-4 h-4" />
                     <span>Gestionar Cupones Únicos ({conv.coupons?.length || 0})</span>

@@ -499,3 +499,65 @@ export function getFlavorSwatchStyle(flavorName = '') {
   };
 }
 
+/**
+ * Resuelve la imagen real y limpia de un producto, evitando fotos de stock con fondos
+ * de patrones repetitivos (ej. Unsplash con galletas/huesitos) y sustituyéndolas por
+ * packshots nítidos con fondo transparente cuando se detecta una coincidencia por nombre o marca.
+ */
+export function resolveProductImage(product) {
+  if (!product) return '/images/hero_dog.png';
+
+  const name = (product.name || product.foodName || '').toLowerCase();
+  const brand = (product.brand || '').toLowerCase();
+  const petType = (product.petType || product.pet_type || '').toLowerCase();
+  const isCat = petType.includes('gato');
+  const img = product.image || (Array.isArray(product.images) && product.images[0]) || '';
+
+  // Si la imagen proviene del placeholder de Unsplash con fondo rosado y huesos, sustituir por packshot real
+  const isUnsplashBonePlaceholder = typeof img === 'string' && img.includes('photo-1568640347023-a616a30bc3bd');
+
+  // Si ya tiene una imagen local válida y limpia, respetarla
+  if (img && !isUnsplashBonePlaceholder && (img.startsWith('/') || img.startsWith('data:'))) {
+    return img;
+  }
+
+  // Mapeo inteligente a los packshots reales de alta fidelidad en /images/
+  if (name.includes('freshwater') || (brand.includes('acana') && name.includes('fish'))) {
+    return '/images/acana_freshwater_fish.png';
+  }
+  if (name.includes('light') || (brand.includes('acana') && name.includes('fit'))) {
+    return '/images/acana_light_fit.png';
+  }
+  if (name.includes('poultry') || name.includes('free run') || (brand.includes('acana') && (name.includes('pollo') || name.includes('adult')))) {
+    return '/images/acana_poultry.png';
+  }
+  if (brand.includes('bravery') && (name.includes('pollo') || name.includes('chicken'))) {
+    return '/images/bravery_chicken.jpg';
+  }
+  if (brand.includes('bravery') && (name.includes('cordero') || name.includes('lamb'))) {
+    return '/images/bravery_lamb.jpg';
+  }
+  if (brand.includes('bravery') && (name.includes('salm') || name.includes('salmon'))) {
+    return '/images/bravery_salmon.jpg';
+  }
+  if (brand.includes('alpha spirit') || name.includes('lata') || name.includes('paté') || name.includes('pate')) {
+    return '/images/dog_food_ingredients.png';
+  }
+  if (name.includes('tuna') || name.includes('atun') || name.includes('atún')) {
+    return '/images/cat_food_tuna.png';
+  }
+  if (isCat || name.includes('gato') || name.includes('cat')) {
+    if (name.includes('ocean')) return '/images/cat_ocean_bag.png';
+    if (name.includes('poultry') || name.includes('ave')) return '/images/cat_poultry_bag.png';
+    return '/images/cat_salmon_bag.png';
+  }
+
+  // Si tiene una imagen externa válida que NO sea el placeholder de huesos
+  if (img && !isUnsplashBonePlaceholder && img.startsWith('http')) {
+    return img;
+  }
+
+  // Fallback seguro de alta fidelidad según especie
+  return isCat ? '/images/cat_salmon_bag.png' : '/images/dog_food_salmon.png';
+}
+

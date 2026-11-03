@@ -149,12 +149,12 @@ export default function GoogleAddressAutocomplete({
             }
           }}
           placeholder={placeholder}
-          className={`w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-semibold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0E8388]/30 focus:border-[#0E8388] transition-all shadow-xs ${className}`}
+          className={`w-full pl-9 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-semibold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]/40 focus:border-[#F5BA13] transition-all shadow-xs ${className}`}
         />
 
         <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1">
           {isLoading && (
-            <Loader2 className="w-4 h-4 text-[#0E8388] animate-spin shrink-0" />
+            <Loader2 className="w-4 h-4 text-amber-500 animate-spin shrink-0" />
           )}
           {query && !isLoading && (
             <button
@@ -171,13 +171,13 @@ export default function GoogleAddressAutocomplete({
 
       {/* Desplegable de sugerencias de Google Maps */}
       {isOpen && predictions.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-emerald-200/90 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute top-full left-0 right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-amber-200/90 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between px-2.5 py-1 border-b border-slate-100 text-[10px] text-slate-500 font-bold">
             <span className="flex items-center gap-1.5 text-slate-700">
               <GoogleMapsIcon className="w-3.5 h-3.5" />
               <span>Direcciones Google Maps</span>
             </span>
-            <span className="text-[9px] text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full font-black border border-emerald-200/70">
+            <span className="text-[9px] text-amber-900 bg-amber-100/80 px-2 py-0.5 rounded-full font-black border border-amber-200/70">
               Cobertura Los Lagos
             </span>
           </div>
@@ -190,15 +190,15 @@ export default function GoogleAddressAutocomplete({
                   key={pred.placeId || idx}
                   type="button"
                   onClick={() => handleSelectPrediction(pred)}
-                  className="w-full p-2.5 rounded-xl hover:bg-emerald-50/80 transition-colors cursor-pointer flex items-start gap-2.5 text-left group"
+                  className="w-full p-2.5 rounded-xl hover:bg-amber-50/70 transition-colors cursor-pointer flex items-start gap-2.5 text-left group"
                 >
                   <div
                     className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 transition-transform group-hover:scale-105 ${
-                      inZone ? 'bg-emerald-100/80 text-[#0E8388]' : 'bg-slate-100 text-slate-500'
+                      inZone ? 'bg-amber-100/80 text-amber-700' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
                     {inZone ? (
-                      <MapPin className="w-4 h-4 text-[#0E8388]" />
+                      <MapPin className="w-4 h-4 text-amber-600" />
                     ) : (
                       <AlertCircle className="w-4 h-4 text-amber-500" />
                     )}
@@ -206,12 +206,12 @@ export default function GoogleAddressAutocomplete({
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs font-bold text-slate-900 group-hover:text-[#0A3E40]">
+                      <span className="text-xs font-bold text-slate-900 group-hover:text-amber-900">
                         {pred.mainText}
                       </span>
                       {inZone ? (
-                        <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded shrink-0">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                        <span className="inline-flex items-center gap-0.5 text-[9px] font-black text-amber-900 bg-amber-50 border border-amber-200/70 px-1.5 py-0.2 rounded shrink-0">
+                          <CheckCircle2 className="w-2.5 h-2.5 text-amber-600" />
                           <span>{pred.city}</span>
                         </span>
                       ) : (
@@ -225,7 +225,7 @@ export default function GoogleAddressAutocomplete({
                     </div>
                   </div>
 
-                  <span className="text-[10px] font-black text-[#0E8388] self-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-[10px] font-black text-amber-700 self-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                     Seleccionar
                   </span>
                 </button>

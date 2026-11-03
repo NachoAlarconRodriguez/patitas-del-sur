@@ -1,5 +1,5 @@
 import React from 'react';
-import { Award, Sparkles } from 'lucide-react';
+import { Award, Sparkles, Ticket, Coins, Crown, Lock } from 'lucide-react';
 
 export default function CustomerMembershipCard({
   currentUser,
@@ -37,7 +37,7 @@ export default function CustomerMembershipCard({
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
       {/* Left 5 Cols: CUSTOM PATITAS DEL SUR BRAND VIP MEMBERSHIP CARD */}
       <div className="lg:col-span-5 flex flex-col justify-between">
-        <div className="w-full aspect-[1.58/1] rounded-3xl p-6 text-slate-900 bg-gradient-to-br from-[#E6F4F1] via-[#FAF9F5] to-[#CBE5E1] shadow-2xl border-2 border-[#0E8388]/30 relative overflow-hidden flex flex-col justify-between group transform transition-transform hover:scale-[1.02]">
+        <div className="w-full aspect-[1.58/1] rounded-3xl p-6 text-slate-900 bg-gradient-to-br from-[#FFFDF7] via-[#FFFBEB] to-[#FEF3C7] shadow-2xl border-2 border-[#F5BA13]/40 relative overflow-hidden flex flex-col justify-between group transform transition-transform hover:scale-[1.02]">
           {/* Watermarked Official Patitas del Sur Logo Outline in Background */}
           <img
             src="/images/logo_patitas_del_sur.svg"
@@ -46,7 +46,7 @@ export default function CustomerMembershipCard({
           />
 
           {/* Decorative Brand Color Bar at Top */}
-          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981]" />
+          <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-[#F5BA13] via-[#D97706] to-[#B45309]" />
 
           {/* Card Top Row: Official Logo & Tier Badge */}
           <div className="relative z-10 flex items-center justify-between pt-1">
@@ -56,9 +56,9 @@ export default function CustomerMembershipCard({
               className="h-10 w-auto object-contain drop-shadow-xs"
             />
 
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0A3E40] text-white shadow-md border border-[#0E8388]/40">
-              <Award className="w-3.5 h-3.5 text-amber-300" />
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1D1D1F] text-white shadow-md border border-[#F5BA13]/40">
+              <Award className="w-3.5 h-3.5 text-[#F5BA13]" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#F5BA13]">
                 SOCIO ORO 🥇
               </span>
             </div>
@@ -67,7 +67,7 @@ export default function CustomerMembershipCard({
           {/* Card Middle Row: Member Name, ID & Points Balance */}
           <div className="relative z-10 space-y-1.5 my-auto pt-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-black tracking-widest text-[#0E8388]">
+              <span className="text-[10px] uppercase font-black tracking-widest text-amber-900">
                 Tarjeta de Fidelización Oficial
               </span>
               <span className="text-[10px] font-mono font-bold text-slate-600">
@@ -81,11 +81,11 @@ export default function CustomerMembershipCard({
             </div>
 
             {/* Points Box */}
-            <div className="p-3 rounded-2xl bg-white/90 border border-[#0E8388]/30 shadow-xs flex items-center justify-between backdrop-blur-md">
+            <div className="p-3 rounded-2xl bg-white/95 border border-amber-200/90 shadow-xs flex items-center justify-between backdrop-blur-md">
               <div>
                 <span className="text-[9px] uppercase font-black text-slate-500 block">Saldo de Puntos</span>
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-2xl font-black text-[#0A3E40]">{userPoints.toLocaleString('es-CL')} PTS</span>
+                  <span className="text-2xl font-black text-slate-900">{userPoints.toLocaleString('es-CL')} PTS</span>
                   {pendingPoints > 0 && (
                     <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-md" title="Puntos pendientes de validación de pago">
                       +{pendingPoints} pendientes
@@ -95,7 +95,7 @@ export default function CustomerMembershipCard({
               </div>
               <div className="text-right">
                 <span className="text-[9px] uppercase font-black text-slate-500 block">Valor Canjeable</span>
-                <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                <span className="text-xs font-black text-amber-900 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-300">
                   {redeemableValue > 0
                     ? `$${redeemableValue.toLocaleString('es-CL')} CLP Dcto`
                     : `$0 CLP Dcto`}
@@ -105,11 +105,11 @@ export default function CustomerMembershipCard({
           </div>
 
           {/* Card Bottom Row: Pet Icons & Brand Guarantee */}
-          <div className="relative z-10 flex items-center justify-between text-xs font-bold text-slate-600 pt-2 border-t border-slate-200/80">
-            <div className="flex items-center gap-1.5 text-[11px] font-black text-[#0A3E40]">
+          <div className="relative z-10 flex items-center justify-between text-xs font-bold text-slate-600 pt-2 border-t border-amber-200/80">
+            <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-900">
               <span>🐾 Mascotas: {currentUser?.petName || 'Mis Mascotas'}</span>
             </div>
-            <div className="text-[10px] font-extrabold text-[#0E8388] uppercase tracking-wider">
+            <div className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider">
               Patitas del Sur SpA
             </div>
           </div>
@@ -136,9 +136,9 @@ export default function CustomerMembershipCard({
             <button
               type="button"
               onClick={onOpenRedeemModal}
-              className="px-5 py-3 rounded-2xl bg-gradient-to-r from-[#0A3E40] to-[#0E8388] text-white font-black text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+              className="px-5 py-3 rounded-2xl bg-[#F5BA13] hover:bg-[#e2aa10] text-[#1D1D1F] font-black text-xs shadow-md shadow-[#F5BA13]/25 transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
             >
-              <Sparkles className="w-4 h-4 text-amber-300" />
+              <Sparkles className="w-4 h-4 text-[#1D1D1F]" />
               <span>Canjear Puntos</span>
             </button>
           </div>
@@ -151,7 +151,7 @@ export default function CustomerMembershipCard({
                   ? `¡Meta VIP Alcanzada (${maxTier.points.toLocaleString('es-CL')} Pts)!`
                   : `Progreso para ${nextTier.label || `$${getDiscount(nextTier).toLocaleString('es-CL')} Dcto`} (${nextTier.points.toLocaleString('es-CL')} Pts):`}
               </span>
-              <span className="text-[#0E8388]">
+              <span className="text-amber-800">
                 {isMaxTier
                   ? '✓ Puntos listos para canjear'
                   : `¡Faltan solo ${Math.max(0, targetPoints - userPoints)} Pts! (${progressPercent}%)`}
@@ -159,7 +159,7 @@ export default function CustomerMembershipCard({
             </div>
             <div className="w-full h-4 rounded-full bg-slate-200 overflow-hidden p-0.5 border border-slate-300">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-[#0A3E40] via-[#0E8388] to-[#10B981] transition-all duration-700 shadow-md relative"
+                className="h-full rounded-full bg-gradient-to-r from-[#F5BA13] via-[#D97706] to-[#B45309] transition-all duration-700 shadow-md relative"
                 style={{ width: `${progressPercent}%` }}
               >
                 <div className="absolute inset-0 bg-white/20 animate-pulse" />
@@ -176,43 +176,55 @@ export default function CustomerMembershipCard({
             const discountVal = getDiscount(tier);
             const labelText = tier.label || `$${discountVal.toLocaleString('es-CL')} Dcto`;
 
+            const getTierSvg = (pts) => {
+              if (pts >= 500) return <Crown className="w-3.5 h-3.5 text-amber-500" />;
+              if (pts >= 350) return <Sparkles className="w-3.5 h-3.5 text-amber-500" />;
+              if (pts >= 200) return <Coins className="w-3.5 h-3.5 text-amber-600" />;
+              return <Ticket className="w-3.5 h-3.5 text-amber-600" />;
+            };
+
             return (
               <div
                 key={tier.points}
                 className={`p-3 rounded-2xl border text-xs space-y-1 transition-all ${
                   isReached
-                    ? 'bg-emerald-50 border-emerald-300 shadow-xs'
+                    ? 'bg-amber-50/90 border-amber-300 shadow-2xs'
                     : isNext
-                    ? 'bg-amber-50/70 border-2 border-amber-300 shadow-xs'
+                    ? 'bg-amber-100/50 border-2 border-amber-400 shadow-xs'
                     : 'bg-slate-50 border-slate-200 opacity-60'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div
                     className={`text-[10px] font-black uppercase ${
-                      isReached ? 'text-emerald-800' : isNext ? 'text-amber-900' : 'text-slate-500'
+                      isReached ? 'text-amber-900' : isNext ? 'text-amber-950' : 'text-slate-500'
                     }`}
                   >
                     {tier.points} Pts
                   </div>
-                  <span className="text-xs">{tier.icon || '💵'}</span>
+                  {getTierSvg(tier.points)}
                 </div>
                 <div className="font-extrabold text-slate-900">{labelText}</div>
                 <div className="text-[10px] text-slate-600 font-medium">{tier.validity || 'Válido: 1 compra'}</div>
                 <div
-                  className={`text-[10px] font-black ${
+                  className={`text-[10px] font-black flex items-center gap-1 ${
                     isReached
-                      ? 'text-emerald-700'
-                      : isNext
                       ? 'text-amber-800'
+                      : isNext
+                      ? 'text-amber-900 font-black'
                       : 'text-slate-400'
                   }`}
                 >
-                  {isReached
-                    ? '✓ Canjeable'
-                    : isNext
-                    ? '¡Próxima Meta!'
-                    : `🔒 Faltan ${tier.points - userPoints} Pts`}
+                  {isReached ? (
+                    '✓ Canjeable'
+                  ) : isNext ? (
+                    '¡Próxima Meta!'
+                  ) : (
+                    <>
+                      <Lock className="w-2.5 h-2.5" />
+                      <span>Faltan {tier.points - userPoints} Pts</span>
+                    </>
+                  )}
                 </div>
               </div>
             );

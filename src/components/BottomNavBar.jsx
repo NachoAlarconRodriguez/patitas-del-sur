@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, ShoppingBag, User, Heart, Stethoscope } from 'lucide-react';
+import { Home, ShoppingBag, User, Heart, Stethoscope, Package } from 'lucide-react';
 
 export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAuthModal }) {
   const location = useLocation();
@@ -49,10 +49,11 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
   };
 
   // =========================================================================
-  // VISTA PWA CLIENTE: 3 BOTONES MINIMALISTAS
-  // 1. Izquierda: Mis Mascotas
-  // 2. Centro: Botón grande para realizar una compra
-  // 3. Derecha: Cuaderno Veterinario (vacunas, desparasitante, etc.)
+  // VISTA PWA CLIENTE: 4 ACCESOS DIRECTOS EQUILIBRADOS
+  // 1. Mascotas (mascotas)
+  // 2. Tienda (tienda)
+  // 3. Mis Pedidos (compras)
+  // 4. Cuaderno Vet (cuaderno)
   // =========================================================================
   if (isCustomerPWA) {
     return (
@@ -60,15 +61,15 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
         aria-label="Navegación PWA Cliente"
         className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white/95 backdrop-blur-2xl border-t border-slate-200/90 shadow-[0_-4px_25px_rgba(0,0,0,0.08)] pb-safe transition-all duration-300"
       >
-        <div className="flex items-center justify-between px-8 py-1.5 max-w-md mx-auto relative">
+        <div className="flex items-center justify-around px-2 py-1 max-w-md mx-auto relative">
           
-          {/* 1. Al lado izquierdo: Mis Mascotas */}
+          {/* 1. Mis Mascotas */}
           <button
             type="button"
             onClick={() => handleSelectCustomerTab('mascotas')}
-            className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer min-h-[44px] ${
               activeCustomerTab === 'mascotas'
-                ? 'text-[#0E8388]'
+                ? 'text-[#D97706]'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -76,55 +77,85 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
               <Heart
                 className={`w-5 h-5 transition-all ${
                   activeCustomerTab === 'mascotas'
-                    ? 'fill-[#0E8388] text-[#0E8388] scale-110'
+                    ? 'fill-[#F5BA13] text-[#D97706] scale-110'
                     : 'text-slate-500'
                 }`}
               />
               {activeCustomerTab === 'mascotas' && (
-                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
               )}
             </div>
-            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'mascotas' ? 'font-black' : 'font-semibold'}`}>
-              Mis Mascotas
+            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'mascotas' ? 'font-black text-[#D97706]' : 'font-semibold text-slate-500'}`}>
+              Mascotas
             </span>
           </button>
 
-          {/* 2. Al centro: Botón grande para realizar una compra */}
-          <div className="flex flex-col items-center -mt-6">
-            <button
-              type="button"
-              onClick={() => handleSelectCustomerTab('tienda')}
-              className={`w-14 h-14 rounded-full bg-gradient-to-tr from-[#0A3E40] via-[#0E8388] to-[#10B981] text-white flex items-center justify-center shadow-lg shadow-[#0E8388]/35 border-4 border-white transition-all transform hover:scale-105 active:scale-95 cursor-pointer relative group ${
-                activeCustomerTab === 'tienda' ? 'ring-2 ring-[#0E8388]' : ''
-              }`}
-              aria-label="Realizar una compra"
-              title="Realizar una compra"
-            >
-              <ShoppingBag className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
+          {/* 2. Tienda */}
+          <button
+            type="button"
+            onClick={() => handleSelectCustomerTab('tienda')}
+            className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer min-h-[44px] relative ${
+              activeCustomerTab === 'tienda'
+                ? 'text-[#D97706]'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className="relative p-1">
+              <ShoppingBag
+                className={`w-5 h-5 transition-all ${
+                  activeCustomerTab === 'tienda'
+                    ? 'text-[#D97706] scale-110 stroke-[2.5]'
+                    : 'text-slate-500'
+                }`}
+              />
               {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#C86D39] text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
+                <span className="absolute -top-1 -right-2 bg-[#F5BA13] text-[#1D1D1F] text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white shadow-xs">
                   {cartCount}
                 </span>
               )}
-            </button>
-            <span
-              className={`text-[10px] tracking-tight mt-1 ${
-                activeCustomerTab === 'tienda'
-                  ? 'font-black text-[#0E8388]'
-                  : 'font-bold text-slate-700'
-              }`}
-            >
-              Comprar
+              {activeCustomerTab === 'tienda' && (
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
+              )}
+            </div>
+            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'tienda' ? 'font-black text-[#D97706]' : 'font-semibold text-slate-500'}`}>
+              Tienda
             </span>
-          </div>
+          </button>
 
-          {/* 3. Al lado derecho: Cuaderno Veterinario */}
+          {/* 3. Mis Pedidos & Puntos */}
+          <button
+            type="button"
+            onClick={() => handleSelectCustomerTab('compras')}
+            className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer min-h-[44px] ${
+              activeCustomerTab === 'compras'
+                ? 'text-[#D97706]'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <div className="relative p-1">
+              <Package
+                className={`w-5 h-5 transition-all ${
+                  activeCustomerTab === 'compras'
+                    ? 'text-[#D97706] scale-110 stroke-[2.5]'
+                    : 'text-slate-500'
+                }`}
+              />
+              {activeCustomerTab === 'compras' && (
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
+              )}
+            </div>
+            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'compras' ? 'font-black text-[#D97706]' : 'font-semibold text-slate-500'}`}>
+              Mis Pedidos
+            </span>
+          </button>
+
+          {/* 4. Cuaderno Veterinario */}
           <button
             type="button"
             onClick={() => handleSelectCustomerTab('cuaderno')}
-            className={`flex flex-col items-center justify-center py-1 px-2 rounded-2xl transition-all active:scale-90 cursor-pointer ${
+            className={`flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all active:scale-90 cursor-pointer min-h-[44px] ${
               activeCustomerTab === 'cuaderno'
-                ? 'text-[#0E8388]'
+                ? 'text-[#D97706]'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
@@ -132,15 +163,15 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
               <Stethoscope
                 className={`w-5 h-5 transition-all ${
                   activeCustomerTab === 'cuaderno'
-                    ? 'text-[#0E8388] scale-110 stroke-[2.5]'
+                    ? 'text-[#D97706] scale-110 stroke-[2.5]'
                     : 'text-slate-500'
                 }`}
               />
               {activeCustomerTab === 'cuaderno' && (
-                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
               )}
             </div>
-            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'cuaderno' ? 'font-black' : 'font-semibold'}`}>
+            <span className={`text-[10px] tracking-tight mt-0.5 ${activeCustomerTab === 'cuaderno' ? 'font-black text-[#D97706]' : 'font-semibold text-slate-500'}`}>
               Cuaderno Vet
             </span>
           </button>
@@ -165,14 +196,14 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
           to="/"
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
             isActive('/')
-              ? 'text-[#0E8388]'
+              ? 'text-[#D97706]'
               : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           <div className="relative p-1">
             <Home className="w-5 h-5" />
             {isActive('/') && (
-              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
             )}
           </div>
           <span className="text-[10px] font-extrabold tracking-tight mt-0.5">Inicio</span>
@@ -183,14 +214,14 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
           to="/perros"
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
             isActive('/perros')
-              ? 'text-[#0E8388]'
+              ? 'text-[#D97706]'
               : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           <div className="relative p-1">
             <span className="text-lg leading-none">🐶</span>
             {isActive('/perros') && (
-              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+              <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
             )}
           </div>
           <span className="text-[10px] font-extrabold tracking-tight mt-0.5">Perros</span>
@@ -223,7 +254,7 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
         >
           <div className="relative p-1">
             <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-md">
-              <ShoppingBag className="w-4 h-4 text-emerald-400" />
+              <ShoppingBag className="w-4 h-4 text-[#F5BA13]" />
             </div>
             {cartCount > 0 && (
               <span className="absolute -top-1 -right-1 bg-[#C86D39] text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow-xs animate-pulse">
@@ -240,16 +271,16 @@ export default function BottomNavBar({ cartCount = 0, onOpenCart, user, onOpenAu
             to="/mi-cuenta"
             className={`flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all active:scale-90 ${
               isActive('/mi-cuenta')
-                ? 'text-[#0E8388]'
+                ? 'text-[#D97706]'
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
             <div className="relative p-1">
-              <div className="w-6 h-6 rounded-full bg-[#0E8388]/15 text-[#0E8388] font-bold text-xs flex items-center justify-center border border-[#0E8388]/30">
+              <div className="w-6 h-6 rounded-full bg-[#F5BA13]/20 text-[#1D1D1F] font-bold text-xs flex items-center justify-center border border-[#F5BA13]/50">
                 {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
               </div>
               {isActive('/mi-cuenta') && (
-                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#0E8388]" />
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-[#F5BA13]" />
               )}
             </div>
             <span className="text-[10px] font-extrabold tracking-tight mt-0.5 truncate max-w-[45px]">

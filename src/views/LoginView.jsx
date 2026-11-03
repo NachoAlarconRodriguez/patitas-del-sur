@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, ArrowLeft, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getCustomerProfile, upsertCustomerProfile } from '../services/customersService';
 
@@ -220,12 +220,12 @@ export default function LoginView({ onLoginSuccess }) {
   };
 
   return (
-    <div className="min-h-dvh w-full bg-gradient-to-b from-[#093C3E] via-[#0E8388] to-[#072B2D] flex flex-col items-center justify-center p-6 select-none relative">
+    <div className="min-h-dvh w-full bg-gradient-to-b from-[#1D1D1F] via-[#2A1D0E] to-[#120D06] flex flex-col items-center justify-center p-6 select-none relative">
       
       {/* Toast Notificación */}
       {notice && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur-md text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-2.5 animate-in fade-in slide-in-from-top-3">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
           <span>{notice}</span>
         </div>
       )}
@@ -233,14 +233,35 @@ export default function LoginView({ onLoginSuccess }) {
       {/* Contenedor central de autenticación segura */}
       <div className="w-full max-w-sm flex flex-col items-center space-y-6 animate-in fade-in duration-300">
         
+        {/* Cabecera con flecha para volver al sitio web público */}
+        <div className="w-full flex items-center justify-between">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white hover:text-amber-200 backdrop-blur-md border border-white/20 text-xs font-bold transition-all shadow-md group cursor-pointer"
+            title="Volver a la portada y catálogo público"
+          >
+            <ArrowLeft className="w-4 h-4 text-amber-300 group-hover:-translate-x-1 transition-transform" />
+            <span>Volver al sitio web</span>
+          </Link>
+
+          <span className="text-[11px] font-black text-amber-200 bg-amber-500/15 border border-amber-400/25 px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+            <span>Tienda Pública</span>
+            <span>🐾</span>
+          </span>
+        </div>
+
         {/* Logo de la empresa */}
-        <div className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-center transition-transform hover:scale-105">
+        <Link
+          to="/"
+          title="Ir a la portada de Patitas del Sur"
+          className="bg-white p-3.5 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-center transition-transform hover:scale-105 cursor-pointer"
+        >
           <img
-            src="/images/logo_patitas_del_sur.svg"
+            src="/images/logo_patitas_del_sur_amber.svg"
             alt="Patitas del Sur"
             className="h-14 sm:h-16 w-auto object-contain"
           />
-        </div>
+        </Link>
 
         {/* Mensaje de Error */}
         {errorMsg && (
@@ -319,7 +340,7 @@ export default function LoginView({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
+              className="w-full py-4 rounded-2xl bg-[#F5BA13] hover:bg-[#D97706] active:scale-98 text-[#1D1D1F] hover:text-white font-black text-sm tracking-wide shadow-xl shadow-[#F5BA13]/25 flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
             >
               {loading ? (
                 <>
@@ -429,7 +450,7 @@ export default function LoginView({ onLoginSuccess }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-4 rounded-2xl bg-[#062628] hover:bg-[#041a1b] active:scale-98 text-white font-black text-sm tracking-wide shadow-xl flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
+              className="w-full py-4 rounded-2xl bg-[#F5BA13] hover:bg-[#D97706] active:scale-98 text-[#1D1D1F] hover:text-white font-black text-sm tracking-wide shadow-xl shadow-[#F5BA13]/25 flex items-center justify-center gap-2 transition-all cursor-pointer mt-2 disabled:opacity-60"
             >
               {loading ? (
                 <>

@@ -43,14 +43,14 @@ import {
 } from 'lucide-react';
 
 // Custom Vector Paw Print Icon for gallery indicators
-function PawPrintIcon({ active = false, activeColor = "#10B981" }) {
+function PawPrintIcon({ active = false, activeColor = "#F5BA13" }) {
   return (
     <svg
       viewBox="0 0 24 24"
       className={`w-5 h-5 transition-all duration-300 cursor-pointer ${
-        active ? 'scale-125 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'opacity-40 hover:opacity-100 hover:scale-110'
+        active ? 'scale-125 drop-shadow-[0_0_8px_rgba(245,186,19,0.5)]' : 'opacity-40 hover:opacity-100 hover:scale-110'
       }`}
-      fill={active ? activeColor : '#0F383A'}
+      fill={active ? activeColor : '#94A3B8'}
     >
       {/* Main Bottom Pad */}
       <ellipse cx="12" cy="16" rx="4.5" ry="3.5" />
@@ -64,7 +64,7 @@ function PawPrintIcon({ active = false, activeColor = "#10B981" }) {
 }
 
 // Mini Circular Ring Chart Component for numeric percentage values (% Proteína)
-function MiniCircleMetric({ value, label, color = '#0E8388', trackColor = 'text-slate-200/70' }) {
+function MiniCircleMetric({ value, label, color = '#D97706', trackColor = 'text-slate-200/70' }) {
   const numeric = typeof value === 'number' ? value : parseInt(value, 10) || 0;
   const radius = 14;
   const circumference = 2 * Math.PI * radius;
@@ -105,22 +105,22 @@ function MiniCircleMetric({ value, label, color = '#0E8388', trackColor = 'text-
       </span>
 
       {/* Explanatory Tooltip Popover on Hover */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#0F383A] text-white rounded-2xl shadow-2xl shadow-[#0E8388]/20 border border-[#0E8388]/40 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
-        <div className="flex items-center gap-1.5 text-xs font-black text-[#4DE1D0] mb-1">
-          <Dumbbell className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#1D1D1F] text-white rounded-2xl shadow-2xl shadow-black/25 border border-slate-700 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
+        <div className="flex items-center gap-1.5 text-xs font-black text-[#F5BA13] mb-1">
+          <Dumbbell className="w-3.5 h-3.5 shrink-0 text-[#F5BA13]" />
           <span>Porcentaje Proteína ({value})</span>
         </div>
-        <p className="text-[11px] text-slate-200 font-medium leading-relaxed">
+        <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
           Nivel de concentración proteica por porción. Esencial para la nutrición, masa muscular y vitalidad diaria de tu mascota.
         </p>
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0F383A]" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#1D1D1F]" />
       </div>
     </div>
   );
 }
 
 // Protein Source Vector Icon Badge (Modern Lucide UI Icons, rounded-2xl badge card)
-function ProteinIconBadge({ icon: IconComponent, label, iconColor = 'text-[#0E8388]', bgColor = 'bg-white border-slate-200' }) {
+function ProteinIconBadge({ icon: IconComponent, label, iconColor = 'text-slate-800', bgColor = 'bg-white border-slate-200' }) {
   let tooltipTitle = `Fuente Proteica: ${label}`;
   let tooltipText = `Proteína magra seleccionada para aportar aminoácidos de alto valor biológico y excelente palatabilidad.`;
 
@@ -146,15 +146,15 @@ function ProteinIconBadge({ icon: IconComponent, label, iconColor = 'text-[#0E83
       </span>
 
       {/* Explanatory Tooltip Popover on Hover */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#0F383A] text-white rounded-2xl shadow-2xl shadow-[#0E8388]/20 border border-[#0E8388]/40 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
-        <div className="flex items-center gap-1.5 text-xs font-black text-[#4DE1D0] mb-1">
-          <IconComponent className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#1D1D1F] text-white rounded-2xl shadow-2xl shadow-black/25 border border-slate-700 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
+        <div className="flex items-center gap-1.5 text-xs font-black text-[#F5BA13] mb-1">
+          <IconComponent className="w-3.5 h-3.5 shrink-0 text-[#F5BA13]" />
           <span>{tooltipTitle}</span>
         </div>
-        <p className="text-[11px] text-slate-200 font-medium leading-relaxed">
+        <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
           {tooltipText}
         </p>
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0F383A]" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#1D1D1F]" />
       </div>
     </div>
   );
@@ -205,15 +205,15 @@ function GrainIconBadge({ isGrainFree, grainLevelProp, tagline = '' }) {
       </span>
 
       {/* Explanatory Tooltip Popover on Hover */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#0F383A] text-white rounded-2xl shadow-2xl shadow-[#0E8388]/20 border border-[#0E8388]/40 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
-        <div className="flex items-center gap-1.5 text-xs font-black text-[#4DE1D0] mb-1">
-          <Wheat className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#1D1D1F] text-white rounded-2xl shadow-2xl shadow-black/25 border border-slate-700 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
+        <div className="flex items-center gap-1.5 text-xs font-black text-[#F5BA13] mb-1">
+          <Wheat className="w-3.5 h-3.5 shrink-0 text-[#F5BA13]" />
           <span>{tooltipTitle}</span>
         </div>
-        <p className="text-[11px] text-slate-200 font-medium leading-relaxed">
+        <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
           {tooltipText}
         </p>
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0F383A]" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#1D1D1F]" />
       </div>
     </div>
   );
@@ -247,17 +247,17 @@ function VetStatusMetric({ isVeterinary = false }) {
       </span>
 
       {/* Explanatory Tooltip Popover on Hover */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#0F383A] text-white rounded-2xl shadow-2xl shadow-[#0E8388]/20 border border-[#0E8388]/40 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
-        <div className="flex items-center gap-1.5 text-xs font-black text-[#4DE1D0] mb-1">
-          <Stethoscope className="w-3.5 h-3.5 shrink-0 text-[#10B981]" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-60 p-3.5 bg-[#1D1D1F] text-white rounded-2xl shadow-2xl shadow-black/25 border border-slate-700 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-300 z-50 animate-in fade-in slide-in-from-bottom-2 text-left">
+        <div className="flex items-center gap-1.5 text-xs font-black text-purple-300 mb-1">
+          <Stethoscope className="w-3.5 h-3.5 shrink-0 text-purple-400" />
           <span>{tooltipTitle}</span>
         </div>
-        <p className="text-[11px] text-slate-200 font-medium leading-relaxed">
+        <p className="text-[11px] text-slate-300 font-medium leading-relaxed">
           {tooltipText}
         </p>
         
         {/* Tooltip Arrow */}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#0F383A]" />
+        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#1D1D1F]" />
       </div>
 
     </div>
@@ -299,8 +299,8 @@ function getProteinBadge(mainProteinStr, productNameStr) {
     return {
       icon: Sparkles,
       label: 'Multiproteico',
-      iconColor: 'text-[#0E8388]',
-      bgColor: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+      iconColor: 'text-[#D97706]',
+      bgColor: 'bg-amber-50 border-amber-200 text-amber-800',
     };
   }
 
@@ -317,8 +317,8 @@ function getProteinBadge(mainProteinStr, productNameStr) {
     return {
       icon: Fish,
       label: 'Salmón',
-      iconColor: 'text-teal-600',
-      bgColor: 'bg-teal-50 border-teal-200/90 text-teal-900',
+      iconColor: 'text-amber-600',
+      bgColor: 'bg-amber-50 border-amber-200/90 text-amber-900',
     };
   }
 
@@ -335,15 +335,15 @@ function getProteinBadge(mainProteinStr, productNameStr) {
     return {
       icon: Fish,
       label: 'Pescado',
-      iconColor: 'text-[#0E8388]',
-      bgColor: 'bg-[#E6F4F1] border-[#0E8388]/30 text-[#0A3E40]',
+      iconColor: 'text-amber-700',
+      bgColor: 'bg-amber-50 border-amber-200/60 text-amber-900',
     };
   }
 
   return {
     icon: Beef,
     label: 'Proteína',
-    iconColor: 'text-[#0E8388]',
+    iconColor: 'text-slate-700',
     bgColor: 'bg-slate-50 border-slate-200 text-slate-800',
   };
 }
@@ -554,7 +554,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
       <div className="pt-36 pb-24 max-w-4xl mx-auto px-6 text-center space-y-4">
         <h2 className="text-2xl font-black text-slate-800">Producto no disponible</h2>
         <p className="text-slate-500 text-sm">El catálogo se encuentra en actualización o el producto consultado no existe.</p>
-        <Link to="/perros" className="inline-block px-6 py-2.5 rounded-full bg-[#0E8388] text-white text-xs font-bold">
+        <Link to="/perros" className="inline-block px-6 py-2.5 rounded-full bg-[#1D1D1F] hover:bg-black hover:text-[#F5BA13] text-white text-xs font-bold transition-all shadow-md active:scale-95">
           Explorar Catálogo
         </Link>
       </div>
@@ -672,7 +672,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     : [];
 
   return (
-    <div className="pt-28 pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
+    <div className="pt-28 pb-44 md:pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
       <SEOHead
         title={product.name}
         description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${product.tagline || 'Alimento holístico y natural para mascotas.'} Despacho a domicilio en Puerto Varas, Llanquihue y Región de Los Lagos.`}
@@ -696,7 +696,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
           
           <button
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-slate-700 hover:text-[#0E8388] text-xs font-extrabold border border-slate-200 shadow-xs hover:shadow-md transition-all active:scale-95"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white text-slate-700 hover:text-[#D97706] text-xs font-extrabold border border-slate-200 shadow-xs hover:shadow-md transition-all active:scale-95"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Volver al Catálogo</span>
@@ -758,7 +758,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               {productImages.length > 1 && (
                 <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
                   <span className="px-3 py-1.5 rounded-full text-xs font-black bg-white/90 text-slate-800 border border-slate-200 shadow-sm backdrop-blur-md flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <ImageIcon className="w-3.5 h-3.5 text-[#D97706]" />
                     <span>Foto {activeImageIndex + 1} de {productImages.length}</span>
                   </span>
                 </div>
@@ -767,7 +767,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               {/* Mascot Recommendation Tag */}
               <div className="absolute top-4 right-4 z-10">
                 <span className="px-3.5 py-1.5 rounded-full text-xs font-black bg-white/90 text-slate-800 border border-slate-200 shadow-sm backdrop-blur-md flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#F5BA13]" />
                   {isDog ? 'Kira 🐶' : 'Jack 🐱'}
                 </span>
               </div>
@@ -792,9 +792,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                       onClick={() => setActiveImageIndex(idx)}
                       className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl p-1.5 cursor-pointer flex-shrink-0 transition-all duration-200 border-2 bg-white ${
                         isActive
-                          ? isDog
-                            ? 'border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-105'
-                            : 'border-[#C86D39] shadow-md ring-2 ring-[#C86D39]/30 scale-105'
+                          ? 'border-[#F5BA13] shadow-md ring-2 ring-[#F5BA13]/40 scale-105'
                           : 'border-slate-200/90 hover:border-slate-300 opacity-75 hover:opacity-100 hover:scale-102 shadow-2xs'
                       }`}
                       title={`Ver foto ${idx + 1}`}
@@ -806,11 +804,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         className="w-full h-full object-contain rounded-xl"
                       />
                       {isActive && (
-                        <span
-                          className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs ${
-                            isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'
-                          }`}
-                        />
+                        <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs bg-[#F5BA13]" />
                       )}
                     </button>
                   );
@@ -834,7 +828,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   {/* Brand Name */}
-                  <span className="text-xl sm:text-2xl font-black uppercase tracking-wider text-[#0E8388]">
+                  <span className="text-xl sm:text-2xl font-black uppercase tracking-wider text-[#D97706]">
                     {product.brand || 'Patagonia Holística'}
                   </span>
 
@@ -880,7 +874,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     {product.hasFlavorVariants ? 'Sabor:' : 'Formato:'}{' '}
                     <strong className="text-slate-900 font-extrabold">{selectedWeight}</strong>
                   </span>
-                  <span className="text-[11px] font-bold text-[#0E8388]">
+                  <span className="text-[11px] font-bold text-slate-500">
                     {product.weights.length} variedades
                   </span>
                 </label>
@@ -899,9 +893,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         disabled={isVOutOfStock}
                         className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all border cursor-pointer active:scale-95 ${
                           isSelected
-                            ? isDog
-                              ? 'bg-emerald-50 text-slate-900 border-[#0E8388] shadow-2xs ring-2 ring-[#0E8388]/30'
-                              : 'bg-amber-50 text-slate-900 border-[#C86D39] shadow-2xs ring-2 ring-[#C86D39]/30'
+                            ? 'bg-amber-50/90 text-slate-950 border-[#F5BA13] shadow-xs ring-2 ring-[#F5BA13]/40'
                             : isVOutOfStock
                             ? 'bg-slate-100 text-slate-300 border-slate-200 line-through cursor-not-allowed opacity-60'
                             : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
@@ -955,7 +947,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     ⚡ ¡Última unidad!
                   </span>
                 ) : (
-                  <span className="px-3 py-1 rounded-xl bg-[#10B981]/15 text-[#10B981] font-black text-xs">
+                  <span className="px-3 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-black text-xs">
                     ✓ {currentStock} unidades disponibles
                   </span>
                 )}
@@ -984,21 +976,19 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 <button
                   disabled={isOutOfStock}
                   onClick={handleAddToCart}
-                  className={`flex-1 py-3 px-6 rounded-xl font-black text-xs sm:text-sm text-white transition-all shadow-md flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
+                  className={`flex-1 py-3 px-6 rounded-xl font-black text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
                     isOutOfStock
                       ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                       : addedSuccess
-                      ? 'bg-[#10B981] shadow-[#10B981]/30'
-                      : isDog
-                      ? 'bg-[#0E8388] hover:bg-[#0A3E40] shadow-[#0E8388]/30'
-                      : 'bg-[#C86D39] hover:bg-[#A8582C] shadow-[#C86D39]/30'
+                      ? 'bg-[#F5BA13] text-[#1D1D1F] font-black shadow-md'
+                      : 'bg-[#1D1D1F] hover:bg-black text-white hover:text-[#F5BA13] shadow-md hover:shadow-xl'
                   }`}
                 >
                   {isOutOfStock ? (
                     <span>Agotado en {selectedWeight}</span>
                   ) : addedSuccess ? (
                     <>
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-4 h-4 stroke-[3]" />
                       <span>¡AGREGADO AL CARRITO!</span>
                     </>
                   ) : (
@@ -1018,11 +1008,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 onClick={() => setActiveTab('ingredientes')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
                   activeTab === 'ingredientes'
-                    ? 'bg-[#0A3E40] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-[#1D1D1F] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                 }`}
               >
-                <Utensils className="w-3.5 h-3.5 text-[#0E8388]" />
+                <Utensils className="w-3.5 h-3.5 text-[#F5BA13]" />
                 <span>Ingredientes & Análisis</span>
               </button>
 
@@ -1031,11 +1021,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 onClick={() => setActiveTab('racion')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
                   activeTab === 'racion'
-                    ? 'bg-[#0A3E40] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-[#1D1D1F] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                 }`}
               >
-                <Scale className="w-3.5 h-3.5 text-[#C86D39]" />
+                <Scale className="w-3.5 h-3.5 text-amber-400" />
                 <span>Guía de Alimentación</span>
               </button>
 
@@ -1044,11 +1034,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 onClick={() => setActiveTab('beneficios')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
                   activeTab === 'beneficios'
-                    ? 'bg-[#0A3E40] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-[#1D1D1F] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                 }`}
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#10B981]" />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Beneficios</span>
               </button>
 
@@ -1057,11 +1047,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 onClick={() => setActiveTab('resenas')}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
                   activeTab === 'resenas'
-                    ? 'bg-[#0A3E40] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-[#1D1D1F] text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                 }`}
               >
-                <MessageSquare className="w-3.5 h-3.5 text-amber-500" />
+                <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
                 <span>Reseñas ({product.reviewsCount})</span>
               </button>
             </div>
@@ -1077,7 +1067,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     </h3>
                     {ingredientList.length > 5 && (
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#0E8388] mr-1 align-middle"></span>
+                        <span className="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1 align-middle"></span>
                         Primeros 5 destacados
                       </span>
                     )}
@@ -1105,7 +1095,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                       </p>
                       {ingredientList.length >= 5 && (
                         <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] sm:text-[11px] text-slate-400 italic flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3 text-[#0E8388] shrink-0" />
+                          <Sparkles className="w-3 h-3 text-[#D97706] shrink-0" />
                           <span>
                             Los primeros 5 ingredientes en negrita constituyen la base principal de mayor concentración del alimento.
                           </span>
@@ -1132,9 +1122,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     {primaryGuaranteed.map((item) => (
                       <div
                         key={item.label}
-                        className="p-3 rounded-2xl bg-gradient-to-b from-[#0E8388]/5 to-transparent border border-[#0E8388]/20 text-center shadow-xs"
+                        className="p-3 rounded-2xl bg-amber-50/50 border border-amber-200/70 text-center shadow-2xs"
                       >
-                        <div className="text-xl sm:text-2xl font-black text-[#0E8388] font-mono tracking-tight">
+                        <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-tight">
                           {item.value}
                         </div>
                         <div className="text-[10px] sm:text-[11px] font-black text-slate-700 uppercase tracking-wider mt-1">
@@ -1188,7 +1178,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     </p>
                   </div>
                   {product.targetStageLabel && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black self-start sm:self-auto">
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black self-start sm:self-auto">
                       {product.targetStageLabel}
                     </span>
                   )}
@@ -1202,9 +1192,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     onClick={() => setWizardStep(1)}
                     className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
                       wizardStep === 1
-                        ? 'bg-[#0E8388] text-white shadow-2xs'
+                        ? 'bg-[#1D1D1F] text-white shadow-2xs'
                         : wizardStep > 1 || wizardStep === 'result'
-                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                         : 'bg-white text-slate-400 border border-slate-200'
                     }`}
                   >
@@ -1223,9 +1213,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         disabled={!selectedLifeStage}
                         className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
                           wizardStep === 2
-                            ? 'bg-[#0E8388] text-white shadow-2xs'
+                            ? 'bg-[#1D1D1F] text-white shadow-2xs'
                             : wizardStep > 2 || wizardStep === 'result'
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                            ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                             : 'bg-white text-slate-400 border border-slate-200'
                         }`}
                       >
@@ -1247,9 +1237,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     disabled={!selectedLifeStage}
                     className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
                       wizardStep === 3
-                        ? 'bg-[#0E8388] text-white shadow-2xs'
+                        ? 'bg-[#1D1D1F] text-white shadow-2xs'
                         : wizardStep === 'result'
-                        ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                        ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                         : 'bg-white text-slate-400 border border-slate-200'
                     }`}
                   >
@@ -1262,7 +1252,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 {wizardStep === 1 && (
                   <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
                     <div className="space-y-0.5">
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
                         Paso 1 de {isDog ? '3' : '2'}
                       </span>
                       <h4 className="text-sm font-black text-slate-900 tracking-tight">
@@ -1276,7 +1266,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setSelectedLifeStage('cachorro')}
                         className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                           selectedLifeStage === 'cachorro'
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1290,7 +1280,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setSelectedLifeStage('adulto')}
                         className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                           selectedLifeStage === 'adulto'
-                            ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1305,7 +1295,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                           onClick={() => setSelectedLifeStage('senior')}
                           className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                             selectedLifeStage === 'senior'
-                              ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-md ring-2 ring-[#0E8388]/30 scale-102'
+                              ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                               : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
@@ -1329,7 +1319,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         }}
                         className={`px-4 py-2 rounded-full font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                           selectedLifeStage
-                            ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-2xs hover:scale-105'
+                            ? 'bg-[#1D1D1F] text-white hover:bg-black hover:text-[#F5BA13] shadow-md active:scale-95'
                             : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                         }`}
                       >
@@ -1344,7 +1334,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 {wizardStep === 2 && (
                   <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
                     <div className="space-y-0.5">
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
                         Paso 2 de 3
                       </span>
                       <h4 className="text-sm font-black text-slate-900 tracking-tight">
@@ -1358,7 +1348,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setSelectedBreedSize('pequena')}
                         className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                           selectedBreedSize === 'pequena'
-                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1372,7 +1362,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setSelectedBreedSize('mediana')}
                         className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                           selectedBreedSize === 'mediana'
-                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1386,7 +1376,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setSelectedBreedSize('grande')}
                         className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
                           selectedBreedSize === 'grande'
-                            ? 'bg-[#0A3E40] text-white border-[#0A3E40] shadow-md ring-2 ring-[#0A3E40]/30 scale-102'
+                            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1411,7 +1401,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                         onClick={() => setWizardStep(3)}
                         className={`px-4 py-2 rounded-full font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                           selectedBreedSize
-                            ? 'bg-[#0E8388] text-white hover:bg-[#0A3E40] shadow-2xs hover:scale-105'
+                            ? 'bg-[#1D1D1F] text-white hover:bg-black hover:text-[#F5BA13] shadow-md active:scale-95'
                             : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                         }`}
                       >
@@ -1426,7 +1416,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 {wizardStep === 3 && (
                   <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
                     <div className="space-y-0.5">
-                      <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/10 text-[#0E8388] text-[10px] font-black uppercase tracking-wider">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
                         Último Paso
                       </span>
                       <h4 className="text-sm font-black text-slate-900 tracking-tight">
@@ -1435,7 +1425,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     </div>
 
                     <div className="flex flex-col items-center gap-3 py-1">
-                      <div className="flex items-center border-2 border-[#0E8388]/30 rounded-2xl bg-slate-50 p-1.5 shadow-inner">
+                      <div className="flex items-center border-2 border-slate-200 rounded-2xl bg-slate-50 p-1.5 shadow-inner">
                         <button
                           type="button"
                           onClick={() => setPetWeight(Math.max(1, (parseFloat(petWeight) || 1) - 1))}
@@ -1474,7 +1464,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                             onClick={() => setPetWeight(w)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all border cursor-pointer ${
                               parseFloat(petWeight) === w
-                                ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-2xs'
+                                ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-2xs'
                                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
@@ -1502,7 +1492,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                       <button
                         type="button"
                         onClick={() => setWizardStep('result')}
-                        className="px-5 py-2.5 rounded-full font-black text-xs bg-gradient-to-r from-[#0E8388] to-[#0A3E40] text-white hover:shadow-md hover:scale-105 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                        className="px-5 py-2.5 rounded-full font-black text-xs bg-[#1D1D1F] hover:bg-black text-white hover:text-[#F5BA13] hover:shadow-md hover:scale-102 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
                       >
                         <span>🎯 Calcular Ración</span>
                       </button>
@@ -1516,11 +1506,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                     <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-800">
                         <span className="text-slate-400">Mascota:</span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-[#0E8388]/15 text-[#0E8388]">
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900">
                           {selectedLifeStage === 'cachorro' ? '🐾 Cachorro' : selectedLifeStage === 'adulto' ? '🐕 Adulto' : '🦴 Senior'}
                         </span>
                         {selectedBreedSize && (
-                          <span className="px-2.5 py-0.5 rounded-full bg-[#0A3E40]/15 text-[#0A3E40]">
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800">
                             {selectedBreedSize === 'pequena' ? '🐩 Pequeña' : selectedBreedSize === 'mediana' ? '🐕 Mediana' : '🦮 Grande'}
                           </span>
                         )}
@@ -1532,7 +1522,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                       <button
                         type="button"
                         onClick={() => setWizardStep(1)}
-                        className="px-3 py-1 rounded-full text-xs font-black bg-[#0E8388]/10 text-[#0E8388] hover:bg-[#0E8388] hover:text-white transition-colors cursor-pointer self-start sm:self-auto"
+                        className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-700 hover:bg-[#1D1D1F] hover:text-white transition-colors cursor-pointer self-start sm:self-auto"
                       >
                         ✏️ Modificar
                       </button>
@@ -1540,13 +1530,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
                     {/* Highlight Banner */}
                     {activeFeedingRow && (
-                      <div className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs shadow-2xs transition-all ${
-                        isDog
-                          ? 'bg-[#0E8388]/10 border-[#0E8388]/30 text-[#0A3E40]'
-                          : 'bg-[#C86D39]/10 border-[#C86D39]/30 text-[#692A08]'
-                      }`}>
+                      <div className="p-3.5 rounded-xl border border-amber-200/80 bg-amber-50/70 text-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs shadow-2xs transition-all">
                         <div className="flex items-center gap-2.5 font-black text-xs sm:text-sm">
-                          <span className={`p-2 rounded-lg text-white text-xs ${isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'}`}>🎯</span>
+                          <span className="p-2 rounded-lg text-[#1D1D1F] bg-[#F5BA13] text-xs">🎯</span>
                           <div>
                             <div>Ración Sugerida ({petWeight} kg):</div>
                             <div className="text-[10px] font-normal opacity-80">{activeFeedingRow.label}</div>
@@ -1575,9 +1561,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                                 key={row.id}
                                 className={`transition-all duration-200 ${
                                   isActive
-                                    ? isDog
-                                      ? 'bg-[#0E8388]/15 font-black text-[#0A3E40]'
-                                      : 'bg-[#C86D39]/15 font-black text-[#692A08]'
+                                    ? 'bg-amber-100/70 font-black text-slate-900'
                                     : 'hover:bg-slate-50'
                                 }`}
                               >
@@ -1585,9 +1569,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                                   <div className="flex items-center gap-2">
                                     <span>{row.label}</span>
                                     {isActive && (
-                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black text-white ${
-                                        isDog ? 'bg-[#0E8388]' : 'bg-[#C86D39]'
-                                      }`}>
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black text-[#1D1D1F] bg-[#F5BA13]">
                                         ✓ Mascota
                                       </span>
                                     )}
@@ -1666,12 +1648,12 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
         <section className="max-w-7xl mx-auto px-6">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <span className="text-xs font-black text-[#0E8388] uppercase tracking-widest">Recomendaciones del Sur</span>
+              <span className="text-xs font-black text-[#D97706] uppercase tracking-widest">Recomendaciones del Sur</span>
               <h2 className="text-2xl md:text-3xl font-black text-slate-900">También te puede gustar</h2>
             </div>
             <Link
               to={isDog ? "/perros" : "/gatos"}
-              className="text-xs font-extrabold text-[#0E8388] hover:underline flex items-center gap-1"
+              className="text-xs font-extrabold text-slate-700 hover:text-[#D97706] flex items-center gap-1 transition-colors"
             >
               Ver todo el catálogo <ChevronRight className="w-4 h-4" />
             </Link>
@@ -1715,17 +1697,15 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
 
           <button
             onClick={handleAddToCart}
-            className={`py-2.5 px-4 rounded-xl font-black text-xs text-white shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
+            className={`py-2.5 px-4 rounded-xl font-black text-xs shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
               addedSuccess
-                ? 'bg-[#10B981]'
-                : isDog
-                ? 'bg-[#0E8388]'
-                : 'bg-[#C86D39]'
+                ? 'bg-[#F5BA13] text-[#1D1D1F] font-black shadow-md'
+                : 'bg-[#1D1D1F] text-white hover:text-[#F5BA13] shadow-md'
             }`}
           >
             {addedSuccess ? (
               <>
-                <CheckCircle2 className="w-4 h-4" />
+                <CheckCircle2 className="w-4 h-4 stroke-[3]" />
                 <span>¡AGREGADO!</span>
               </>
             ) : (

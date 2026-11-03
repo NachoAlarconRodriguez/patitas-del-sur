@@ -419,7 +419,7 @@ export default function AdminDatePicker({
               onClick={() => handleSelectDate(cell.dateStr)}
               className={`h-6.5 w-6.5 mx-auto rounded-lg text-[11px] font-bold flex items-center justify-center transition-all cursor-pointer ${
                 cell.isSelected
-                  ? 'bg-gradient-to-r from-[#0E8388] to-[#10B981] text-white shadow-xs font-black'
+                  ? 'bg-gradient-to-r from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-[#1D1D1F] font-black shadow-xs font-black'
                   : cell.isToday
                   ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 font-black'
                   : 'text-slate-700 hover:bg-slate-100 active:scale-95'
@@ -486,7 +486,7 @@ export default function AdminDatePicker({
         ref={triggerRef}
         className={`relative w-full h-[35px] rounded-xl bg-white border transition-all flex items-center shadow-2xs group ${
           isOpen
-            ? 'border-[#0E8388] ring-2 ring-[#0E8388]/20 bg-white'
+            ? 'border-[#F5BA13] ring-2 ring-[#F5BA13]/20 bg-white'
             : 'border-slate-200 hover:border-slate-300'
         } ${disabled ? 'opacity-50 cursor-not-allowed bg-slate-50' : ''} ${buttonClassName}`}
       >
@@ -511,11 +511,11 @@ export default function AdminDatePicker({
             setIsOpen((prev) => !prev);
           }}
           title="Abrir calendario"
-          className="absolute right-1 w-7 h-7 rounded-lg text-slate-400 hover:text-[#0E8388] hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+          className="absolute right-1 w-7 h-7 rounded-lg text-slate-400 hover:text-amber-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
         >
           <Calendar
             className={`w-3.5 h-3.5 transition-colors ${
-              isOpen ? 'text-[#0E8388]' : 'text-slate-400 group-hover:text-slate-600'
+              isOpen ? 'text-amber-700' : 'text-slate-400 group-hover:text-slate-600'
             }`}
           />
         </button>

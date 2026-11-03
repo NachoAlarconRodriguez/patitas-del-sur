@@ -1,8 +1,7 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Star, ShoppingBag, Eye, Stethoscope, Check } from 'lucide-react';
-import { getFlavorSwatchStyle } from '../utils/productVariants';
-import AppleNutritionSpecs from './AppleNutritionSpecs';
+import { getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
 
 export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
   const navigate = useNavigate();
@@ -132,13 +131,13 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
         {/* View Product Overlay on Hover */}
         <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 flex items-center justify-center gap-2 text-white font-bold text-sm">
           <span className="px-4 py-2 rounded-full bg-white text-slate-900 shadow-xl flex items-center gap-1.5 hover:scale-105 transition-transform">
-            <Eye className="w-4 h-4 text-[#0E8388]" /> Ver Detalles
+            <Eye className="w-4 h-4 text-[#D97706]" /> Ver Detalles
           </span>
         </div>
 
         {/* Product Image */}
         <img
-          src={displayVariant?.image || activeVariant?.image || product.image}
+          src={resolveProductImage(displayVariant || activeVariant || product)}
           alt={`${product.name} - Alimento para ${isDog ? 'perros' : 'gatos'} en Puerto Varas, Patitas del Sur`}
           loading="lazy"
           decoding="async"
@@ -149,20 +148,21 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
       </Link>
 
       {/* Content Body */}
-      <div className="flex flex-col flex-grow space-y-3">
+      <div className="flex flex-col flex-grow space-y-2">
         
-        {/* Apple Style Nutrition Rings & Spec Visualizer */}
-        <AppleNutritionSpecs
-          product={product}
-          activeFlavor={currentVariantFormat}
-        />
+        {/* Brand */}
+        {product.brand && (
+          <span className="text-[11px] font-bold text-amber-700 tracking-wider uppercase block">
+            {product.brand}
+          </span>
+        )}
 
         {/* Product Title */}
         <h3 className="font-heading font-extrabold text-base sm:text-lg text-slate-900 line-clamp-2 leading-snug tracking-tight">
           <Link
             to={`/producto/${activeVariant?.id || product.id}`}
             onClick={(e) => e.stopPropagation()}
-            className="group-hover:text-[#0E8388] transition-colors"
+            className="group-hover:text-[#D97706] transition-colors"
           >
             {product.name}
           </Link>
@@ -209,7 +209,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
                         ? 'text-rose-500'
                         : displayVariant?.stock === 1
                         ? 'text-amber-600'
-                        : 'text-emerald-700'
+                        : 'text-amber-700'
                     }`}>
                       {displayVariant?.stock <= 0
                         ? 'Agotado'
@@ -218,7 +218,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
                         : `${displayVariant?.stock} disp.`}
                     </span>
                   ) : selectedVariants.length > 1 ? (
-                    <span className="text-[10px] font-bold text-[#0E8388] shrink-0 bg-[#E6F4F1] px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] font-bold text-[#78350F] shrink-0 bg-amber-100 px-2 py-0.5 rounded-full">
                       {selectedVariants.length} seleccionados
                     </span>
                   ) : selectedVariants.length === 1 ? (
@@ -227,7 +227,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
                         ? 'text-rose-500'
                         : selectedVariants[0]?.stock === 1
                         ? 'text-amber-600'
-                        : 'text-emerald-700'
+                        : 'text-amber-700'
                     }`}>
                       {selectedVariants[0]?.stock <= 0
                         ? 'Agotado'
@@ -328,7 +328,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
                         }}
                         className={`text-[11px] font-black px-3 py-1 rounded-xl transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-[#0E8388] text-white shadow-xs scale-105 ring-2 ring-[#0E8388]/30'
+                            ? 'bg-[#F5BA13] text-[#1D1D1F] shadow-xs scale-105 ring-2 ring-[#F5BA13]/40'
                             : vOutOfStock
                             ? 'bg-slate-100 text-slate-300 line-through cursor-not-allowed border border-slate-200/50'
                             : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/70 hover:scale-102'
@@ -429,8 +429,8 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
             isAddToCartDisabled
               ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
               : justAdded
-              ? 'bg-[#10B981] text-white shadow-md'
-              : 'bg-[#0E8388] text-white hover:bg-[#0A3E40] hover:shadow-md active:scale-95'
+              ? 'bg-[#F5BA13] text-[#1D1D1F] font-black shadow-md'
+              : 'bg-[#1D1D1F] text-white hover:bg-black hover:text-[#F5BA13] hover:shadow-md active:scale-95'
           }`}
           title={
             isSelectionEmpty

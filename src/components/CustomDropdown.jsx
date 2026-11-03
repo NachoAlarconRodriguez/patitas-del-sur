@@ -140,7 +140,7 @@ export default function CustomDropdown({
             }}
             className={`group flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
               isSelected
-                ? 'bg-[#0E8388]/10 text-[#0A3E40] font-black'
+                ? 'bg-[#F5BA13]/15 text-amber-950 font-black'
                 : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-semibold'
             }`}
           >
@@ -153,7 +153,7 @@ export default function CustomDropdown({
               )}
             </div>
             {isSelected && (
-              <Check className="w-3.5 h-3.5 text-[#0E8388] stroke-[2.5] shrink-0 ml-2" />
+              <Check className="w-3.5 h-3.5 text-amber-700 stroke-[2.5] shrink-0 ml-2" />
             )}
           </div>
         );
@@ -168,7 +168,7 @@ export default function CustomDropdown({
         <div className="flex items-center justify-between mb-1 px-0.5">
           {label && (
             <label className={labelClassName || "flex items-center gap-1.5 text-slate-700 font-extrabold uppercase tracking-wider text-[11px]"}>
-              {Icon && <Icon className="w-3.5 h-3.5 text-[#0E8388]" />}
+              {Icon && <Icon className="w-3.5 h-3.5 text-amber-700" />}
               <span>{label}</span>
             </label>
           )}

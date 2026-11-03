@@ -264,7 +264,7 @@ function AnimalLiquidGauge({ animalConfig, percent }) {
 /**
  * Componente Gráfico Circular para el % de Proteína Animal
  */
-function AnimalProteinCircularGauge({ percent = 70, color = '#0E8388', proteinSource = 'Pollo' }) {
+function AnimalProteinCircularGauge({ percent = 70, color = '#D97706', proteinSource = 'Pollo' }) {
   const numeric = typeof percent === 'number' ? percent : parseInt(percent, 10) || 70;
   const radius = 17;
   const circumference = 2 * Math.PI * radius;
@@ -416,7 +416,7 @@ export default function AppleNutritionSpecs({ product, activeFlavor = '', classN
       <div className="flex flex-col items-center justify-center text-center px-1">
         <AnimalProteinCircularGauge
           percent={animalPercent}
-          color={animalConfig?.outlineColor || '#0E8388'}
+          color={animalConfig?.outlineColor || '#D97706'}
           proteinSource={animalConfig?.label || proteinSource}
         />
       </div>

@@ -29,6 +29,7 @@ import {
   Home,
   ChevronDown,
   ChevronUp,
+  Calendar,
 } from 'lucide-react';
 import { verifyCouponInSupabase, redeemCouponInSupabase } from '../services/conveniosService';
 import { createOrderInSupabase, getNextOrderId } from '../services/ordersService';
@@ -56,6 +57,9 @@ import {
   getDeliverySchedulesFromSupabase,
   getSlotsForCity,
   DEFAULT_DELIVERY_SCHEDULES,
+  getUpcomingDeliveryDates,
+  formatDeliveryDaysSummary,
+  WEEKDAYS,
 } from '../services/dispatchService';
 
 // Helper para resolver imágenes de productos en el carrito y recomendaciones
@@ -311,6 +315,7 @@ export default function CartDrawer({
   const [depto, setDepto] = useState('');
   const [deliveryReference, setDeliveryReference] = useState('');
   const [deliverySlot, setDeliverySlot] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState('');
 
   // Estado para la búsqueda y autocompletado de cliente por teléfono
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
@@ -533,12 +538,6 @@ export default function CartDrawer({
     };
   }, []);
 
-  // Opciones de horarios calculadas dinámicamente según la comuna/ciudad seleccionada
-  const availableSlots = useMemo(() => {
-    if (!city) return [];
-    return getSlotsForCity(city, deliverySchedules);
-  }, [city, deliverySchedules]);
-
   // Submission & Post-order state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedOrder, setCompletedOrder] = useState(null);
@@ -556,6 +555,7 @@ export default function CartDrawer({
     setDepto('');
     setDeliveryReference('');
     setDeliverySlot('');
+    setDeliveryDate('');
     setAutofillCustomer(null);
     setFormError(null);
   };
@@ -696,6 +696,68 @@ export default function CartDrawer({
     return activeDispatchZones[0] || null;
   }, [activeDispatchZones, customerCoords, city, address]);
 
+  // Opciones de horarios calculadas dinámicamente según la zona detectada o comuna
+  const availableSlots = useMemo(() => {
+    if (matchedDispatchZone && Array.isArray(matchedDispatchZone.slots) && matchedDispatchZone.slots.length > 0) {
+      return matchedDispatchZone.slots.map((slot) => {
+        let desc = '';
+        if (slot.fee !== null && slot.fee !== undefined && Number(slot.fee) > 0) {
+          desc += `Tarifa: $${new Intl.NumberFormat('es-CL').format(slot.fee)}`;
+        }
+        if (slot.noFreeShipping) {
+          desc += (desc ? ' • ' : '') + 'Sin despacho gratis';
+        }
+        return {
+          value: slot.label,
+          label: slot.label,
+          desc: desc || undefined,
+          fee: slot.fee,
+          noFreeShipping: Boolean(slot.noFreeShipping),
+        };
+      });
+    }
+
+    if (!city) return [];
+    return getSlotsForCity(city, deliverySchedules);
+  }, [matchedDispatchZone, city, deliverySchedules]);
+
+  // Próximas fechas de reparto disponibles según los días habilitados de la zona detectada
+  const availableDeliveryDates = useMemo(() => {
+    const allowedDays = Array.isArray(matchedDispatchZone?.deliveryDays) && matchedDispatchZone.deliveryDays.length > 0
+      ? matchedDispatchZone.deliveryDays
+      : [1, 2, 3, 4, 5, 6];
+    return getUpcomingDeliveryDates(allowedDays, 6);
+  }, [matchedDispatchZone]);
+
+  // Sincronizar fecha seleccionada con las fechas disponibles
+  useEffect(() => {
+    if (availableDeliveryDates.length > 0) {
+      const exists = availableDeliveryDates.some((d) => d.isoDate === deliveryDate);
+      if (!exists) {
+        setDeliveryDate(availableDeliveryDates[0].isoDate);
+      }
+    }
+  }, [availableDeliveryDates, deliveryDate]);
+
+  // Objeto de la fecha seleccionada
+  const selectedDateObj = useMemo(() => {
+    return availableDeliveryDates.find((d) => d.isoDate === deliveryDate) || availableDeliveryDates[0] || null;
+  }, [availableDeliveryDates, deliveryDate]);
+
+  // ¿El día seleccionado es un día especial para esta zona (ej: Sábado)?
+  const isSpecialDeliveryDay = useMemo(() => {
+    if (!matchedDispatchZone || !matchedDispatchZone.hasSpecialDayPricing || !selectedDateObj) {
+      return false;
+    }
+    const specialDays = Array.isArray(matchedDispatchZone.specialDays) ? matchedDispatchZone.specialDays : [6];
+    return specialDays.includes(selectedDateObj.dayOfWeek);
+  }, [matchedDispatchZone, selectedDateObj]);
+
+  // Objeto de la franja horaria seleccionada
+  const selectedSlotData = useMemo(() => {
+    return availableSlots.find((s) => s.value === deliverySlot) || null;
+  }, [availableSlots, deliverySlot]);
+
   // Umbral de despacho gratis: obtenido de la zona configurada en el panel de administración
   const freeShippingThreshold = useMemo(() => {
     if (matchedDispatchZone && matchedDispatchZone.freeThreshold !== undefined) {
@@ -710,7 +772,7 @@ export default function CartDrawer({
 
   const progressToFreeShipping = Math.min(100, (subtotal / freeShippingThreshold) * 100);
 
-  // Tarifa base de despacho configurada en el panel de administración
+  // Tarifa base de despacho estándar configurada en el panel de administración
   const zoneBaseFee = useMemo(() => {
     if (matchedDispatchZone && matchedDispatchZone.baseFee !== undefined) {
       return Number(matchedDispatchZone.baseFee) || 0;
@@ -721,12 +783,32 @@ export default function CartDrawer({
     return 2000;
   }, [matchedDispatchZone, activeDispatchZones]);
 
+  // ¿Aplica exclusión de envío gratis por día especial o por horario?
+  const isFreeShippingExcluded = Boolean(
+    (isSpecialDeliveryDay && matchedDispatchZone?.specialDayNoFreeShipping) ||
+    (selectedSlotData?.noFreeShipping)
+  );
+
+  // Tarifa efectiva según horario seleccionado o día especial
+  const effectiveBaseFee = useMemo(() => {
+    // 1. Si el horario seleccionado tiene tarifa especial
+    if (selectedSlotData && selectedSlotData.fee !== null && selectedSlotData.fee !== undefined && Number(selectedSlotData.fee) > 0) {
+      return Number(selectedSlotData.fee);
+    }
+    // 2. Si el día de reparto tiene tarifa especial
+    if (isSpecialDeliveryDay && matchedDispatchZone?.specialDayFee !== undefined && Number(matchedDispatchZone.specialDayFee) > 0) {
+      return Number(matchedDispatchZone.specialDayFee);
+    }
+    // 3. Tarifa estándar de la zona
+    return zoneBaseFee;
+  }, [selectedSlotData, isSpecialDeliveryDay, matchedDispatchZone, zoneBaseFee]);
+
   // Determinar si ya se ingresó la dirección de despacho
   const hasShippingAddress = Boolean(address.trim() && (city || detectCommuneFromAddress(address)));
 
-  // Costo efectivo de despacho: gratuito si supera el umbral, si no la tarifa base configurada
-  const isFreeShippingApplicable = subtotal >= freeShippingThreshold;
-  const calculatedShippingCost = isFreeShippingApplicable ? 0 : zoneBaseFee;
+  // Costo efectivo de despacho: gratuito si supera el umbral Y no está excluido de despacho gratis
+  const isFreeShippingApplicable = !isFreeShippingExcluded && subtotal >= freeShippingThreshold;
+  const calculatedShippingCost = isFreeShippingApplicable ? 0 : effectiveBaseFee;
 
   // Coupon Discount Calculation (Soporta descuento porcentual o dinero fijo de fidelización)
   const discountPercent = appliedCoupon ? (appliedCoupon.discountPercent || 0) : 0;
@@ -934,6 +1016,14 @@ export default function CartDrawer({
         if (!firstErrorField) firstErrorField = 'checkout-shipping-address';
       }
     }
+    if (!deliveryDate) {
+      errors.deliveryDate = 'Por favor selecciona el día de entrega.';
+      if (!firstErrorField) {
+        firstErrorField = addressMode === 'habitual'
+          ? 'field-delivery-date-habitual'
+          : 'field-delivery-date-temporary';
+      }
+    }
     if (!deliverySlot) {
       errors.deliverySlot = 'Por favor selecciona el horario preferido de entrega.';
       if (!firstErrorField) {
@@ -1008,8 +1098,8 @@ export default function CartDrawer({
       discount: discountAmount,
       total,
       pointsEarned,
-      deliveryDayText: 'Hoy Mismo',
-      deliveryDate: new Date().toISOString().split('T')[0],
+      deliveryDayText: selectedDateObj?.label || 'Hoy Mismo',
+      deliveryDate: deliveryDate || new Date().toISOString().split('T')[0],
       deliverySlot: deliverySlot,
       address: fullAddress,
       city: effectiveCity,
@@ -1152,6 +1242,8 @@ export default function CartDrawer({
         customerId: savedCustId,
         address: fullAddress,
         city: effectiveCity,
+        deliveryDayText: selectedDateObj?.label || 'Hoy Mismo',
+        deliveryDate: selectedDateObj?.label || deliveryDate,
         deliverySlot,
         paymentMethod: finalPaymentMethodLabel,
         paymentType,
@@ -1258,7 +1350,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                 </button>
               )}
 
-              <ShoppingBag className="w-5 h-5 text-[#0E8388]" />
+              <ShoppingBag className="w-5 h-5 text-[#D97706]" />
               <h2 className="text-lg sm:text-xl font-black text-slate-900">
                 {step === 'cart' && 'Tu Carrito'}
                 {step === 'shipping' && 'Despacho & Pago'}
@@ -1287,10 +1379,10 @@ Asunto: Pedido ${completedOrder?.id}`;
           {step === 'cart' && (
             <>
               {/* Free Shipping Progress Bar */}
-              <div className="bg-[#0E8388]/5 px-5 sm:px-6 py-3 border-b border-[#0E8388]/10">
+              <div className="bg-[#F5BA13]/10 px-5 sm:px-6 py-3 border-b border-[#F5BA13]/10">
                 <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1">
                   <span className="flex items-center gap-1">
-                    <Truck className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <Truck className="w-3.5 h-3.5 text-[#D97706]" />
                     {subtotal >= freeShippingThreshold
                       ? '¡Envío Gratis desbloqueado!'
                       : `Te faltan ${formatCLP(freeShippingThreshold - subtotal)} para Envío Gratis`}
@@ -1299,7 +1391,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-[#0E8388] to-[#10B981] transition-all duration-500"
+                    className="h-full bg-gradient-to-r from-[#F5BA13] to-[#D97706] transition-all duration-500"
                     style={{ width: `${progressToFreeShipping}%` }}
                   />
                 </div>
@@ -1315,7 +1407,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                     <p className="text-sm font-semibold">Tu carrito está vacío por ahora</p>
                     <button
                       onClick={onClose}
-                      className="px-6 py-2.5 rounded-full bg-[#0E8388] text-white text-xs font-extrabold hover:bg-[#10B981] transition-colors shadow-md cursor-pointer"
+                      className="px-6 py-2.5 rounded-full bg-[#F5BA13] text-[#1D1D1F] text-white text-xs font-extrabold hover:bg-[#10B981] transition-colors shadow-md cursor-pointer"
                     >
                       Ir a Explorar Catálogo
                     </button>
@@ -1451,9 +1543,9 @@ Asunto: Pedido ${completedOrder?.id}`;
                     <button
                       type="button"
                       onClick={handleContinueShopping}
-                      className="w-full py-2.5 px-4 rounded-2xl border border-dashed border-slate-300 hover:border-[#0E8388] bg-slate-50/70 hover:bg-teal-50/40 text-slate-700 hover:text-[#0E8388] text-xs font-bold transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
+                      className="w-full py-2.5 px-4 rounded-2xl border border-dashed border-slate-300 hover:border-[#F5BA13] bg-slate-50/70 hover:bg-teal-50/40 text-slate-700 hover:text-[#D97706] text-xs font-bold transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-2xs"
                     >
-                      <Plus className="w-4 h-4 text-slate-400 group-hover:text-[#0E8388] transition-transform group-hover:rotate-90 duration-300" />
+                      <Plus className="w-4 h-4 text-slate-400 group-hover:text-[#D97706] transition-transform group-hover:rotate-90 duration-300" />
                       <span>Seguir comprando en la tienda</span>
                     </button>
 
@@ -1462,7 +1554,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <div className="p-3.5 bg-gradient-to-b from-slate-50 to-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-2.5">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-[#0E8388]" />
+                            <Sparkles className="w-3.5 h-3.5 text-[#D97706]" />
                             <span className="text-xs font-extrabold text-slate-900 tracking-tight">
                               Completa tu pedido
                             </span>
@@ -1470,7 +1562,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                           <button
                             type="button"
                             onClick={() => setShowQuickSearch(!showQuickSearch)}
-                            className="text-[11px] font-bold text-[#0E8388] hover:text-teal-700 flex items-center gap-1 hover:underline cursor-pointer"
+                            className="text-[11px] font-bold text-[#D97706] hover:text-teal-700 flex items-center gap-1 hover:underline cursor-pointer"
                           >
                             <Search className="w-3 h-3" />
                             <span>{showQuickSearch ? 'Cerrar búsqueda' : 'Buscar otro'}</span>
@@ -1486,7 +1578,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                               value={quickSearchQuery}
                               onChange={(e) => setQuickSearchQuery(e.target.value)}
                               placeholder="Buscar por nombre o marca..."
-                              className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-white border border-slate-200 focus:border-[#0E8388] focus:ring-1 focus:ring-[#0E8388] outline-none text-slate-900 placeholder:text-slate-400 shadow-2xs"
+                              className="w-full pl-8 pr-8 py-2 text-xs rounded-xl bg-white border border-slate-200 focus:border-[#F5BA13] focus:ring-1 focus:ring-[#F5BA13] outline-none text-slate-900 placeholder:text-slate-400 shadow-2xs"
                               autoFocus
                             />
                             {quickSearchQuery && (
@@ -1537,7 +1629,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                                       </h5>
                                       <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium mt-0.5">
                                         {formatText && (
-                                          <span className="text-[#0E8388] font-bold bg-teal-50 px-1 rounded">
+                                          <span className="text-[#D97706] font-bold bg-teal-50 px-1 rounded">
                                             {formatText}
                                           </span>
                                         )}
@@ -1558,7 +1650,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                                       ? 'bg-emerald-600 text-white shadow-xs'
                                       : isMaxInCart
                                       ? 'bg-slate-100 text-slate-400 cursor-not-allowed text-[11px]'
-                                      : 'bg-slate-900 hover:bg-[#0E8388] text-white shadow-2xs hover:shadow-xs'
+                                      : 'bg-slate-900 hover:bg-[#F5BA13] text-[#1D1D1F] text-white shadow-2xs hover:shadow-xs'
                                   }`}
                                   title={isMaxInCart ? 'Stock máximo ya en tu carrito' : 'Agregar 1 unidad a tu carrito'}
                                 >
@@ -1596,13 +1688,13 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <button
                         type="button"
                         onClick={() => setIsCouponExpanded(true)}
-                        className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-600 hover:text-[#0E8388] hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                        className="w-full px-3 py-2 flex items-center justify-between text-xs text-slate-600 hover:text-[#D97706] hover:bg-slate-50/80 transition-colors group cursor-pointer"
                       >
-                        <span className="flex items-center gap-1.5 font-bold text-[11px] text-slate-700 group-hover:text-[#0E8388] transition-colors">
-                          <Ticket className="w-3.5 h-3.5 text-[#0E8388] group-hover:scale-110 transition-transform" />
+                        <span className="flex items-center gap-1.5 font-bold text-[11px] text-slate-700 group-hover:text-[#D97706] transition-colors">
+                          <Ticket className="w-3.5 h-3.5 text-[#D97706] group-hover:scale-110 transition-transform" />
                           <span>¿Tienes un cupón de convenio?</span>
                         </span>
-                        <span className="text-[11px] font-extrabold text-[#0E8388] flex items-center gap-0.5 group-hover:underline">
+                        <span className="text-[11px] font-extrabold text-[#D97706] flex items-center gap-0.5 group-hover:underline">
                           <span>Ingresar</span>
                           <ChevronDown className="w-3.5 h-3.5 transition-transform group-hover:translate-y-0.5" />
                         </span>
@@ -1612,7 +1704,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <div className="p-2.5 space-y-2 animate-in fade-in duration-150">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-slate-700 flex items-center gap-1.5 text-[11px]">
-                            <Ticket className="w-3.5 h-3.5 text-[#0E8388]" />
+                            <Ticket className="w-3.5 h-3.5 text-[#D97706]" />
                             <span>Cupón de descuento o convenio</span>
                           </span>
                           {appliedCoupon ? (
@@ -1668,13 +1760,13 @@ Asunto: Pedido ${completedOrder?.id}`;
                               placeholder="Ej: SWD-7K9P"
                               value={couponInput}
                               onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-                              className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                              className="flex-1 px-2.5 py-1.5 text-xs font-mono font-bold rounded-lg bg-slate-50 border border-slate-200 text-slate-900 focus:outline-none focus:bg-white focus:border-[#F5BA13]"
                               autoFocus
                             />
                             <button
                               type="submit"
                               disabled={isVerifyingCoupon || !couponInput.trim()}
-                              className="px-3 py-1.5 bg-[#0E8388] hover:bg-[#10B981] text-white font-bold text-xs rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                              className="px-3 py-1.5 bg-[#F5BA13] text-[#1D1D1F] hover:bg-[#10B981] text-white font-bold text-xs rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-50"
                             >
                               {isVerifyingCoupon ? '...' : 'Aplicar'}
                             </button>
@@ -1757,7 +1849,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                     className={`w-full py-3.5 sm:py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all ${
                       hasOutOfStockItems
                         ? 'bg-rose-100 text-rose-700 border border-rose-300 shadow-none cursor-not-allowed opacity-90'
-                        : 'bg-[#0E8388] hover:bg-[#10B981] text-white shadow-xl shadow-[#0E8388]/30 active:scale-95 cursor-pointer'
+                        : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 font-black active:scale-95 cursor-pointer'
                     }`}
                   >
                     {hasOutOfStockItems ? (
@@ -1795,7 +1887,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                 {/* Sección 1: Datos del Receptor */}
                 <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-[#0E8388]" />
+                    <MapPin className="w-3.5 h-3.5 text-[#D97706]" />
                     <span>1. Datos de Entrega</span>
                   </h3>
 
@@ -1819,7 +1911,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                         className={`relative flex items-center rounded-xl border bg-white transition-all shadow-2xs ${
                           fieldErrors.phone
                             ? 'border-2 border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/40'
-                            : 'border border-slate-200 focus-within:border-[#0E8388] focus-within:ring-2 focus-within:ring-[#0E8388]/20'
+                            : 'border border-slate-200 focus-within:border-[#F5BA13] focus-within:ring-2 focus-within:ring-[#F5BA13]/20'
                         }`}
                       >
                         <CountryCodeDropdown
@@ -1840,7 +1932,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                         />
                         <div className="absolute right-2.5 flex items-center pointer-events-none">
                           {isSearchingCustomer && (
-                            <Loader2 className="w-3.5 h-3.5 text-[#0E8388] animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 text-[#D97706] animate-spin" />
                           )}
                           {!isSearchingCustomer && phone.replace(/\D/g, '').length === 9 && (
                             <CheckCircle2 className="w-4 h-4 text-emerald-500 animate-in zoom-in" />
@@ -1899,7 +1991,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                         className={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none transition-all ${
                           fieldErrors.recipientName
                             ? 'border-2 border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/40 text-rose-950'
-                            : 'border border-slate-200 focus:border-[#0E8388]'
+                            : 'border border-slate-200 focus:border-[#F5BA13]'
                         }`}
                       />
                       {fieldErrors.recipientName && (
@@ -1922,7 +2014,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             onClick={handleSwitchToHabitual}
                             className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                               addressMode === 'habitual'
-                                ? 'bg-white text-[#0E8388] shadow-xs'
+                                ? 'bg-white text-[#D97706] shadow-xs'
                                 : 'text-slate-600 hover:text-slate-900'
                             }`}
                           >
@@ -1935,7 +2027,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             onClick={handleSwitchToTemporary}
                             className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                               addressMode === 'temporary'
-                                ? 'bg-white text-[#0E8388] shadow-xs'
+                                ? 'bg-white text-[#D97706] shadow-xs'
                                 : 'text-slate-600 hover:text-slate-900'
                             }`}
                           >
@@ -2000,34 +2092,87 @@ Asunto: Pedido ${completedOrder?.id}`;
                           )}
                         </div>
 
-                        {/* Horario Preferido */}
-                        <div id="field-delivery-slot-habitual">
-                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                            Horario Preferido *
-                          </label>
-                          <CustomDropdown
-                            id="delivery-slot-dropdown-habitual"
-                            value={deliverySlot}
-                            options={availableSlots}
-                            onChange={(val) => {
-                              clearFieldError('deliverySlot');
-                              setDeliverySlot(val);
-                            }}
-                            placeholder={!city ? 'Primero indica dirección...' : 'Seleccionar horario...'}
-                            disabled={!city}
-                            buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
-                              fieldErrors.deliverySlot
-                                ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                : 'border border-slate-200 focus:border-[#0E8388]'
-                            }`}
-                            usePortal={true}
-                          />
-                          {fieldErrors.deliverySlot && (
-                            <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
-                              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                              <span>{fieldErrors.deliverySlot}</span>
-                            </p>
-                          )}
+                        {/* Día y Horario Preferido */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                          {/* Día de Entrega */}
+                          <div id="field-delivery-date-habitual">
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Día de Entrega *</span>
+                              </span>
+                              {matchedDispatchZone && (
+                                <span className="text-[9.5px] font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 truncate max-w-[120px]">
+                                  {formatDeliveryDaysSummary(matchedDispatchZone.deliveryDays || [1, 2, 3, 4, 5, 6])}
+                                </span>
+                              )}
+                            </label>
+                            <CustomDropdown
+                              id="delivery-date-dropdown-habitual"
+                              value={deliveryDate}
+                              options={availableDeliveryDates.map((d) => {
+                                const isSpecial =
+                                  matchedDispatchZone?.hasSpecialDayPricing &&
+                                  (matchedDispatchZone.specialDays || [6]).includes(d.dayOfWeek);
+                                return {
+                                  value: d.isoDate,
+                                  label: d.label,
+                                  desc: isSpecial
+                                    ? `Tarifa especial: $${new Intl.NumberFormat('es-CL').format(matchedDispatchZone.specialDayFee || 0)}${matchedDispatchZone.specialDayNoFreeShipping ? ' • Sin envío gratis' : ''}`
+                                    : undefined,
+                                };
+                              })}
+                              onChange={(val) => {
+                                clearFieldError('deliveryDate');
+                                setDeliveryDate(val);
+                              }}
+                              placeholder={availableDeliveryDates.length === 0 ? 'Sin días disponibles' : 'Seleccionar día...'}
+                              disabled={availableDeliveryDates.length === 0}
+                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
+                                fieldErrors.deliveryDate
+                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
+                                  : 'border border-slate-200 focus:border-[#F5BA13]'
+                              }`}
+                              usePortal={true}
+                            />
+                            {fieldErrors.deliveryDate && (
+                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>{fieldErrors.deliveryDate}</span>
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Horario Preferido */}
+                          <div id="field-delivery-slot-habitual">
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Horario Preferido *</span>
+                            </label>
+                            <CustomDropdown
+                              id="delivery-slot-dropdown-habitual"
+                              value={deliverySlot}
+                              options={availableSlots}
+                              onChange={(val) => {
+                                clearFieldError('deliverySlot');
+                                setDeliverySlot(val);
+                              }}
+                              placeholder={!city ? 'Primero indica dirección...' : 'Seleccionar horario...'}
+                              disabled={!city}
+                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
+                                fieldErrors.deliverySlot
+                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
+                                  : 'border border-slate-200 focus:border-[#F5BA13]'
+                              }`}
+                              usePortal={true}
+                            />
+                            {fieldErrors.deliverySlot && (
+                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>{fieldErrors.deliverySlot}</span>
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -2099,13 +2244,80 @@ Asunto: Pedido ${completedOrder?.id}`;
                               placeholder="Ej: Depto 402, Casa B (opcional)"
                               value={depto}
                               onChange={(e) => setDepto(e.target.value)}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#0E8388]"
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#F5BA13]"
                             />
                           </div>
 
-                          <div id="field-delivery-slot-temporary">
+                          <div>
                             <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                              Horario Preferido *
+                              Referencia (Opcional)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Ej: Portón verde, rejas negras"
+                              value={deliveryReference}
+                              onChange={(e) => setDeliveryReference(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#F5BA13]"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Fila: Día y Horario Preferido */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {/* Día de Entrega */}
+                          <div id="field-delivery-date-temporary">
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                                <span>Día de Entrega *</span>
+                              </span>
+                              {matchedDispatchZone && (
+                                <span className="text-[9.5px] font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 truncate max-w-[120px]">
+                                  {formatDeliveryDaysSummary(matchedDispatchZone.deliveryDays || [1, 2, 3, 4, 5, 6])}
+                                </span>
+                              )}
+                            </label>
+                            <CustomDropdown
+                              id="delivery-date-dropdown-temporary"
+                              value={deliveryDate}
+                              options={availableDeliveryDates.map((d) => {
+                                const isSpecial =
+                                  matchedDispatchZone?.hasSpecialDayPricing &&
+                                  (matchedDispatchZone.specialDays || [6]).includes(d.dayOfWeek);
+                                return {
+                                  value: d.isoDate,
+                                  label: d.label,
+                                  desc: isSpecial
+                                    ? `Tarifa especial: $${new Intl.NumberFormat('es-CL').format(matchedDispatchZone.specialDayFee || 0)}${matchedDispatchZone.specialDayNoFreeShipping ? ' • Sin envío gratis' : ''}`
+                                    : undefined,
+                                };
+                              })}
+                              onChange={(val) => {
+                                clearFieldError('deliveryDate');
+                                setDeliveryDate(val);
+                              }}
+                              placeholder={availableDeliveryDates.length === 0 ? 'Sin días disponibles' : 'Seleccionar día...'}
+                              disabled={availableDeliveryDates.length === 0}
+                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
+                                fieldErrors.deliveryDate
+                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
+                                  : 'border border-slate-200 focus:border-[#F5BA13]'
+                              }`}
+                              usePortal={true}
+                            />
+                            {fieldErrors.deliveryDate && (
+                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>{fieldErrors.deliveryDate}</span>
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Horario Preferido */}
+                          <div id="field-delivery-slot-temporary">
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Horario Preferido *</span>
                             </label>
                             <CustomDropdown
                               id="delivery-slot-dropdown-temporary"
@@ -2120,7 +2332,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                               buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
                                 fieldErrors.deliverySlot
                                   ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                  : 'border border-slate-200 focus:border-[#0E8388]'
+                                  : 'border border-slate-200 focus:border-[#F5BA13]'
                               }`}
                               usePortal={true}
                             />
@@ -2133,19 +2345,6 @@ Asunto: Pedido ${completedOrder?.id}`;
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                            Referencia para el despachador (Opcional)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Indicaciones para el despachador (opcional)"
-                            value={deliveryReference}
-                            onChange={(e) => setDeliveryReference(e.target.value)}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#0E8388]"
-                          />
-                        </div>
-
                         {/* Opción para guardar o no en libreta permanente */}
                         {address.trim().length > 3 && (
                           <div className="pt-1.5 space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
@@ -2154,7 +2353,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                                 type="checkbox"
                                 checked={saveNewAddressToProfile}
                                 onChange={(e) => setSaveNewAddressToProfile(e.target.checked)}
-                                className="w-4 h-4 rounded border-slate-300 text-[#0E8388] focus:ring-[#0E8388] cursor-pointer"
+                                className="w-4 h-4 rounded border-slate-300 text-[#D97706] focus:ring-[#F5BA13] cursor-pointer"
                               />
                               <span>Guardar esta dirección para futuras compras</span>
                             </label>
@@ -2164,7 +2363,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                                 placeholder="Nombre de esta dirección (ej: Parcela, Oficina, Playa)..."
                                 value={newAddressLabel}
                                 onChange={(e) => setNewAddressLabel(e.target.value)}
-                                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#0E8388]"
+                                className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-[#F5BA13]"
                               />
                             )}
                           </div>
@@ -2179,7 +2378,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                 <div className="space-y-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <CreditCard className="w-3.5 h-3.5 text-[#0E8388]" />
+                      <CreditCard className="w-3.5 h-3.5 text-[#D97706]" />
                       <span>2. Método de Pago</span>
                     </h3>
                     <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
@@ -2199,12 +2398,12 @@ Asunto: Pedido ${completedOrder?.id}`;
                         onClick={() => handleSelectPaymentType('anticipado')}
                         className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                           paymentType === 'anticipado'
-                            ? 'bg-white border-[#0E8388] shadow-xs ring-2 ring-[#0E8388]/20'
+                            ? 'bg-white border-[#F5BA13] shadow-xs ring-2 ring-[#F5BA13]/20'
                             : 'bg-white/60 border-slate-200 hover:bg-white text-slate-600'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <Globe className={`w-3.5 h-3.5 ${paymentType === 'anticipado' ? 'text-[#0E8388]' : 'text-slate-400'}`} />
+                          <Globe className={`w-3.5 h-3.5 ${paymentType === 'anticipado' ? 'text-[#D97706]' : 'text-slate-400'}`} />
                           <span className={`text-xs font-black ${paymentType === 'anticipado' ? 'text-slate-900' : 'text-slate-700'}`}>
                             Pago Anticipado
                           </span>
@@ -2220,12 +2419,12 @@ Asunto: Pedido ${completedOrder?.id}`;
                         onClick={() => handleSelectPaymentType('contra_entrega')}
                         className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                           paymentType === 'contra_entrega'
-                            ? 'bg-white border-[#0E8388] shadow-xs ring-2 ring-[#0E8388]/20'
+                            ? 'bg-white border-[#F5BA13] shadow-xs ring-2 ring-[#F5BA13]/20'
                             : 'bg-white/60 border-slate-200 hover:bg-white text-slate-600'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <Truck className={`w-3.5 h-3.5 ${paymentType === 'contra_entrega' ? 'text-[#0E8388]' : 'text-slate-400'}`} />
+                          <Truck className={`w-3.5 h-3.5 ${paymentType === 'contra_entrega' ? 'text-[#D97706]' : 'text-slate-400'}`} />
                           <span className={`text-xs font-black ${paymentType === 'contra_entrega' ? 'text-slate-900' : 'text-slate-700'}`}>
                             Contra Entrega
                           </span>
@@ -2247,19 +2446,19 @@ Asunto: Pedido ${completedOrder?.id}`;
                       /* Opción Única Anticipada: Botón de Pago Mercado Pago (Tarjeta Débito/Crédito) */
                       <label
                         onClick={() => setPaymentMethod('tarjeta')}
-                        className="flex items-start gap-3 p-3.5 rounded-xl border bg-white border-[#0E8388] shadow-xs ring-1 ring-[#0E8388] transition-all cursor-pointer"
+                        className="flex items-start gap-3 p-3.5 rounded-xl border bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13] transition-all cursor-pointer"
                       >
                         <input
                           type="radio"
                           name="payment"
                           checked={paymentMethod === 'tarjeta'}
                           onChange={() => setPaymentMethod('tarjeta')}
-                          className="mt-0.5 text-[#0E8388] focus:ring-[#0E8388]"
+                          className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
                         />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                              <CreditCard className="w-3.5 h-3.5 text-[#0E8388]" />
+                              <CreditCard className="w-3.5 h-3.5 text-[#D97706]" />
                               <span>Tarjeta Débito / Crédito</span>
                             </span>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
@@ -2278,7 +2477,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                           onClick={() => setPaymentMethod('transferencia_entrega')}
                           className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                             paymentMethod === 'transferencia_entrega'
-                              ? 'bg-white border-[#0E8388] shadow-xs ring-1 ring-[#0E8388]'
+                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
                               : 'bg-white/60 border-slate-200 hover:bg-white'
                           }`}
                         >
@@ -2287,7 +2486,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             name="payment"
                             checked={paymentMethod === 'transferencia_entrega'}
                             onChange={() => setPaymentMethod('transferencia_entrega')}
-                            className="mt-0.5 text-[#0E8388] focus:ring-[#0E8388]"
+                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
@@ -2310,7 +2509,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                           onClick={() => setPaymentMethod('efectivo')}
                           className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                             paymentMethod === 'efectivo'
-                              ? 'bg-white border-[#0E8388] shadow-xs ring-1 ring-[#0E8388]'
+                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
                               : 'bg-white/60 border-slate-200 hover:bg-white'
                           }`}
                         >
@@ -2319,7 +2518,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             name="payment"
                             checked={paymentMethod === 'efectivo'}
                             onChange={() => setPaymentMethod('efectivo')}
-                            className="mt-0.5 text-[#0E8388] focus:ring-[#0E8388]"
+                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
@@ -2349,7 +2548,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                                   placeholder="Ej: Pago con $20.000 / Pago exacto"
                                   value={cashChangeNote}
                                   onChange={(e) => setCashChangeNote(e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-[#0E8388]"
+                                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-[#F5BA13]"
                                 />
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                   <button
@@ -2384,7 +2583,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                           onClick={() => setPaymentMethod('pos')}
                           className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
                             paymentMethod === 'pos'
-                              ? 'bg-white border-[#0E8388] shadow-xs ring-1 ring-[#0E8388]'
+                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
                               : 'bg-white/60 border-slate-200 hover:bg-white'
                           }`}
                         >
@@ -2393,7 +2592,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             name="payment"
                             checked={paymentMethod === 'pos'}
                             onChange={() => setPaymentMethod('pos')}
-                            className="mt-0.5 text-[#0E8388] focus:ring-[#0E8388]"
+                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
@@ -2431,7 +2630,7 @@ Asunto: Pedido ${completedOrder?.id}`;
 
                   <div className="flex justify-between items-center text-xs text-slate-600">
                     <span className="flex items-center gap-1.5">
-                      <Truck className="w-3.5 h-3.5 text-[#0E8388]" />
+                      <Truck className="w-3.5 h-3.5 text-[#D97706]" />
                       <span>Despacho {city ? `(${city})` : ''}</span>
                     </span>
                     {hasShippingAddress ? (
@@ -2445,10 +2644,20 @@ Asunto: Pedido ${completedOrder?.id}`;
                     )}
                   </div>
 
+                  {hasShippingAddress && isFreeShippingExcluded && subtotal >= freeShippingThreshold && (
+                    <div className="py-1 px-2.5 rounded-lg bg-amber-50 border border-amber-200/90 text-[10.5px] text-amber-950 font-semibold flex items-center gap-1.5 animate-in fade-in">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span>
+                        {isSpecialDeliveryDay && matchedDispatchZone?.specialDayNoFreeShipping
+                          ? `Tarifa especial para el día ${selectedDateObj?.label?.split(' - ').pop() || 'seleccionado'}: no aplica envío gratis.`
+                          : 'El horario seleccionado tiene condiciones especiales: no aplica envío gratis.'}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-100">
                     <span>Total a Pagar</span>
-                    <span className="text-[#0E8388]">{formatCLP(shippingStepTotal)}</span>
+                    <span className="text-[#D97706]">{formatCLP(shippingStepTotal)}</span>
                   </div>
                 </div>
 
@@ -2474,7 +2683,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                   className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-transform ${
                     hasOutOfStockItems
                       ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed shadow-none opacity-90'
-                      : 'bg-[#10B981] hover:bg-[#34D399] text-slate-950 shadow-xl shadow-[#10B981]/30 active:scale-95 cursor-pointer disabled:opacity-50'
+                      : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 font-black active:scale-95 cursor-pointer disabled:opacity-50'
                   }`}
                 >
                   {isSubmitting ? (
@@ -2520,7 +2729,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                   </h3>
                   <p className="text-xs text-slate-500 font-medium">
                     Número de Orden:{' '}
-                    <span className="font-mono font-black text-[#0E8388] bg-[#0E8388]/10 px-2 py-0.5 rounded-md">
+                    <span className="font-mono font-black text-[#D97706] bg-[#F5BA13]/20 px-2 py-0.5 rounded-md">
                       {completedOrder.id}
                     </span>
                   </p>
@@ -2540,6 +2749,13 @@ Asunto: Pedido ${completedOrder?.id}`;
                     </span>
                   </div>
 
+                  {completedOrder.deliveryDate && (
+                    <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                      <span className="text-slate-500">Día de Entrega:</span>
+                      <span className="font-bold text-slate-900">{completedOrder.deliveryDate}</span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
                     <span className="text-slate-500">Ventana de Entrega:</span>
                     <span className="font-bold text-emerald-800">{completedOrder.deliverySlot}</span>
@@ -2547,7 +2763,7 @@ Asunto: Pedido ${completedOrder?.id}`;
 
                   <div className="flex items-center justify-between">
                     <span className="text-slate-500">Total:</span>
-                    <span className="font-black text-sm text-[#0E8388]">
+                    <span className="font-black text-sm text-[#D97706]">
                       {formatCLP(completedOrder.total)}
                     </span>
                   </div>
@@ -2615,12 +2831,12 @@ Asunto: Pedido ${completedOrder?.id}`;
                   <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl space-y-3 animate-in fade-in">
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-black text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
-                        <Landmark className="w-4 h-4 text-[#0E8388]" />
+                        <Landmark className="w-4 h-4 text-[#D97706]" />
                         <span>Datos para Transferir al Recibir</span>
                       </h4>
                       <button
                         onClick={handleCopyBankData}
-                        className="text-[11px] font-bold text-[#0E8388] hover:underline flex items-center gap-1 cursor-pointer"
+                        className="text-[11px] font-bold text-[#D97706] hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         {copiedBankData ? (
                           <>
@@ -2670,9 +2886,9 @@ Asunto: Pedido ${completedOrder?.id}`;
 
                 {/* 🥫 DESPENSA INTELIGENTE: PREGUNTAR FRECUENCIA SI HAY ALIMENTO */}
                 {completedOrder.hasFoodItem && (
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/80 to-[#E6F4F1] border-2 border-[#0E8388]/30 shadow-sm space-y-3 animate-in fade-in duration-300">
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/80 to-[#E6F4F1] border-2 border-[#F5BA13]/30 shadow-sm space-y-3 animate-in fade-in duration-300">
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#0E8388] text-white flex items-center justify-center shrink-0 shadow-sm text-lg">
+                      <div className="w-10 h-10 rounded-2xl bg-[#F5BA13] text-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-sm text-lg">
                         🥫
                       </div>
                       <div>
@@ -2706,8 +2922,8 @@ Asunto: Pedido ${completedOrder?.id}`;
                               onClick={() => handleSaveReplenishment(days)}
                               className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
                                 selectedReplenishFrequency === days
-                                  ? 'bg-[#0E8388] text-white border-[#0E8388] shadow-sm font-black scale-102'
-                                  : 'bg-white hover:bg-emerald-50/80 text-slate-700 border-slate-200/90 font-bold hover:border-[#0E8388]/40'
+                                  ? 'bg-[#F5BA13] text-[#1D1D1F] text-white border-[#F5BA13] shadow-sm font-black scale-102'
+                                  : 'bg-white hover:bg-emerald-50/80 text-slate-700 border-slate-200/90 font-bold hover:border-[#F5BA13]/40'
                               }`}
                             >
                               <div className="text-xs font-black">{days} días</div>
@@ -2732,7 +2948,7 @@ Asunto: Pedido ${completedOrder?.id}`;
               {/* Botón de Finalizar */}
               <button
                 onClick={handleCloseAndFinish}
-                className="w-full py-3.5 rounded-2xl bg-[#0E8388] hover:bg-[#10B981] text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer mt-4"
+                className="w-full py-3.5 rounded-2xl bg-[#F5BA13] text-[#1D1D1F] hover:bg-[#10B981] text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer mt-4"
               >
                 <span>FINALIZAR Y SEGUIR EXPLORANDO</span>
               </button>
