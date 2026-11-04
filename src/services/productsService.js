@@ -80,31 +80,39 @@ export async function fetchProductsFromSupabase() {
       };
 
       // Normalizar campos JSON y propiedades para que coincidan al 100% con el frontend
-      return data.map((item) => ({
-        ...item,
-        weights: safeParseJson(item.weights, ['10 kg']),
-        images: safeParseJson(item.images, []),
-        ingredients: safeParseJson(item.ingredients, []).map(cleanIngredientName).filter(Boolean),
-        guaranteedAnalysis: safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {}),
-        benefits: safeParseJson(item.benefits, []),
-        animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
-          ? (Number(item.animal_percent) || item.animal_percent)
-          : (item.animalPercent ? (Number(item.animalPercent) || item.animalPercent) : null),
-        animal_percent: item.animal_percent || item.animalPercent || null,
-        originalPrice: item.original_price || item.originalPrice,
-        petType: item.pet_type || item.petType,
-        isVeterinary: item.is_veterinary ?? item.isVeterinary,
-        isPaused: item.is_paused ?? item.isPaused,
-        isActive: item.is_active ?? item.isActive,
-        proteinValue: item.protein_value ?? item.proteinValue,
-        proteinPercent: item.protein_percent ?? item.proteinPercent,
-        mainProtein: item.main_protein || item.mainProtein || 'Pollo',
-        grainLevel: item.gama || item.grain_level || item.grainLevel || 'free',
-        vetDetail: item.vet_detail || item.vetDetail || null,
-        lifeStage: item.life_stage || item.lifeStage || 'adulto',
-        unitCostNeto: item.unit_cost_neto ?? item.unitCostNeto ?? 0,
-        minStock: item.min_stock ?? item.minStock ?? 5,
-      }));
+      const normalized = data.map((item) => {
+        const rawGa = safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {});
+        const shippingUnitCost = Number(rawGa._shipping_unit_cost ?? item.shipping_unit_cost ?? item.shippingUnitCost) || 0;
+        const cleanGa = { ...rawGa };
+        delete cleanGa._shipping_unit_cost;
+
+        return {
+          ...item,
+          weights: safeParseJson(item.weights, ['10 kg']),
+          images: safeParseJson(item.images, []),
+          ingredients: safeParseJson(item.ingredients, []).map(cleanIngredientName).filter(Boolean),
+          guaranteedAnalysis: cleanGa,
+          shippingUnitCost,
+          benefits: safeParseJson(item.benefits, []),
+          animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
+            ? (Number(item.animal_percent) || item.animal_percent)
+            : (item.animalPercent ? (Number(item.animalPercent) || item.animalPercent) : null),
+          animal_percent: item.animal_percent || item.animalPercent || null,
+          originalPrice: item.original_price || item.originalPrice,
+          petType: item.pet_type || item.petType,
+          isVeterinary: item.is_veterinary ?? item.isVeterinary,
+          isPaused: item.is_paused ?? item.isPaused,
+          isActive: item.is_active ?? item.isActive,
+          proteinValue: item.protein_value ?? item.proteinValue,
+          proteinPercent: item.protein_percent ?? item.proteinPercent,
+          mainProtein: item.main_protein || item.mainProtein || 'Pollo',
+          grainLevel: item.gama || item.grain_level || item.grainLevel || 'free',
+          vetDetail: item.vet_detail || item.vetDetail || null,
+          lifeStage: item.life_stage || item.lifeStage || 'adulto',
+          unitCostNeto: item.unit_cost_neto ?? item.unitCostNeto ?? 0,
+          minStock: item.min_stock ?? item.minStock ?? 5,
+        };
+      });
 
       memoryCachedProducts = normalized;
       if (typeof window !== 'undefined') {
@@ -189,7 +197,29 @@ export async function updateProductInSupabase(productId, updates) {
         const raw = Array.isArray(value) ? value : (value ? [value] : []);
         payload.ingredients = raw.map(cleanIngredientName).filter(Boolean);
       } else if (key === 'guaranteedAnalysis' || key === 'guaranteed_analysis') {
-        payload.guaranteed_analysis = (typeof value === 'object' && value !== null) ? value : {};
+        const cleanObj = (typeof value === 'object' && value !== null) ? { ...value } : {};
+        const existingProd = (memoryCachedProducts || []).find((p) => p.id === productId);
+        const shipCost = updates.shippingUnitCost !== undefined
+          ? Number(updates.shippingUnitCost) || 0
+          : updates.shipping_unit_cost !== undefined
+          ? Number(updates.shipping_unit_cost) || 0
+          : Number(existingProd?.shippingUnitCost) || 0;
+        if (shipCost > 0) {
+          cleanObj._shipping_unit_cost = shipCost;
+        } else {
+          delete cleanObj._shipping_unit_cost;
+        }
+        payload.guaranteed_analysis = cleanObj;
+      } else if (key === 'shippingUnitCost' || key === 'shipping_unit_cost') {
+        const shipCost = Number(value) || 0;
+        const existingProd = (memoryCachedProducts || []).find((p) => p.id === productId);
+        const baseGa = payload.guaranteed_analysis || (existingProd?.guaranteedAnalysis ? { ...existingProd.guaranteedAnalysis } : {});
+        if (shipCost > 0) {
+          baseGa._shipping_unit_cost = shipCost;
+        } else {
+          delete baseGa._shipping_unit_cost;
+        }
+        payload.guaranteed_analysis = baseGa;
       } else if (key === 'animalPercent' || key === 'animal_percent') {
         payload.animal_percent = value !== '' && value !== null && !isNaN(value) ? String(value) : (value || null);
       }
@@ -304,9 +334,16 @@ export async function createProductInSupabase(productData) {
       vet_detail: productData.vetDetail || null,
       life_stage: productData.lifeStage || 'adulto',
       ingredients: (Array.isArray(productData.ingredients) ? productData.ingredients : []).map(cleanIngredientName).filter(Boolean),
-      guaranteed_analysis: (typeof productData.guaranteedAnalysis === 'object' && productData.guaranteedAnalysis !== null)
-        ? productData.guaranteedAnalysis
-        : (productData.guaranteed_analysis || {}),
+      guaranteed_analysis: (() => {
+        const baseGa = (typeof productData.guaranteedAnalysis === 'object' && productData.guaranteedAnalysis !== null)
+          ? { ...productData.guaranteedAnalysis }
+          : (productData.guaranteed_analysis ? { ...productData.guaranteed_analysis } : {});
+        const shipCost = Number(productData.shippingUnitCost ?? productData.shipping_unit_cost) || 0;
+        if (shipCost > 0) {
+          baseGa._shipping_unit_cost = shipCost;
+        }
+        return baseGa;
+      })(),
       animal_percent: productData.animalPercent ? String(productData.animalPercent) : (productData.animal_percent || null),
     };
 

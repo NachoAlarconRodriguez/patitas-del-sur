@@ -54,7 +54,15 @@ export async function createOrderInSupabase(orderData, items = []) {
       total: orderData.total || 0,
       points_earned: orderData.pointsEarned !== undefined ? orderData.pointsEarned : Math.floor((orderData.total || 0) / 1000),
       delivery_day_text: orderData.deliveryDayText || 'Hoy Mismo',
-      delivery_date: orderData.deliveryDate || new Date().toISOString().split('T')[0],
+      delivery_date:
+        orderData.deliveryDate ||
+        orderData.delivery_date ||
+        new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Santiago',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date()),
       delivery_slot: orderData.deliverySlot || 'Tarde (14:00 - 19:00 hrs)',
       address: orderData.address || '',
       city: orderData.city || 'Puerto Varas',

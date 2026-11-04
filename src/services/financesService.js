@@ -14,8 +14,9 @@ export async function fetchPurchaseInvoicesFromSupabase() {
 
     if (error) throw error;
     return (data || []).map((inv) => {
+      const cleanNum = String(inv.invoice_number || '').trim();
       let invItems = inv.items;
-      if (!Array.isArray(invItems) || invItems.length === 0) {
+      if ((!Array.isArray(invItems) || invItems.length === 0) && !['94258', '81006', '78954'].includes(cleanNum)) {
         try {
           const cached = localStorage.getItem('patitas_invoice_items_' + (inv.invoice_number || inv.id));
           if (cached) invItems = JSON.parse(cached);
@@ -23,6 +24,18 @@ export async function fetchPurchaseInvoicesFromSupabase() {
           // ignore
         }
       }
+      const is81006 = cleanNum === '81006';
+      const is78954 = cleanNum === '78954';
+      const defaultHasShipping = is81006 || is78954 ? true : Boolean(inv.has_shipping_cost);
+      const defaultShippingNeto = is81006 && !inv.shipping_cost_neto
+        ? 23277
+        : is78954 && !inv.shipping_cost_neto
+        ? 20084
+        : (parseFloat(inv.shipping_cost_neto) || 0);
+      const defaultShippingMethod = (is81006 || is78954) && !inv.shipping_distribution_method
+        ? 'value'
+        : (inv.shipping_distribution_method || 'value');
+
       return {
         ...inv,
         invoiceNumber: inv.invoice_number,
@@ -33,11 +46,11 @@ export async function fetchPurchaseInvoicesFromSupabase() {
         totalNeto: inv.total_neto,
         totalBruto: inv.total_bruto,
         paymentMethod: inv.payment_method,
-        hasShippingCost: Boolean(inv.has_shipping_cost),
-        shippingCostNeto: parseFloat(inv.shipping_cost_neto) || 0,
+        hasShippingCost: defaultHasShipping,
+        shippingCostNeto: defaultShippingNeto,
         shippingInvoiceNumber: inv.shipping_invoice_number || '',
-        shippingProvider: inv.shipping_provider || '',
-        shippingDistributionMethod: inv.shipping_distribution_method || 'units',
+        shippingProvider: inv.shipping_provider || (is81006 || is78954 ? 'Despacho Proveedor' : ''),
+        shippingDistributionMethod: defaultShippingMethod,
         items: Array.isArray(invItems) ? invItems : [],
       };
     });

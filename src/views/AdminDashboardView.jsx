@@ -285,14 +285,14 @@ const INVESTMENT_TYPE_OPTIONS = [
 
 const SHIPPING_DISTRIBUTION_OPTIONS = [
   {
+    value: 'value',
+    label: 'Proporcional al valor neto (Recomendado)',
+    desc: 'Distribuye según el porcentaje del valor neto de cada ítem',
+  },
+  {
     value: 'units',
     label: 'Por unidades (Equitativo)',
     desc: 'Divide el flete en partes iguales por cada unidad de producto',
-  },
-  {
-    value: 'value',
-    label: 'Proporcional al valor neto',
-    desc: 'Distribuye según el porcentaje del valor neto de cada ítem',
   },
 ];
 
@@ -308,10 +308,67 @@ const formatCLP = (amount) => {
   }).format(amount || 0);
 };
 
+// Helper para obtener la fecha actual en zona horaria de Chile (YYYY-MM-DD)
+const getChileDateString = (dateObj = new Date()) => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Santiago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(dateObj);
+  } catch {
+    const offsetMs = dateObj.getTime() - dateObj.getTimezoneOffset() * 60000;
+    return new Date(offsetMs).toISOString().split('T')[0];
+  }
+};
+
+// Helper para obtener la hora actual en zona horaria de Chile (ej: "11:05 p. m." / "23:05")
+const getChileTimeFormatted = (dateObj = new Date()) => {
+  try {
+    return dateObj.toLocaleTimeString('es-CL', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Santiago',
+    });
+  } catch {
+    return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+  }
+};
+
+// Helper para construir un ISO timestamp alineado con la fecha seleccionada y la hora actual de Chile
+const buildChileOrderIso = (dateStr) => {
+  const now = new Date();
+  const todayChile = getChileDateString(now);
+  if (!dateStr || dateStr === todayChile) {
+    return now.toISOString();
+  }
+  const [ordY, ordM, ordD] = String(dateStr).split('-').map(Number);
+  if (!ordY || !ordM || !ordD) return now.toISOString();
+  const localDate = new Date(
+    ordY,
+    ordM - 1,
+    ordD,
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds()
+  );
+  return localDate.toISOString();
+};
+
 // Helper date formatter DD/MM/YYYY
 const formatCLPDate = (dateVal) => {
   if (!dateVal) return '-';
   const str = String(dateVal).trim();
+  if (str.includes('T')) {
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const chileIso = getChileDateString(parsed);
+      const parts = chileIso.split('-');
+      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+  }
   if (str.includes('-')) {
     const parts = str.split('T')[0].split('-');
     if (parts.length === 3 && parts[0].length === 4) {
@@ -326,15 +383,30 @@ export const getYearMonthFromDate = (dateVal, createdAtVal) => {
   const str = String(dateVal || createdAtVal || '').trim();
   if (!str) return null;
 
+  // Si es un timestamp completo con T (UTC), convertir primero a fecha de Chile
+  if (str.includes('T')) {
+    const parsedTs = new Date(str);
+    if (!isNaN(parsedTs.getTime())) {
+      return getChileDateString(parsedTs).slice(0, 7);
+    }
+  }
+
   // 1. Matches YYYY-MM-DD o YYYY-MM
   const isoMatch = str.match(/^(\d{4})-(\d{2})/);
   if (isoMatch) {
     return `${isoMatch[1]}-${isoMatch[2]}`;
   }
 
-  // 2. Si createdAtVal existe y coincide con YYYY-MM
+  // 2. Si createdAtVal existe y coincide con YYYY-MM (considerando zona horaria de Chile si tiene T)
   if (createdAtVal) {
-    const cMatch = String(createdAtVal).match(/^(\d{4})-(\d{2})/);
+    const cStr = String(createdAtVal);
+    if (cStr.includes('T')) {
+      const parsedCreated = new Date(cStr);
+      if (!isNaN(parsedCreated.getTime())) {
+        return getChileDateString(parsedCreated).slice(0, 7);
+      }
+    }
+    const cMatch = cStr.match(/^(\d{4})-(\d{2})/);
     if (cMatch) return `${cMatch[1]}-${cMatch[2]}`;
   }
 
@@ -392,13 +464,47 @@ export const formatPeriodLabel = (ym) => {
   return `${name} ${year}`;
 };
 
+// Helper centralizado: al Precio Unitario Neto y al Despacho Unitario Neto se les calcula el IVA (19%)
+// Si se pasa `order` y corresponde al lote histórico de la Factura #78954 (previo a Factura #81006 del 20/10/2026),
+// utiliza el prorrateo proporcional de transporte de la Factura #78954 ($20.084 neto / $23.900 c/IVA sobre $204.804 neto).
+const getProductUnitCostWithIva = (prod, order = null) => {
+  if (!prod) return 0;
+  const unitNeto = Number(prod.unitCostNeto ?? prod.unit_cost_neto) || 0;
+  let shippingUnitCost = Number(prod.shippingUnitCost ?? prod.shipping_unit_cost) || 0;
+
+  if (order && shippingUnitCost > 0) {
+    const orderId = String(order.id || order.order_number || '').trim();
+    const orderDate = String(order.date || order.created_at || '').slice(0, 10);
+    const isBatch78954 =
+      ['PED-0001', 'PED-0002', 'PED-0003', 'PED-0004'].includes(orderId) ||
+      (orderDate && orderDate < '2026-10-20');
+
+    if (isBatch78954) {
+      shippingUnitCost = Math.round((unitNeto / 204804) * 20084);
+    }
+  }
+
+  return Math.round(unitNeto * 1.19) + Math.round(shippingUnitCost * 1.19);
+};
+
 // Helper para resolver el listado ordenado de productos, formatos, unidades y costo unitario neto de una factura
 const resolveInvoiceItems = (inv, inventoryList = []) => {
   if (!inv) return [];
 
-  const hasShipping = Boolean(inv.hasShippingCost || inv.has_shipping_cost || (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0);
-  const shippingNeto = parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0;
-  const shippingMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'units';
+  const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
+  const is81006 = cleanInvNum === '81006';
+  const is78954 = cleanInvNum === '78954';
+  const hasShipping = Boolean(
+    inv.hasShippingCost ||
+    inv.has_shipping_cost ||
+    (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0 ||
+    is81006 ||
+    is78954
+  );
+  const shippingNeto =
+    parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) ||
+    (is81006 ? 23277 : is78954 ? 20084 : 0);
+  const shippingMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'value';
 
   // 1. Si la factura ya trae un array estructurado de ítems
   if (Array.isArray(inv.items) && inv.items.length > 0) {
@@ -423,8 +529,8 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
         }
       }
 
-      const landedUnitNeto = it.landedUnitNeto || (supplierUnitNeto + unitShippingCost);
-      const unitNeto = landedUnitNeto || supplierUnitNeto;
+      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
+      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
 
       return {
         index: idx + 1,
@@ -433,14 +539,139 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
         qty,
         supplierUnitNeto,
         unitShippingCost,
-        landedUnitNeto,
-        unitNeto,
+        unitShippingCostWithIva,
+        unitCostWithIva,
+        landedUnitNeto: supplierUnitNeto,
+        unitNeto: supplierUnitNeto,
         subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
       };
     });
   }
 
-  // 2. Si se guardó en caché local de ítems de factura
+  // 2. Casos estructurados verificados para Facturas #94258, #78954 y #81006
+  if (cleanInvNum === '94258') {
+    const raw94258 = [
+      { name: 'Arena Fit Carbón', format: '10 kg', qty: 1, supplierUnitNeto: 8125 },
+      { name: 'Stay Happy Arena Aglutinante Café', format: '10 kg', qty: 1, supplierUnitNeto: 8581 },
+      { name: 'Fit Adulto Raza Pequeña', format: '10 kg', qty: 2, supplierUnitNeto: 16467 },
+      { name: 'Fit Adulto Raza Pequeña', format: '3 kg', qty: 2, supplierUnitNeto: 7982 },
+      { name: 'Fit Adulto Raza Mediana y Grande', format: '20 kg', qty: 1, supplierUnitNeto: 30095 },
+      { name: 'Fit Cachorro', format: '10 kg', qty: 1, supplierUnitNeto: 17564 },
+      { name: 'Fit Cachorro', format: '3 kg', qty: 1, supplierUnitNeto: 9081 },
+      { name: 'Fit Gato Adulto', format: '11 kg', qty: 2, supplierUnitNeto: 22359 },
+      { name: 'Nomade Adulto Raza Mediana y Grande', format: '20 kg', qty: 2, supplierUnitNeto: 30378 },
+      { name: 'Nomade Adulto Raza Pequeña', format: '10 kg', qty: 1, supplierUnitNeto: 16105 },
+    ];
+    return raw94258.map((it, idx) => {
+      const qty = it.qty;
+      const supplierUnitNeto = it.supplierUnitNeto;
+      const unitShippingCost = 0;
+      const unitShippingCostWithIva = 0;
+      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19);
+      return {
+        index: idx + 1,
+        name: it.name,
+        format: it.format,
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        unitShippingCostWithIva,
+        unitCostWithIva,
+        landedUnitNeto: supplierUnitNeto,
+        unitNeto: supplierUnitNeto,
+        subtotalNeto: qty * supplierUnitNeto,
+      };
+    });
+  }
+
+  if (cleanInvNum === '78954') {
+    const raw78954 = [
+      { name: 'Alpha Spirit Lata Cordero & Pera', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Conejo & Platano', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Salmón & Piña', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
+      { name: 'Acana Free Run Poultry', format: '11,35 kg', qty: 2, supplierUnitNeto: 48410 },
+      { name: 'Acana Freshwater Fish', format: '11,35 kg', qty: 2, supplierUnitNeto: 50478 },
+    ];
+    const totalUnits = 8;
+    const totalNetoMercaderia = 204804;
+
+    return raw78954.map((it, idx) => {
+      const qty = it.qty;
+      const supplierUnitNeto = it.supplierUnitNeto;
+      let unitShippingCost = 0;
+
+      if (hasShipping && shippingNeto > 0) {
+        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
+          const itemNeto = qty * supplierUnitNeto;
+          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
+        } else if (totalUnits > 0) {
+          unitShippingCost = Math.round(shippingNeto / totalUnits);
+        }
+      }
+
+      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
+      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
+
+      return {
+        index: idx + 1,
+        name: it.name,
+        format: it.format,
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        unitShippingCostWithIva,
+        unitCostWithIva,
+        landedUnitNeto: supplierUnitNeto,
+        unitNeto: supplierUnitNeto,
+        subtotalNeto: qty * supplierUnitNeto,
+      };
+    });
+  }
+
+  if (cleanInvNum === '81006') {
+    const raw81006 = [
+      { name: 'Alpha Spirit Lata Vacuno & Melón', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Cordero & Pera', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Conejo & Platano', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
+      { name: 'Alpha Spirit Lata Salmón & Piña', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
+      { name: 'Acana Free Run Poultry', format: '11,35 kg', qty: 2, supplierUnitNeto: 48410 },
+      { name: 'Acana Freshwater Fish', format: '11,35 kg', qty: 2, supplierUnitNeto: 50478 },
+      { name: 'Acana Light & Fit', format: '11,35 kg', qty: 1, supplierUnitNeto: 50672 },
+    ];
+    const totalUnits = 15;
+    const totalNetoMercaderia = 266018;
+
+    return raw81006.map((it, idx) => {
+      const qty = it.qty;
+      const supplierUnitNeto = it.supplierUnitNeto;
+      let unitShippingCost = hasShipping && shippingNeto > 0
+        ? (shippingMethod === 'value' && totalNetoMercaderia > 0
+          ? Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * shippingNeto) / qty)
+          : Math.round(shippingNeto / totalUnits))
+        : Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * 23277) / qty);
+
+      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
+      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
+
+      return {
+        index: idx + 1,
+        name: it.name,
+        format: it.format,
+        qty,
+        supplierUnitNeto,
+        unitShippingCost,
+        unitShippingCostWithIva,
+        unitCostWithIva,
+        landedUnitNeto: supplierUnitNeto,
+        unitNeto: supplierUnitNeto,
+        subtotalNeto: qty * supplierUnitNeto,
+      };
+    });
+  }
+
+  // 2.5 Si se guardó en caché local de ítems de factura
   try {
     const cached = localStorage.getItem('patitas_invoice_items_' + (inv.invoiceNumber || inv.id));
     if (cached) {
@@ -467,8 +698,8 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
             }
           }
 
-          const landedUnitNeto = it.landedUnitNeto || (supplierUnitNeto + unitShippingCost);
-          const unitNeto = landedUnitNeto || supplierUnitNeto;
+          const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
+          const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
 
           return {
             index: idx + 1,
@@ -477,8 +708,10 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
             qty,
             supplierUnitNeto,
             unitShippingCost,
-            landedUnitNeto,
-            unitNeto,
+            unitShippingCostWithIva,
+            unitCostWithIva,
+            landedUnitNeto: supplierUnitNeto,
+            unitNeto: supplierUnitNeto,
             subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
           };
         });
@@ -488,52 +721,7 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
     // ignore
   }
 
-  // 2.5 Caso específico para Factura #78954 de Comecan SpA (4 latas unitarias + 2 sacos Acana Poultry + 2 sacos Acana Freshwater = 8 unidades, $204.804 neto)
-  const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
-  if (cleanInvNum === '78954') {
-    const raw78954 = [
-      { name: 'Alpha Spirit Lata Cordero & Pera', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Conejo & Platano', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Salmón & Piña', format: '10 kg', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Acana Free Run Poultry', format: '11.4 kg', qty: 2, supplierUnitNeto: 48410 },
-      { name: 'Acana Freshwater Fish', format: '11.4 kg', qty: 2, supplierUnitNeto: 50478 },
-    ];
-    const totalUnits = 8;
-    const totalNetoMercaderia = 204804;
-
-    return raw78954.map((it, idx) => {
-      const qty = it.qty;
-      const supplierUnitNeto = it.supplierUnitNeto;
-      let unitShippingCost = 0;
-
-      if (hasShipping && shippingNeto > 0) {
-        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
-          const itemNeto = qty * supplierUnitNeto;
-          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
-        } else if (totalUnits > 0) {
-          unitShippingCost = Math.round(shippingNeto / totalUnits);
-        }
-      }
-
-      const landedUnitNeto = supplierUnitNeto + unitShippingCost;
-      const unitNeto = landedUnitNeto || supplierUnitNeto;
-
-      return {
-        index: idx + 1,
-        name: it.name,
-        format: it.format,
-        qty,
-        supplierUnitNeto,
-        unitShippingCost,
-        landedUnitNeto,
-        unitNeto,
-        subtotalNeto: qty * supplierUnitNeto,
-      };
-    });
-  }
-
-  // 3. Descomponer y reconstruir desde la cadena product_name
+  // 3. Descomponer y reconstruir desde la cadena product_name respetando variantes por formato (ej. 3 kg vs 10 kg)
   const rawNames = (inv.productName || inv.product_name || '')
     .split(',')
     .map((s) => s.trim())
@@ -544,7 +732,7 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
     const fallbackNeto = inv.totalNeto || inv.total_neto || 0;
     const fallbackUnit = inv.unitCostNeto || inv.unit_cost_neto || (fallbackQty > 0 ? Math.round(fallbackNeto / fallbackQty) : 0);
     const unitShippingCost = hasShipping && shippingNeto > 0 && fallbackQty > 0 ? Math.round(shippingNeto / fallbackQty) : 0;
-    const landedUnitNeto = fallbackUnit + unitShippingCost;
+    const unitCostWithIva = Math.round(fallbackUnit * 1.19) + unitShippingCost;
     return [
       {
         index: 1,
@@ -553,14 +741,15 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
         qty: fallbackQty,
         supplierUnitNeto: fallbackUnit,
         unitShippingCost,
-        landedUnitNeto,
-        unitNeto: landedUnitNeto,
+        unitCostWithIva,
+        landedUnitNeto: fallbackUnit,
+        unitNeto: fallbackUnit,
         subtotalNeto: fallbackNeto,
       },
     ];
   }
 
-  // Contar frecuencias para asignar unidades correctas por ítem
+  // Contar ocurrencias de nombres limpios en la lista de la factura
   const counts = {};
   rawNames.forEach((n) => {
     let clean = n.trim();
@@ -571,38 +760,50 @@ const resolveInvoiceItems = (inv, inventoryList = []) => {
   const expectedTotalUnits = parseInt(inv.quantityReceived || inv.quantity_received || inv.itemsCount, 10) || 0;
   const expectedTotalNeto = parseFloat(inv.totalNeto || inv.total_neto) || 0;
 
-  let itemsParsed = Object.entries(counts).map(([name, countQty]) => {
+  let itemsParsed = [];
+  Object.entries(counts).forEach(([name, countQty]) => {
     const allMatches = (inventoryList || []).filter((p) => {
-      const pName = (p.name || '').toLowerCase();
-      const nName = name.toLowerCase();
-      return pName.includes(nName) || nName.includes(pName);
+      const pName = (p.name || '').toLowerCase().trim();
+      const nName = name.toLowerCase().trim();
+      return pName === nName || pName.includes(nName) || nName.includes(pName);
     });
 
-    let matched = allMatches[0];
-    if (allMatches.length > 1) {
-      const tenKg = allMatches.find((p) => {
-        const fmt = Array.isArray(p.weights) ? p.weights[0] : (p.format || '');
-        return fmt.includes('10');
+    // Si hay múltiples formatos del mismo producto (ej. Fit Adulto Raza Pequeña 3 kg y 10 kg) y el nombre aparece varias veces en la factura,
+    // separar cada formato como su propio ítem independiente en vez de fusionarlos en uno solo
+    if (allMatches.length > 1 && countQty >= allMatches.length) {
+      allMatches.forEach((matchedProd, mIdx) => {
+        const unitNeto = Number(matchedProd.unitCostNeto || matchedProd.unit_cost_neto) || 0;
+        const format = Array.isArray(matchedProd.weights)
+          ? matchedProd.weights[0]
+          : (matchedProd.format || '10 kg');
+        const assignedQty = mIdx === 0 ? countQty - (allMatches.length - 1) : 1;
+        itemsParsed.push({
+          name: matchedProd.name || name,
+          format,
+          qty: assignedQty,
+          supplierUnitNeto: unitNeto,
+          unitNeto,
+          subtotalNeto: assignedQty * unitNeto,
+        });
       });
-      if (tenKg) matched = tenKg;
+    } else {
+      const matched = allMatches[0];
+      const unitNeto = matched
+        ? (Number(matched.unitCostNeto || matched.unit_cost_neto) || 0)
+        : (Number(inv.unitCostNeto || inv.unit_cost_neto) || 8500);
+      const format = matched
+        ? (Array.isArray(matched.weights) ? matched.weights[0] : (matched.format || matched.weights || '10 kg'))
+        : '10 kg';
+
+      itemsParsed.push({
+        name,
+        format,
+        qty: countQty,
+        supplierUnitNeto: unitNeto,
+        unitNeto,
+        subtotalNeto: countQty * unitNeto,
+      });
     }
-
-    const unitNeto = matched
-      ? (matched.unitCostNeto || matched.unit_cost_neto || 0)
-      : (inv.unitCostNeto || inv.unit_cost_neto || 8500);
-
-    const format = matched
-      ? (Array.isArray(matched.weights) ? matched.weights[0] : (matched.weights || '10 kg'))
-      : '10 kg';
-
-    return {
-      name,
-      format,
-      qty: countQty,
-      supplierUnitNeto: unitNeto,
-      unitNeto,
-      subtotalNeto: countQty * unitNeto,
-    };
   });
 
   // Reconciliación si la factura registra más unidades totales que los nombres únicos
@@ -1078,12 +1279,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     });
   }, [orders, todayFormattedDate]);
 
-  // Mercado Pago Configuration State
+  // Mercado Pago & Máquina de Pago Configuration State (Opción A: descuento directo sobre el total c/IVA)
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState({
-    commissionRatePercent: 3.19, // 3.19% + IVA
-    fixedFeeCLP: 350, // $350 CLP fijo
-    ivaPercent: 19, // 19% IVA
-    payoutSchedule: 'instant', // 'instant' | '14_days'
+    cardRatePercent: 2.55, // 2.55% fijo Tarjeta / Máquina POS (cubre débito/crédito)
+    webRatePercent: 3.19, // 3.19% fijo Botón de Pago Web sobre el monto total c/IVA
+    commissionRatePercent: 3.19, // alias retrocompatible
+    fixedFeeCLP: 0, // $0 CLP cargo fijo por defecto
+    addIvaToCommission: false, // false = Opción A (descuento directo), true = Opción B (+19% IVA adicional)
+    ivaPercent: 19,
+    payoutSchedule: 'instant',
     cardDiscountActive: false,
   });
 
@@ -1109,6 +1313,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             minStock: p.minStock || 5,
             salePrice: p.price || 68990,
             unitCostNeto: p.unitCostNeto || Math.round((p.price || 68990) * 0.6),
+            shippingUnitCost: Number(p.shippingUnitCost ?? p.shipping_unit_cost) || 0,
             status: typeof p.stock === 'number' && p.stock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
             isPaused: Boolean(p.is_paused || p.isPaused),
             isActive: p.is_active !== false,
@@ -1209,6 +1414,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     day: 'numeric',
                     month: 'short',
                     year: 'numeric',
+                    timeZone: 'America/Santiago',
                   })
                 : 'Hoy',
               customer: o.customer_name || 'Cliente Patitas',
@@ -1381,13 +1587,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     });
 
-    // Configuración de Mercado Pago
+    // Configuración de Mercado Pago & Máquina de Tarjeta
     getMercadoPagoSettingsFromSupabase().then((mpSettings) => {
       if (!isMounted) return;
       if (mpSettings) {
         setMercadoPagoConfig((prev) => ({
           ...prev,
           ...mpSettings,
+          cardRatePercent: mpSettings.cardRatePercent ?? 2.55,
+          webRatePercent: mpSettings.webRatePercent ?? mpSettings.commissionRatePercent ?? 3.19,
+          fixedFeeCLP: mpSettings.cardRatePercent !== undefined ? (mpSettings.fixedFeeCLP ?? 0) : 0,
+          addIvaToCommission: Boolean(mpSettings.addIvaToCommission),
         }));
       }
     });
@@ -1751,11 +1961,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         comparison = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
       } else if (inventorySortKey === 'unitCostNeto') {
         comparison = (Number(a.unitCostNeto) || 0) - (Number(b.unitCostNeto) || 0);
+      } else if (inventorySortKey === 'unitCostWithIva') {
+        const costIvaA = getProductUnitCostWithIva(a);
+        const costIvaB = getProductUnitCostWithIva(b);
+        comparison = costIvaA - costIvaB;
       } else if (inventorySortKey === 'salePrice') {
         comparison = (Number(a.salePrice) || 0) - (Number(b.salePrice) || 0);
       } else if (inventorySortKey === 'margin') {
-        const marginA = a.salePrice ? ((a.salePrice - a.unitCostNeto) / a.salePrice) * 100 : 0;
-        const marginB = b.salePrice ? ((b.salePrice - b.unitCostNeto) / b.salePrice) * 100 : 0;
+        const costIvaA = getProductUnitCostWithIva(a);
+        const costIvaB = getProductUnitCostWithIva(b);
+        const marginA = a.salePrice ? ((a.salePrice - costIvaA) / a.salePrice) * 100 : 0;
+        const marginB = b.salePrice ? ((b.salePrice - costIvaB) / b.salePrice) * 100 : 0;
         comparison = marginA - marginB;
       } else if (inventorySortKey === 'stock') {
         comparison = (Number(a.stock) || 0) - (Number(b.stock) || 0);
@@ -1863,6 +2079,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [isAddOrderModalOpen, setIsAddOrderModalOpen] = useState(false);
   const [manualOrderStep, setManualOrderStep] = useState(1);
   const [manualOrderPhoneTouched, setManualOrderPhoneTouched] = useState(false);
+  const [manualOrderAddressTouched, setManualOrderAddressTouched] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
   const [manualOrderCustomer, setManualOrderCustomer] = useState({
     name: '',
@@ -1876,8 +2093,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     shippingCost: 0,
     status: 'en_preparacion',
     paymentMethod: 'Transferencia',
-    date: new Date().toISOString().split('T')[0],
+    date: getChileDateString(),
   });
+
+  // Asegurar que la fecha por defecto en el modal siga la zona horaria de Chile (evita desfase UTC después de las 21:00 hrs)
+  useEffect(() => {
+    const chileToday = getChileDateString();
+    const utcToday = new Date().toISOString().slice(0, 10);
+    if (manualOrderCustomer.date === utcToday && utcToday !== chileToday) {
+      setManualOrderCustomer((prev) => ({ ...prev, date: chileToday }));
+    }
+  }, [isAddOrderModalOpen, manualOrderCustomer.date]);
   const [manualOrderItems, setManualOrderItems] = useState([]);
   const [mapsSearchQuery, setMapsSearchQuery] = useState('');
   const [mapsSearchResults, setMapsSearchResults] = useState([]);
@@ -1915,6 +2141,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
   const handleSelectMapsAddress = async (item) => {
+    const typedQuery = (mapsSearchQuery || '').trim();
+    const typedNumberMatch = typedQuery.match(/\b(\d+[a-zA-Z]?)\b/);
     let streetName = item.mainText || item.address || item.fullAddress;
     let cityName = item.city || manualOrderCustomer.city || 'Puerto Varas';
 
@@ -1930,6 +2158,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     }
 
+    // Preservar numeración exacta ingresada por el usuario si Google devolvió solo el nombre de la calle
+    if (typedNumberMatch && streetName && !new RegExp(`\\b${typedNumberMatch[1]}\\b`).test(streetName)) {
+      streetName = `${streetName} ${typedNumberMatch[1]}`.trim();
+    }
+
     setManualOrderCustomer((prev) => ({
       ...prev,
       address: streetName,
@@ -1938,6 +2171,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     setMapsSearchQuery(streetName);
     setShowMapsDropdown(false);
     setSelectedFromMaps(true);
+    setManualOrderAddressTouched(false);
     showToast(`📍 Dirección Google Maps fijada: ${streetName}, ${cityName}`);
   };
 
@@ -2122,7 +2356,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     partnerName: loggedInPartnerName,
     partnerRut: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getChileDateString(),
     investmentType: 'capital_inicial',
     paymentMethod: 'Transferencia Bancaria',
     destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
@@ -2138,7 +2372,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         ...prev,
         partnerName: prev.partnerName || activePartner,
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getChileDateString(),
         investmentType: 'capital_inicial',
       }));
     }
@@ -2277,14 +2511,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     providerRut: '',
     provider: '',
     invoiceNumber: '',
-    date: new Date().toISOString().split('T')[0],
-    dueDate: new Date().toISOString().split('T')[0],
+    date: getChileDateString(),
+    dueDate: getChileDateString(),
     status: 'pendiente', // 'pendiente' | 'pagada'
     hasShippingCost: false,
     shippingCostNeto: '',
     shippingInvoiceNumber: '',
     shippingProvider: '',
-    shippingDistributionMethod: 'units', // 'units' | 'value'
+    shippingDistributionMethod: 'value', // 'value' | 'units'
     items: [
       {
         id: 'ITEM-INIT-1',
@@ -2447,7 +2681,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     provider: '',
     documentType: 'boleta', // 'boleta' | 'factura'
     documentNumber: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getChileDateString(),
     amount: 35000,
     paymentMethod: 'Tarjeta Débito Banco Santander',
     isRecurring: false,
@@ -2509,7 +2743,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       provider: '',
       documentType: 'boleta',
       documentNumber: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getChileDateString(),
       amount: 35000,
       paymentMethod: 'Tarjeta Débito Banco Santander',
       isRecurring: false,
@@ -2559,7 +2793,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       partnerName: currentPartner,
       partnerRut: '',
       amount: cleanAmount,
-      date: newInvestmentForm.date || new Date().toISOString().split('T')[0],
+      date: newInvestmentForm.date || getChileDateString(),
       investmentType: isAumento ? 'aumento_capital' : 'capital_inicial',
       investmentTypeLabel: typeLabel,
       paymentMethod: 'Transferencia Bancaria',
@@ -2580,7 +2814,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       partnerName: currentPartner,
       partnerRut: '',
       amount: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getChileDateString(),
       investmentType: 'capital_inicial',
       paymentMethod: 'Transferencia Bancaria',
       destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
@@ -3157,18 +3391,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       showToast('Debes agregar al menos un producto al pedido');
       return;
     }
+    const cleanAddress = (manualOrderCustomer.address || mapsSearchQuery || '').trim();
+    if (
+      !cleanAddress ||
+      cleanAddress.toLowerCase() === 'dirección por confirmar' ||
+      cleanAddress.toLowerCase() === 'direccion por confirmar' ||
+      cleanAddress.toLowerCase() === 'dirección no registrada'
+    ) {
+      setManualOrderAddressTouched(true);
+      setManualOrderStep(3);
+      showToast('⚠️ La dirección de entrega es obligatoria para crear el pedido');
+      return;
+    }
 
     const subtotal = manualOrderItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
     const shipping = parseInt(manualOrderCustomer.shippingCost, 10) || 0;
     const total = subtotal + shipping;
 
-    const orderDateStr = manualOrderCustomer.date || new Date().toISOString().split('T')[0];
+    const orderDateStr = manualOrderCustomer.date || getChileDateString();
     const [ordY, ordM, ordD] = orderDateStr.split('-').map(Number);
     const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const dateFormatted = `${ordD} ${months[ordM - 1]} ${ordY}`;
     const now = new Date();
-    const timeFormatted = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const orderIso = new Date(Date.UTC(ordY, ordM - 1, ordD, 12, 0, 0)).toISOString();
+    const timeFormatted = getChileTimeFormatted(now);
+    const orderIso = buildChileOrderIso(orderDateStr);
     let maxNum = 0;
     for (const o of orders) {
       const match = String(o.id || '').match(/PED-(\d+)/i);
@@ -3213,7 +3459,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       status: manualOrderCustomer.status || 'en_preparacion',
       tracking: `CHI-${Math.floor(8000000 + Math.random() * 1000000)}`,
       invoiceNumber: invoiceNum,
-      address: manualOrderCustomer.address || 'Dirección por confirmar',
+      address: cleanAddress,
       city: manualOrderCustomer.city || 'Puerto Varas',
       deliveryZone: `Entrega ${manualOrderCustomer.city || 'Puerto Varas'}`,
       notes: manualOrderCustomer.notes || 'Pedido creado manualmente en el panel',
@@ -3222,16 +3468,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     setOrders([newOrder, ...orders]);
     setInventory((prevInv) =>
       prevInv.map((p) => {
-        const matchingItems = (newOrder.items || []).filter(
-          (it) =>
-            it.id === p.id ||
-            it.productId === p.id ||
-            String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase()
-        );
+        const matchingItems = (newOrder.items || []).filter((it) => {
+          const targetId = it.id || it.productId;
+          if (targetId) return targetId === p.id;
+          return String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase();
+        });
         if (matchingItems.length > 0) {
           const qty = matchingItems.reduce((sum, it) => sum + Number(it.quantity || 1), 0);
           const newStock = Math.max(0, (Number(p.stock) || 0) - qty);
-          updateProductInSupabase(p.id, { stock: newStock, name: p.name, sku: p.sku }).catch(() => {});
           return {
             ...p,
             stock: newStock,
@@ -3286,12 +3530,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       shippingCost: 0,
       status: 'en_preparacion',
       paymentMethod: 'Transferencia',
-      date: new Date().toISOString().split('T')[0],
+      date: getChileDateString(),
     });
     setManualOrderItems([]);
     setQuantityToAdd(1);
     setManualOrderStep(1);
     setManualOrderPhoneTouched(false);
+    setManualOrderAddressTouched(false);
     setMapsSearchQuery('');
     setMapsSearchResults([]);
     setShowMapsDropdown(false);
@@ -3499,7 +3744,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     const hasShipping = Boolean(newInvoiceForm.hasShippingCost);
     const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(newInvoiceForm.shippingCostNeto, 10) || 0) : 0;
-    const shippingMethod = newInvoiceForm.shippingDistributionMethod || 'units';
+    const shippingMethod = newInvoiceForm.shippingDistributionMethod || 'value';
 
     let totalQuantity = 0;
     let totalNeto = 0;
@@ -3526,10 +3771,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         }
       }
 
-      const landedUnitNeto = supplierUnitNeto + unitShippingCost;
+      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + Math.round(unitShippingCost * 1.19);
+      const landedUnitNeto = supplierUnitNeto;
       const margin = Number(it.profitMarginPercent) || 0;
-      // El precio de venta sugerido protege el margen real calculándose sobre el costo puesto en bodega
-      const saleP = parseInt(it.salePrice, 10) || Math.round(landedUnitNeto * (1 + 0.19 + margin / 100));
+      // Primero al precio unitario y al despacho se les calcula el IVA (19%), y sobre eso se proyecta el margen
+      const saleP = parseInt(it.salePrice, 10) || Math.round(unitCostWithIva * (1 + margin / 100));
       const subtotalNeto = subtotalSupplierNeto;
       const iva = Math.round(subtotalNeto * 0.19);
       const totalBruto = subtotalNeto + iva;
@@ -3663,7 +3909,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           return pTitle === itemTitleClean;
         });
 
-        const landedCost = it.landedUnitNeto || it.unitNeto;
+        const pureUnitNeto = it.supplierUnitNeto || it.unitNeto || 0;
 
         if (exactMatchIdx > -1) {
           const prevItem = currentInv[exactMatchIdx];
@@ -3672,11 +3918,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           const addedStock = it.qty;
           const newStock = prevStock + addedStock;
 
-          // CÁLCULO PMP (Precio Medio Ponderado):
-          // Ponderar stock previo con nuevo lote que incluye flete
+          // CÁLCULO PMP (Precio Medio Ponderado) sobre el Costo Neto Unitario puro (sin mezclar el despacho antes de IVA):
           const weightedCost = (newStock > 0 && prevStock > 0 && prevCost > 0)
-            ? Math.round(((prevStock * prevCost) + (addedStock * landedCost)) / newStock)
-            : landedCost;
+            ? Math.round(((prevStock * prevCost) + (addedStock * pureUnitNeto)) / newStock)
+            : pureUnitNeto;
 
           const newInvoiceEntry = {
             invoiceNumber: newInvoiceForm.invoiceNumber,
@@ -3684,9 +3929,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             provider: newInvoiceForm.provider || 'Proveedor Autorizado',
             providerRut: newInvoiceForm.providerRut || '76.123.456-7',
             quantity: it.qty,
-            supplierUnitCostNeto: it.supplierUnitNeto,
-            shippingUnitCost: it.unitShippingCost,
-            landedCostNeto: landedCost,
+            supplierUnitCostNeto: pureUnitNeto,
+            shippingUnitCost: it.unitShippingCost || 0,
+            landedCostNeto: pureUnitNeto,
             unitCostNeto: weightedCost,
           };
 
@@ -3711,9 +3956,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             stock: newStock,
             invoiceNumber: newInvoiceForm.invoiceNumber,
             invoiceDate: newInvoiceForm.date,
-            unitCostNeto: weightedCost, // ¡Costo ponderado PMP con flete incorporado!
-            supplierUnitCostNeto: it.supplierUnitNeto,
-            landedCostNeto: landedCost,
+            unitCostNeto: weightedCost,
+            supplierUnitCostNeto: pureUnitNeto,
+            shippingUnitCost: it.unitShippingCost || 0,
+            landedCostNeto: pureUnitNeto,
             salePrice: it.saleP,
             provider: newInvoiceForm.provider || prevItem.provider,
             providerRut: newInvoiceForm.providerRut || prevItem.providerRut,
@@ -3721,10 +3967,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             invoices: [newInvoiceEntry, ...existingInvoices],
           };
 
-          // Actualizar stock y costo ponderado en Supabase
+          // Actualizar stock, costo neto puro y despacho unitario en Supabase
           updateProductInSupabase(prevItem.id, {
             stock: newStock,
             unitCostNeto: weightedCost,
+            shippingUnitCost: it.unitShippingCost || 0,
             salePrice: it.saleP,
             brand: it.cleanBrand || prevItem.brand,
             category: it.category || prevItem.category,
@@ -3742,10 +3989,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             provider: newInvoiceForm.provider || 'Proveedor Autorizado',
             providerRut: newInvoiceForm.providerRut || '76.123.456-7',
             quantity: it.qty,
-            supplierUnitCostNeto: it.supplierUnitNeto,
-            shippingUnitCost: it.unitShippingCost,
-            landedCostNeto: landedCost,
-            unitCostNeto: landedCost,
+            supplierUnitCostNeto: pureUnitNeto,
+            shippingUnitCost: it.unitShippingCost || 0,
+            landedCostNeto: pureUnitNeto,
+            unitCostNeto: pureUnitNeto,
           };
           const newProd = {
             id: newProdId,
@@ -3759,9 +4006,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             stock: it.qty,
             minStock: 6,
             salePrice: it.saleP,
-            unitCostNeto: landedCost,
-            supplierUnitCostNeto: it.supplierUnitNeto,
-            landedCostNeto: landedCost,
+            unitCostNeto: pureUnitNeto,
+            supplierUnitCostNeto: pureUnitNeto,
+            shippingUnitCost: it.unitShippingCost || 0,
+            landedCostNeto: pureUnitNeto,
             parentId: parentId,
             invoices: [newInvoiceEntry],
             invoiceNumber: newInvoiceForm.invoiceNumber,
@@ -3793,14 +4041,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       providerRut: '',
       provider: '',
       invoiceNumber: '',
-      date: new Date().toISOString().split('T')[0],
-      dueDate: new Date().toISOString().split('T')[0],
+      date: getChileDateString(),
+      dueDate: getChileDateString(),
       status: 'pendiente',
       hasShippingCost: false,
       shippingCostNeto: '',
       shippingInvoiceNumber: '',
       shippingProvider: '',
-      shippingDistributionMethod: 'units',
+      shippingDistributionMethod: 'value',
       items: [createInitialInvoiceItem()],
     });
     showToast(
@@ -3836,13 +4084,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const handleOpenEditInvoice = (inv) => {
     if (!inv) return;
     const invItems = resolveInvoiceItems(inv, inventory);
+    const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
+    const is81006 = cleanInvNum === '81006';
+    const is78954 = cleanInvNum === '78954';
     const hasShipping = Boolean(
       inv.hasShippingCost ||
       inv.has_shipping_cost ||
-      (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0
+      (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0 ||
+      is81006 ||
+      is78954
     );
-    const sNeto = parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0;
-    const sMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'units';
+    const sNeto =
+      parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) ||
+      (is81006 ? 23277 : is78954 ? 20084 : 0);
+    const sMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'value';
     const sInvNum = inv.shippingInvoiceNumber || inv.shipping_invoice_number || '';
     const sProv = inv.shippingProvider || inv.shipping_provider || '';
 
@@ -3939,7 +4194,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     try {
       const hasShipping = Boolean(editingInvoiceModal.hasShippingCost);
       const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(editingInvoiceModal.shippingCostNeto, 10) || 0) : 0;
-      const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'units';
+      const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'value';
 
       let totalQuantity = 0;
       let totalNeto = 0;
@@ -4041,22 +4296,33 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         console.warn('Error saving invoice items cache:', err);
       }
 
-      // 4. Actualizar costo de productos en bodega/inventario si coincide
+      // 4. Actualizar costo neto puro y despacho unitario en bodega/inventario coincidiendo por nombre Y formato
       setInventory((prevInv) => {
         let updatedInv = [...prevInv];
         processedItems.forEach((it) => {
-          const itemTitleClean = (it.name || '').toLowerCase().trim();
+          const itemTitleClean = cleanBaseProductName(it.name || '').toLowerCase().trim();
+          const itemFormatClean = (it.format || '').toLowerCase().trim();
           const matchIdx = updatedInv.findIndex((p) => {
-            const pTitle = (p.name || '').toLowerCase().trim();
-            return pTitle.includes(itemTitleClean) || itemTitleClean.includes(pTitle);
+            const pTitle = cleanBaseProductName(p.name || '', p.brand).toLowerCase().trim();
+            const pFormat = (p.format || extractProductFormat(p)).toLowerCase().trim();
+            const nameMatches = pTitle === itemTitleClean || pTitle.includes(itemTitleClean) || itemTitleClean.includes(pTitle);
+            if (!nameMatches) return false;
+            return itemFormatClean ? pFormat === itemFormatClean : true;
           });
           if (matchIdx > -1) {
             const prevItem = updatedInv[matchIdx];
+            const pureNeto = it.supplierUnitNeto || it.unitNeto || 0;
+            const shipUnit = it.unitShippingCost || 0;
             updatedInv[matchIdx] = {
               ...prevItem,
-              unitCostNeto: it.landedUnitNeto || it.unitNeto,
-              cost: it.landedUnitNeto || it.unitNeto,
+              unitCostNeto: pureNeto,
+              shippingUnitCost: shipUnit,
+              cost: pureNeto,
             };
+            updateProductInSupabase(prevItem.id, {
+              unitCostNeto: pureNeto,
+              shippingUnitCost: shipUnit,
+            });
           }
         });
         return updatedInv;
@@ -4261,6 +4527,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const updatedStock = Number(editingProduct.stock) >= 0 ? Number(editingProduct.stock) : undefined;
       const updatedPrice = Number(editingProduct.salePrice) || undefined;
       const updatedCost = Number(editingProduct.unitCostNeto) || undefined;
+      const updatedShippingCost =
+        editingProduct.shippingUnitCost !== undefined && editingProduct.shippingUnitCost !== ''
+          ? Math.max(0, Math.round(Number(editingProduct.shippingUnitCost) || 0))
+          : undefined;
       const updatedMin = Number(editingProduct.minStock) || 5;
 
       // Sanitizar ingredientes para eliminar cualquier emoji o caracter decorativo
@@ -4280,6 +4550,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 sku: (editingProduct.sku || '').trim(),
                 salePrice: updatedPrice !== undefined ? updatedPrice : item.salePrice,
                 unitCostNeto: updatedCost !== undefined ? updatedCost : item.unitCostNeto,
+                shippingUnitCost:
+                  updatedShippingCost !== undefined ? updatedShippingCost : (item.shippingUnitCost || 0),
                 stock: updatedStock !== undefined ? updatedStock : item.stock,
                 minStock: updatedMin,
                 category: editingProduct.category || item.category,
@@ -4317,6 +4589,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         sku: (editingProduct.sku || '').trim() || null,
         salePrice: updatedPrice,
         unitCostNeto: updatedCost,
+        shippingUnitCost: updatedShippingCost !== undefined ? updatedShippingCost : 0,
         stock: updatedStock,
         minStock: updatedMin,
         category: editingProduct.category,
@@ -4385,7 +4658,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     if (!product) return null;
 
     const unitPrice = Number(product.salePrice) || 0;
-    const unitCost = Number(product.unitCostNeto) || Math.round(unitPrice * 0.65);
+    const unitCost = product.unitCostNeto
+      ? getProductUnitCostWithIva(product)
+      : Math.round(unitPrice * 0.65);
 
     // Normalizador de texto para comparar nombres sin acentos ni mayúsculas
     const normalize = (t) =>
@@ -4445,6 +4720,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               : '🐶 Perro'
             : 'Mascota regalona';
 
+          const orderUnitCost = product.unitCostNeto
+            ? getProductUnitCostWithIva(product, order)
+            : unitCost;
+
           matchingOrderItems.push({
             orderId: order.id,
             dateObj,
@@ -4453,6 +4732,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             pet: petLabel,
             units: qty,
             unitPrice: price,
+            unitCost: orderUnitCost,
             subtotal,
             paymentMethod: order.paymentMethod || order.payment_method || 'Web',
             status: order.status || 'en_preparacion',
@@ -4464,7 +4744,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     // 2. Cálculo de Totales Reales
     const totalUnitsSold = matchingOrderItems.reduce((acc, curr) => acc + curr.units, 0);
     const totalRevenue = matchingOrderItems.reduce((acc, curr) => acc + curr.subtotal, 0);
-    const totalMargin = totalRevenue - totalUnitsSold * unitCost;
+    const totalCostOfSold = matchingOrderItems.reduce((acc, curr) => acc + curr.units * (curr.unitCost || unitCost), 0);
+    const totalMargin = totalRevenue - totalCostOfSold;
     const marginPercent = unitPrice > 0 ? Math.round(((unitPrice - unitCost) / unitPrice) * 100) : 0;
 
     const monthlyAverageUnits = totalUnitsSold > 0 ? Math.max(1, Math.round(totalUnitsSold / 1)) : 0;
@@ -4973,13 +5254,64 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     };
   }, [periodFilteredInvestments]);
 
-  // Helper para calcular costo, despacho y repartición financiera exacta por pedido
+  // Helper para calcular la comisión retenida por uso de Máquina de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
+  // Opción A por defecto: el porcentaje se aplica directamente sobre el monto total cobrado (con IVA incluido).
+  const calculateOrderPaymentFee = useCallback((order) => {
+    if (!order || order.status === 'cancelado') {
+      return {
+        norm: 'Transferencia',
+        hasFee: false,
+        ratePercent: 0,
+        feeAmount: 0,
+        netReceived: 0,
+        label: 'Sin comisión (0%)',
+      };
+    }
+
+    const orderTotal = Number(order.total || 0);
+    const norm = normalizePaymentMethod(order.paymentMethod);
+
+    let ratePercent = 0;
+    let label = 'Sin comisión (0%)';
+
+    if (norm === 'Tarjeta') {
+      ratePercent = Number(mercadoPagoConfig.cardRatePercent ?? 2.55);
+      label = `Comisión máquina tarjeta (${ratePercent}%)`;
+    } else if (norm === 'Web') {
+      ratePercent = Number(mercadoPagoConfig.webRatePercent ?? mercadoPagoConfig.commissionRatePercent ?? 3.19);
+      label = `Comisión botón de pago (${ratePercent}%)`;
+    }
+
+    let feeAmount = 0;
+    if (ratePercent > 0 && orderTotal > 0) {
+      const baseCommission = orderTotal * (ratePercent / 100) + (Number(mercadoPagoConfig.fixedFeeCLP) || 0);
+      const ivaMultiplier = mercadoPagoConfig.addIvaToCommission
+        ? 1 + (Number(mercadoPagoConfig.ivaPercent || 19) / 100)
+        : 1;
+      feeAmount = Math.round(baseCommission * ivaMultiplier);
+    }
+
+    return {
+      norm,
+      hasFee: feeAmount > 0,
+      ratePercent,
+      feeAmount,
+      netReceived: Math.max(0, orderTotal - feeAmount),
+      label,
+    };
+  }, [mercadoPagoConfig]);
+
+  // Helper para calcular costo, despacho, comisión de tarjeta/botón y repartición financiera exacta por pedido
   const calculateOrderFinancialDistribution = useCallback((order) => {
     if (!order || order.status === 'cancelado') {
       return {
         orderTotal: 0,
         productCostWithIva: 0,
         deliveryCost: 0,
+        paymentFee: 0,
+        paymentFeeRate: 0,
+        paymentFeeNorm: 'Transferencia',
+        netOrderReceived: 0,
         realProfit: 0,
         halfProfit: 0,
         driverName: 'Ignacio Alarcón',
@@ -4997,21 +5329,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     (order.items || []).forEach((item) => {
       const qty = Number(item.quantity || 1);
       const itemName = String(item.name || '').trim().toLowerCase();
+      const itemFormat = String(item.format || item.weight || '').trim().toLowerCase();
+      const itemProdId = String(item.productId || item.product_id || '').trim();
 
-      const match = (inventory || []).find((p) => {
-        const pName = String(p.name || '').trim().toLowerCase();
-        return (
-          (item.id && p.id && item.id === p.id) ||
-          (item.code && p.sku && item.code === p.sku) ||
-          pName === itemName ||
-          pName.includes(itemName) ||
-          itemName.includes(pName)
-        );
-      });
+      const match =
+        (inventory || []).find((p) => itemProdId && p.id === itemProdId) ||
+        (inventory || []).find((p) => item.id && p.id && item.id === p.id) ||
+        (inventory || []).find((p) => {
+          const pName = String(p.name || '').trim().toLowerCase();
+          const pFormat = String(p.format || extractProductFormat(p)).trim().toLowerCase();
+          const nameOk = pName === itemName || pName.includes(itemName) || itemName.includes(pName);
+          return nameOk && itemFormat && pFormat === itemFormat;
+        }) ||
+        (inventory || []).find((p) => {
+          const pName = String(p.name || '').trim().toLowerCase();
+          return (
+            (item.code && p.sku && item.code === p.sku) ||
+            pName === itemName ||
+            pName.includes(itemName) ||
+            itemName.includes(pName)
+          );
+        });
 
       if (match && Number(match.unitCostNeto) > 0) {
-        const unitNeto = Number(match.unitCostNeto);
-        const unitConIva = Math.round(unitNeto * 1.19);
+        const unitConIva = getProductUnitCostWithIva(match, order);
         totalProductCostWithIva += unitConIva * qty;
       } else {
         const itemPrice = Number(item.price || (orderTotal > 0 ? orderTotal / qty : 0));
@@ -5060,11 +5401,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const fuelCost = Math.round(kmRoundTrip * avgFuelPerKm);
     const deliveryCalculatedCost = fuelCost + baseFixed;
 
-    // 3. Ganancia Real Neta
-    const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost;
+    // 3. Comisión por uso de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
+    const paymentFeeInfo = calculateOrderPaymentFee(order);
+    const paymentFee = paymentFeeInfo.feeAmount;
+
+    // 4. Ganancia Real Neta (descontando producto c/IVA, despacho y comisión de tarjeta/botón)
+    const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost - paymentFee;
     const halfProfit = Math.round(realProfit / 2);
 
-    // 4. Identificar Repartidor
+    // 5. Identificar Repartidor
     const driverName = String(order.deliveredByName || order.delivered_by_name || (order.id === 'PED-0001' ? 'Ignacio Alarcón' : '')).trim();
     const isAlamiro = driverName.toLowerCase().includes('alamiro');
     const isIgnacio = !isAlamiro;
@@ -5076,6 +5421,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       orderTotal,
       productCostWithIva: totalProductCostWithIva,
       deliveryCost: deliveryCalculatedCost,
+      paymentFee,
+      paymentFeeRate: paymentFeeInfo.ratePercent,
+      paymentFeeNorm: paymentFeeInfo.norm,
+      netOrderReceived: paymentFeeInfo.netReceived,
       realProfit,
       halfProfit,
       driverName: isAlamiro ? 'Alamiro Huerto' : 'Ignacio Alarcón',
@@ -5084,7 +5433,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       ignacioTotal,
       alamiroTotal,
     };
-  }, [inventory, fleetFuelStats]);
+  }, [inventory, fleetFuelStats, calculateOrderPaymentFee]);
 
   // Calculations for Financial Dashboard
   const financialMetrics = useMemo(() => {
@@ -5107,24 +5456,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const manualSalesNeto = Math.round(manualSales / 1.19);
     const manualIvaDebito = manualSales - manualSalesNeto;
 
-    // Desglose de ingresos por método de pago
-    const mpSales = Math.round(totalSales * 0.72); // 72% de ventas con Mercado Pago / Tarjetas
-    const transferSales = Math.round(totalSales * 0.22); // 22% por Transferencia Bancaria Directa
-    const cashSales = totalSales - mpSales - transferSales; // 6% Efectivo
-    const mpTxCount = mpSales > 0 ? Math.max(1, Math.round(mpSales / 42000)) : 0;
+    // Desglose REAL de ingresos por método de pago (Tarjeta / Botón Web vs Transferencia vs Efectivo)
+    const cardAndWebOrders = periodFilteredOrders.filter((o) =>
+      ['Tarjeta', 'Web'].includes(normalizePaymentMethod(o.paymentMethod))
+    );
+    const transferOrders = periodFilteredOrders.filter(
+      (o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia'
+    );
+    const cashOrders = periodFilteredOrders.filter(
+      (o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo'
+    );
+
+    const mpSales = cardAndWebOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const transferSales = transferOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const cashSales = cashOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const mpTxCount = cardAndWebOrders.length;
 
     // Costo de Mercadería Vendida (COGS - 58% promedio según facturas)
     const estimatedCOGS = Math.round(totalSales * 0.58);
     const grossMargin = totalSales - estimatedCOGS;
     const grossMarginPercent = totalSales > 0 ? ((grossMargin / totalSales) * 100).toFixed(1) : '0.0';
 
-    // Cálculo dinámico de comisiones Mercado Pago
-    const mpPercentFeeNeto = Math.round(mpSales * (mercadoPagoConfig.commissionRatePercent / 100));
+    // Cálculo REAL de comisiones por pedidos pagados con Tarjeta (2,55%) o Botón de Pago Web (3,19%)
+    const mpTotalCostWithIva = cardAndWebOrders.reduce(
+      (sum, o) => sum + calculateOrderPaymentFee(o).feeAmount,
+      0
+    );
+    const mpPercentFeeNeto = mpTotalCostWithIva;
     const mpFixedFeeNeto = Math.round(mpTxCount * (mercadoPagoConfig.fixedFeeCLP || 0));
-    const mpTotalNeto = mpPercentFeeNeto + mpFixedFeeNeto;
-    const mpTotalIva = Math.round(mpTotalNeto * (mercadoPagoConfig.ivaPercent / 100));
-    const mpTotalCostWithIva = mpTotalNeto + mpTotalIva;
-    const mpEffectiveRate = mpSales > 0 ? ((mpTotalCostWithIva / mpSales) * 100).toFixed(2) : '0.00';
+    const mpEffectiveRate =
+      mpSales > 0
+        ? ((mpTotalCostWithIva / mpSales) * 100).toFixed(2)
+        : String(mercadoPagoConfig.cardRatePercent ?? 2.55);
     const mpNetRevenueReceived = mpSales - mpTotalCostWithIva;
 
     // 2. Facturas de Proveedores (Mercadería / Stock) & IVA Crédito Fiscal
@@ -5295,6 +5658,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         let alamiroProductProfit = 0;
         let alamiroDeliveryFees = 0;
         let alamiroDeliveryCount = 0;
+        let totalPaymentFees = 0;
 
         periodFilteredOrders.forEach((ord) => {
           const dist = calculateOrderFinancialDistribution(ord);
@@ -5307,12 +5671,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           }
           ignacioProductProfit += dist.halfProfit;
           alamiroProductProfit += dist.halfProfit;
+          totalPaymentFees += dist.paymentFee || 0;
 
           ignacioTotalEarnings += dist.ignacioTotal;
           alamiroTotalEarnings += dist.alamiroTotal;
         });
 
         return {
+          totalPaymentFees,
           ignacio: {
             total: ignacioTotalEarnings,
             productProfit: ignacioProductProfit,
@@ -5328,7 +5694,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         };
       })(),
     };
-  }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution]);
+  }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution, calculateOrderPaymentFee]);
 
   // Mes actual dinámico en español
   const currentMonthName = useMemo(() => {
@@ -9060,9 +9426,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   {filteredInventory.map((prod) => {
                     const isOutOfStock = (Number(prod.stock) || 0) <= 0;
                     const isLow = isOutOfStock || (Number(prod.stock) || 0) <= (Number(prod.minStock) || 5);
-                    const marginPercent = Math.round(
-                      ((prod.salePrice - prod.unitCostNeto) / prod.salePrice) * 100
-                    );
+                    const unitCostWithIva = getProductUnitCostWithIva(prod);
+                    const marginPercent = prod.salePrice
+                      ? Math.round(((prod.salePrice - unitCostWithIva) / prod.salePrice) * 100)
+                      : 0;
 
                     return (
                       <div
@@ -9127,12 +9494,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
 
                           {/* Pricing & Margin Box */}
-                          <div className="mt-3 grid grid-cols-3 gap-2 bg-slate-50/80 p-2.5 rounded-2xl border border-slate-100 text-center">
+                          <div className="mt-3 grid grid-cols-4 gap-1.5 bg-slate-50/80 p-2.5 rounded-2xl border border-slate-100 text-center">
                             <div>
                               <span className="text-[9px] uppercase font-bold text-slate-400 block">Costo Neto</span>
-                              <span className="text-xs font-mono font-bold text-slate-700">
+                              <span className="text-xs font-mono font-bold text-slate-600 block">
                                 {formatCLP(prod.unitCostNeto)}
                               </span>
+                              {Number(prod.shippingUnitCost) > 0 && (
+                                <span className="text-[9px] font-mono text-slate-400 font-semibold block leading-tight">
+                                  +{formatCLP(prod.shippingUnitCost)} desp.
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              <span className="text-[9px] uppercase font-bold text-slate-400 block">Costo c/ IVA</span>
+                              <span className="text-xs font-mono font-bold text-slate-800 block">
+                                {formatCLP(unitCostWithIva)}
+                              </span>
+                              {Number(prod.shippingUnitCost) > 0 && (
+                                <span className="text-[9px] font-mono text-[#0E8388] font-bold block leading-tight">
+                                  +{formatCLP(Math.round(Number(prod.shippingUnitCost) * 1.19))} desp. c/IVA
+                                </span>
+                              )}
                             </div>
                             <div>
                               <span className="text-[9px] uppercase font-bold text-slate-400 block">PVP Venta</span>
@@ -9143,7 +9526,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <div>
                               <span className="text-[9px] uppercase font-bold text-emerald-700 block">Margen</span>
                               <span className="text-xs font-black text-emerald-700">
-                                +{marginPercent}%
+                                {marginPercent > 0 ? `+${marginPercent}%` : `${marginPercent}%`}
                               </span>
                             </div>
                           </div>
@@ -9297,7 +9680,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 4. Precio Venta */}
+                        {/* 4. Costo c/ IVA */}
+                        <th
+                          onClick={() => handleInventorySort('unitCostWithIva')}
+                          className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
+                          title="Ordenar por costo con IVA (19%) incluido (menor a mayor / mayor a menor)"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span className={inventorySortKey === 'unitCostWithIva' ? 'text-[#0E8388] font-black' : ''}>
+                              Costo c/ IVA
+                            </span>
+                            {renderSortIndicator('unitCostWithIva')}
+                          </div>
+                        </th>
+
+                        {/* 5. Precio Venta */}
                         <th
                           onClick={() => handleInventorySort('salePrice')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
@@ -9311,7 +9708,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 5. Stock en Bodega */}
+                        {/* 6. Stock en Bodega */}
                         <th
                           onClick={() => handleInventorySort('stock')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
@@ -9325,11 +9722,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 6. % Ganancia */}
+                        {/* 7. % Ganancia */}
                         <th
                           onClick={() => handleInventorySort('margin')}
                           className="py-3.5 px-4 cursor-pointer select-none group hover:bg-slate-100/80 transition-colors"
-                          title="Ordenar por porcentaje de ganancia / margen comercial (menor a mayor / mayor a menor)"
+                          title="Ordenar por porcentaje de ganancia calculado sobre el costo con IVA (menor a mayor / mayor a menor)"
                         >
                           <div className="flex items-center gap-1.5">
                             <span className={inventorySortKey === 'margin' ? 'text-[#0E8388] font-black' : ''}>
@@ -9339,14 +9736,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </th>
 
-                        {/* 7. Acciones (Sin ordenar) */}
+                        {/* 8. Acciones (Sin ordenar) */}
                         <th className="py-3.5 px-4 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredInventory.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-12 px-4 text-center">
+                          <td colSpan={8} className="py-12 px-4 text-center">
                             <div className="max-w-sm mx-auto space-y-2">
                               <Package className="w-10 h-10 text-slate-300 mx-auto" />
                               <div className="font-bold text-slate-800 text-sm">
@@ -9375,9 +9772,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         filteredInventory.map((prod) => {
                           const isOutOfStock = (Number(prod.stock) || 0) <= 0;
                           const isLow = isOutOfStock || (Number(prod.stock) || 0) <= (Number(prod.minStock) || 5);
-                          const marginPercent = Math.round(
-                            ((prod.salePrice - prod.unitCostNeto) / prod.salePrice) * 100
-                          );
+                          const unitCostWithIva = getProductUnitCostWithIva(prod);
+                          const marginPercent = prod.salePrice
+                            ? Math.round(((prod.salePrice - unitCostWithIva) / prod.salePrice) * 100)
+                            : 0;
 
                           return (
                             <tr
@@ -9477,7 +9875,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                               {/* Costo Neto */}
                               <td className="py-4 px-4 font-mono font-bold text-slate-600">
-                                {formatCLP(prod.unitCostNeto)}
+                                <div>{formatCLP(prod.unitCostNeto)}</div>
+                                {Number(prod.shippingUnitCost) > 0 && (
+                                  <div className="text-[10px] font-mono text-slate-400 font-semibold">
+                                    +{formatCLP(prod.shippingUnitCost)} desp. neto
+                                  </div>
+                                )}
+                              </td>
+
+                              {/* Costo c/ IVA */}
+                              <td className="py-4 px-4 font-mono font-bold text-slate-800">
+                                <div>{formatCLP(unitCostWithIva)}</div>
+                                {Number(prod.shippingUnitCost) > 0 && (
+                                  <div className="text-[10px] font-mono text-[#0E8388] font-bold">
+                                    +{formatCLP(Math.round(Number(prod.shippingUnitCost) * 1.19))} desp. c/IVA
+                                  </div>
+                                )}
                               </td>
 
                               {/* Precio Venta */}
@@ -9491,9 +9904,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   const siblingVariants = inventory.filter(
                                     (o) => o.id !== prod.id && areProductsSameGroup(prod, o)
                                   );
-                                  const totalGroupStock =
-                                    (prod.stock || 0) +
-                                    siblingVariants.reduce((sum, s) => sum + (s.stock || 0), 0);
 
                                   return (
                                     <div>
@@ -9514,12 +9924,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                         )}
                                       </div>
                                       <div className="text-[10px] font-mono text-slate-400">
-                                        Total SKU: {formatCLP(prod.stock * prod.unitCostNeto)}
+                                        Total SKU ({prod.format || extractProductFormat(prod)}): {formatCLP(prod.stock * prod.unitCostNeto)}
                                       </div>
                                       {siblingVariants.length > 0 && (
                                         <div className="text-[10px] text-teal-700 font-bold mt-1 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200/60 inline-flex items-center gap-1">
-                                          <span>Total publicación:</span>
-                                          <span className="font-black">{totalGroupStock} u.</span>
+                                          <span>Otros formatos:</span>
+                                          <span className="font-black">
+                                            {siblingVariants.map((s) => `${s.format || extractProductFormat(s)}: ${s.stock} u.`).join(' • ')}
+                                          </span>
                                         </div>
                                       )}
                                     </div>
@@ -9531,7 +9943,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <td className="py-4 px-4 font-mono">
                                 {(() => {
                                   const sale = Number(prod.salePrice) || 0;
-                                  const cost = Number(prod.unitCostNeto) || 0;
+                                  const cost = unitCostWithIva;
                                   const marginPct = sale > 0 ? Math.round(((sale - cost) / sale) * 100) : 0;
                                   const profitCLP = sale - cost;
 
@@ -10187,32 +10599,42 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                   {/* 2 Cards complementarias: Mercado Pago & Inventario */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Card 1: Mercado Pago */}
+                    {/* Card 1: Cobros con Tarjetas & Botón de Pago */}
                     <div className="bg-white border border-slate-200/80 rounded-3xl p-6 space-y-4 shadow-xs">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div className="flex items-center gap-2">
                           <CreditCard className="w-5 h-5 text-blue-600" />
-                          <h3 className="text-sm font-black text-slate-900">Cobros con Tarjetas & Mercado Pago</h3>
+                          <div>
+                            <h3 className="text-sm font-black text-slate-900">Cobros con Tarjeta & Botón de Pago</h3>
+                            <p className="text-[10px] text-slate-400 font-semibold">
+                              Tarjeta: {mercadoPagoConfig.cardRatePercent ?? 2.55}% • Botón Web: {mercadoPagoConfig.webRatePercent ?? 3.19}%
+                            </p>
+                          </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => setIsMercadoPagoModalOpen(true)}
                           className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer"
                         >
-                          Configurar Pasarela →
+                          Configurar Tasas →
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="grid grid-cols-3 gap-2.5 text-xs">
                         <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-1">
-                          <span className="text-slate-400 text-[10px] font-bold uppercase">Ventas Procesadas</span>
+                          <span className="text-slate-400 text-[10px] font-bold uppercase">Ventas Tarjeta/Web</span>
                           <div className="font-black text-slate-900 font-mono text-sm">{formatCLP(financialMetrics.mpSales)}</div>
-                          <span className="text-[10px] text-slate-500">{financialMetrics.mpTxCount} cobros</span>
+                          <span className="text-[10px] text-slate-500">{financialMetrics.mpTxCount} {financialMetrics.mpTxCount === 1 ? 'cobro' : 'cobros'}</span>
                         </div>
-                        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-1">
-                          <span className="text-slate-400 text-[10px] font-bold uppercase">Líquido Recibido</span>
+                        <div className="p-3 rounded-2xl bg-rose-50/50 border border-rose-200/70 space-y-1">
+                          <span className="text-rose-700 text-[10px] font-bold uppercase">Comisión Retenida</span>
+                          <div className="font-black text-rose-600 font-mono text-sm">-{formatCLP(financialMetrics.mpTotalCostWithIva)}</div>
+                          <span className="text-[10px] text-slate-500">Tasa prom. {financialMetrics.mpEffectiveRate}%</span>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-emerald-50/50 border border-emerald-200/70 space-y-1">
+                          <span className="text-emerald-700 text-[10px] font-bold uppercase">Líquido Recibido</span>
                           <div className="font-black text-emerald-700 font-mono text-sm">{formatCLP(financialMetrics.mpNetRevenueReceived)}</div>
-                          <span className="text-[10px] text-slate-500">Tasa efec. {financialMetrics.mpEffectiveRate}%</span>
+                          <span className="text-[10px] text-emerald-700 font-semibold">Neto en cuenta</span>
                         </div>
                       </div>
                     </div>
@@ -11528,7 +11950,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   {dist && (
                                     <div
                                       className="text-[9px] text-slate-500 font-semibold mt-1 whitespace-nowrap"
-                                      title={`Repartición de este pedido:\n• Ignacio: ${formatCLP(dist.ignacioTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})\n• Alamiro: ${formatCLP(dist.alamiroTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})`}
+                                      title={`Repartición de este pedido:${dist.paymentFee > 0 ? `\n• Comisión ${dist.paymentFeeNorm} (${dist.paymentFeeRate}%): -${formatCLP(dist.paymentFee)}` : ''}\n• Ignacio: ${formatCLP(dist.ignacioTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})\n• Alamiro: ${formatCLP(dist.alamiroTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})`}
                                     >
                                       <span>Ignacio: <strong className="text-slate-800 font-mono">{formatCLP(dist.ignacioTotal)}</strong></span>
                                       <span className="mx-1 text-slate-300">|</span>
@@ -13381,27 +13803,35 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       quantity: selectedOrderModal.qty || 1,
                     }];
 
-                // 2. Costo del producto con IVA (19%)
+                // 2. Costo del producto con IVA (19%) + Despacho unitario
                 let totalProductCostWithIva = 0;
                 items.forEach((item) => {
                   const qty = parseInt(item.quantity || item.qty || 1, 10) || 1;
                   const itemName = (item.name || '').toLowerCase().trim();
+                  const itemFmt = (item.format || '').toLowerCase().trim();
 
-                  const match = (inventory || []).find((p) => {
-                    if (!p) return false;
-                    const pName = (p.name || '').toLowerCase().trim();
-                    return (
-                      (item.id && p.id && item.id === p.id) ||
-                      (item.code && p.sku && item.code === p.sku) ||
-                      pName === itemName ||
-                      pName.includes(itemName) ||
-                      itemName.includes(pName)
-                    );
-                  });
+                  // Priorizar coincidencia exacta por productId/id/SKU o por nombre + formato
+                  const match =
+                    (inventory || []).find((p) => {
+                      if (!p) return false;
+                      if ((item.productId && p.id && item.productId === p.id) || (item.id && p.id && item.id === p.id)) {
+                        return true;
+                      }
+                      if (item.code && p.sku && item.code === p.sku) {
+                        return true;
+                      }
+                      const pName = (p.name || '').toLowerCase().trim();
+                      const pFmt = (p.format || '').toLowerCase().trim();
+                      return (pName === itemName || pName.includes(itemName) || itemName.includes(pName)) && itemFmt && pFmt === itemFmt;
+                    }) ||
+                    (inventory || []).find((p) => {
+                      if (!p) return false;
+                      const pName = (p.name || '').toLowerCase().trim();
+                      return pName === itemName || pName.includes(itemName) || itemName.includes(pName);
+                    });
 
                   if (match && Number(match.unitCostNeto) > 0) {
-                    const unitNeto = Number(match.unitCostNeto);
-                    const unitConIva = Math.round(unitNeto * 1.19);
+                    const unitConIva = getProductUnitCostWithIva(match, selectedOrderModal);
                     totalProductCostWithIva += unitConIva * qty;
                   } else {
                     const itemPrice = Number(item.price || (orderTotal > 0 ? orderTotal / qty : 0));
@@ -13474,8 +13904,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 const fuelCost = Math.round(kmRoundTrip * avgFuelPerKm);
                 const deliveryCalculatedCost = fuelCost + baseFixed;
 
-                // 4. Ganancia Real Neta
-                const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost;
+                // 4. Comisión por uso de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
+                const paymentFeeInfo = calculateOrderPaymentFee(selectedOrderModal);
+                const paymentFee = paymentFeeInfo.feeAmount;
+
+                // 5. Ganancia Real Neta (descontando costo producto c/IVA, despacho y comisión de tarjeta/botón)
+                const realProfit = orderTotal - totalProductCostWithIva - deliveryCalculatedCost - paymentFee;
                 const profitMarginPercent = orderTotal > 0 ? ((realProfit / orderTotal) * 100).toFixed(1) : '0';
 
                 const isPaid = String(selectedOrderModal.paymentStatus || '').toLowerCase() === 'pagado';
@@ -13581,6 +14015,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </span>
                         </div>
 
+                        {/* 5. Comisión por uso de Tarjeta (2,55%) o Botón de Pago Web (3,19%) */}
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0 pr-2">
+                            <span className="text-slate-600">
+                              {paymentFee > 0
+                                ? `Comisión ${paymentFeeInfo.norm === 'Tarjeta' ? 'máquina tarjeta' : 'botón de pago'} (${paymentFeeInfo.ratePercent}%):`
+                                : `Comisión medio de pago (${paymentFeeInfo.norm}):`}
+                            </span>
+                            <span className="block text-[10px] text-slate-400">
+                              {paymentFee > 0
+                                ? `Líquido recibido tras comisión: ${formatCLP(paymentFeeInfo.netReceived)}`
+                                : 'Sin recargo por pasarela o máquina (0%)'}
+                            </span>
+                          </div>
+                          <span className={`font-mono font-semibold shrink-0 ${paymentFee > 0 ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold'}`}>
+                            {paymentFee > 0 ? `-${formatCLP(paymentFee)}` : '$0 (0%)'}
+                          </span>
+                        </div>
+
                         {selectedOrderModal.agreementUsed && (
                           <div className="flex items-center justify-between text-purple-700 text-[11px] pt-1 border-t border-slate-100">
                             <span>Convenio aplicado:</span>
@@ -13589,7 +14042,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         )}
                       </div>
 
-                      {/* 5. Ganancia Real / Margen Neto */}
+                      {/* 6. Ganancia Real / Margen Neto */}
                       <div className={`p-3 rounded-xl border flex items-center justify-between transition-all ${
                         realProfit > 0
                           ? 'bg-gradient-to-r from-emerald-50 to-teal-50/70 border-emerald-200/90 text-emerald-950'
@@ -13614,14 +14067,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                       </div>
 
-                      {/* 6. Repartición entre Socios (50/50 + Despacho) */}
+                      {/* 7. Repartición entre Socios (50/50 + Despacho) */}
                       {(() => {
                         const dist = calculateOrderFinancialDistribution(selectedOrderModal);
                         return (
                           <div className="p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200 space-y-2 mt-2">
                             <div className="flex items-center justify-between text-[10px] font-black uppercase text-slate-500 tracking-wider">
                               <span>Repartición entre Socios</span>
-                              <span className="text-emerald-700 font-bold">50% Utilidad + Despacho</span>
+                              <span className="text-emerald-700 font-bold">
+                                {dist.paymentFee > 0 ? `50% Utilidad Neta (-${dist.paymentFeeRate}% comisión) + Despacho` : '50% Utilidad + Despacho'}
+                              </span>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               {/* Ignacio Alarcón */}
@@ -13815,6 +14270,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           setIsAddOrderModalOpen(false);
           setManualOrderStep(1);
           setManualOrderPhoneTouched(false);
+          setManualOrderAddressTouched(false);
           setShowPhoneSuggestions(false);
           setMapsSearchQuery('');
           setMapsSearchResults([]);
@@ -14187,16 +14643,26 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                     key={cust.id}
                                     onMouseDown={(e) => {
                                       e.preventDefault();
+                                      const validCustAddress =
+                                        cust.address &&
+                                        cust.address.toLowerCase() !== 'dirección no registrada' &&
+                                        cust.address.toLowerCase() !== 'dirección por confirmar'
+                                          ? cust.address
+                                          : '';
                                       setManualOrderCustomer((prev) => ({
                                         ...prev,
                                         name: cust.name,
                                         phone: custPhoneDigits,
                                         email: cust.email || prev.email,
-                                        address: cust.address || prev.address,
+                                        address: validCustAddress || prev.address,
                                         city: cust.city || prev.city || 'Puerto Varas',
                                         petName: firstPet?.name || prev.petName,
                                         petType: (firstPet?.type?.toLowerCase().includes('gato') ? '🐱 Gato' : '🐶 Perro') || prev.petType,
                                       }));
+                                      if (validCustAddress) {
+                                        setMapsSearchQuery(validCustAddress);
+                                        setManualOrderAddressTouched(false);
+                                      }
                                       setShowPhoneSuggestions(false);
                                       setManualOrderPhoneTouched(false);
                                       showToast(`✨ Datos de ${cust.name} autocompletados`);
@@ -14975,27 +15441,47 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div className="px-1 mb-1.5 flex items-center justify-between">
                         <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider flex items-center gap-1.5">
                           <MapPin className="w-3.5 h-3.5 text-[#D97706]" />
-                          <span>Lugar de Entrega</span>
+                          <span>Lugar de Entrega <span className="text-[#D97706]">*</span></span>
                         </span>
-                        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#F5BA13] animate-pulse"></span>
-                          Google Maps
-                        </span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[10px] font-semibold text-[#B45309]/80">
+                            * Obligatorio
+                          </span>
+                          <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#F5BA13] animate-pulse"></span>
+                            Google Maps
+                          </span>
+                        </div>
                       </div>
 
                       {/* Barra de Búsqueda Google Maps */}
                       <div className="relative mb-3">
-                        <div className="flex items-center gap-2.5 bg-white rounded-2xl border-2 border-[#F5BA13]/40 hover:border-[#F5BA13]/80 focus-within:border-[#F5BA13] focus-within:ring-4 focus-within:ring-[#F5BA13]/15 px-3.5 py-2.5 shadow-sm transition-all">
+                        <div
+                          className={`flex items-center gap-2.5 bg-white rounded-2xl border-2 px-3.5 py-2.5 shadow-sm transition-all ${
+                            manualOrderAddressTouched && !(manualOrderCustomer.address || mapsSearchQuery || '').trim()
+                              ? 'border-rose-400 focus-within:border-rose-500 focus-within:ring-4 focus-within:ring-rose-500/15'
+                              : 'border-[#F5BA13]/40 hover:border-[#F5BA13]/80 focus-within:border-[#F5BA13] focus-within:ring-4 focus-within:ring-[#F5BA13]/15'
+                          }`}
+                        >
                           <div className="w-7 h-7 rounded-xl bg-gradient-to-tr from-[#D97706] to-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-xs">
                             <Search className="w-3.5 h-3.5 stroke-[2.5]" />
                           </div>
                           <input
                             type="text"
-                            placeholder="Buscar dirección en Google Maps (ej: San Francisco 416)..."
+                            required
+                            placeholder="Buscar dirección obligatoria en Google Maps (ej: San Pedro 11)..."
                             value={mapsSearchQuery}
                             onChange={(e) => {
                               handleMapsSearch(e.target.value);
                               setManualOrderCustomer((prev) => ({ ...prev, address: e.target.value }));
+                              if (e.target.value.trim()) {
+                                setManualOrderAddressTouched(false);
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!(manualOrderCustomer.address || mapsSearchQuery || '').trim()) {
+                                setManualOrderAddressTouched(true);
+                              }
                             }}
                             onFocus={() => {
                               if (mapsSearchQuery.length >= 2) setShowMapsDropdown(true);
@@ -15012,7 +15498,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 setMapsSearchQuery('');
                                 setMapsSearchResults([]);
                                 setShowMapsDropdown(false);
+                                setSelectedFromMaps(false);
                                 setManualOrderCustomer((prev) => ({ ...prev, address: '' }));
+                                setManualOrderAddressTouched(true);
                               }}
                               className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
                               title="Limpiar"
@@ -15021,6 +15509,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </button>
                           )}
                         </div>
+
+                        {manualOrderAddressTouched && !(manualOrderCustomer.address || mapsSearchQuery || '').trim() && (
+                          <p className="mt-1.5 px-1 flex items-center gap-1.5 text-[11px] font-semibold text-rose-500 animate-in fade-in">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 text-rose-500" />
+                            <span>La dirección de entrega es obligatoria para crear un pedido manual</span>
+                          </p>
+                        )}
 
                         {/* Dropdown de resultados de Google Maps */}
                         {showMapsDropdown && mapsSearchResults.length > 0 && (
@@ -15091,7 +15586,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div>
                         <AdminDatePicker
                           label="Fecha de la Venta / Ingreso"
-                          value={manualOrderCustomer.date || new Date().toISOString().split('T')[0]}
+                          value={manualOrderCustomer.date || getChileDateString()}
                           onChange={(newDate) =>
                             setManualOrderCustomer((prev) => ({ ...prev, date: newDate }))
                           }
@@ -17042,8 +17537,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <input
                                 type="number"
                                 min="0"
-                                step="100"
-                                placeholder="Ej: 25000"
+                                step="1"
+                                placeholder="Ej: 23277"
                                 value={newInvoiceForm.shippingCostNeto}
                                 onChange={(e) =>
                                   setNewInvoiceForm({
@@ -17053,6 +17548,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 }
                                 className="w-full px-3 py-1.5 rounded-xl bg-white border border-teal-200/80 text-slate-900 font-mono font-bold text-xs focus:outline-none focus:border-[#0E8388]"
                               />
+                              {parseFloat(newInvoiceForm.shippingCostNeto) > 0 && (
+                                <span className="text-[10px] font-mono text-[#0E8388] font-bold block mt-0.5">
+                                  c/IVA (19%): {formatCLP(Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19))}
+                                </span>
+                              )}
                             </div>
 
                             <div>
@@ -17060,7 +17560,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 Criterio Prorrateo
                               </label>
                               <CustomDropdown
-                                value={newInvoiceForm.shippingDistributionMethod || 'units'}
+                                value={newInvoiceForm.shippingDistributionMethod || 'value'}
                                 options={SHIPPING_DISTRIBUTION_OPTIONS}
                                 onChange={(val) =>
                                   setNewInvoiceForm({
@@ -17675,20 +18175,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             const q = parseInt(item.quantityReceived, 10) || 1;
                             const u = parseInt(item.unitCostNeto, 10) || 0;
                             let estimatedUnitFreight = 0;
-                            if (newInvoiceForm.shippingDistributionMethod === 'value' && totNeto > 0) {
+                            if ((newInvoiceForm.shippingDistributionMethod || 'value') === 'value' && totNeto > 0) {
                               estimatedUnitFreight = Math.round(((q * u) / totNeto * shippingNeto) / q);
                             } else if (totUnits > 0) {
                               estimatedUnitFreight = Math.round(shippingNeto / totUnits);
                             }
-                            const landedEstimated = u + estimatedUnitFreight;
+                            const unitWithIva = Math.round(u * 1.19);
+                            const estimatedUnitFreightWithIva = Math.round(estimatedUnitFreight * 1.19);
+                            const totalUnitCostWithIva = unitWithIva + estimatedUnitFreightWithIva;
                             return (
                               <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-teal-50 border border-teal-200/80 flex items-center justify-between text-[11px] text-teal-950 font-medium">
                                 <span className="flex items-center gap-1.5 font-bold text-teal-800">
                                   <Truck className="w-3.5 h-3.5 text-[#0E8388]" />
-                                  <span>Flete asignado: +{formatCLP(estimatedUnitFreight)} / un.</span>
+                                  <span>Despacho asignado: +{formatCLP(estimatedUnitFreight)} neto (+{formatCLP(estimatedUnitFreightWithIva)} c/IVA) / un.</span>
                                 </span>
                                 <span>
-                                  Costo Puesto en Bodega: <strong className="font-mono font-black text-[#0E8388] text-xs">{formatCLP(landedEstimated)} neto</strong>
+                                  Costo Unit. c/ IVA + Desp.: <strong className="font-mono font-black text-[#0E8388] text-xs">{formatCLP(totalUnitCostWithIva)}</strong>
                                 </span>
                               </div>
                             );
@@ -17715,8 +18217,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0 && (
                           <span className="text-teal-700 font-medium flex items-center gap-1">
                             <Truck className="w-3 h-3 text-[#0E8388]" />
-                            <span>Flete:</span>
-                            <strong className="font-mono font-bold">+{formatCLP(parseFloat(newInvoiceForm.shippingCostNeto) || 0)}</strong>
+                            <span>Flete c/IVA:</span>
+                            <strong className="font-mono font-bold">+{formatCLP(Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19))}</strong>
                           </span>
                         )}
                         <span>IVA (19%): <strong className="font-mono text-emerald-600">+{formatCLP(modalIvaCredito)}</strong></span>
@@ -17724,7 +18226,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div>
                         <span className="text-slate-500 text-[10px] uppercase font-bold mr-1.5">Total Preliminar:</span>
                         <span className="font-mono font-black text-slate-900 text-sm sm:text-base">
-                          {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0))}
+                          {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19) : 0))}
                         </span>
                       </div>
                     </div>
@@ -17833,11 +18335,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <th className="py-2.5 px-3">Producto & Formato</th>
                                 <th className="py-2.5 px-3 text-center">Cant.</th>
                                 <th className="py-2.5 px-3 text-right">
-                                  {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0
-                                    ? 'Costo Bodega (Landed)'
-                                    : 'Costo Neto'}
+                                  Costo Neto
                                 </th>
-                                <th className="py-2.5 px-3 text-right">IVA (19%)</th>
+                                <th className="py-2.5 px-3 text-right">
+                                  {newInvoiceForm.hasShippingCost && parseFloat(newInvoiceForm.shippingCostNeto) > 0
+                                    ? 'Costo c/ IVA + Desp.'
+                                    : 'IVA (19%)'}
+                                </th>
                                 <th className="py-2.5 px-3 text-right">Subtotal Neto</th>
                               </tr>
                             </thead>
@@ -17852,13 +18356,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 const shippingNeto = parseFloat(newInvoiceForm.shippingCostNeto) || 0;
                                 let itFreight = 0;
                                 if (newInvoiceForm.hasShippingCost && shippingNeto > 0) {
-                                  if (newInvoiceForm.shippingDistributionMethod === 'value' && modalSubtotalNeto > 0) {
+                                  if ((newInvoiceForm.shippingDistributionMethod || 'value') === 'value' && modalSubtotalNeto > 0) {
                                     itFreight = Math.round(((subNet / modalSubtotalNeto) * shippingNeto) / q);
                                   } else if (totalItemsUnits > 0) {
                                     itFreight = Math.round(shippingNeto / totalItemsUnits);
                                   }
                                 }
-                                const landedC = c + itFreight;
+                                const itFreightWithIva = Math.round(itFreight * 1.19);
+                                const unitCostWithIvaAndShipping = Math.round(c * 1.19) + itFreightWithIva;
 
                                 return (
                                   <tr key={it.id} className="hover:bg-slate-50/70 transition-colors">
@@ -17878,17 +18383,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                       </div>
                                     </td>
                                     <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-800">{q} un.</td>
+                                    <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                                      {formatCLP(c)}
+                                    </td>
                                     <td className="py-2.5 px-3 text-right font-mono">
                                       {itFreight > 0 ? (
                                         <div>
-                                          <div className="font-black text-slate-900">{formatCLP(landedC)}</div>
-                                          <div className="text-[9px] text-[#0E8388] font-bold">+{formatCLP(itFreight)} flete</div>
+                                          <div className="font-black text-slate-900">{formatCLP(unitCostWithIvaAndShipping)}</div>
+                                          <div className="text-[9px] text-[#0E8388] font-bold">+{formatCLP(itFreightWithIva)} desp. c/IVA</div>
                                         </div>
                                       ) : (
-                                        <span className="text-slate-700">{formatCLP(c)}</span>
+                                        <span className="text-emerald-600">+{formatCLP(unitIva)}</span>
                                       )}
                                     </td>
-                                    <td className="py-2.5 px-3 text-right font-mono text-emerald-600">+{formatCLP(unitIva)}</td>
                                     <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">{formatCLP(subNet)}</td>
                                   </tr>
                                 );
@@ -17921,7 +18428,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </span>
                           </span>
                           <span className="font-mono font-black text-teal-800 text-sm">
-                            +{formatCLP(parseFloat(newInvoiceForm.shippingCostNeto) || 0)} neto
+                            +{formatCLP(parseFloat(newInvoiceForm.shippingCostNeto) || 0)} neto ({formatCLP(Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19))} c/IVA)
                           </span>
                         </div>
                       )}
@@ -17934,15 +18441,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
 
                         <div className="p-3 bg-white rounded-xl border border-teal-200 shadow-2xs">
-                          <span className="block text-[10px] font-bold text-teal-700 uppercase mb-0.5">2. Flete Neto</span>
+                          <span className="block text-[10px] font-bold text-teal-700 uppercase mb-0.5">2. Flete (Neto / c/IVA)</span>
                           <span className="font-mono font-black text-teal-700 text-sm sm:text-base">
-                            +{formatCLP(newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0)}
+                            +{formatCLP(newInvoiceForm.hasShippingCost ? Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19) : 0)}
                           </span>
-                          <span className="block text-[9px] text-teal-600/80 mt-0.5">Prorrateado al costo PMP</span>
+                          <span className="block text-[9px] text-teal-600/80 mt-0.5">
+                            Neto: {formatCLP(newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0)} + 19% IVA
+                          </span>
                         </div>
 
                         <div className="p-3 bg-white rounded-xl border border-emerald-200 shadow-2xs">
-                          <span className="block text-[10px] font-bold text-emerald-700 uppercase mb-0.5">3. IVA Crédito (19%)</span>
+                          <span className="block text-[10px] font-bold text-emerald-700 uppercase mb-0.5">3. IVA Mercadería (19%)</span>
                           <span className="font-mono font-black text-emerald-600 text-sm sm:text-base">+{formatCLP(modalIvaCredito)}</span>
                           <span className="block text-[9px] text-emerald-600/80 mt-0.5">Crédito fiscal mercadería</span>
                         </div>
@@ -17950,9 +18459,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <div className="p-3 bg-gradient-to-br from-emerald-600 to-[#0E8388] text-white rounded-xl shadow-xs">
                           <span className="block text-[10px] font-bold text-emerald-100 uppercase mb-0.5">4. Desembolso Total</span>
                           <span className="font-mono font-black text-white text-base sm:text-lg">
-                            {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? (parseFloat(newInvoiceForm.shippingCostNeto) || 0) : 0))}
+                            {formatCLP(modalTotalBruto + (newInvoiceForm.hasShippingCost ? Math.round((parseFloat(newInvoiceForm.shippingCostNeto) || 0) * 1.19) : 0))}
                           </span>
-                          <span className="block text-[9px] text-emerald-100/90 mt-0.5">Mercadería bruta + Flete</span>
+                          <span className="block text-[9px] text-emerald-100/90 mt-0.5">Mercadería bruta + Flete c/IVA</span>
                         </div>
                       </div>
                     </div>
@@ -20115,8 +20624,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Costo Neto & Precio Venta (PVP) */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Costo Neto, Despacho Proveedor Unitario & Precio Venta (PVP) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
                         Costo Neto Unitario ($ CLP)
@@ -20127,6 +20636,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         step="any"
                         value={editingProduct.unitCostNeto ?? ''}
                         onChange={(e) => setEditingProduct((prev) => ({ ...prev, unitCostNeto: e.target.value }))}
+                        className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
+                        Despacho Neto Unit. ($ CLP) <span className="text-slate-400 font-normal lowercase">(+19% IVA en Costo c/IVA)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={editingProduct.shippingUnitCost ?? 0}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, shippingUnitCost: e.target.value }))}
                         className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
                       />
                     </div>
@@ -20145,18 +20667,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Margen Estimado Preview */}
-                  {Number(editingProduct.salePrice) > 0 && Number(editingProduct.unitCostNeto) > 0 && (
-                    <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between text-xs">
-                      <span className="text-emerald-800 font-bold">Margen comercial proyectado:</span>
-                      <span className="font-mono font-black text-emerald-700 text-sm">
-                        +{Math.round(((Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto)) / Number(editingProduct.salePrice)) * 100)}%
-                        <span className="text-[11px] font-medium text-emerald-600 ml-1.5">
-                          ({formatCLP(Number(editingProduct.salePrice) - Number(editingProduct.unitCostNeto))} margen bruto)
+                  {/* Margen Estimado Preview (Costo c/ IVA + Despacho c/ IVA) */}
+                  {Number(editingProduct.salePrice) > 0 && Number(editingProduct.unitCostNeto) > 0 && (() => {
+                    const previewCostWithIva = getProductUnitCostWithIva(editingProduct);
+                    const previewSale = Number(editingProduct.salePrice) || 0;
+                    const previewMarginPct = Math.round(((previewSale - previewCostWithIva) / previewSale) * 100);
+                    const previewProfit = previewSale - previewCostWithIva;
+                    const shipNeto = Number(editingProduct.shippingUnitCost) || 0;
+                    const shipConIva = Math.round(shipNeto * 1.19);
+                    return (
+                      <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                        <div>
+                          <span className="text-emerald-800 font-bold block">Margen sobre Costo c/ IVA:</span>
+                          <span className="text-[11px] font-mono text-emerald-700">
+                            Costo c/ IVA: {formatCLP(previewCostWithIva)}
+                            {shipNeto > 0
+                              ? ` (${formatCLP(Math.round(Number(editingProduct.unitCostNeto) * 1.19))} prod. c/IVA + ${formatCLP(shipConIva)} desp. c/IVA)`
+                              : ''}
+                          </span>
+                        </div>
+                        <span className="font-mono font-black text-emerald-700 text-sm">
+                          {previewMarginPct > 0 ? `+${previewMarginPct}%` : `${previewMarginPct}%`}
+                          <span className="text-[11px] font-medium text-emerald-600 ml-1.5">
+                            ({formatCLP(previewProfit)} ganancia/u.)
+                          </span>
                         </span>
-                      </span>
-                    </div>
-                  )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Stock Actual & Stock Mínimo */}
                   <div className="grid grid-cols-2 gap-3">
@@ -21487,9 +22025,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
 
                 {/* Bloque Informativo: Flete / Transporte Asociado al Pedido */}
-                {(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || (parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0) > 0) && (() => {
-                  const sNeto = parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0;
-                  const sMethod = selectedInvoiceModal.shippingDistributionMethod || selectedInvoiceModal.shipping_distribution_method || 'units';
+                {(() => {
+                  const cleanModalNum = String(invNumber).trim();
+                  const is81006 = cleanModalNum === '81006';
+                  const is78954 = cleanModalNum === '78954';
+                  const sNeto =
+                    parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) ||
+                    (is81006 ? 23277 : is78954 ? 20084 : 0);
+                  const hasShip = Boolean(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || sNeto > 0);
+                  if (!hasShip || sNeto <= 0) return null;
+                  const sConIva = Math.round(sNeto * 1.19);
+                  const sMethod = selectedInvoiceModal.shippingDistributionMethod || selectedInvoiceModal.shipping_distribution_method || 'value';
                   const sInvNum = selectedInvoiceModal.shippingInvoiceNumber || selectedInvoiceModal.shipping_invoice_number;
                   const sProv = selectedInvoiceModal.shippingProvider || selectedInvoiceModal.shipping_provider;
 
@@ -21511,15 +22057,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             )}
                           </div>
                           <p className="text-[11px] text-slate-600 mt-0.5">
-                            Transportista: <strong className="text-slate-800">{sProv || 'Transporte externo'}</strong> • Monto neto flete:{' '}
-                            <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> (incorporado al costo unitario en inventario)
+                            Transportista: <strong className="text-slate-800">{sProv || 'Despacho Proveedor'}</strong> • Flete neto:{' '}
+                            <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> • Flete c/IVA (19%):{' '}
+                            <strong className="text-[#0E8388] font-mono">+{formatCLP(sConIva)}</strong>
                           </p>
                         </div>
                       </div>
                       <div className="sm:text-right shrink-0 bg-white/70 sm:bg-transparent p-2 sm:p-0 rounded-xl">
                         <span className="text-[9px] font-bold uppercase text-slate-400 block tracking-wider">Criterio Prorrateo</span>
                         <span className="text-[11px] font-bold text-[#0E8388]">
-                          {sMethod === 'value' ? 'Por Valor Neto' : 'Equitativo por Unidades'}
+                          {sMethod === 'value' ? 'Proporcional por Valor Neto' : 'Equitativo por Unidades'}
                         </span>
                       </div>
                     </div>
@@ -21546,9 +22093,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <th className="py-2.5 px-3 text-center">Formato / Peso</th>
                           <th className="py-2.5 px-3 text-center">Cantidad</th>
                           <th className="py-2.5 px-3 text-right">
-                            {(selectedInvoiceModal.hasShippingCost || (parseFloat(selectedInvoiceModal.shippingCostNeto) || 0) > 0)
-                              ? 'Costo Unit. (Neto + Flete)'
-                              : 'Costo Unitario (Neto)'}
+                            Costo Unitario (Neto)
                           </th>
                           <th className="py-2.5 px-3 text-right">Subtotal Neto</th>
                         </tr>
@@ -21575,13 +22120,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <td className="py-2.5 px-3 text-right font-mono">
                               {it.unitShippingCost > 0 ? (
                                 <div>
-                                  <div className="font-black text-slate-900">{formatCLP(it.landedUnitNeto || it.unitNeto)}</div>
+                                  <div className="font-black text-slate-900">{formatCLP(it.supplierUnitNeto || it.unitNeto)}</div>
                                   <div className="text-[9px] text-slate-400 font-normal">
-                                    Prov: {formatCLP(it.supplierUnitNeto)} <span className="text-[#0E8388] font-bold">(+{formatCLP(it.unitShippingCost)} flete)</span>
+                                    c/IVA + Desp.: {formatCLP(it.unitCostWithIva)} <span className="text-[#0E8388] font-bold">(+{formatCLP(it.unitShippingCostWithIva || Math.round(it.unitShippingCost * 1.19))} desp. c/IVA)</span>
                                   </div>
                                 </div>
                               ) : (
-                                <span className="font-semibold text-slate-700">{formatCLP(it.unitNeto)}</span>
+                                <span className="font-semibold text-slate-700">{formatCLP(it.supplierUnitNeto || it.unitNeto)}</span>
                               )}
                             </td>
                             <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
@@ -21618,8 +22163,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                   {/* Resumen Financiero de Totales */}
                   {(() => {
-                    const sNeto = parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) || 0;
+                    const cleanModalNum = String(invNumber).trim();
+                    const is81006 = cleanModalNum === '81006';
+                    const is78954 = cleanModalNum === '78954';
+                    const sNeto =
+                      parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) ||
+                      (is81006 ? 23277 : is78954 ? 20084 : 0);
                     const hasShipping = Boolean(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || sNeto > 0);
+                    const sConIva = Math.round(sNeto * 1.19);
 
                     return (
                       <div className="w-full sm:w-80 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-2">
@@ -21629,17 +22180,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             {formatCLP(selectedInvoiceModal.totalNeto || selectedInvoiceModal.neto)}
                           </span>
                         </div>
-                        {hasShipping && sNeto > 0 && (
-                          <div className="flex items-center justify-between text-xs text-[#0E8388] font-medium">
-                            <span className="flex items-center gap-1">
-                              <Truck className="w-3.5 h-3.5" />
-                              <span>Flete Neto Asociado:</span>
-                            </span>
-                            <span className="font-mono font-bold">
-                              +{formatCLP(sNeto)}
-                            </span>
-                          </div>
-                        )}
                         <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
                           <span>IVA Crédito Fiscal (19%):</span>
                           <span className="font-mono font-bold">
@@ -21653,12 +22193,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </span>
                         </div>
                         {hasShipping && sNeto > 0 && (
-                          <div className="pt-1.5 border-t border-dashed border-teal-200/80 flex items-center justify-between text-[11px] text-teal-800">
-                            <span className="font-bold">Total Desembolso (con flete):</span>
-                            <span className="font-mono font-black text-slate-900 text-xs">
-                              {formatCLP((selectedInvoiceModal.totalBruto || selectedInvoiceModal.total) + sNeto)}
-                            </span>
-                          </div>
+                          <>
+                            <div className="pt-1.5 border-t border-dashed border-teal-200/80 flex items-center justify-between text-xs text-[#0E8388] font-medium">
+                              <span className="flex items-center gap-1">
+                                <Truck className="w-3.5 h-3.5" />
+                                <span>Flete Asociado (Neto / c/IVA):</span>
+                              </span>
+                              <span className="font-mono font-bold">
+                                +{formatCLP(sNeto)} / +{formatCLP(sConIva)}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-teal-900">
+                              <span className="font-bold">Total Desembolso (c/ Flete + IVA):</span>
+                              <span className="font-mono font-black text-slate-900 text-xs">
+                                {formatCLP((selectedInvoiceModal.totalBruto || selectedInvoiceModal.total) + sConIva)}
+                              </span>
+                            </div>
+                          </>
                         )}
                       </div>
                     );
@@ -21702,7 +22253,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {editingInvoiceModal && (() => {
         const hasShipping = Boolean(editingInvoiceModal.hasShippingCost);
         const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(editingInvoiceModal.shippingCostNeto, 10) || 0) : 0;
-        const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'units';
+        const shippingFeeConIva = Math.round(shippingFeeNeto * 1.19);
+        const shippingMethod = editingInvoiceModal.shippingDistributionMethod || 'value';
 
         const totalQuantity = editingInvoiceModal.items.reduce((acc, it) => acc + (Math.max(1, parseInt(it.qty, 10) || 1)), 0);
         const totalNetoMercaderia = editingInvoiceModal.items.reduce((acc, it) => {
@@ -21713,7 +22265,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
         const calculatedIva = Math.round(totalNetoMercaderia * 0.19);
         const calculatedTotalBruto = totalNetoMercaderia + calculatedIva;
-        const totalConFlete = calculatedTotalBruto + (hasShipping ? shippingFeeNeto : 0);
+        const totalConFlete = calculatedTotalBruto + (hasShipping ? shippingFeeConIva : 0);
 
         return (
           <div
@@ -21831,12 +22383,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <th className="py-2.5 px-2 text-right min-w-[110px]">Costo Unit. (Neto)</th>
                             {hasShipping && shippingFeeNeto > 0 && (
                               <th className="py-2.5 px-2 text-right min-w-[110px] text-[#0E8388]">
-                                + Flete Unit.
+                                + Desp. Unit. (Neto / c/IVA)
                               </th>
                             )}
                             {hasShipping && shippingFeeNeto > 0 && (
                               <th className="py-2.5 px-2 text-right min-w-[120px] text-emerald-800">
-                                Costo Final (Neto)
+                                Costo Unit. c/ IVA + Desp.
                               </th>
                             )}
                             <th className="py-2.5 px-3 text-right min-w-[110px]">Subtotal Neto</th>
@@ -21857,7 +22409,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 unitShippingCost = Math.round(shippingFeeNeto / totalQuantity);
                               }
                             }
-                            const landedCost = u + unitShippingCost;
+                            const unitShippingWithIva = Math.round(unitShippingCost * 1.19);
+                            const totalUnitCostWithIva = Math.round(u * 1.19) + unitShippingWithIva;
 
                             return (
                               <tr key={it.tempId} className="hover:bg-slate-50/70 transition-colors">
@@ -21906,12 +22459,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </td>
                                 {hasShipping && shippingFeeNeto > 0 && (
                                   <td className="py-2.5 px-2 text-right font-mono font-bold text-[#0E8388]">
-                                    +{formatCLP(unitShippingCost)}
+                                    <div>+{formatCLP(unitShippingCost)} neto</div>
+                                    <div className="text-[10px] text-teal-700">+{formatCLP(unitShippingWithIva)} c/IVA</div>
                                   </td>
                                 )}
                                 {hasShipping && shippingFeeNeto > 0 && (
                                   <td className="py-2.5 px-2 text-right font-mono font-black text-emerald-800">
-                                    {formatCLP(landedCost)}
+                                    {formatCLP(totalUnitCostWithIva)}
                                   </td>
                                 )}
                                 <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
@@ -21991,6 +22545,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               className="w-full pl-7 pr-3 py-2 text-xs font-mono font-bold text-slate-900 bg-white border border-teal-300 rounded-xl focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 outline-none"
                             />
                           </div>
+                          {shippingFeeNeto > 0 && (
+                            <span className="text-[10px] font-mono text-[#0E8388] font-bold block mt-1">
+                              +19% IVA ({formatCLP(shippingFeeConIva - shippingFeeNeto)}) = Total Flete c/IVA: {formatCLP(shippingFeeConIva)}
+                            </span>
+                          )}
                         </div>
 
                         <div>
@@ -22038,35 +22597,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <label
                             className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                              shippingMethod === 'units'
-                                ? 'bg-teal-50 border-[#0E8388] text-slate-900 shadow-2xs'
-                                : 'bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-50'
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="editShippingMethod"
-                              checked={shippingMethod === 'units'}
-                              onChange={() =>
-                                setEditingInvoiceModal((prev) => ({
-                                  ...prev,
-                                  shippingDistributionMethod: 'units',
-                                }))
-                              }
-                              className="mt-0.5 text-[#0E8388] focus:ring-teal-500 cursor-pointer"
-                            />
-                            <div>
-                              <strong className="block text-xs font-black text-slate-900">
-                                Equitativo por Unidades (Recomendado)
-                              </strong>
-                              <span className="text-[10px] text-slate-500">
-                                Divide el flete neto ({formatCLP(shippingFeeNeto)}) en partes iguales entre las {totalQuantity} unidades ({totalQuantity > 0 ? formatCLP(Math.round(shippingFeeNeto / totalQuantity)) : '$0'} por unidad).
-                              </span>
-                            </div>
-                          </label>
-
-                          <label
-                            className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
                               shippingMethod === 'value'
                                 ? 'bg-teal-50 border-[#0E8388] text-slate-900 shadow-2xs'
                                 : 'bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -22086,10 +22616,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             />
                             <div>
                               <strong className="block text-xs font-black text-slate-900">
-                                Proporcional por Valor Neto ($)
+                                Proporcional por Valor Neto ($) (Recomendado)
                               </strong>
                               <span className="text-[10px] text-slate-500">
                                 Los productos más caros de la factura absorben mayor porcentaje del flete según su participación en el subtotal.
+                              </span>
+                            </div>
+                          </label>
+
+                          <label
+                            className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                              shippingMethod === 'units'
+                                ? 'bg-teal-50 border-[#0E8388] text-slate-900 shadow-2xs'
+                                : 'bg-slate-50/50 border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="editShippingMethod"
+                              checked={shippingMethod === 'units'}
+                              onChange={() =>
+                                setEditingInvoiceModal((prev) => ({
+                                  ...prev,
+                                  shippingDistributionMethod: 'units',
+                                }))
+                              }
+                              className="mt-0.5 text-[#0E8388] focus:ring-teal-500 cursor-pointer"
+                            />
+                            <div>
+                              <strong className="block text-xs font-black text-slate-900">
+                                Equitativo por Unidades
+                              </strong>
+                              <span className="text-[10px] text-slate-500">
+                                Divide el flete neto ({formatCLP(shippingFeeNeto)}) en partes iguales entre las {totalQuantity} unidades ({totalQuantity > 0 ? formatCLP(Math.round(shippingFeeNeto / totalQuantity)) : '$0'} por unidad).
                               </span>
                             </div>
                           </label>
@@ -22114,11 +22673,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <strong className="font-mono text-slate-900 font-bold text-xs">{formatCLP(totalNetoMercaderia)}</strong>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
-                      <span className="text-[#0E8388] text-[10px] font-bold block">Flete Neto</span>
-                      <strong className="font-mono text-[#0E8388] font-bold text-xs">+{formatCLP(shippingFeeNeto)}</strong>
+                      <span className="text-[#0E8388] text-[10px] font-bold block">Flete (Neto / c/IVA)</span>
+                      <strong className="font-mono text-[#0E8388] font-bold text-xs">
+                        +{formatCLP(shippingFeeNeto)} / +{formatCLP(shippingFeeConIva)}
+                      </strong>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-200/80">
-                      <span className="text-emerald-700 text-[10px] font-bold block">IVA (19%)</span>
+                      <span className="text-emerald-700 text-[10px] font-bold block">IVA Mercadería (19%)</span>
                       <strong className="font-mono text-emerald-800 font-bold text-xs">+{formatCLP(calculatedIva)}</strong>
                     </div>
                     <div className="bg-white p-2.5 rounded-xl border border-slate-300 col-span-2 sm:col-span-1 shadow-2xs">
@@ -22128,7 +22689,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
                   {hasShipping && shippingFeeNeto > 0 && (
                     <div className="text-right text-[11px] text-teal-800 font-medium pt-1">
-                      Total Desembolso (Factura + Flete): <strong className="font-mono font-black text-slate-900">{formatCLP(totalConFlete)}</strong>
+                      Total Desembolso (Factura + Flete c/IVA): <strong className="font-mono font-black text-slate-900">{formatCLP(totalConFlete)}</strong>
                     </div>
                   )}
                 </div>
@@ -22257,9 +22818,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   <CreditCard className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Configuración de Mercado Pago</h3>
+                  <h3 className="text-base font-black text-slate-900">Comisiones de Tarjeta & Botón de Pago</h3>
                   <p className="text-[11px] text-slate-500 font-medium">
-                    Ajusta los cobros por venta con tarjeta y botón de pago
+                    Porcentajes descontados antes de repartir la ganancia 50/50 entre socios
                   </p>
                 </div>
               </div>
@@ -22277,14 +22838,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               onSubmit={(e) => {
                 e.preventDefault();
                 setIsMercadoPagoModalOpen(false);
-                showToast(`Parámetros de Mercado Pago actualizados (${mercadoPagoConfig.commissionRatePercent}% + $${mercadoPagoConfig.fixedFeeCLP} CLP).`);
+                showToast(`Tasas actualizadas: Tarjeta ${mercadoPagoConfig.cardRatePercent ?? 2.55}% • Botón de Pago ${mercadoPagoConfig.webRatePercent ?? 3.19}%.`);
               }}
               className="p-6 space-y-4 text-xs"
             >
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    Comisión Variable (%)
+                    💳 Máquina / Tarjeta (%)
                   </label>
                   <div className="relative">
                     <input
@@ -22292,30 +22853,79 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       step="0.01"
                       min="0"
                       max="15"
-                      value={mercadoPagoConfig.commissionRatePercent}
-                      onChange={(e) =>
+                      value={mercadoPagoConfig.cardRatePercent ?? 2.55}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
                         setMercadoPagoConfig((prev) => ({
                           ...prev,
-                          commissionRatePercent: parseFloat(e.target.value) || 0,
-                        }))
-                      }
+                          cardRatePercent: val,
+                        }));
+                      }}
                       className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Estándar Chile: 3.19%</span>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Tasa fija única (cubre Débito/Crédito: 2,55%)</span>
                 </div>
 
                 <div>
                   <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    Costo Fijo por Cobro ($ CLP)
+                    🌐 Botón de Pago Web (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="15"
+                      value={mercadoPagoConfig.webRatePercent ?? mercadoPagoConfig.commissionRatePercent ?? 3.19}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        setMercadoPagoConfig((prev) => ({
+                          ...prev,
+                          webRatePercent: val,
+                          commissionRatePercent: val,
+                        }));
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Sobre el monto total c/IVA (3,19%)</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                    Modo de Cálculo (IVA)
+                  </label>
+                  <select
+                    value={mercadoPagoConfig.addIvaToCommission ? 'add_iva' : 'direct'}
+                    onChange={(e) =>
+                      setMercadoPagoConfig((prev) => ({
+                        ...prev,
+                        addIvaToCommission: e.target.value === 'add_iva',
+                      }))
+                    }
+                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none cursor-pointer"
+                  >
+                    <option value="direct">Opción A: % directo final (IVA incl.)</option>
+                    <option value="add_iva">Opción B: Sumar +19% IVA a comisión</option>
+                  </select>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Opción A activa por defecto</span>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                    Cargo Fijo Opcional ($ CLP)
                   </label>
                   <div className="relative">
                     <input
                       type="number"
                       step="10"
                       min="0"
-                      value={mercadoPagoConfig.fixedFeeCLP}
+                      value={mercadoPagoConfig.fixedFeeCLP ?? 0}
                       onChange={(e) =>
                         setMercadoPagoConfig((prev) => ({
                           ...prev,
@@ -22326,65 +22936,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">CLP</span>
                   </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Cargo fijo por transacción</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    IVA sobre Comisión (%)
-                  </label>
-                  <input
-                    type="number"
-                    value={mercadoPagoConfig.ivaPercent}
-                    onChange={(e) =>
-                      setMercadoPagoConfig((prev) => ({
-                        ...prev,
-                        ivaPercent: parseInt(e.target.value, 10) || 19,
-                      }))
-                    }
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-1 block">19% IVA tributario Chile</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    Plazo de Acreditación
-                  </label>
-                  <select
-                    value={mercadoPagoConfig.payoutSchedule}
-                    onChange={(e) =>
-                      setMercadoPagoConfig((prev) => ({
-                        ...prev,
-                        payoutSchedule: e.target.value,
-                      }))
-                    }
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#0E8388] focus:outline-none cursor-pointer"
-                  >
-                    <option value="instant">Inmediata (Recomendado)</option>
-                    <option value="14_days">14 Días (Menor comisión)</option>
-                    <option value="30_days">30 Días</option>
-                  </select>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Disponibilidad en cuenta</span>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Por defecto $0 CLP</span>
                 </div>
               </div>
 
               {/* Simulation Box */}
-              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-1.5">
-                <div className="text-[11px] font-bold text-blue-900 flex items-center justify-between">
-                  <span>Simulación en una venta de $45.000 CLP:</span>
-                  <span className="font-mono text-emerald-700">
-                    Neto a recibir: {formatCLP(45000 - Math.round(((45000 * (mercadoPagoConfig.commissionRatePercent / 100)) + (mercadoPagoConfig.fixedFeeCLP || 0)) * (1 + (mercadoPagoConfig.ivaPercent || 19) / 100)))}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-600 space-y-0.5">
-                  <div>• Comisión variable: -{formatCLP(Math.round(45000 * (mercadoPagoConfig.commissionRatePercent / 100)))}</div>
-                  <div>• Cargo fijo: -{formatCLP(mercadoPagoConfig.fixedFeeCLP || 0)}</div>
-                  <div>• Total retenido con IVA: -{formatCLP(Math.round(((45000 * (mercadoPagoConfig.commissionRatePercent / 100)) + (mercadoPagoConfig.fixedFeeCLP || 0)) * (1 + (mercadoPagoConfig.ivaPercent || 19) / 100)))}</div>
-                </div>
-              </div>
+              {(() => {
+                const cRate = Number(mercadoPagoConfig.cardRatePercent ?? 2.55);
+                const wRate = Number(mercadoPagoConfig.webRatePercent ?? 3.19);
+                const fixed = Number(mercadoPagoConfig.fixedFeeCLP || 0);
+                const mult = mercadoPagoConfig.addIvaToCommission ? 1 + (Number(mercadoPagoConfig.ivaPercent || 19) / 100) : 1;
+                const sampleCardFee = Math.round((10000 * (cRate / 100) + fixed) * mult);
+                const sampleWebFee = Math.round((10000 * (wRate / 100) + fixed) * mult);
+
+                return (
+                  <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-2">
+                    <div className="text-[11px] font-bold text-blue-900">
+                      Simulación sobre una venta de $10.000 CLP (ej. PED-0006):
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5 text-[10px]">
+                      <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
+                        <div className="font-black text-slate-800">💳 Con Tarjeta ({cRate}%)</div>
+                        <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleCardFee)}</div>
+                        <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleCardFee)}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
+                        <div className="font-black text-slate-800">🌐 Botón Web ({wRate}%)</div>
+                        <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleWebFee)}</div>
+                        <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleWebFee)}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Modal Actions */}
               <div className="pt-2 flex items-center justify-end gap-2.5">
