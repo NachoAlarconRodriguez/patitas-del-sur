@@ -8,12 +8,13 @@ import { useLocation } from 'react-router-dom';
 export default function FloatingWhatsAppButton({
   phoneNumber = '56953332492',
   defaultMessage = '¡Hola Patitas del Sur! Quisiera hacer una consulta sobre los alimentos y despacho a domicilio 🐾',
+  hidden = false,
 }) {
   const location = useLocation();
   const [isHovered, setIsHovered] = useState(false);
 
-  // Ocultar en el panel de administración
-  if (location.pathname.startsWith('/admin')) {
+  // Ocultar en el panel de administración o cuando el carrito/modal está abierto
+  if (hidden || location.pathname.startsWith('/admin')) {
     return null;
   }
 
@@ -24,14 +25,14 @@ export default function FloatingWhatsAppButton({
   return (
     <aside
       aria-label="Contacto directo por WhatsApp"
-      className={`fixed ${isProductPage ? 'bottom-36' : 'bottom-20'} sm:bottom-6 right-4 sm:right-6 z-50 flex items-center justify-end select-none pointer-events-auto transition-all duration-300`}
+      className={`fixed ${isProductPage ? 'bottom-36' : 'bottom-20'} sm:bottom-6 right-4 sm:right-6 z-40 flex items-center justify-end select-none pointer-events-none transition-all duration-300`}
     >
       {/* Tooltip flotante con efecto Apple Glassmorphism */}
       <div
-        className={`hidden sm:flex items-center gap-2 mr-3 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md text-[#1D1D1F] border border-slate-200/90 shadow-xl transition-all duration-300 origin-right ${
+        className={`hidden sm:flex items-center gap-2 mr-3 px-3.5 py-2 rounded-2xl bg-white/95 backdrop-blur-md text-[#1D1D1F] border border-slate-200/90 shadow-xl transition-all duration-300 origin-right pointer-events-none ${
           isHovered
             ? 'opacity-100 scale-100 translate-x-0'
-            : 'opacity-0 scale-95 translate-x-2 pointer-events-none'
+            : 'opacity-0 scale-95 translate-x-2'
         }`}
       >
         <div className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse shrink-0" />
@@ -48,7 +49,7 @@ export default function FloatingWhatsAppButton({
         aria-label="Abrir chat de WhatsApp con Patitas del Sur"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
-        className="relative group w-14 h-14 sm:w-15 sm:h-15 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white flex items-center justify-center shadow-2xl shadow-emerald-900/35 border-2 border-white/30 transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
+        className="pointer-events-auto relative group w-14 h-14 sm:w-15 sm:h-15 rounded-full bg-[#25D366] hover:bg-[#20ba5a] text-white flex items-center justify-center shadow-2xl shadow-emerald-900/35 border-2 border-white/30 transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer"
       >
         {/* Halo de pulso continuo sutil */}
         <span className="absolute -inset-1 rounded-full bg-[#25D366]/40 animate-ping pointer-events-none opacity-60 duration-1000" />

@@ -467,7 +467,10 @@ export default function App() {
       {!isLoginPage && <PWAInstallBanner />}
 
       {/* Botón Flotante Oficial de WhatsApp */}
-      <FloatingWhatsAppButton phoneNumber="56953332492" />
+      <FloatingWhatsAppButton
+        phoneNumber="56953332492"
+        hidden={isCartOpen || Boolean(selectedProductModal) || isAuthModalOpen}
+      />
     </div>
   );
 }

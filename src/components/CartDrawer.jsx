@@ -1538,11 +1538,16 @@ Asunto: Pedido ${completedOrder?.id}`;
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10 w-full justify-end">
+    <div className="fixed inset-0 z-[80] overflow-hidden bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+      <div
+        className="absolute inset-0"
+        onClick={step === 'success' ? handleCloseAndFinish : onClose}
+        aria-hidden="true"
+      />
+      <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10 w-full justify-end pointer-events-none">
         
         {/* Drawer Panel */}
-        <div className="w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-slate-100 h-full">
+        <div className="pointer-events-auto w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-slate-100 h-full">
           
           {/* ========================================================= */}
           {/* HEADER: Dinámico según el paso                            */}
