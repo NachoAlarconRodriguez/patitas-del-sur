@@ -32,7 +32,12 @@ import {
   Calendar,
 } from 'lucide-react';
 import { verifyCouponInSupabase, redeemCouponInSupabase } from '../services/conveniosService';
-import { createOrderInSupabase, getNextOrderId } from '../services/ordersService';
+import {
+  createOrderInSupabase,
+  getNextOrderId,
+  createMercadoPagoOrder,
+  updateOrderMercadoPagoData,
+} from '../services/ordersService';
 import {
   updateCustomerPoints,
   getCustomerByPhone,
@@ -560,6 +565,135 @@ export default function CartDrawer({
     setFormError(null);
   };
 
+  // Procesar URLs de retorno de Mercado Pago (Paso 3: success_url, failure_url, pending_url)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.location?.search) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const mpReturn = params.get('mp_return'); // 'success' | 'failure' | 'pending'
+    const mpStatus = params.get('status') || params.get('collection_status'); // 'approved' | 'rejected' | 'pending' | 'in_process' | 'null'
+    const externalRef = params.get('external_reference');
+    const mpPaymentId = params.get('payment_id') || params.get('collection_id');
+    const mpOrderId =
+      params.get('order_id') ||
+      params.get('merchant_order_id') ||
+      params.get('preference_id');
+    const mpPaymentType = params.get('payment_type');
+
+    const hasMpParams =
+      Boolean(mpReturn) ||
+      Boolean(mpStatus && (externalRef || mpOrderId || mpPaymentId));
+
+    if (!hasMpParams) return;
+
+    let savedPendingOrder = null;
+    try {
+      const rawPending = localStorage.getItem('patitas_pending_mp_order');
+      if (rawPending) {
+        savedPendingOrder = JSON.parse(rawPending);
+      }
+    } catch (err) {
+      console.warn('Error leyendo orden pendiente de Mercado Pago:', err);
+    }
+
+    const targetOrderId = externalRef || savedPendingOrder?.id || null;
+    const cleanPaymentId = mpPaymentId && mpPaymentId !== 'null' ? mpPaymentId : null;
+    const cleanMpOrderId = mpOrderId && mpOrderId !== 'null' ? mpOrderId : (savedPendingOrder?.mpOrderId || null);
+
+    // Determinar el resultado de la transacción
+    const isRejectedOrCanceled =
+      mpStatus === 'rejected' ||
+      mpStatus === 'null' ||
+      (mpReturn === 'failure' && mpStatus !== 'approved');
+
+    const isPending =
+      !isRejectedOrCanceled &&
+      (mpStatus === 'pending' || mpStatus === 'in_process' || (mpReturn === 'pending' && mpStatus !== 'approved'));
+
+    const isApproved =
+      !isRejectedOrCanceled &&
+      !isPending &&
+      (mpStatus === 'approved' || mpReturn === 'success');
+
+    // Limpiar los parámetros de la URL para evitar reprocesamiento al recargar
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (isRejectedOrCanceled) {
+      setStep('shipping');
+      setPaymentType('anticipado');
+      setPaymentMethod('tarjeta');
+      setFormError(
+        'El pago en Mercado Pago fue rechazado o cancelado. Puedes intentar nuevamente o elegir pago contra entrega.'
+      );
+      return;
+    }
+
+    const handleFinalizeReturn = async () => {
+      const finalPaymentStatus = isApproved ? 'pagado' : 'pendiente';
+
+      if (targetOrderId) {
+        await updateOrderMercadoPagoData(targetOrderId, {
+          mpOrderId: cleanMpOrderId || undefined,
+          mpPaymentId: cleanPaymentId || undefined,
+          paymentStatus: finalPaymentStatus,
+        });
+      }
+
+      if (isApproved && savedPendingOrder?.customerId && (savedPendingOrder?.pointsEarned || 0) > 0 && !savedPendingOrder?.pointsAlreadyAwarded) {
+        try {
+          await updateCustomerPoints(savedPendingOrder.customerId, savedPendingOrder.pointsEarned);
+        } catch (ptsErr) {
+          console.warn('Error acreditando puntos tras retorno de Mercado Pago:', ptsErr);
+        }
+      }
+
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      window.dispatchEvent(new Event('patitas_products_updated'));
+
+      const restoredOrder = savedPendingOrder
+        ? {
+            ...savedPendingOrder,
+            id: targetOrderId || savedPendingOrder.id,
+            paymentStatus: finalPaymentStatus,
+            mpPaymentId: cleanPaymentId,
+            mpOrderId: cleanMpOrderId,
+            mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
+          }
+        : {
+            id: targetOrderId || 'PED-MP',
+            total: subtotal,
+            pointsEarned: Math.floor(subtotal / 1000),
+            recipientName: recipientName || user?.name || 'Cliente Web',
+            phone: phone || user?.phone || '',
+            customerId: user?.id || null,
+            address: address || user?.address || 'Dirección registrada',
+            city: city || user?.city || 'Puerto Varas',
+            deliveryDayText: 'Según programación',
+            deliveryDate: deliveryDate || '',
+            deliverySlot: deliverySlot || 'Horario programado',
+            paymentMethod: 'Tarjeta Débito / Crédito (Mercado Pago)',
+            paymentType: 'anticipado',
+            specificMethod: 'tarjeta',
+            paymentStatus: finalPaymentStatus,
+            mpPaymentId: cleanPaymentId,
+            mpOrderId: cleanMpOrderId,
+            mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
+            itemsCount: cartItems.length,
+            items: cartItems,
+            hasFoodItem: false,
+          };
+
+      setCompletedOrder(restoredOrder);
+      localStorage.removeItem('patitas_pending_mp_order');
+      if (onClearCart) {
+        onClearCart();
+      }
+      setStep('success');
+    };
+
+    handleFinalizeReturn();
+  }, []);
+
   // Reset coupon and step if cart is emptied externally
   useEffect(() => {
     if (cartItems.length === 0 && step !== 'success') {
@@ -1059,7 +1193,21 @@ export default function CartDrawer({
 
     setIsSubmitting(true);
 
-    const orderId = await getNextOrderId();
+    // Verificar si ya existe un pedido pendiente de un intento previo en Mercado Pago para no duplicar la orden ni descontar stock dos veces
+    let existingPendingOrder = null;
+    try {
+      const rawPending = localStorage.getItem('patitas_pending_mp_order');
+      if (rawPending) {
+        const parsed = JSON.parse(rawPending);
+        if (parsed?.id && parsed?.createdInSupabase) {
+          existingPendingOrder = parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error leyendo patitas_pending_mp_order:', e);
+    }
+
+    const orderId = existingPendingOrder?.id || (await getNextOrderId());
     const seqMatch = String(orderId).match(/PED-(\d+)/i);
     const seqNum = seqMatch ? seqMatch[1] : '0001';
     const pointsEarned = Math.floor(total / 1000); // 1 Punto por cada $1.000 CLP gastados
@@ -1083,6 +1231,7 @@ export default function CartDrawer({
       notesText += ` · Pago Efectivo: ${cashChangeNote.trim()}`;
     }
 
+    // El estado inicial siempre es 'pendiente'; al aprobarse en Mercado Pago pasa a 'pagado'
     const orderPayload = {
       id: orderId,
       customerId: user?.id || null,
@@ -1091,7 +1240,7 @@ export default function CartDrawer({
       customerPhone: fullPhone,
       channel: 'web',
       paymentMethod: finalPaymentMethodLabel,
-      paymentStatus: paymentType === 'anticipado' && paymentMethod === 'tarjeta' ? 'pagado' : 'pendiente',
+      paymentStatus: 'pendiente',
       status: 'en_preparacion',
       subtotal,
       shippingCost,
@@ -1111,10 +1260,67 @@ export default function CartDrawer({
     };
 
     try {
-      // 1. Guardar orden e ítems en Supabase
-      const result = await createOrderInSupabase(orderPayload, cartItems);
-      if (!result.success) {
-        throw new Error(result.error?.message || 'Error registrando el pedido en base de datos');
+      // Si el cliente seleccionó Pagar con Mercado Pago (paymentType === 'anticipado'),
+      // creamos primero la orden en Mercado Pago (Orders API /v1/orders) para obtener checkout_url
+      let mpOrderResult = null;
+      if (paymentType === 'anticipado') {
+        mpOrderResult = await createMercadoPagoOrder({
+          externalReference: orderId,
+          totalAmount: total,
+          payerEmail: email.trim() || user?.email || 'cliente@patitasdelsur.cl',
+          items: cartItems.map((it) => ({
+            title: `${it.name}${it.weight ? ` (${it.weight})` : ''}`,
+            unit_price: it.price,
+            quantity: it.quantity || 1,
+          })),
+          shippingCost,
+          description: `Pedido Patitas del Sur #${orderId}`,
+        });
+
+        if (!mpOrderResult.success || !mpOrderResult.checkoutUrl) {
+          throw new Error(
+            mpOrderResult.error?.message ||
+              'No se pudo generar el enlace de pago en Mercado Pago. Intenta nuevamente.'
+          );
+        }
+
+        orderPayload.mercadopagoPreferenceId = mpOrderResult.mpOrderId;
+      }
+
+      // 1. Guardar o actualizar orden en Supabase
+      if (existingPendingOrder?.id) {
+        const { error: updErr } = await supabase
+          .from('orders')
+          .update({
+            customer_name: orderPayload.customerName,
+            customer_email: orderPayload.customerEmail,
+            customer_phone: orderPayload.customerPhone,
+            payment_method: orderPayload.paymentMethod,
+            payment_status: 'pendiente',
+            mercadopago_preference_id: orderPayload.mercadopagoPreferenceId || null,
+            subtotal: orderPayload.subtotal,
+            shipping_cost: orderPayload.shippingCost,
+            discount: orderPayload.discount,
+            total: orderPayload.total,
+            points_earned: orderPayload.pointsEarned,
+            delivery_day_text: orderPayload.deliveryDayText,
+            delivery_date: orderPayload.deliveryDate,
+            delivery_slot: orderPayload.deliverySlot,
+            address: orderPayload.address,
+            city: orderPayload.city,
+            delivery_zone: orderPayload.deliveryZone,
+            notes: orderPayload.notes,
+          })
+          .eq('id', orderId);
+
+        if (updErr) {
+          throw new Error(updErr.message || 'Error actualizando el pedido en base de datos');
+        }
+      } else {
+        const result = await createOrderInSupabase(orderPayload, cartItems);
+        if (!result.success) {
+          throw new Error(result.error?.message || 'Error registrando el pedido en base de datos');
+        }
       }
 
       // 1.5 Guardar o actualizar datos del cliente con su teléfono como identificador
@@ -1163,7 +1369,7 @@ export default function CartDrawer({
       }
 
       // 2. Quemar cupón si aplica (Fidelización Club Patitas vs Convenio Aliado)
-      if (appliedCoupon) {
+      if (appliedCoupon && !existingPendingOrder?.couponRedeemed) {
         try {
           if (appliedCoupon.source === 'loyalty' || (appliedCoupon.code && appliedCoupon.code.startsWith('PTS-'))) {
             await markCouponAsUsed(appliedCoupon.code, orderId);
@@ -1175,18 +1381,7 @@ export default function CartDrawer({
         }
       }
 
-      // 3. Sumar puntos acumulados al cliente (1 punto por cada $1.000 gastados)
-      // Solo si el pago ya está aprobado (ej. tarjeta online inmediata). Si queda pendiente, se sumarán al validar el pago en administración.
-      const isPaymentApproved = orderPayload.paymentStatus === 'pagado';
-      if (savedCustId && pointsEarned > 0 && isPaymentApproved) {
-        try {
-          await updateCustomerPoints(savedCustId, pointsEarned);
-        } catch (ptsErr) {
-          console.warn('Error updating customer points:', ptsErr);
-        }
-      }
-
-      // 4. Emitir eventos globales de sincronización
+      // 3. Emitir eventos globales de sincronización
       window.dispatchEvent(new Event('patitas_orders_updated'));
       window.dispatchEvent(new Event('patitas_products_updated'));
       window.dispatchEvent(new Event('patitas_convenios_updated'));
@@ -1232,8 +1427,7 @@ export default function CartDrawer({
         );
       });
 
-      // Set order result and switch to modern success screen
-      setCompletedOrder({
+      const orderSummaryObj = {
         id: orderId,
         total,
         pointsEarned,
@@ -1248,14 +1442,15 @@ export default function CartDrawer({
         paymentMethod: finalPaymentMethodLabel,
         paymentType,
         specificMethod: paymentMethod,
+        paymentStatus: 'pendiente',
+        mpOrderId: mpOrderResult?.mpOrderId || null,
         cashChangeNote: cashChangeNote.trim(),
         itemsCount: cartItems.length,
         items: orderedItems,
         hasFoodItem,
-      });
-
-      setReplenishmentSaved(false);
-      setSelectedReplenishFrequency(30);
+        createdInSupabase: true,
+        couponRedeemed: Boolean(appliedCoupon),
+      };
 
       // Guardar automáticamente como pedido habitual por defecto si tiene alimentos
       if (hasFoodItem && (savedCustId || phone)) {
@@ -1267,6 +1462,19 @@ export default function CartDrawer({
         }).catch((err) => console.warn('Replenishment auto-save warning:', err));
       }
 
+      // PASO 4: Si es pago con Mercado Pago, guardar contexto local y redirigir a checkout_url
+      if (paymentType === 'anticipado' && mpOrderResult?.checkoutUrl) {
+        localStorage.setItem('patitas_pending_mp_order', JSON.stringify(orderSummaryObj));
+        window.location.href = mpOrderResult.checkoutUrl;
+        return;
+      }
+
+      // Si es pago contra entrega, limpiar cualquier intento pendiente de MP y mostrar pantalla de éxito
+      localStorage.removeItem('patitas_pending_mp_order');
+      setCompletedOrder(orderSummaryObj);
+      setReplenishmentSaved(false);
+      setSelectedReplenishFrequency(30);
+
       if (onClearCart) {
         onClearCart();
       }
@@ -1274,7 +1482,9 @@ export default function CartDrawer({
       setStep('success');
     } catch (err) {
       console.error('Error during checkout process:', err);
-      setFormError('Hubo un inconveniente al procesar tu pedido. Por favor intenta nuevamente.');
+      setFormError(
+        err?.message || 'Hubo un inconveniente al procesar tu pedido. Por favor intenta nuevamente.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -2689,7 +2899,11 @@ Asunto: Pedido ${completedOrder?.id}`;
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>REGISTRANDO ORDEN EN BASE DE DATOS...</span>
+                      <span>
+                        {paymentType === 'anticipado'
+                          ? 'REDIRIGIENDO A MERCADO PAGO...'
+                          : 'REGISTRANDO ORDEN EN BASE DE DATOS...'}
+                      </span>
                     </>
                   ) : hasOutOfStockItems ? (
                     <>
@@ -2872,15 +3086,45 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <span>Enviar Comprobante por WhatsApp</span>
                     </a>
                   </div>
+                ) : completedOrder.paymentStatus === 'pendiente' ? (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-950 space-y-1.5 animate-in fade-in">
+                    <p className="font-bold flex items-center gap-1.5 text-amber-900">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      <span>Pago en Mercado Pago en Proceso</span>
+                    </p>
+                    <p className="text-[11px] text-amber-800">
+                      Tu pedido fue registrado y estamos esperando la confirmación final de tu pago por parte de Mercado Pago.
+                    </p>
+                    {(completedOrder.mpPaymentId || completedOrder.mpOrderId) && (
+                      <div className="pt-1 border-t border-amber-200/70 flex flex-wrap gap-2 text-[10px] font-mono text-amber-900">
+                        {completedOrder.mpPaymentId && (
+                          <span>Operación MP: #{completedOrder.mpPaymentId}</span>
+                        )}
+                        {completedOrder.mpOrderId && (
+                          <span>Orden MP: {completedOrder.mpOrderId}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-950 space-y-1 animate-in fade-in">
+                  <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-950 space-y-1.5 animate-in fade-in">
                     <p className="font-bold flex items-center gap-1.5 text-sky-900">
                       <CreditCard className="w-4 h-4 text-sky-600" />
-                      <span>Pago con Mercado Pago Registrado</span>
+                      <span>Pago con Mercado Pago Aprobado</span>
                     </p>
                     <p className="text-[11px] text-sky-700">
-                      Tu pago anticipado con tarjeta fue registrado vía Mercado Pago y tu pedido ya está en preparación.
+                      Tu pago anticipado fue confirmado vía Mercado Pago y tu pedido ya está en preparación.
                     </p>
+                    {(completedOrder.mpPaymentId || completedOrder.mpOrderId) && (
+                      <div className="pt-1 border-t border-sky-200/70 flex flex-wrap gap-2 text-[10px] font-mono text-sky-900">
+                        {completedOrder.mpPaymentId && (
+                          <span>Operación MP: #{completedOrder.mpPaymentId}</span>
+                        )}
+                        {completedOrder.mpOrderId && (
+                          <span>Orden MP: {completedOrder.mpOrderId}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

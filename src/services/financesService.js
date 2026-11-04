@@ -309,11 +309,22 @@ export async function getMercadoPagoSettingsFromSupabase() {
 
 export async function updateMercadoPagoSettingsInSupabase(settings) {
   try {
+    const { data: existing } = await supabase
+      .from('store_settings')
+      .select('value')
+      .eq('key', 'mercadopago')
+      .maybeSingle();
+
+    const mergedValue = {
+      ...(existing?.value || {}),
+      ...(settings || {}),
+    };
+
     const { data, error } = await supabase
       .from('store_settings')
       .upsert({
         key: 'mercadopago',
-        value: settings,
+        value: mergedValue,
         updated_at: new Date().toISOString(),
       })
       .select();

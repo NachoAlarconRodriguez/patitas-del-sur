@@ -176,10 +176,23 @@ export default function App() {
     };
   }, []);
 
-  // Listen for global open cart requests (e.g. from Despensa Habitual)
+  // Listen for global open cart requests (e.g. from Despensa Habitual) and Mercado Pago return URLs
   useEffect(() => {
     const handleOpenCart = () => setIsCartOpen(true);
     window.addEventListener('patitas_open_cart', handleOpenCart);
+
+    // Detectar retorno desde el checkout de Mercado Pago (success_url, failure_url, pending_url)
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const params = new URLSearchParams(window.location.search);
+      const hasMpReturn =
+        params.has('mp_return') ||
+        ((params.has('status') || params.has('collection_status')) &&
+          (params.has('external_reference') || params.has('order_id') || params.has('payment_id')));
+      if (hasMpReturn) {
+        setIsCartOpen(true);
+      }
+    }
+
     return () => window.removeEventListener('patitas_open_cart', handleOpenCart);
   }, []);
 

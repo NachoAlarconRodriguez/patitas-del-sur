@@ -47,6 +47,8 @@ export async function createOrderInSupabase(orderData, items = []) {
       channel: orderData.channel || 'web',
       payment_method: orderData.paymentMethod || 'Tarjeta',
       payment_status: orderData.paymentStatus || 'pendiente',
+      mercadopago_preference_id: orderData.mercadopagoPreferenceId || orderData.mercadopago_preference_id || null,
+      mercadopago_payment_id: orderData.mercadopagoPaymentId || orderData.mercadopago_payment_id || null,
       status: orderData.status || 'en_preparacion',
       subtotal: orderData.subtotal || 0,
       shipping_cost: orderData.shippingCost || 0,
@@ -182,5 +184,104 @@ export async function fetchOrdersFromSupabase() {
   } catch (err) {
     console.error('Error fetching orders from Supabase:', err);
     return [];
+  }
+}
+
+/**
+ * Crea una orden de pago en Mercado Pago (Orders API /v1/orders) a través del endpoint serverless /api/mercadopago-order
+ */
+export async function createMercadoPagoOrder({
+  externalReference,
+  totalAmount,
+  payerEmail,
+  items = [],
+  shippingCost = 0,
+  description,
+  origin,
+  config,
+}) {
+  try {
+    const resolvedOrigin =
+      origin ||
+      (typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://patitas-del-sur.vercel.app');
+
+    const response = await fetch('/api/mercadopago-order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        externalReference,
+        totalAmount,
+        payerEmail,
+        items,
+        shippingCost,
+        description,
+        origin: resolvedOrigin,
+        config,
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Error al crear la orden en Mercado Pago');
+    }
+
+    return {
+      success: true,
+      mpOrder: data,
+      mpOrderId: data.id,
+      checkoutUrl: data.checkout_url,
+    };
+  } catch (err) {
+    console.error('Error en createMercadoPagoOrder:', err);
+    return {
+      success: false,
+      error: err,
+    };
+  }
+}
+
+/**
+ * Consulta una orden de Mercado Pago por su ID (GET /api/mercadopago-order?id=...)
+ */
+export async function getMercadoPagoOrderById(mpOrderId) {
+  try {
+    const response = await fetch(`/api/mercadopago-order?id=${encodeURIComponent(mpOrderId)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.error || 'Error al consultar la orden en Mercado Pago');
+    }
+    return { success: true, mpOrder: data };
+  } catch (err) {
+    console.error('Error en getMercadoPagoOrderById:', err);
+    return { success: false, error: err };
+  }
+}
+
+/**
+ * Actualiza los identificadores y estado de pago de Mercado Pago en un pedido de Supabase
+ */
+export async function updateOrderMercadoPagoData(orderId, { mpOrderId, mpPaymentId, paymentStatus }) {
+  try {
+    const updatePayload = {};
+    if (mpOrderId !== undefined) updatePayload.mercadopago_preference_id = mpOrderId;
+    if (mpPaymentId !== undefined) updatePayload.mercadopago_payment_id = mpPaymentId;
+    if (paymentStatus !== undefined) updatePayload.payment_status = paymentStatus;
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update(updatePayload)
+      .eq('id', orderId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.error('Error updating order Mercado Pago data in Supabase:', err);
+    return { success: false, error: err };
   }
 }
