@@ -94,8 +94,18 @@ export default function App() {
     return [];
   });
 
-  // Modals & Drawers State
-  const [isCartOpen, setIsCartOpen] = useState(false);
+  // Modals & Drawers State (abrir automáticamente si el cliente regresa desde Mercado Pago)
+  const [isCartOpen, setIsCartOpen] = useState(() => {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const params = new URLSearchParams(window.location.search);
+      return (
+        params.has('mp_return') ||
+        ((params.has('status') || params.has('collection_status')) &&
+          (params.has('external_reference') || params.has('order_id') || params.has('payment_id')))
+      );
+    }
+    return false;
+  });
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 

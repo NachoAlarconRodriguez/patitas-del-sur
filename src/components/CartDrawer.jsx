@@ -36,6 +36,7 @@ import {
   createOrderInSupabase,
   getNextOrderId,
   createMercadoPagoOrder,
+  getMercadoPagoOrderById,
   updateOrderMercadoPagoData,
 } from '../services/ordersService';
 import {
@@ -566,10 +567,11 @@ export default function CartDrawer({
   };
 
   // Procesar URLs de retorno de Mercado Pago (Paso 3: success_url, failure_url, pending_url)
+  // o verificar el estado en vivo si existe una orden pendiente en localStorage
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.location?.search) return;
+    if (typeof window === 'undefined') return;
 
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(window.location.search || '');
     const mpReturn = params.get('mp_return'); // 'success' | 'failure' | 'pending'
     const mpStatus = params.get('status') || params.get('collection_status'); // 'approved' | 'rejected' | 'pending' | 'in_process' | 'null'
     const externalRef = params.get('external_reference');
@@ -584,8 +586,6 @@ export default function CartDrawer({
       Boolean(mpReturn) ||
       Boolean(mpStatus && (externalRef || mpOrderId || mpPaymentId));
 
-    if (!hasMpParams) return;
-
     let savedPendingOrder = null;
     try {
       const rawPending = localStorage.getItem('patitas_pending_mp_order');
@@ -594,6 +594,62 @@ export default function CartDrawer({
       }
     } catch (err) {
       console.warn('Error leyendo orden pendiente de Mercado Pago:', err);
+    }
+
+    // Caso B: Si el usuario volvió a la tienda sin parámetros en la URL pero tiene una orden MP recién creada,
+    // consultar su estado real en la API de Mercado Pago (/v1/orders/{id})
+    if (!hasMpParams) {
+      if (savedPendingOrder?.mpOrderId) {
+        getMercadoPagoOrderById(savedPendingOrder.mpOrderId).then(async (res) => {
+          if (!res?.success || !res.mpOrder) return;
+          const orderData = res.mpOrder;
+          const liveStatus = String(orderData.status || '').toLowerCase();
+          const liveDetail = String(orderData.status_detail || '').toLowerCase();
+          const firstPayment = orderData.transactions?.payments?.[0] || null;
+          const paymentStatus = String(firstPayment?.status || '').toLowerCase();
+
+          const isPaidLive =
+            liveStatus === 'processed' ||
+            liveStatus === 'approved' ||
+            liveDetail === 'accredited' ||
+            paymentStatus === 'approved' ||
+            paymentStatus === 'processed';
+
+          if (isPaidLive) {
+            const livePaymentId = firstPayment?.reference?.id || firstPayment?.id || null;
+            const restoredOrder = {
+              ...savedPendingOrder,
+              paymentStatus: 'pagado',
+              mpPaymentId: livePaymentId,
+              mpOrderId: savedPendingOrder.mpOrderId,
+            };
+
+            setCompletedOrder(restoredOrder);
+            setStep('success');
+            localStorage.removeItem('patitas_pending_mp_order');
+            if (onClearCart) onClearCart();
+            window.dispatchEvent(new Event('patitas_open_cart'));
+
+            if (savedPendingOrder.id) {
+              await updateOrderMercadoPagoData(savedPendingOrder.id, {
+                mpOrderId: savedPendingOrder.mpOrderId,
+                mpPaymentId: livePaymentId || undefined,
+                paymentStatus: 'pagado',
+              });
+            }
+            if (savedPendingOrder.customerId && (savedPendingOrder.pointsEarned || 0) > 0 && !savedPendingOrder.pointsAlreadyAwarded) {
+              try {
+                await updateCustomerPoints(savedPendingOrder.customerId, savedPendingOrder.pointsEarned);
+              } catch (ptsErr) {
+                console.warn('Error acreditando puntos tras verificación de Mercado Pago:', ptsErr);
+              }
+            }
+            window.dispatchEvent(new Event('patitas_orders_updated'));
+            window.dispatchEvent(new Event('patitas_products_updated'));
+          }
+        });
+      }
+      return;
     }
 
     const targetOrderId = externalRef || savedPendingOrder?.id || null;
@@ -615,6 +671,9 @@ export default function CartDrawer({
       !isPending &&
       (mpStatus === 'approved' || mpReturn === 'success');
 
+    // Abrir el drawer de inmediato antes de limpiar la URL para que nunca quede oculto
+    window.dispatchEvent(new Event('patitas_open_cart'));
+
     // Limpiar los parámetros de la URL para evitar reprocesamiento al recargar
     window.history.replaceState({}, '', window.location.pathname);
 
@@ -628,9 +687,51 @@ export default function CartDrawer({
       return;
     }
 
-    const handleFinalizeReturn = async () => {
-      const finalPaymentStatus = isApproved ? 'pagado' : 'pendiente';
+    const finalPaymentStatus = isApproved ? 'pagado' : 'pendiente';
 
+    const restoredOrder = savedPendingOrder
+      ? {
+          ...savedPendingOrder,
+          id: targetOrderId || savedPendingOrder.id,
+          paymentStatus: finalPaymentStatus,
+          mpPaymentId: cleanPaymentId,
+          mpOrderId: cleanMpOrderId,
+          mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
+        }
+      : {
+          id: targetOrderId || 'PED-MP',
+          total: subtotal,
+          pointsEarned: Math.floor(subtotal / 1000),
+          recipientName: recipientName || user?.name || 'Cliente Web',
+          phone: phone || user?.phone || '',
+          customerId: user?.id || null,
+          address: address || user?.address || 'Dirección registrada',
+          city: city || user?.city || 'Puerto Varas',
+          deliveryDayText: 'Según programación',
+          deliveryDate: deliveryDate || '',
+          deliverySlot: deliverySlot || 'Horario programado',
+          paymentMethod: 'Tarjeta Débito / Crédito (Mercado Pago)',
+          paymentType: 'anticipado',
+          specificMethod: 'tarjeta',
+          paymentStatus: finalPaymentStatus,
+          mpPaymentId: cleanPaymentId,
+          mpOrderId: cleanMpOrderId,
+          mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
+          itemsCount: cartItems.length,
+          items: cartItems,
+          hasFoodItem: false,
+        };
+
+    // Mostrar el cuadro de confirmación ("¡Pedido Recibido con Éxito!") de forma instantánea
+    setCompletedOrder(restoredOrder);
+    setStep('success');
+    localStorage.removeItem('patitas_pending_mp_order');
+    if (onClearCart) {
+      onClearCart();
+    }
+    window.dispatchEvent(new Event('patitas_open_cart'));
+
+    const syncOrderInBackground = async () => {
       if (targetOrderId) {
         await updateOrderMercadoPagoData(targetOrderId, {
           mpOrderId: cleanMpOrderId || undefined,
@@ -649,49 +750,9 @@ export default function CartDrawer({
 
       window.dispatchEvent(new Event('patitas_orders_updated'));
       window.dispatchEvent(new Event('patitas_products_updated'));
-
-      const restoredOrder = savedPendingOrder
-        ? {
-            ...savedPendingOrder,
-            id: targetOrderId || savedPendingOrder.id,
-            paymentStatus: finalPaymentStatus,
-            mpPaymentId: cleanPaymentId,
-            mpOrderId: cleanMpOrderId,
-            mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
-          }
-        : {
-            id: targetOrderId || 'PED-MP',
-            total: subtotal,
-            pointsEarned: Math.floor(subtotal / 1000),
-            recipientName: recipientName || user?.name || 'Cliente Web',
-            phone: phone || user?.phone || '',
-            customerId: user?.id || null,
-            address: address || user?.address || 'Dirección registrada',
-            city: city || user?.city || 'Puerto Varas',
-            deliveryDayText: 'Según programación',
-            deliveryDate: deliveryDate || '',
-            deliverySlot: deliverySlot || 'Horario programado',
-            paymentMethod: 'Tarjeta Débito / Crédito (Mercado Pago)',
-            paymentType: 'anticipado',
-            specificMethod: 'tarjeta',
-            paymentStatus: finalPaymentStatus,
-            mpPaymentId: cleanPaymentId,
-            mpOrderId: cleanMpOrderId,
-            mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
-            itemsCount: cartItems.length,
-            items: cartItems,
-            hasFoodItem: false,
-          };
-
-      setCompletedOrder(restoredOrder);
-      localStorage.removeItem('patitas_pending_mp_order');
-      if (onClearCart) {
-        onClearCart();
-      }
-      setStep('success');
     };
 
-    handleFinalizeReturn();
+    syncOrderInBackground();
   }, []);
 
   // Reset coupon and step if cart is emptied externally
