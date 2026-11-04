@@ -1264,14 +1264,41 @@ export default function CartDrawer({
       // creamos primero la orden en Mercado Pago (Orders API /v1/orders) para obtener checkout_url
       let mpOrderResult = null;
       if (paymentType === 'anticipado') {
+        const nameParts = (recipientName || user?.name || '').trim().split(/\s+/).filter(Boolean);
+        const payerFirstName = nameParts[0] || 'Cliente';
+        const payerLastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Patitas del Sur';
+
         mpOrderResult = await createMercadoPagoOrder({
           externalReference: orderId,
           totalAmount: total,
           payerEmail: email.trim() || user?.email || 'cliente@patitasdelsur.cl',
-          items: cartItems.map((it) => ({
+          payerFirstName,
+          payerLastName,
+          payerName: recipientName.trim() || user?.name || 'Cliente Patitas del Sur',
+          payerPhone: {
+            area_code: String(countryCode || '+56').replace(/\D/g, '') || '56',
+            number: cleanDigits,
+          },
+          payerIdentification: {
+            type: 'RUT',
+            number: autofillCustomer?.rut || user?.rut || '11111111-1',
+          },
+          payerRegistrationDate:
+            autofillCustomer?.created_at ||
+            user?.created_at ||
+            new Date().toISOString(),
+          payerIsFirstPurchaseOnline: !autofillCustomer,
+          payerAuthenticationType: 'WEB',
+          items: cartItems.map((it, idx) => ({
+            external_code: String(it.sku || it.id || `PROD-${idx + 1}`),
             title: `${it.name}${it.weight ? ` (${it.weight})` : ''}`,
+            description:
+              it.description ||
+              it.tagline ||
+              `${it.brand ? `${it.brand} - ` : ''}${it.name}${it.weight ? ` (${it.weight})` : ''} - Nutrición natural Patitas del Sur`,
             unit_price: it.price,
             quantity: it.quantity || 1,
+            category_id: 'others',
           })),
           shippingCost,
           description: `Pedido Patitas del Sur #${orderId}`,

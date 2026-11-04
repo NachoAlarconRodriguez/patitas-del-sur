@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { MercadoPagoConfig, Order } from 'mercadopago';
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -53,24 +54,23 @@ export default async function handler(req, res) {
     });
   }
 
+  // Inicializar cliente oficial del SDK de Backend de Mercado Pago (Node.js)
+  const mpClient = new MercadoPagoConfig({
+    accessToken,
+    options: { timeout: 10000 },
+  });
+  const orderClient = new Order(mpClient);
+
   try {
-    // 1. GET /api/mercadopago-order?id=ORD... -> Consultar estado de una orden en Mercado Pago
+    // 1. GET /api/mercadopago-order?id=ORD... -> Consultar estado de una orden en Mercado Pago vía SDK oficial
     if (req.method === 'GET') {
       const orderId = req.query?.id;
       if (!orderId) {
         return res.status(400).json({ error: 'Falta el parámetro id de la orden de Mercado Pago.' });
       }
 
-      const mpRes = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(orderId)}`, {
-        method: 'GET',
-        headers: {
-          accept: 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      const mpData = await mpRes.json();
-      return res.status(mpRes.status).json(mpData);
+      const mpData = await orderClient.get({ id: String(orderId) });
+      return res.status(200).json(mpData);
     }
 
     // 2. POST /api/mercadopago-order -> Crear nueva orden de pago en Mercado Pago
@@ -80,6 +80,15 @@ export default async function handler(req, res) {
         externalReference,
         totalAmount,
         payerEmail,
+        payerFirstName,
+        payerLastName,
+        payerName,
+        payerPhone,
+        payerIdentification,
+        payerRegistrationDate,
+        payerIsFirstPurchaseOnline,
+        payerAuthenticationType,
+        additionalInfo,
         items = [],
         shippingCost = 0,
         description,
@@ -93,18 +102,31 @@ export default async function handler(req, res) {
       }
 
       // Construir lista de ítems asegurando que sum(unit_price * quantity) === total_amount
-      let normalizedItems = (Array.isArray(items) ? items : []).map((it) => ({
-        title: String(it.title || it.name || 'Producto Patitas del Sur').slice(0, 120),
-        unit_price: String(Math.round(Number(it.unit_price ?? it.price) || 0)),
-        quantity: Math.max(1, parseInt(it.quantity || it.qty || 1, 10) || 1),
-      })).filter((it) => Number(it.unit_price) > 0);
+      let normalizedItems = (Array.isArray(items) ? items : []).map((it, idx) => {
+        const itemTitle = String(it.title || it.name || 'Producto Patitas del Sur').slice(0, 120);
+        const itemDesc = String(
+          it.description || it.tagline || `${itemTitle} - Nutrición y cuidado para mascotas Patitas del Sur`
+        ).slice(0, 250);
+        const extCode = String(it.external_code || it.sku || it.id || `PROD-${idx + 1}`).slice(0, 60);
+        return {
+          external_code: extCode,
+          title: itemTitle,
+          description: itemDesc,
+          unit_price: String(Math.round(Number(it.unit_price ?? it.price) || 0)),
+          quantity: Math.max(1, parseInt(it.quantity || it.qty || 1, 10) || 1),
+          category_id: String(it.category_id || 'others'),
+        };
+      }).filter((it) => Number(it.unit_price) > 0);
 
       const numericShipping = Math.round(Number(shippingCost) || 0);
       if (numericShipping > 0) {
         normalizedItems.push({
+          external_code: 'DESPACHO-DOMICILIO',
           title: 'Despacho a Domicilio',
+          description: 'Servicio de despacho a domicilio Patitas del Sur',
           unit_price: String(numericShipping),
           quantity: 1,
+          category_id: 'others',
         });
       }
 
@@ -123,9 +145,14 @@ export default async function handler(req, res) {
 
         normalizedItems = [
           {
+            external_code: String(externalReference || 'PEDIDO-CONSOLIDADO').slice(0, 60),
             title: summaryTitle || 'Pedido Patitas del Sur',
+            description: String(
+              description || `${summaryTitle || 'Pedido'} - Alimento y snacks naturales para mascotas`
+            ).slice(0, 250),
             unit_price: String(numericTotal),
             quantity: 1,
+            category_id: 'others',
           },
         ];
       }
@@ -135,6 +162,41 @@ export default async function handler(req, res) {
           ? String(payerEmail).trim()
           : 'cliente@patitasdelsur.cl';
 
+      // Separar nombre y apellido para payer.first_name y payer.last_name
+      const fullNameParts = String(payerName || '').trim().split(/\s+/).filter(Boolean);
+      const resolvedFirstName = String(
+        payerFirstName || fullNameParts[0] || 'Cliente'
+      ).trim();
+      const resolvedLastName = String(
+        payerLastName ||
+          (fullNameParts.length > 1 ? fullNameParts.slice(1).join(' ') : 'Patitas del Sur')
+      ).trim();
+
+      const resolvedIdentification = {
+        type: String(payerIdentification?.type || 'RUT').trim(),
+        number: String(payerIdentification?.number || '11111111-1').trim(),
+      };
+
+      // Resolver payer.phone ({ area_code, number })
+      let resolvedAreaCode = '56';
+      let resolvedPhoneNumber = '953332492';
+      if (payerPhone && typeof payerPhone === 'object') {
+        resolvedAreaCode = String(payerPhone.area_code || '56').replace(/\D/g, '') || '56';
+        resolvedPhoneNumber = String(payerPhone.number || '').replace(/\D/g, '') || '953332492';
+      } else if (payerPhone) {
+        const digits = String(payerPhone).replace(/\D/g, '');
+        if (digits.startsWith('56') && digits.length > 9) {
+          resolvedAreaCode = '56';
+          resolvedPhoneNumber = digits.slice(2);
+        } else if (digits.length > 0) {
+          resolvedPhoneNumber = digits;
+        }
+      }
+      const resolvedPhone = {
+        area_code: resolvedAreaCode,
+        number: resolvedPhoneNumber,
+      };
+
       // Determinar URL base para las URLs de retorno (config.online)
       const rawOrigin =
         origin ||
@@ -142,6 +204,48 @@ export default async function handler(req, res) {
         (req.headers?.referer ? new URL(req.headers.referer).origin : null) ||
         'https://patitas-del-sur.vercel.app';
       const baseUrl = String(rawOrigin).replace(/\/+$/, '');
+
+      // Resolver additional_info["payer.registration_date"] en formato ISO 8601
+      const rawRegDate =
+        payerRegistrationDate ||
+        additionalInfo?.['payer.registration_date'] ||
+        additionalInfo?.payer?.registration_date ||
+        null;
+      let resolvedRegDate = new Date().toISOString();
+      if (rawRegDate) {
+        const parsedDate = new Date(rawRegDate);
+        if (!Number.isNaN(parsedDate.getTime())) {
+          resolvedRegDate = parsedDate.toISOString();
+        }
+      }
+
+      const rawFirstPurchase =
+        payerIsFirstPurchaseOnline ??
+        additionalInfo?.['payer.is_first_purchase_online'] ??
+        additionalInfo?.payer?.is_first_purchase_online;
+      const resolvedFirstPurchase =
+        typeof rawFirstPurchase === 'boolean' ? rawFirstPurchase : Boolean(rawFirstPurchase ?? true);
+
+      const rawAuthType = String(
+        payerAuthenticationType ||
+          additionalInfo?.['payer.authentication_type'] ||
+          additionalInfo?.payer?.authentication_type ||
+          'WEB'
+      ).toUpperCase();
+      const resolvedAuthType = rawAuthType === 'MOBILE' ? 'MOBILE' : 'WEB';
+
+      const flatAdditionalInfo = {
+        'payer.registration_date': resolvedRegDate,
+        'payer.is_first_purchase_online': resolvedFirstPurchase,
+        'payer.authentication_type': resolvedAuthType,
+      };
+      if (additionalInfo && typeof additionalInfo === 'object') {
+        Object.entries(additionalInfo).forEach(([k, v]) => {
+          if (k !== 'payer' && v !== undefined && v !== null) {
+            flatAdditionalInfo[k] = v;
+          }
+        });
+      }
 
       const mpPayload = {
         type: 'online',
@@ -151,9 +255,15 @@ export default async function handler(req, res) {
         description: String(description || `Pedido Patitas del Sur #${externalReference || ''}`).slice(0, 120),
         payer: {
           email: cleanEmail,
+          first_name: resolvedFirstName,
+          last_name: resolvedLastName,
+          identification: resolvedIdentification,
+          phone: resolvedPhone,
         },
+        additional_info: flatAdditionalInfo,
         items: normalizedItems,
         config: {
+          statement_descriptor: 'PATITASDELSUR',
           ...(config && typeof config === 'object' ? config : {}),
           online: {
             success_url: `${baseUrl}/?mp_return=success`,
@@ -167,28 +277,20 @@ export default async function handler(req, res) {
 
       const idempotencyKey = crypto.randomUUID();
 
-      const mpRes = await fetch('https://api.mercadopago.com/v1/orders', {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-          'X-Idempotency-Key': idempotencyKey,
-        },
-        body: JSON.stringify(mpPayload),
-      });
-
-      const mpData = await mpRes.json();
-
-      if (!mpRes.ok) {
-        console.error('Error creando orden en Mercado Pago:', mpData);
-        return res.status(mpRes.status).json({
-          error: mpData?.message || 'Error al crear la orden en Mercado Pago',
-          details: mpData,
+      try {
+        const mpData = await orderClient.create({
+          body: mpPayload,
+          requestOptions: { idempotencyKey },
+        });
+        return res.status(201).json(mpData);
+      } catch (sdkErr) {
+        console.error('Error creando orden con MercadoPago SDK:', sdkErr);
+        const statusCode = sdkErr?.status || sdkErr?.statusCode || 400;
+        return res.status(statusCode).json({
+          error: sdkErr?.message || 'Error al crear la orden en Mercado Pago',
+          details: sdkErr?.cause || sdkErr?.errors || sdkErr,
         });
       }
-
-      return res.status(201).json(mpData);
     }
 
     return res.status(405).json({ error: 'Método no permitido' });

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import { MercadoPagoConfig, Order } from 'mercadopago';
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -133,18 +134,14 @@ export default async function handler(req, res) {
 
     if ((!orderDetails.status || !orderDetails.external_reference) && accessToken && String(mpOrderId).startsWith('ORD')) {
       try {
-        const mpRes = await fetch(`https://api.mercadopago.com/v1/orders/${encodeURIComponent(mpOrderId)}`, {
-          method: 'GET',
-          headers: {
-            accept: 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
+        const mpClient = new MercadoPagoConfig({
+          accessToken,
+          options: { timeout: 10000 },
         });
-        if (mpRes.ok) {
-          orderDetails = await mpRes.json();
-        }
+        const orderClient = new Order(mpClient);
+        orderDetails = await orderClient.get({ id: String(mpOrderId) });
       } catch (fetchErr) {
-        console.warn('No se pudo consultar GET /v1/orders en webhook:', fetchErr);
+        console.warn('No se pudo consultar GET /v1/orders con SDK en webhook:', fetchErr);
       }
     }
 

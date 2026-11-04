@@ -124,6 +124,7 @@ export default function App() {
               address: profile.address || '',
               phone: profile.phone || '',
               points: profile.points || 0,
+              created_at: profile.created_at || session.user.created_at || new Date().toISOString(),
               memberSince: profile.created_at
                 ? new Intl.DateTimeFormat('es-CL', { month: 'long', year: 'numeric' }).format(new Date(profile.created_at))
                 : 'Octubre 2026',
