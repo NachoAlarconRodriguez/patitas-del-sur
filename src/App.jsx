@@ -321,14 +321,15 @@ export default function App() {
 
   const totalCartCount = cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0);
   const isLoginPage = location.pathname === '/login';
+  const isKiboryHome = location.pathname === '/';
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#0E8388] selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#F5BA13] selection:text-[#1D1D1F]">
       <Preloader />
       <ScrollToTop />
 
-      {/* Global Navigation Bar - Hidden on Login screen to provide an immersive PWA entry */}
-      {!isLoginPage && (
+      {/* Global Navigation Bar - Hidden on Login screen and Kibory Home (which has its own floating Kibory header) */}
+      {!isLoginPage && !isKiboryHome && (
         <Navbar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -359,6 +360,10 @@ export default function App() {
                 <HomeView
                   onSelectProduct={handleSelectProduct}
                   onAddToCart={handleAddToCart}
+                  cartCount={totalCartCount}
+                  onOpenCart={() => setIsCartOpen(true)}
+                  user={user}
+                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
                 />
               }
             />
@@ -433,8 +438,8 @@ export default function App() {
         </Suspense>
       </main>
 
-      {/* Global Footer - Hidden on Login and Admin dashboards */}
-      {!isLoginPage && location.pathname !== '/admin' && <Footer />}
+      {/* Global Footer - Hidden on Login, Admin dashboards, and Kibory Home */}
+      {!isLoginPage && !isKiboryHome && location.pathname !== '/admin' && <Footer />}
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer
