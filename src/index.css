@@ -2508,6 +2508,30 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
 }
 
 /* 5.2 Reviews */
+.kibo-page .sec--reviews.card--green {
+  background: linear-gradient(100deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 72%, #D97706 100%);
+  color: #fff;
+}
+.kibo-page .sec--reviews.card--green .pill-label {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+.kibo-page .sec--reviews.card--green .rv__head .h2 {
+  color: #fff;
+}
+.kibo-page .sec--reviews.card--green .rv__stadium {
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.kibo-page .sec--reviews.card--green .rv {
+  color: var(--ink);
+}
+.kibo-page .sec--reviews.card--green .rv__giant .ln > span {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FDE68A 70%, rgba(253, 230, 138, 0.55) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
 .kibo-page .rv__head {
   text-align: center;
 }
@@ -2519,9 +2543,10 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   position: relative;
   z-index: 2;
   width: var(--dw);
-  margin: 8px 10% calc(var(--dw) * -0.123) auto;
-  mix-blend-mode: multiply;
+  margin: 8px 10% calc(var(--dw) * -0.045) auto;
+  mix-blend-mode: normal;
   pointer-events: none;
+  filter: drop-shadow(0 8px 14px rgba(24, 18, 12, 0.08));
 }
 .kibo-page .rv__perch img {
   width: 100%;
@@ -2701,14 +2726,14 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
 }
 .kibo-page .rv__giant {
   position: absolute;
-  left: 50%;
+  left: 58%;
   translate: -50% 0;
-  bottom: -0.38em;
+  bottom: clamp(24px, 3.2vw, 44px);
   margin: 0;
   z-index: 1;
   pointer-events: none;
-  font: 800 clamp(120px, 22vw, 340px)/0.8 var(--font-display);
-  letter-spacing: -0.05em;
+  font: 800 clamp(42px, 8.2vw, 122px)/0.95 var(--font-display);
+  letter-spacing: -0.04em;
   white-space: nowrap;
 }
 .kibo-page .rv__giant .ln {
@@ -3489,8 +3514,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: 50% 50%;
-    transform: scaleX(-1);
+    object-position: 62% 50%;
   }
   .kibo-page .sec--photo-b .ph__copy {
     padding: 28px var(--pad) 32px;
@@ -3531,7 +3555,8 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     object-position: 50% 62%;
   }
   .kibo-page .rv__giant {
-    font-size: 30vw;
+    left: 56%;
+    font-size: clamp(32px, 11vw, 64px);
   }
   .kibo-page .sec--cta {
     grid-template-columns: minmax(0, 1fr);

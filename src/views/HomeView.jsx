@@ -5,63 +5,10 @@ import { getWebSiteSchema, getOrganizationSchema, getLocalBusinessSchema } from 
 import { fetchProductsFromSupabase, getCachedProducts } from '../services/productsService';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
+import { areProductsSameGroup, extractProductFormat } from '../utils/productVariants';
 import { COMPANY_INFO } from '../constants';
 import { WhatsAppIcon } from '../components/OfficialIcons';
-import { saveSpecialOrderToSupabase } from '../services/specialOrdersService';
 import { getDispatchZonesFromSupabase } from '../services/dispatchService';
-
-const POLAROID_ITEMS = [
-  {
-    num: '01',
-    title: 'Carne y salmón',
-    sub: 'Pollo, pavo, cordero y salmón austral',
-    img: 'https://media.kolpusites.com/kibory/ing-01.webp',
-    dx: '200%',
-    r: '-6deg',
-    y: '10px',
-    tape: 'var(--biscuit)',
-  },
-  {
-    num: '02',
-    title: 'Verduras frescas',
-    sub: 'Camote, calabaza y zanahoria',
-    img: 'https://media.kolpusites.com/kibory/ing-02.webp',
-    dx: '100%',
-    r: '3deg',
-    y: '-14px',
-    tape: 'var(--green-300)',
-  },
-  {
-    num: '03',
-    title: 'Aceite de salmón',
-    sub: 'Omega 3 puro para piel y pelaje',
-    img: 'https://media.kolpusites.com/kibory/ing-03.webp',
-    dx: '0%',
-    r: '-2deg',
-    y: '18px',
-    tape: 'var(--blush-300)',
-  },
-  {
-    num: '04',
-    title: 'Frutas y bayas',
-    sub: 'Arándanos patagónicos y manzana',
-    img: 'https://media.kolpusites.com/kibory/ing-04.webp',
-    dx: '-100%',
-    r: '5deg',
-    y: '-8px',
-    tape: 'var(--biscuit)',
-  },
-  {
-    num: '05',
-    title: 'Botánicos y semillas',
-    sub: 'Linaza, algas marinas y prebióticos',
-    img: 'https://media.kolpusites.com/kibory/ing-05.webp',
-    dx: '-200%',
-    r: '-4deg',
-    y: '12px',
-    tape: 'var(--green-300)',
-  },
-];
 
 const REVIEWS_DATA = [
   {
@@ -134,17 +81,6 @@ export default function HomeView({
   const [hiddenProducts, setHiddenProducts] = useState(getHiddenProductIdentifiers);
   const [dispatchZones, setDispatchZones] = useState([]);
   const [activeReviewDot, setActiveReviewDot] = useState(0);
-  const [showSpecialOrderModal, setShowSpecialOrderModal] = useState(false);
-
-  // Special Order Form State
-  const [encargoFood, setEncargoFood] = useState('');
-  const [encargoName, setEncargoName] = useState('');
-  const [encargoPhone, setEncargoPhone] = useState('');
-  const [encargoEmail, setEncargoEmail] = useState('');
-  const [countryCode, setCountryCode] = useState('+56');
-  const [encargoSubmitted, setEncargoSubmitted] = useState(false);
-  const [encargoError, setEncargoError] = useState('');
-  const [encargoSubmitting, setEncargoSubmitting] = useState(false);
 
   const pageRef = useRef(null);
   const navRef = useRef(null);
@@ -298,36 +234,50 @@ export default function HomeView({
       });
     });
 
-    // Split statement words for word-by-word scroll fill
+    // Split statement into words (.w) and characters (.ch) for karaoke letter-by-letter scroll fill
     const statementEl = page.querySelector('.statement');
     const statementWords = [];
-    if (statementEl && !RM && !statementEl.dataset.splitDone) {
-      statementEl.dataset.splitDone = 'true';
-      const splitNode = (node, inHl) => {
-        if (node.nodeType === 3) {
-          const parts = node.textContent.split(/(\s+)/);
-          const frag = document.createDocumentFragment();
-          parts.forEach((part) => {
-            if (!part) return;
-            if (/^\s+$/.test(part)) {
-              frag.appendChild(document.createTextNode(part));
-            } else {
-              const sp = document.createElement('span');
-              sp.className = 'w';
-              if (inHl) sp.dataset.hl = '1';
-              sp.style.color = inHl ? 'var(--muted-hl)' : 'var(--muted)';
-              sp.textContent = part;
-              frag.appendChild(sp);
-              statementWords.push({ el: sp, hl: inHl, prev: -1 });
-            }
-          });
-          node.parentNode.replaceChild(frag, node);
-        } else if (node.nodeType === 1) {
-          const isHl = inHl || node.classList.contains('hl');
-          Array.from(node.childNodes).forEach((child) => splitNode(child, isHl));
-        }
-      };
-      splitNode(statementEl, false);
+    if (statementEl && !RM) {
+      if (!statementEl.dataset.splitDone) {
+        statementEl.dataset.splitDone = 'true';
+        const splitNode = (node, inHl) => {
+          if (node.nodeType === 3) {
+            const parts = node.textContent.split(/(\s+)/);
+            const frag = document.createDocumentFragment();
+            parts.forEach((part) => {
+              if (!part) return;
+              if (/^\s+$/.test(part)) {
+                frag.appendChild(document.createTextNode(part));
+              } else {
+                const wordSpan = document.createElement('span');
+                wordSpan.className = 'w';
+                for (const ch of Array.from(part)) {
+                  const chSpan = document.createElement('span');
+                  chSpan.className = 'ch';
+                  if (inHl) chSpan.dataset.hl = '1';
+                  chSpan.style.color = inHl ? 'var(--muted-hl)' : 'var(--muted)';
+                  chSpan.textContent = ch;
+                  wordSpan.appendChild(chSpan);
+                  statementWords.push({ el: chSpan, hl: inHl, prev: -1 });
+                }
+                frag.appendChild(wordSpan);
+              }
+            });
+            node.parentNode.replaceChild(frag, node);
+          } else if (node.nodeType === 1) {
+            const isHl = inHl || node.classList.contains('hl');
+            Array.from(node.childNodes).forEach((child) => splitNode(child, isHl));
+          }
+        };
+        splitNode(statementEl, false);
+      } else {
+        statementEl.querySelectorAll('.ch, .w').forEach((el) => {
+          if (el.classList.contains('ch') || !el.querySelector('.ch')) {
+            const inHl = el.dataset.hl === '1' || Boolean(el.closest('.hl'));
+            statementWords.push({ el, hl: inHl, prev: -1 });
+          }
+        });
+      }
     }
 
     // Engine state
@@ -340,6 +290,12 @@ export default function HomeView({
       current: 0.5,
       lean: 0,
       shiftX: 0,
+      eyeTargetX: 0,
+      eyeTargetY: 0,
+      eyeX: 0,
+      eyeY: 0,
+      blinkStart: -1e4,
+      nextBlinkAt: performance.now() + 2600,
       hx: window.innerWidth * 0.5,
       hy: window.innerHeight * 0.42,
       visible: true,
@@ -374,34 +330,128 @@ export default function HomeView({
     };
 
     const mapX = (x) => clamp01(0.5 + (x - dog.hx) / (window.innerWidth * 0.65));
+    const updateEyeTarget = (clientX, clientY) => {
+      let dx = (clientX - dog.hx) / (window.innerWidth * 0.34);
+      let dy = (clientY - dog.hy) / (window.innerHeight * 0.34);
+      const mag = Math.hypot(dx, dy);
+      if (mag > 1) {
+        dx /= mag;
+        dy /= mag;
+      }
+      dog.eyeTargetX = dx * 5.2;
+      dog.eyeTargetY = dy * 3.8;
+    };
 
-    // Direct 41-frame transparent atlas loader for Kira (zero video autoplay/codec restrictions)
-    const ATLAS_COLS = 7;
-    const ATLAS_FW = 320;
-    const ATLAS_FH = 400;
-    const ATLAS_FRAMES = 41;
-    let atlasImg = null;
+    // Ultra-HD 800x1000 Retina Kira stage + real-time 360-degree 3D eye-tracking & blinking rig
+    const STAGE_W = 800;
+    const STAGE_H = 1000;
+    const EYES_SPEC = [
+      { cx: 328.2, cy: 249.4, rx: 18.8, ry: 16.4 },
+      { cx: 468.8, cy: 249.0, rx: 18.5, ry: 16.2 },
+    ];
+    let stillImg = null;
     let fctx = null;
-    let lastFrameIdx = -1;
+    let lastEyeKey = '';
     let decodeCancelled = false;
 
-    const drawAtlasFrame = (idx) => {
-      if (!fctx || !atlasImg) return;
-      const safeIdx = clamp(idx, 0, ATLAS_FRAMES - 1);
-      const col = safeIdx % ATLAS_COLS;
-      const row = (safeIdx / ATLAS_COLS) | 0;
-      fctx.clearRect(0, 0, ATLAS_FW, ATLAS_FH);
-      fctx.drawImage(
-        atlasImg,
-        col * ATLAS_FW,
-        row * ATLAS_FH,
-        ATLAS_FW,
-        ATLAS_FH,
-        0,
-        0,
-        ATLAS_FW,
-        ATLAS_FH
-      );
+    const drawKiraEyes = (gx, gy, blink) => {
+      if (!fctx || !stillImg) return;
+      // Restore clean eye region from Ultra-HD base image
+      fctx.clearRect(295, 220, 205, 60);
+      fctx.drawImage(stillImg, 295, 220, 205, 60, 295, 220, 205, 60);
+
+      for (let i = 0; i < EYES_SPEC.length; i++) {
+        const { cx, cy, rx, ry } = EYES_SPEC[i];
+        fctx.save();
+        fctx.beginPath();
+        fctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        fctx.clip();
+
+        // 1. Shaded dog sclera base
+        const scleraGrad = fctx.createRadialGradient(cx, cy, rx * 0.35, cx, cy, rx * 1.05);
+        scleraGrad.addColorStop(0, '#7a6b66');
+        scleraGrad.addColorStop(1, '#291c17');
+        fctx.fillStyle = scleraGrad;
+        fctx.fillRect(cx - rx - 2, cy - ry - 2, rx * 2 + 4, ry * 2 + 4);
+
+        const ix = cx + gx;
+        const iy = cy + gy;
+
+        // 2. Dark limbal ring (r = 17.6)
+        fctx.fillStyle = '#120502';
+        fctx.beginPath();
+        fctx.arc(ix, iy, 17.6, 0, Math.PI * 2);
+        fctx.fill();
+
+        // 3. Rich warm mahogany-amber 3D iris (r = 15.6)
+        const irisGrad = fctx.createLinearGradient(ix, iy - 15.6, ix, iy + 15.6);
+        irisGrad.addColorStop(0, '#1a0802');
+        irisGrad.addColorStop(0.45, '#471e0d');
+        irisGrad.addColorStop(1, '#7a3b1c');
+        fctx.fillStyle = irisGrad;
+        fctx.beginPath();
+        fctx.arc(ix, iy, 15.6, 0, Math.PI * 2);
+        fctx.fill();
+
+        // 4. Deep velvet black pupil (r = 10.2)
+        const pxEye = ix + gx * 0.12;
+        const pyEye = iy + gy * 0.12;
+        fctx.fillStyle = '#080200';
+        fctx.beginPath();
+        fctx.arc(pxEye, pyEye, 10.2, 0, Math.PI * 2);
+        fctx.fill();
+
+        // 5. Upper corneal sky dome reflection
+        fctx.fillStyle = 'rgba(166, 189, 224, 0.20)';
+        fctx.beginPath();
+        fctx.ellipse(ix, iy - 6.0, 8.0, 4.5, 0, 0, Math.PI * 2);
+        fctx.fill();
+
+        // 6. Primary white specular catchlight (moves with 1.18x corneal dome parallax)
+        const hlX = cx + 6.2 + gx * 1.18;
+        const hlY = cy - 5.0 + gy * 1.18;
+        fctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+        fctx.beginPath();
+        fctx.ellipse(hlX, hlY, 3.7, 3.0, -0.35, 0, Math.PI * 2);
+        fctx.fill();
+
+        // Secondary pinpoint catchlight
+        fctx.fillStyle = 'rgba(255, 255, 255, 0.82)';
+        fctx.beginPath();
+        fctx.arc(hlX + 2.9, hlY + 4.3, 1.4, 0, Math.PI * 2);
+        fctx.fill();
+
+        // 7. Fixed upper-eyelid ambient occlusion shadow
+        const aoGrad = fctx.createLinearGradient(cx, cy - ry, cx, cy - ry + 8.5);
+        aoGrad.addColorStop(0, 'rgba(10, 3, 0, 0.65)');
+        aoGrad.addColorStop(1, 'rgba(10, 3, 0, 0)');
+        fctx.fillStyle = aoGrad;
+        fctx.fillRect(cx - rx - 2, cy - ry - 2, rx * 2 + 4, 10);
+
+        // 8. Natural eyelid blink
+        if (blink > 0.01) {
+          const upperY = cy - ry + (ry * 1.35) * blink;
+          const lowerY = cy + ry - (ry * 0.75) * blink;
+          fctx.fillStyle = '#ede6df';
+          fctx.fillRect(cx - rx - 2, cy - ry - 2, rx * 2 + 4, upperY - (cy - ry - 2));
+          fctx.fillRect(cx - rx - 2, lowerY, rx * 2 + 4, cy + ry + 2 - lowerY);
+          fctx.strokeStyle = '#140804';
+          fctx.lineWidth = 2.6;
+          fctx.beginPath();
+          fctx.moveTo(cx - rx - 2, upperY);
+          fctx.quadraticCurveTo(cx, upperY + 2.5 * blink, cx + rx + 2, upperY);
+          fctx.stroke();
+        }
+
+        // 9. Outer eyeliner rim
+        fctx.strokeStyle = 'rgba(15, 5, 2, 0.98)';
+        fctx.lineWidth = 3.2;
+        fctx.beginPath();
+        fctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        fctx.stroke();
+
+        fctx.restore();
+      }
     };
 
     const dogEl = dogElRef.current;
@@ -410,8 +460,8 @@ export default function HomeView({
       if (!canvas) {
         canvas = document.createElement('canvas');
         canvas.className = 'dog__canvas';
-        canvas.width = ATLAS_FW;
-        canvas.height = ATLAS_FH;
+        canvas.width = STAGE_W;
+        canvas.height = STAGE_H;
         canvas.setAttribute('aria-hidden', 'true');
         dogEl.insertBefore(canvas, dogEl.firstChild);
       }
@@ -421,14 +471,15 @@ export default function HomeView({
       img.decoding = 'async';
       img.onload = () => {
         if (decodeCancelled) return;
-        atlasImg = img;
+        stillImg = img;
         dog.ready = true;
         dog.enabled = true;
-        lastFrameIdx = 20;
-        drawAtlasFrame(20);
+        fctx.clearRect(0, 0, STAGE_W, STAGE_H);
+        fctx.drawImage(stillImg, 0, 0, STAGE_W, STAGE_H);
+        drawKiraEyes(0, 0, 0);
         dogEl.classList.add('has-video');
       };
-      img.src = '/images/kira_hero_atlas.png?v=4';
+      img.src = '/images/kira_hero_still_alpha.png?v=5';
     }
 
     const enableDog = () => {
@@ -560,6 +611,7 @@ export default function HomeView({
 
       if (dog.enabled && dog.visible) {
         dog.target = mapX(e.clientX);
+        updateEyeTarget(e.clientX, e.clientY);
       }
 
       if (BONE) {
@@ -586,6 +638,7 @@ export default function HomeView({
       ptr.seen = true;
       if (dog.enabled && dog.visible) {
         dog.target = mapX(e.clientX);
+        updateEyeTarget(e.clientX, e.clientY);
       }
 
       const now = performance.now();
@@ -599,6 +652,7 @@ export default function HomeView({
 
       if (isBite) {
         biteAt = now;
+        dog.blinkStart = now;
         req.bite = true;
       }
     };
@@ -636,19 +690,39 @@ export default function HomeView({
       }
     };
 
-    const updDog = () => {
-      dog.current += (dog.target - dog.current) * 0.12;
-      if (dog.ready && fctx && atlasImg) {
-        const want = clamp01(dog.current);
-        const idx = Math.round(want * (ATLAS_FRAMES - 1));
-        if (idx !== lastFrameIdx) {
-          lastFrameIdx = idx;
-          drawAtlasFrame(idx);
+    const updDog = (now) => {
+      dog.current += (dog.target - dog.current) * 0.11;
+      dog.eyeX += (dog.eyeTargetX - dog.eyeX) * 0.16;
+      dog.eyeY += (dog.eyeTargetY - dog.eyeY) * 0.16;
+
+      if (now >= dog.nextBlinkAt) {
+        dog.blinkStart = now;
+        dog.nextBlinkAt = now + 3200 + Math.random() * 2800;
+      }
+      let blink = 0;
+      const blinkElapsed = now - dog.blinkStart;
+      if (blinkElapsed >= 0 && blinkElapsed <= 165) {
+        blink = Math.sin((blinkElapsed / 165) * Math.PI);
+      }
+
+      if (dog.ready && fctx && stillImg) {
+        const key = `${dog.eyeX.toFixed(2)}_${dog.eyeY.toFixed(2)}_${blink.toFixed(2)}`;
+        if (key !== lastEyeKey) {
+          lastEyeKey = key;
+          drawKiraEyes(dog.eyeX, dog.eyeY, blink);
         }
       }
-      dog.lean += ((dog.current - 0.5) * 3 - dog.lean) * 0.1;
+
+      dog.lean += ((dog.current - 0.5) * 5.2 - dog.lean) * 0.1;
+      dog.shiftX += ((dog.current - 0.5) * 14 - dog.shiftX) * 0.1;
+      const breathY = Math.sin(now * 0.0024) * 2.6;
+      const rotY = (dog.current - 0.5) * 8.5;
+      const rotX = clamp(-dog.eyeY * 0.85, -4, 4);
+
       if (dogElRef.current) {
         dogElRef.current.style.rotate = `${dog.lean.toFixed(3)}deg`;
+        dogElRef.current.style.translate = `calc(${dog.shiftX.toFixed(2)} * var(--u)) calc(${breathY.toFixed(2)} * var(--u))`;
+        dogElRef.current.style.transform = `perspective(900px) rotateY(${rotY.toFixed(2)}deg) rotateX(${rotX.toFixed(2)}deg)`;
       }
     };
 
@@ -693,13 +767,14 @@ export default function HomeView({
         pupEl.style.rotate = `${(q * 5).toFixed(2)}deg`;
       }
 
-      // 2. Manifesto word-by-word fill
+      // 2. Manifesto karaoke letter-by-letter fill
       if (statementEl && statementWords.length) {
-        const p = band(statementEl, 0.9, 0.7);
-        const head = p * statementWords.length;
+        const p = band(statementEl, 0.85, 0.52);
+        const feather = 4;
+        const head = p * (statementWords.length + feather);
         for (let i = 0; i < statementWords.length; i++) {
           const wObj = statementWords[i];
-          const k = clamp01(head - i);
+          const k = clamp01((head - i) / feather);
           if (Math.abs(k - wObj.prev) > 0.01 || ((k === 0 || k === 1) && k !== wObj.prev)) {
             wObj.prev = k;
             const to = wObj.hl ? 'var(--green-text)' : 'var(--ink)';
@@ -783,23 +858,12 @@ export default function HomeView({
     const updNav = () => {
       const nav = navRef.current;
       if (!nav) return;
-      const floating = scroll.y > (geo.heroH || 700) - 120;
+      const floating = scroll.y > 24;
       const wasFloating = nav.classList.contains('is-floating');
       if (floating !== wasFloating) {
         nav.classList.toggle('is-floating', floating);
-        if (!floating) nav.classList.remove('is-hidden');
       }
-      if (floating) {
-        const menuOpen = nav.getAttribute('data-open') === 'true';
-        const hasFocus = nav.contains(document.activeElement);
-        if (menuOpen || hasFocus) {
-          nav.classList.remove('is-hidden');
-        } else if (scroll.v > 6) {
-          nav.classList.add('is-hidden');
-        } else if (scroll.v < -6) {
-          nav.classList.remove('is-hidden');
-        }
-      }
+      nav.classList.remove('is-hidden');
     };
 
     // Master requestAnimationFrame loop
@@ -980,58 +1044,6 @@ export default function HomeView({
     track.scrollTo({ left: cards[idx].offsetLeft - padLeft, behavior: RM ? 'auto' : 'smooth' });
   };
 
-  // Special Order Submit
-  const handleEncargoSubmit = async (e) => {
-    e.preventDefault();
-    if (!encargoFood.trim()) {
-      setEncargoError('Por favor indica qué alimento o marca buscas');
-      return;
-    }
-    const nameParts = encargoName.trim().split(/\s+/).filter(Boolean);
-    if (nameParts.length < 2) {
-      setEncargoError('Por favor ingresa tu nombre y apellido');
-      return;
-    }
-    const cleanPhone = encargoPhone.replace(/\D/g, '');
-    if (cleanPhone.length !== 9) {
-      setEncargoError('El teléfono debe tener exactamente 9 dígitos (ej: 9 1234 5678)');
-      return;
-    }
-    const cleanEmail = encargoEmail.trim();
-    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setEncargoError('Por favor ingresa un correo electrónico válido');
-      return;
-    }
-
-    setEncargoError('');
-    setEncargoSubmitting(true);
-    const fullPhone = `${countryCode} ${cleanPhone}`;
-
-    try {
-      await saveSpecialOrderToSupabase({
-        food_requested: encargoFood.trim(),
-        customer_name: encargoName.trim(),
-        customer_phone: fullPhone,
-        customer_email: cleanEmail,
-      });
-    } catch (saveErr) {
-      console.warn('Error al registrar encargo especial:', saveErr);
-    } finally {
-      setEncargoSubmitting(false);
-    }
-
-    setEncargoSubmitted(true);
-    const message =
-      `¡Hola Patitas del Sur! Quisiera consultar si pueden traer este alimento para mi regalón:\n\n` +
-      `🐾 Alimento o Marca: ${encargoFood.trim()}\n` +
-      `👤 Nombre y Apellido: ${encargoName.trim()}\n` +
-      `📞 Teléfono o WhatsApp: ${fullPhone}\n` +
-      `✉️ Correo Electrónico: ${cleanEmail}\n\n` +
-      `¿Me podrían confirmar disponibilidad y fecha de entrega? ¡Muchas gracias!`;
-    const whatsappUrl = `https://wa.me/${COMPANY_INFO.whatsappRaw || '56953332492'}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-  };
-
   return (
     <div ref={pageRef} className="kibo-page">
       <SEOHead
@@ -1077,7 +1089,7 @@ export default function HomeView({
           <svg className="paw" viewBox="0 0 24 24" aria-hidden="true">
             <use href="#i-paw" />
           </svg>
-          <span>patitas</span>
+          <span>patitas del sur</span>
         </a>
 
         <nav
@@ -1090,9 +1102,6 @@ export default function HomeView({
             if (e.target.closest('a')) setMenu(false, false);
           }}
         >
-          <a href="#recetas">Recetas</a>
-          <a href="#ingredientes">Ingredientes</a>
-          <a href="#opiniones">Opiniones</a>
           <Link to="/perros">Perros</Link>
           <Link to="/gatos">Gatos</Link>
           <Link to={user ? (user.role === 'admin' ? '/admin' : '/mi-cuenta') : '/login'}>
@@ -1231,10 +1240,10 @@ export default function HomeView({
                   >
                     <img
                       className="dog__still"
-                      src="/images/kira_hero_still_alpha.png?v=4"
+                      src="/images/kira_hero_still_alpha.png?v=5"
                       alt="Kira, embajadora de Patitas del Sur"
-                      width="400"
-                      height="500"
+                      width="800"
+                      height="1000"
                       decoding="async"
                     />
                     <span ref={kiraHeadRef} className="dog__head" aria-hidden="true" />
@@ -1371,14 +1380,8 @@ export default function HomeView({
             </h2>
             <div className="experts" data-reveal="rise">
               <span className="avatars avatars--lg">
-                <img src="/images/kira_dog.jpg" alt="" width="44" height="44" />
-                <img src="/images/jack_cat.jpg" alt="" width="44" height="44" />
-                <img
-                  src="https://media.kolpusites.com/kibory/experto-1.webp"
-                  alt=""
-                  width="44"
-                  height="44"
-                />
+                <img src="/images/kira_dog.jpg" alt="Kira" width="44" height="44" />
+                <img src="/images/jack_cat.jpg" alt="Jack" width="44" height="44" />
               </span>
               <p>
                 <b>100 %</b> comprometidos con que a tu perro o gato nunca le falte su comida
@@ -1492,10 +1495,18 @@ export default function HomeView({
             {featuredFive.map((product, idx) => {
               const isFeat = idx === 0;
               const numStr = `0${idx + 1}.`;
-              const tags = [
-                product.brand || (product.petType === 'gatos' ? 'Felinos' : 'Super Premium'),
-                product.category || (product.weights && product.weights[0]) || 'Stock local',
-              ].filter(Boolean);
+              const relatedItems = allProducts.filter(
+                (p) => !isProductHidden(p, hiddenProducts) && !p.isPaused && areProductsSameGroup(product, p)
+              );
+              const rawWeightFormats = (relatedItems.length > 0 ? relatedItems : [product]).flatMap((item) => {
+                if (Array.isArray(item.weights) && item.weights.length > 0) {
+                  return item.weights.map((w) => String(w).trim()).filter(Boolean);
+                }
+                const extracted = extractProductFormat(item);
+                return extracted && extracted !== 'Estándar' ? [extracted] : [];
+              });
+              const uniqueWeights = Array.from(new Set(rawWeightFormats));
+              const tags = uniqueWeights.length > 0 ? uniqueWeights : [extractProductFormat(product)];
 
               return (
                 <li key={product.id || idx} style={{ '--i': idx }}>
@@ -1578,64 +1589,6 @@ export default function HomeView({
         </section>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            4 · POLAROID GALLERY (#ingredientes)
-            ═══════════════════════════════════════════════════════════════════ */}
-        <section
-          className="sec sec--ing card card--blush"
-          id="ingredientes"
-          aria-label="Nutrición biológicamente apropiada"
-        >
-          {/* Polaroid Fan Gallery */}
-          <div className="gal" style={{ marginTop: 0 }}>
-            <header className="gal__head" data-reveal="rise">
-              <h3 className="gal__title">Nutrición biológicamente apropiada</h3>
-              <span className="gal__note" aria-hidden="true">
-                seleccionado con cariño en el sur
-                <svg viewBox="0 0 60 48">
-                  <path
-                    d="M6 4 C 30 6, 46 18, 48 40 M 40 33 L 48 41 L 54 31"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-            </header>
-
-            <ul className="gal__list" data-reveal="fan">
-              {POLAROID_ITEMS.map((pol, idx) => (
-                <li key={pol.num} style={{ '--i': idx, '--dx': pol.dx }}>
-                  <figure
-                    className="gal__card"
-                    style={{ '--r': pol.r, '--y': pol.y, '--tape': pol.tape }}
-                  >
-                    <span className="gal__num" aria-hidden="true">
-                      {pol.num}
-                    </span>
-                    <span className="gal__img" data-ph={pol.title}>
-                      <img
-                        src={pol.img}
-                        alt={pol.sub}
-                        width="962"
-                        height="625"
-                        loading="lazy"
-                        decoding="async"
-                      />
-                    </span>
-                    <figcaption>
-                      <b>{pol.title}</b>
-                      <small>{pol.sub}</small>
-                    </figcaption>
-                  </figure>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-
-        {/* ═══════════════════════════════════════════════════════════════════
             5 · PHOTO BAND A
             ═══════════════════════════════════════════════════════════════════ */}
         <section className="card sec--photo" data-reveal="photo" aria-labelledby="ph-title">
@@ -1662,10 +1615,96 @@ export default function HomeView({
         </section>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            6 · REVIEWS CAROUSEL (#opiniones)
+            6 · PHOTO BAND B (GIANT PAW SVG CLIPPATH — CLUB PATITAS)
             ═══════════════════════════════════════════════════════════════════ */}
         <section
-          className="sec sec--reviews card"
+          className="card sec--photo sec--photo-b"
+          data-reveal="photo"
+          aria-labelledby="ph2-title"
+        >
+          <figure className="ph__bg ph__bg--paw">
+            <svg
+              className="ph__paw"
+              viewBox="0 0 100 100"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <defs>
+                <clipPath id="paw-clip">
+                  <path d="M37 50C37 34 51 16 67 10C81 5 94 9 96 22C97 30 92 36 93 42C94 46 97 48 97 50C97 52 94 54 93 58C92 64 97 70 96 78C94 91 81 95 67 90C51 84 37 66 37 50Z" />
+                  <ellipse
+                    cx="22.5"
+                    cy="61.5"
+                    rx="13.5"
+                    ry="10.5"
+                    transform="rotate(-8 22.5 61.5)"
+                  />
+                  <ellipse
+                    cx="22.5"
+                    cy="38.5"
+                    rx="13.5"
+                    ry="10.5"
+                    transform="rotate(8 22.5 38.5)"
+                  />
+                  <ellipse
+                    cx="36.5"
+                    cy="84"
+                    rx="12.5"
+                    ry="9.5"
+                    transform="rotate(-35 36.5 84)"
+                  />
+                  <ellipse
+                    cx="36.5"
+                    cy="16"
+                    rx="12.5"
+                    ry="9.5"
+                    transform="rotate(35 36.5 16)"
+                  />
+                </clipPath>
+              </defs>
+              <g clipPath="url(#paw-clip)">
+                <g className="ph__zoom">
+                  <rect width="100" height="100" fill="#78350F" />
+                  <image
+                    href="/images/kira_kibble_paw.jpg?v=1"
+                    x="8"
+                    y="16"
+                    width="94"
+                    height="68"
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                </g>
+              </g>
+            </svg>
+            <img
+              className="ph__flat"
+              src="/images/kira_kibble_paw.jpg?v=1"
+              alt="Kira disfrutando su alimento"
+              width="1376"
+              height="768"
+              loading="lazy"
+              decoding="async"
+            />
+          </figure>
+          <div className="ph__copy">
+            <h2 className="ph__title" id="ph2-title" data-reveal="rise">
+              Club Patitas,
+              <br />
+              <span className="ph__hl">suma y ahorra</span>
+            </h2>
+            <p className="ph__text" data-reveal="rise">
+              Al comprar como usuario registrado acumulas puntos en cada pedido: por cada $1.000 CLP
+              de compra sumas 1 punto que después puedes canjear por descuentos en la comida de tu
+              regalón.
+            </p>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════════════════════════════
+            7 · REVIEWS CAROUSEL IN BROWN SECTION (#opiniones)
+            ═══════════════════════════════════════════════════════════════════ */}
+        <section
+          className="sec sec--reviews card card--green"
           id="opiniones"
           aria-labelledby="rv-title"
           aria-roledescription="carrusel"
@@ -1689,10 +1728,10 @@ export default function HomeView({
 
           <figure className="rv__perch" data-reveal="rise" aria-hidden="true">
             <img
-              src="https://media.kolpusites.com/kibory/perro-caja.webp"
-              alt=""
-              width="2048"
-              height="1152"
+              src="/images/kira_perch_alpha.png?v=1"
+              alt="Kira asomándose sobre las reseñas"
+              width="900"
+              height="618"
               loading="lazy"
               decoding="async"
             />
@@ -1775,7 +1814,7 @@ export default function HomeView({
 
               <p className="rv__giant" aria-hidden="true" data-reveal="mask">
                 <span className="ln">
-                  <span>¡guau!</span>
+                  <span>Club Patitas</span>
                 </span>
               </p>
             </div>
@@ -1784,345 +1823,17 @@ export default function HomeView({
               ref={rvPeekRef}
               className="rv__peek"
               data-scroll="peek"
-              data-ph="Mascota asomándose"
+              data-ph="Jack asomándose"
             >
               <img
-                src="https://media.kolpusites.com/kibory/perro-asoma.webp"
-                alt=""
+                src="/images/jack_peek_alpha.png?v=1"
+                alt="Jack asomándose"
                 width="882"
-                height="987"
+                height="773"
                 loading="lazy"
                 decoding="async"
               />
             </figure>
-          </div>
-        </section>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            7 · PHOTO BAND B (GIANT PAW SVG CLIPPATH)
-            ═══════════════════════════════════════════════════════════════════ */}
-        <section
-          className="card sec--photo sec--photo-b"
-          data-reveal="photo"
-          aria-labelledby="ph2-title"
-        >
-          <figure className="ph__bg ph__bg--paw">
-            <svg
-              className="ph__paw"
-              viewBox="0 0 100 100"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <defs>
-                <clipPath id="paw-clip">
-                  <path d="M37 50C37 34 51 16 67 10C81 5 94 9 96 22C97 30 92 36 93 42C94 46 97 48 97 50C97 52 94 54 93 58C92 64 97 70 96 78C94 91 81 95 67 90C51 84 37 66 37 50Z" />
-                  <ellipse
-                    cx="22.5"
-                    cy="61.5"
-                    rx="13.5"
-                    ry="10.5"
-                    transform="rotate(-8 22.5 61.5)"
-                  />
-                  <ellipse
-                    cx="22.5"
-                    cy="38.5"
-                    rx="13.5"
-                    ry="10.5"
-                    transform="rotate(8 22.5 38.5)"
-                  />
-                  <ellipse
-                    cx="36.5"
-                    cy="84"
-                    rx="12.5"
-                    ry="9.5"
-                    transform="rotate(-35 36.5 84)"
-                  />
-                  <ellipse
-                    cx="36.5"
-                    cy="16"
-                    rx="12.5"
-                    ry="9.5"
-                    transform="rotate(35 36.5 16)"
-                  />
-                </clipPath>
-              </defs>
-              <g clipPath="url(#paw-clip)">
-                <g className="ph__zoom">
-                  <rect width="100" height="100" fill="#78350F" />
-                  <image
-                    href="https://media.kolpusites.com/kibory/foto-fondo-2.webp"
-                    x="8"
-                    y="20"
-                    width="96"
-                    height="60"
-                    preserveAspectRatio="xMidYMid slice"
-                    transform="matrix(-1 0 0 1 112 0)"
-                  />
-                </g>
-              </g>
-            </svg>
-            <img
-              className="ph__flat"
-              src="https://media.kolpusites.com/kibory/foto-fondo-2.webp"
-              alt=""
-              width="1778"
-              height="1112"
-              loading="lazy"
-              decoding="async"
-            />
-          </figure>
-          <div className="ph__copy">
-            <h2 className="ph__title" id="ph2-title" data-reveal="rise">
-              Cada bocado,
-              <br />
-              <span className="ph__hl">una fiesta</span>
-            </h2>
-            <p className="ph__text" data-reveal="rise">
-              Alimentos con carne fresca, salmón y snacks deshidratados que perros y gatos disfrutan
-              desde el primer día.
-            </p>
-          </div>
-        </section>
-
-        {/* ═══════════════════════════════════════════════════════════════════
-            8 · CTA & SPECIAL ORDERS (#empezar)
-            ═══════════════════════════════════════════════════════════════════ */}
-        <section
-          className="sec sec--cta card card--green"
-          id="empezar"
-          aria-labelledby="cta-title"
-        >
-          <div className="cta__text">
-            <p className="eyebrow" data-reveal="rise">
-              Club Patitas & Encargos Especiales
-            </p>
-            <h2 className="h2" id="cta-title" data-reveal="mask">
-              <span className="ln">
-                <span>Su alimento favorito,</span>
-              </span>
-              <span className="ln">
-                <span>hoy mismo en casa.</span>
-              </span>
-            </h2>
-            <p className="cta__lead" data-reveal="rise">
-              Elige en nuestro catálogo de Perros y Gatos con despacho a domicilio en{' '}
-              {dispatchSummary.citiesLabel}
-              {dispatchSummary.freeThreshold > 0
-                ? ` (gratis sobre ${formatCLP(dispatchSummary.freeThreshold)})`
-                : ''}
-              , o encárganos cualquier marca o formato y lo traemos para tu regalón.
-            </p>
-
-            <div className="cta__btns" data-reveal="rise">
-              <button
-                type="button"
-                onClick={() => navigate('/perros')}
-                className="btn btn--ink btn--arrow"
-                data-cursor-label="Comprar ahora"
-              >
-                Ver catálogo completo
-                <span className="btn__ico" aria-hidden="true">
-                  ↗
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSpecialOrderModal((prev) => !prev)}
-                className="btn btn--ghost-light"
-              >
-                {showSpecialOrderModal ? 'Ocultar formulario' : 'Encargar un alimento especial'}
-              </button>
-              <span className="hand-note hand-note--light" aria-hidden="true">
-                ¡sin letra chica!
-              </span>
-            </div>
-
-            {showSpecialOrderModal && (
-              <form
-                onSubmit={handleEncargoSubmit}
-                style={{
-                  marginTop: '24px',
-                  padding: '22px',
-                  borderRadius: '24px',
-                  background: 'rgba(255,255,255,0.1)',
-                  backdropFilter: 'blur(14px)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  display: 'grid',
-                  gap: '12px',
-                  maxWidth: '520px',
-                }}
-              >
-                <input
-                  type="text"
-                  required
-                  placeholder="¿Qué alimento o marca buscas? (Ej: Bravery Salmón, Hill's...)"
-                  value={encargoFood}
-                  onChange={(e) => {
-                    setEncargoFood(e.target.value);
-                    if (encargoError) setEncargoError('');
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: '14px',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: 'rgba(29,29,31,0.55)',
-                    color: '#fff',
-                    fontSize: '14px',
-                  }}
-                />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Nombre y apellido"
-                    value={encargoName}
-                    onChange={(e) => {
-                      setEncargoName(e.target.value);
-                      if (encargoError) setEncargoError('');
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      borderRadius: '14px',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      background: 'rgba(29,29,31,0.55)',
-                      color: '#fff',
-                      fontSize: '14px',
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <select
-                      value={countryCode}
-                      onChange={(e) => setCountryCode(e.target.value)}
-                      style={{
-                        padding: '12px 10px',
-                        borderRadius: '14px',
-                        border: '1px solid rgba(255,255,255,0.25)',
-                        background: 'rgba(29,29,31,0.75)',
-                        color: '#fff',
-                        fontSize: '13px',
-                      }}
-                    >
-                      <option value="+56">🇨🇱 +56</option>
-                      <option value="+54">🇦🇷 +54</option>
-                      <option value="+51">🇵🇪 +51</option>
-                    </select>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      maxLength={9}
-                      required
-                      placeholder="9 1234 5678"
-                      value={encargoPhone}
-                      onChange={(e) => {
-                        setEncargoPhone(e.target.value.replace(/\D/g, '').slice(0, 9));
-                        if (encargoError) setEncargoError('');
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '12px 14px',
-                        borderRadius: '14px',
-                        border: '1px solid rgba(255,255,255,0.25)',
-                        background: 'rgba(29,29,31,0.55)',
-                        color: '#fff',
-                        fontSize: '14px',
-                      }}
-                    />
-                  </div>
-                </div>
-                <input
-                  type="email"
-                  required
-                  placeholder="Tu correo electrónico"
-                  value={encargoEmail}
-                  onChange={(e) => {
-                    setEncargoEmail(e.target.value);
-                    if (encargoError) setEncargoError('');
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: '14px',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: 'rgba(29,29,31,0.55)',
-                    color: '#fff',
-                    fontSize: '14px',
-                  }}
-                />
-                {encargoError && (
-                  <p style={{ color: '#FDE68A', fontSize: '12.5px', fontWeight: 700 }}>
-                    {encargoError}
-                  </p>
-                )}
-                {encargoSubmitted && (
-                  <p style={{ color: '#A7F3D0', fontSize: '12.5px', fontWeight: 700 }}>
-                    ✓ ¡Consulta registrada! Se abrió WhatsApp para confirmarte fecha.
-                  </p>
-                )}
-                <button
-                  type="submit"
-                  disabled={encargoSubmitting}
-                  className="btn btn--ink"
-                  style={{ width: '100%', background: '#25D366', color: '#fff' }}
-                >
-                  <WhatsAppIcon className="w-4 h-4" colored={false} />
-                  <span>
-                    {encargoSubmitting ? 'Registrando...' : 'Consultar disponibilidad por WhatsApp'}
-                  </span>
-                </button>
-              </form>
-            )}
-          </div>
-
-          <figure className="cta__dog" aria-hidden="true">
-            <img
-              src="https://media.kolpusites.com/kibory/perro-bolsa-boca.webp"
-              alt=""
-              width="624"
-              height="1000"
-              loading="lazy"
-              decoding="async"
-            />
-          </figure>
-
-          <div className="cta__art">
-            <figure className="cta__img" data-ph="Cuenco Patitas del Sur">
-              <img
-                src="https://media.kolpusites.com/kibory/cta-producto.webp"
-                alt=""
-                width="1626"
-                height="1924"
-                loading="lazy"
-                decoding="async"
-              />
-            </figure>
-            <span className="cta__shadow" aria-hidden="true" />
-            <span className="badge badge--biscuit" aria-hidden="true">
-              <svg className="badge__ring" viewBox="0 0 128 128">
-                <defs>
-                  <path
-                    id="ring-cta"
-                    d="M64,64 m-50,0 a50,50 0 1,1 100,0 a50,50 0 1,1 -100,0"
-                  />
-                </defs>
-                <text>
-                  <textPath href="#ring-cta" textLength="314" lengthAdjust="spacing">
-                    {dispatchSummary.freeThreshold > 0
-                      ? `ENVÍO GRATIS · SOBRE ${formatCLP(dispatchSummary.freeThreshold)} · `
-                      : `DESPACHO DIRECTO · ${dispatchSummary.citiesLabel.toUpperCase()} · `}
-                  </textPath>
-                </text>
-              </svg>
-              <span className="badge__core">
-                <svg viewBox="-2 -2 68 32" width="32" height="15">
-                  <path
-                    d="M48.68 11A7 7 0 1 1 58.61 14A7 7 0 1 1 48.68 17H15.32A7 7 0 1 1 5.39 14A7 7 0 1 1 15.32 11Z"
-                    fill="#FFD452"
-                  />
-                </svg>
-              </span>
-            </span>
           </div>
         </section>
       </main>
@@ -2133,14 +1844,13 @@ export default function HomeView({
       <footer className="foot">
         <div className="foot__row">
           <p className="foot__claim">
-            Nutrición real para mascotas <span>de verdad.</span>
+            Que nunca le falte <span>su comida preferida.</span>
           </p>
           <nav className="foot__links" aria-label="Pie">
-            <a href="#recetas">Recetas</a>
-            <a href="#ingredientes">Ingredientes</a>
-            <a href="#opiniones">Opiniones</a>
-            <Link to="/perros">Perros</Link>
-            <Link to="/gatos">Gatos</Link>
+            <Link to="/politicas-de-privacidad">Privacidad</Link>
+            <Link to="/politicas-de-despacho">Despachos</Link>
+            <Link to="/terminos-y-condiciones">Términos y condiciones</Link>
+            <Link to="/cambios-y-devoluciones">Cambios y devoluciones</Link>
             <Link to="/nosotros">Nosotros</Link>
           </nav>
           <div className="foot__social">
@@ -2182,8 +1892,8 @@ export default function HomeView({
           </a>
           <div className="foot__dogs" data-reveal="dogs">
             <img
-              src="https://media.kolpusites.com/kibory/perros-fila.webp"
-              alt=""
+              src="/images/mascotas-fila.png?v=2"
+              alt="Perros y gatos de Patitas del Sur"
               width="2010"
               height="687"
               loading="lazy"
@@ -2194,10 +1904,28 @@ export default function HomeView({
 
         <div className="foot__legal">
           <span>© 2026 Patitas del Sur · Comercial Kira SpA</span>
-          <Link to="/politicas-de-privacidad">Privacidad</Link>
-          <Link to="/politicas-de-despacho">Despachos</Link>
-          <Link to="/terminos-y-condiciones">Términos y condiciones</Link>
-          <Link to="/cambios-y-devoluciones">Cambios y devoluciones</Link>
+          <p style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '5px', minHeight: '44px' }}>
+            Desarrollado con{' '}
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="#F97316"
+              aria-label="cariño"
+              style={{ display: 'inline-block', flexShrink: 0 }}
+            >
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>{' '}
+            por{' '}
+            <a
+              href="https://www.orangedesign.cl"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontWeight: 800, color: '#F97316' }}
+            >
+              Orange Design
+            </a>
+          </p>
         </div>
       </footer>
     </div>
