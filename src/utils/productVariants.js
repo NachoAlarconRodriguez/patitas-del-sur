@@ -299,6 +299,7 @@ export function groupProductsForStore(rawProducts) {
       ...master,
       id: master.id,
       name: master.name,
+      bowlConfig: master.bowlConfig || items.find((i) => i.bowlConfig)?.bowlConfig || null,
       weights: weights.length > 0 ? weights : ['400 gr'],
       variants: variants,
       hasMultipleVariants: variants.length > 1,

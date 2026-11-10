@@ -83,8 +83,10 @@ export async function fetchProductsFromSupabase() {
       const normalized = data.map((item) => {
         const rawGa = safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {});
         const shippingUnitCost = Number(rawGa._shipping_unit_cost ?? item.shipping_unit_cost ?? item.shippingUnitCost) || 0;
+        const bowlConfig = rawGa._bowl_config || item.bowl_config || item.bowlConfig || null;
         const cleanGa = { ...rawGa };
         delete cleanGa._shipping_unit_cost;
+        delete cleanGa._bowl_config;
 
         return {
           ...item,
@@ -93,6 +95,7 @@ export async function fetchProductsFromSupabase() {
           ingredients: safeParseJson(item.ingredients, []).map(cleanIngredientName).filter(Boolean),
           guaranteedAnalysis: cleanGa,
           shippingUnitCost,
+          bowlConfig,
           benefits: safeParseJson(item.benefits, []),
           animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
             ? (Number(item.animal_percent) || item.animal_percent)
@@ -209,6 +212,16 @@ export async function updateProductInSupabase(productId, updates) {
         } else {
           delete cleanObj._shipping_unit_cost;
         }
+        const bConfig = updates.bowlConfig !== undefined
+          ? updates.bowlConfig
+          : updates.bowl_config !== undefined
+          ? updates.bowl_config
+          : existingProd?.bowlConfig;
+        if (bConfig && typeof bConfig === 'object') {
+          cleanObj._bowl_config = bConfig;
+        } else {
+          delete cleanObj._bowl_config;
+        }
         payload.guaranteed_analysis = cleanObj;
       } else if (key === 'shippingUnitCost' || key === 'shipping_unit_cost') {
         const shipCost = Number(value) || 0;
@@ -218,6 +231,31 @@ export async function updateProductInSupabase(productId, updates) {
           baseGa._shipping_unit_cost = shipCost;
         } else {
           delete baseGa._shipping_unit_cost;
+        }
+        const bConfig = updates.bowlConfig !== undefined
+          ? updates.bowlConfig
+          : updates.bowl_config !== undefined
+          ? updates.bowl_config
+          : existingProd?.bowlConfig;
+        if (bConfig && typeof bConfig === 'object') {
+          baseGa._bowl_config = bConfig;
+        }
+        payload.guaranteed_analysis = baseGa;
+      } else if (key === 'bowlConfig' || key === 'bowl_config') {
+        const existingProd = (memoryCachedProducts || []).find((p) => p.id === productId);
+        const baseGa = payload.guaranteed_analysis || (existingProd?.guaranteedAnalysis ? { ...existingProd.guaranteedAnalysis } : {});
+        const shipCost = updates.shippingUnitCost !== undefined
+          ? Number(updates.shippingUnitCost) || 0
+          : updates.shipping_unit_cost !== undefined
+          ? Number(updates.shipping_unit_cost) || 0
+          : Number(existingProd?.shippingUnitCost) || 0;
+        if (shipCost > 0) {
+          baseGa._shipping_unit_cost = shipCost;
+        }
+        if (value && typeof value === 'object') {
+          baseGa._bowl_config = value;
+        } else {
+          delete baseGa._bowl_config;
         }
         payload.guaranteed_analysis = baseGa;
       } else if (key === 'animalPercent' || key === 'animal_percent') {
@@ -341,6 +379,10 @@ export async function createProductInSupabase(productData) {
         const shipCost = Number(productData.shippingUnitCost ?? productData.shipping_unit_cost) || 0;
         if (shipCost > 0) {
           baseGa._shipping_unit_cost = shipCost;
+        }
+        const bConfig = productData.bowlConfig ?? productData.bowl_config;
+        if (bConfig && typeof bConfig === 'object') {
+          baseGa._bowl_config = bConfig;
         }
         return baseGa;
       })(),

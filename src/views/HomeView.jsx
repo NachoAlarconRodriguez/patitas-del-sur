@@ -10,87 +10,6 @@ import { WhatsAppIcon } from '../components/OfficialIcons';
 import { saveSpecialOrderToSupabase } from '../services/specialOrdersService';
 import { getDispatchZonesFromSupabase } from '../services/dispatchService';
 
-const BOWL_INGREDIENTS = [
-  {
-    num: 1,
-    name: 'Pollo y Pavo Fresco',
-    pill: 'Proteína',
-    desc: 'Proteína magra de alta digestibilidad para músculos fuertes. Sin harinas ni subproductos.',
-    img: 'https://media.kolpusites.com/kibory/bol-pollo.webp',
-    c: 330,
-    p0: '-19.28% 10%',
-    pm: '10% -19.28%',
-    p1: '50% -30%',
-    hx: '36.5%',
-    hy: '26.62%',
-  },
-  {
-    num: 2,
-    name: 'Salmón Austral',
-    pill: 'Omega 3',
-    desc: 'Rico en ácidos grasos EPA y DHA del sur para un pelaje brillante y articulaciones sanas.',
-    img: 'https://media.kolpusites.com/kibory/bol-salmon.webp',
-    c: 270,
-    p0: '-19.28% 90%',
-    pm: '-30% 50%',
-    p1: '-19.28% 10%',
-    hx: '23%',
-    hy: '50%',
-  },
-  {
-    num: 3,
-    name: 'Camote y Calabaza',
-    pill: 'Fibra',
-    desc: 'Carbohidratos nobles de bajo índice glucémico para una digestión suave y energía estable.',
-    img: 'https://media.kolpusites.com/kibory/bol-boniato.webp',
-    c: 210,
-    p0: '50% 130%',
-    pm: '10% 119.28%',
-    p1: '-19.28% 90%',
-    hx: '36.5%',
-    hy: '73.38%',
-  },
-  {
-    num: 4,
-    name: 'Zanahoria Fresca',
-    pill: 'Vitamina A',
-    desc: 'Betacarotenos naturales esenciales para cuidar la visión y el sistema inmune.',
-    img: 'https://media.kolpusites.com/kibory/bol-zanahoria.webp',
-    c: 30,
-    p0: '50% -30%',
-    pm: '90% -19.28%',
-    p1: '119.28% 10%',
-    hx: '63.5%',
-    hy: '26.62%',
-  },
-  {
-    num: 5,
-    name: 'Guisantes Verdes',
-    pill: 'Minerales',
-    desc: 'Aporte equilibrado de aminoácidos vegetales, fibra prebiótica y minerales clave.',
-    img: 'https://media.kolpusites.com/kibory/bol-guisantes.webp',
-    c: 90,
-    p0: '119.28% 10%',
-    pm: '130% 50%',
-    p1: '119.28% 90%',
-    hx: '77%',
-    hy: '50%',
-  },
-  {
-    num: 6,
-    name: 'Arándanos del Sur',
-    pill: 'Antiox.',
-    desc: 'Antioxidantes naturales patagónicos para proteger las vías urinarias y el envejecimiento celular.',
-    img: 'https://media.kolpusites.com/kibory/bol-arandanos.webp',
-    c: 150,
-    p0: '119.28% 90%',
-    pm: '90% 119.28%',
-    p1: '50% 130%',
-    hx: '63.5%',
-    hy: '73.38%',
-  },
-];
-
 const POLAROID_ITEMS = [
   {
     num: '01',
@@ -201,150 +120,6 @@ const REVIEWS_DATA = [
   },
 ];
 
-// Real-time background removal for a video frame of Kira & Jack (1920x1080 -> 640x360)
-function applyKiraJackAlphaCutout(imgData, w, h) {
-  const rgba = imgData.data;
-  const total = w * h;
-  const isBg = new Uint8Array(total);
-
-  for (let y = 0; y < h; y++) {
-    const ny = y / h;
-    const rowOff = y * w;
-    for (let x = 0; x < w; x++) {
-      const nx = x / w;
-      const p = rowOff + x;
-      const idx = p * 4;
-      const r = rgba[idx];
-      const g = rgba[idx + 1];
-      const b = rgba[idx + 2];
-      const rb = r - b;
-      const rg = r - g;
-      const luma = (r * 30 + g * 59 + b * 11) / 100;
-
-      if (
-        ny < 0.145 ||
-        (nx > 0.45 && ny < 0.255) ||
-        nx > 0.865 ||
-        nx < 0.055 ||
-        ny > 0.968 ||
-        (nx > 0.785 && ny < 0.54 && b >= r)
-      ) {
-        isBg[p] = 1;
-        continue;
-      }
-
-      if (ny >= 0.44) {
-        if (b - r >= 13 && r > 92) {
-          isBg[p] = 1;
-        }
-      } else {
-        if (rb <= 7 && luma > 95) {
-          isBg[p] = 1;
-        } else if (ny < 0.36 && rb <= 13 && rg <= 7 && luma > 125) {
-          isBg[p] = 1;
-        } else if (nx > 0.78 && rb <= 22 && luma > 120) {
-          isBg[p] = 1;
-        }
-      }
-    }
-  }
-
-  const visited = new Uint8Array(total);
-  const queue = new Int32Array(total);
-  let tail = 0;
-
-  for (let x = 0; x < w; x++) {
-    const pTop = x;
-    const pBot = (h - 1) * w + x;
-    if (isBg[pTop]) {
-      visited[pTop] = 1;
-      queue[tail++] = pTop;
-    }
-    if (isBg[pBot] && !visited[pBot]) {
-      visited[pBot] = 1;
-      queue[tail++] = pBot;
-    }
-  }
-  for (let y = 0; y < h; y++) {
-    const pL = y * w;
-    const pR = y * w + (w - 1);
-    if (isBg[pL] && !visited[pL]) {
-      visited[pL] = 1;
-      queue[tail++] = pL;
-    }
-    if (isBg[pR] && !visited[pR]) {
-      visited[pR] = 1;
-      queue[tail++] = pR;
-    }
-  }
-
-  let head = 0;
-  while (head < tail) {
-    const p = queue[head++];
-    const x = p % w;
-    const y = (p - x) / w;
-    if (x > 0) {
-      const n = p - 1;
-      if (isBg[n] && !visited[n]) {
-        visited[n] = 1;
-        queue[tail++] = n;
-      }
-    }
-    if (x + 1 < w) {
-      const n = p + 1;
-      if (isBg[n] && !visited[n]) {
-        visited[n] = 1;
-        queue[tail++] = n;
-      }
-    }
-    if (y > 0) {
-      const n = p - w;
-      if (isBg[n] && !visited[n]) {
-        visited[n] = 1;
-        queue[tail++] = n;
-      }
-    }
-    if (y + 1 < h) {
-      const n = p + w;
-      if (isBg[n] && !visited[n]) {
-        visited[n] = 1;
-        queue[tail++] = n;
-      }
-    }
-  }
-
-  const alpha = new Uint8Array(total);
-  for (let i = 0; i < total; i++) {
-    alpha[i] = visited[i] ? 0 : 255;
-  }
-
-  for (let y = 1; y < h - 1; y++) {
-    const row = y * w;
-    for (let x = 1; x < w - 1; x++) {
-      const i = row + x;
-      const sum =
-        alpha[i - w - 1] +
-        alpha[i - w] +
-        alpha[i - w + 1] +
-        alpha[i - 1] +
-        alpha[i] * 4 +
-        alpha[i + 1] +
-        alpha[i + w - 1] +
-        alpha[i + w] +
-        alpha[i + w + 1];
-      rgba[i * 4 + 3] = (sum / 12) | 0;
-    }
-  }
-  for (let x = 0; x < w; x++) {
-    rgba[x * 4 + 3] = 0;
-    rgba[((h - 1) * w + x) * 4 + 3] = 0;
-  }
-  for (let y = 0; y < h; y++) {
-    rgba[y * w * 4 + 3] = 0;
-    rgba[(y * w + (w - 1)) * 4 + 3] = 0;
-  }
-}
-
 export default function HomeView({
   onSelectProduct,
   onAddToCart: _onAddToCart,
@@ -358,7 +133,6 @@ export default function HomeView({
   const [allProducts, setAllProducts] = useState(cached || FALLBACK_PRODUCTS);
   const [hiddenProducts, setHiddenProducts] = useState(getHiddenProductIdentifiers);
   const [dispatchZones, setDispatchZones] = useState([]);
-  const [activeIng, setActiveIng] = useState(0);
   const [activeReviewDot, setActiveReviewDot] = useState(0);
   const [showSpecialOrderModal, setShowSpecialOrderModal] = useState(false);
 
@@ -378,14 +152,10 @@ export default function HomeView({
   const heroRef = useRef(null);
   const dogWrapRef = useRef(null);
   const dogElRef = useRef(null);
-  const videoRef = useRef(null);
   const kiraHeadRef = useRef(null);
-  const jackHeadRef = useRef(null);
   const tittleRef = useRef(null);
   const wmHalfLRef = useRef(null);
   const wmHalfRRef = useRef(null);
-  const bowlRef = useRef(null);
-  const bowlLinesSvgRef = useRef(null);
   const rvTrackRef = useRef(null);
   const rvStadiumRef = useRef(null);
   const rvPeekRef = useRef(null);
@@ -504,56 +274,6 @@ export default function HomeView({
     return visible.slice(0, 5);
   }, [allProducts, hiddenProducts]);
 
-  // Draw curved SVG leader lines in Bowl Explorer
-  const drawBowlLines = () => {
-    const bowl = bowlRef.current;
-    const svg = bowlLinesSvgRef.current;
-    if (!bowl || !svg) return;
-    if (window.getComputedStyle(svg).display === 'none') return;
-
-    const pins = Array.from(bowl.querySelectorAll('.ing__pin'));
-    const spots = Array.from(bowl.querySelectorAll('.bowl__spot'));
-    if (pins.length !== 6 || spots.length !== 6) return;
-
-    const offsetToBowl = (el) => {
-      let x = 0;
-      let y = 0;
-      let cur = el;
-      while (cur && cur !== bowl) {
-        x += cur.offsetLeft || 0;
-        y += cur.offsetTop || 0;
-        cur = cur.offsetParent;
-      }
-      return {
-        x: x + el.offsetWidth / 2,
-        y: y + el.offsetHeight / 2,
-        r: el.offsetWidth / 2,
-      };
-    };
-
-    const paths = [];
-    for (let i = 0; i < 6; i++) {
-      const a = offsetToBowl(pins[i]);
-      const s = offsetToBowl(spots[i]);
-      const dir = s.x > a.x ? 1 : -1;
-      const ax = a.x + dir * (a.r + 6);
-      const k = Math.abs(s.x - ax) * 0.55;
-      const d = `M ${ax.toFixed(1)} ${a.y.toFixed(1)} C ${(ax + dir * k).toFixed(1)} ${a.y.toFixed(1)}, ${(s.x - dir * k * 0.5).toFixed(1)} ${s.y.toFixed(1)}, ${s.x.toFixed(1)} ${s.y.toFixed(1)}`;
-      paths.push(d);
-    }
-
-    const baseLines = svg.querySelectorAll('.bowl__line');
-    const onLines = svg.querySelectorAll('.bowl__line--on');
-    paths.forEach((d, idx) => {
-      if (baseLines[idx]) baseLines[idx].setAttribute('d', d);
-      if (onLines[idx]) onLines[idx].setAttribute('d', d);
-    });
-  };
-
-  useEffect(() => {
-    drawBowlLines();
-  }, [activeIng]);
-
   // MASTER KIBORY ENGINE (Single requestAnimationFrame loop + Video Frame Decoder + Scroll FX)
   useEffect(() => {
     const html = document.documentElement;
@@ -614,15 +334,14 @@ export default function HomeView({
     const ptr = { x: window.innerWidth / 2, y: window.innerHeight / 2, nx: 0, ny: 0, seen: false };
     const scroll = { y: window.scrollY, prevY: window.scrollY, v: 0, dir: 1, dirty: true };
     const dog = {
-      enabled: false,
+      enabled: true,
       ready: false,
       target: 0.5,
       current: 0.5,
       lean: 0,
-      hx: window.innerWidth * 0.42,
-      hy: window.innerHeight * 0.45,
-      jx: window.innerWidth * 0.58,
-      jy: window.innerHeight * 0.48,
+      shiftX: 0,
+      hx: window.innerWidth * 0.5,
+      hy: window.innerHeight * 0.42,
       visible: true,
     };
     const geo = { dirty: true, tx: -1e4, ty: -1e4, heroH: 0, hDirty: true };
@@ -641,13 +360,10 @@ export default function HomeView({
     const measure = () => {
       if (kiraHeadRef.current) {
         const r = kiraHeadRef.current.getBoundingClientRect();
-        dog.hx = r.left + r.width / 2;
-        dog.hy = r.top + r.height / 2;
-      }
-      if (jackHeadRef.current) {
-        const r = jackHeadRef.current.getBoundingClientRect();
-        dog.jx = r.left + r.width / 2;
-        dog.jy = r.top + r.height / 2;
+        if (r.width > 0 || r.left > 0) {
+          dog.hx = r.left + r.width / 2;
+          dog.hy = r.top + r.height / 2;
+        }
       }
       if (tittleRef.current) {
         const r = tittleRef.current.getBoundingClientRect();
@@ -657,119 +373,70 @@ export default function HomeView({
       geo.dirty = false;
     };
 
-    const mapX = (x) => {
-      const center = (dog.hx + dog.jx) * 0.5;
-      return clamp01(0.5 + (x - center) / (window.innerWidth * 0.8));
-    };
+    const mapX = (x) => clamp01(0.5 + (x - dog.hx) / (window.innerWidth * 0.65));
 
-    // Frame decoding pipeline for Kira & Jack (/hero_movie_fast.mp4 -> transparent ImageBitmaps)
-    const frames = [];
+    // Direct 41-frame transparent atlas loader for Kira (zero video autoplay/codec restrictions)
+    const ATLAS_COLS = 7;
+    const ATLAS_FW = 320;
+    const ATLAS_FH = 400;
+    const ATLAS_FRAMES = 41;
+    let atlasImg = null;
     let fctx = null;
-    let lastPos = -1;
+    let lastFrameIdx = -1;
     let decodeCancelled = false;
 
-    const fallbackToStillOnly = () => {
-      dog.ready = false;
-      if (dogElRef.current) {
-        dogElRef.current.classList.remove('has-video', 'is-capturing');
-      }
+    const drawAtlasFrame = (idx) => {
+      if (!fctx || !atlasImg) return;
+      const safeIdx = clamp(idx, 0, ATLAS_FRAMES - 1);
+      const col = safeIdx % ATLAS_COLS;
+      const row = (safeIdx / ATLAS_COLS) | 0;
+      fctx.clearRect(0, 0, ATLAS_FW, ATLAS_FH);
+      fctx.drawImage(
+        atlasImg,
+        col * ATLAS_FW,
+        row * ATLAS_FH,
+        ATLAS_FW,
+        ATLAS_FH,
+        0,
+        0,
+        ATLAS_FW,
+        ATLAS_FH
+      );
     };
 
-    const captureKiraJackFrames = async () => {
-      const video = videoRef.current;
-      const dogEl = dogElRef.current;
-      if (!video || !dogEl || RM) {
-        fallbackToStillOnly();
-        return;
-      }
-
+    const dogEl = dogElRef.current;
+    if (dogEl && !RM) {
       let canvas = dogEl.querySelector('.dog__canvas');
       if (!canvas) {
         canvas = document.createElement('canvas');
         canvas.className = 'dog__canvas';
-        canvas.width = 640;
-        canvas.height = 360;
+        canvas.width = ATLAS_FW;
+        canvas.height = ATLAS_FH;
         canvas.setAttribute('aria-hidden', 'true');
-        video.insertAdjacentElement('afterend', canvas);
+        dogEl.insertBefore(canvas, dogEl.firstChild);
       }
       fctx = canvas.getContext('2d');
 
-      const scratch = document.createElement('canvas');
-      scratch.width = 640;
-      scratch.height = 360;
-      const sctx = scratch.getContext('2d', { willReadFrequently: true });
-
-      const sampleCount = 29; // From 1.8s (looking left) to 5.8s (looking right)
-      const tStart = 1.8;
-      const tEnd = 5.8;
-
-      const seekTo = (t) =>
-        new Promise((resolve) => {
-          const onSeeked = () => {
-            video.removeEventListener('seeked', onSeeked);
-            resolve();
-          };
-          video.addEventListener('seeked', onSeeked, { once: true });
-          video.currentTime = t;
-        });
-
-      try {
-        for (let i = 0; i < sampleCount; i++) {
-          if (decodeCancelled) return;
-          const p = i / (sampleCount - 1);
-          const t = tStart + p * (tEnd - tStart);
-          await seekTo(t);
-          if (decodeCancelled) return;
-
-          sctx.clearRect(0, 0, 640, 360);
-          sctx.drawImage(video, 0, 0, 640, 360);
-          const imgData = sctx.getImageData(0, 0, 640, 360);
-          applyKiraJackAlphaCutout(imgData, 640, 360);
-          const bm = await createImageBitmap(imgData);
-          frames.push({ p, bm });
-
-          // Draw center frame immediately once decoded
-          if (i === Math.floor(sampleCount / 2) && fctx) {
-            fctx.clearRect(0, 0, 640, 360);
-            fctx.drawImage(bm, 0, 0, 640, 360);
-          }
-        }
-
-        if (!decodeCancelled && frames.length >= 6) {
-          dog.ready = true;
-          dogEl.classList.remove('is-capturing');
-          if (dog.enabled) {
-            dogEl.classList.add('has-video');
-          }
-        } else {
-          fallbackToStillOnly();
-        }
-      } catch (err) {
-        console.warn('Fallback to transparent still of Kira and Jack:', err);
-        fallbackToStillOnly();
-      }
-    };
-
-    const video = videoRef.current;
-    if (video && !RM) {
-      video.muted = true;
-      video.pause();
-      if (video.readyState >= 2) {
-        captureKiraJackFrames();
-      } else {
-        video.addEventListener('loadeddata', captureKiraJackFrames, { once: true });
-        video.addEventListener('error', fallbackToStillOnly, { once: true });
-      }
-    } else {
-      fallbackToStillOnly();
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        if (decodeCancelled) return;
+        atlasImg = img;
+        dog.ready = true;
+        dog.enabled = true;
+        lastFrameIdx = 20;
+        drawAtlasFrame(20);
+        dogEl.classList.add('has-video');
+      };
+      img.src = '/images/kira_hero_atlas.png?v=4';
     }
 
     const enableDog = () => {
       measure();
+      dog.enabled = true;
       if (dog.ready && dogElRef.current) {
         dogElRef.current.classList.add('has-video');
       }
-      dog.enabled = true;
       dog.target = ptr.seen ? mapX(ptr.x) : 0.5;
     };
 
@@ -856,13 +523,6 @@ export default function HomeView({
     };
 
     const pupEl = page.querySelector('.mf__pup');
-    const ingGiantSpan = page.querySelector('.ing__giant span');
-    const ingHeadEl = page.querySelector('.ing__head');
-    const stickerEls = Array.from(page.querySelectorAll('.ing__head .sticker')).map((el, i) => ({
-      el,
-      depth: parseFloat(el.style.getPropertyValue('--depth')) || 24,
-      sign: i % 2 === 1 ? -1 : 1,
-    }));
 
     // 3D Tilt state for Recipe cards
     const tilt = { dirty: false, activeCard: null, x: 0, y: 0, resetSet: new Set() };
@@ -929,14 +589,13 @@ export default function HomeView({
       }
 
       const now = performance.now();
-      const hitRadius = Math.min(160, window.innerWidth * 0.14);
+      const hitRadius = Math.min(150, window.innerWidth * 0.12);
       const distKira = Math.hypot(e.clientX - dog.hx, e.clientY - dog.hy);
-      const distJack = Math.hypot(e.clientX - dog.jx, e.clientY - dog.jy);
       const isBite =
         dog.enabled &&
         dog.visible &&
         now - biteAt > 900 &&
-        (distKira <= hitRadius || distJack <= hitRadius);
+        distKira <= hitRadius;
 
       if (isBite) {
         biteAt = now;
@@ -955,7 +614,6 @@ export default function HomeView({
       geo.hDirty = true;
       scroll.dirty = true;
       measureReviews();
-      drawBowlLines();
     };
 
     window.addEventListener('pointermove', onPointerMove, { passive: true });
@@ -979,39 +637,16 @@ export default function HomeView({
     };
 
     const updDog = () => {
-      dog.current += (dog.target - dog.current) * 0.09;
-      if (dog.ready && fctx && frames.length >= 2) {
+      dog.current += (dog.target - dog.current) * 0.12;
+      if (dog.ready && fctx && atlasImg) {
         const want = clamp01(dog.current);
-        let lo = 0;
-        let hi = frames.length - 1;
-        while (lo + 1 < hi) {
-          const mid = (lo + hi) >> 1;
-          if (frames[mid].p <= want) lo = mid;
-          else hi = mid;
-        }
-        const pLo = frames[lo].p;
-        const pHi = frames[hi].p;
-        const f = clamp01((want - pLo) / (pHi - pLo || 1));
-        const pos = lo + f;
-        if (Math.abs(pos - lastPos) > 0.012) {
-          lastPos = pos;
-          fctx.clearRect(0, 0, 640, 360);
-          if (f < 0.04) {
-            fctx.globalAlpha = 1;
-            fctx.drawImage(frames[lo].bm, 0, 0, 640, 360);
-          } else if (f > 0.96) {
-            fctx.globalAlpha = 1;
-            fctx.drawImage(frames[hi].bm, 0, 0, 640, 360);
-          } else {
-            fctx.globalAlpha = 1;
-            fctx.drawImage(frames[lo].bm, 0, 0, 640, 360);
-            fctx.globalAlpha = f;
-            fctx.drawImage(frames[hi].bm, 0, 0, 640, 360);
-            fctx.globalAlpha = 1;
-          }
+        const idx = Math.round(want * (ATLAS_FRAMES - 1));
+        if (idx !== lastFrameIdx) {
+          lastFrameIdx = idx;
+          drawAtlasFrame(idx);
         }
       }
-      dog.lean += ((dog.current - 0.5) * 4.2 - dog.lean) * 0.08;
+      dog.lean += ((dog.current - 0.5) * 3 - dog.lean) * 0.1;
       if (dogElRef.current) {
         dogElRef.current.style.rotate = `${dog.lean.toFixed(3)}deg`;
       }
@@ -1074,22 +709,7 @@ export default function HomeView({
         }
       }
 
-      // 3. Ingredients giant word fill + sticker parallax
-      if (ingGiantSpan) {
-        const p = band(ingGiantSpan, 0.95, 0.6) * 100;
-        ingGiantSpan.style.setProperty('--p', `${p.toFixed(1)}%`);
-      }
-      if (ingHeadEl && stickerEls.length) {
-        const p = traverse(ingHeadEl);
-        stickerEls.forEach(({ el, depth, sign }) => {
-          const ty = (0.5 - p) * depth;
-          const rot = (p - 0.5) * 16 * sign;
-          el.style.translate = `0 ${ty.toFixed(1)}px`;
-          el.style.rotate = `calc(var(--r) + ${rot.toFixed(2)}deg)`;
-        });
-      }
-
-      // 4. Reviews peek dog rising from floor
+      // 3. Reviews peek dog rising from floor
       if (rvStadiumRef.current && rvPeekRef.current) {
         const b = band(rvStadiumRef.current, 0.95, 0.55);
         const e = 1 - Math.pow(1 - b, 3);
@@ -1306,7 +926,6 @@ export default function HomeView({
       if (revealIO) revealIO.disconnect();
       if (heroIO) heroIO.disconnect();
       if (countIO) countIO.disconnect();
-      frames.forEach((f) => f.bm && f.bm.close && f.bm.close());
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('scroll', onScroll);
@@ -1360,11 +979,6 @@ export default function HomeView({
     const RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     track.scrollTo({ left: cards[idx].offsetLeft - padLeft, behavior: RM ? 'auto' : 'smooth' });
   };
-
-  // Active cuts for active Bowl wedge
-  const activeWedgeAngle = BOWL_INGREDIENTS[activeIng]?.c ?? 330;
-  const cut0 = (((activeWedgeAngle - 30) / 60) + 6) % 6;
-  const cut1 = ((activeWedgeAngle + 30) / 60) % 6;
 
   // Special Order Submit
   const handleEncargoSubmit = async (e) => {
@@ -1603,7 +1217,7 @@ export default function HomeView({
                 </span>
               </h1>
 
-              {/* Kira & Jack Transparent Stage */}
+              {/* Kira Transparent Stage (4:5 portrait, Kibory §1.5) */}
               <div className="dog-clip">
                 <div ref={dogWrapRef} className="dog-wrap" data-in="peek" style={{ '--d': '650ms' }}>
                   <div
@@ -1615,27 +1229,15 @@ export default function HomeView({
                       }
                     }}
                   >
-                    <video
-                      ref={videoRef}
-                      className="dog__video"
-                      src="/hero_movie_fast.mp4"
-                      muted
-                      playsInline
-                      preload="auto"
-                      disablePictureInPicture
-                      aria-hidden="true"
-                      tabIndex={-1}
-                    />
                     <img
                       className="dog__still"
-                      src="/images/kira_jack_still_alpha.png"
-                      alt="Kira y Jack, embajadores de Patitas del Sur"
-                      width="1920"
-                      height="1080"
+                      src="/images/kira_hero_still_alpha.png?v=4"
+                      alt="Kira, embajadora de Patitas del Sur"
+                      width="400"
+                      height="500"
                       decoding="async"
                     />
                     <span ref={kiraHeadRef} className="dog__head" aria-hidden="true" />
-                    <span ref={jackHeadRef} className="dog__head--jack" aria-hidden="true" />
                   </div>
                 </div>
               </div>
@@ -1785,7 +1387,7 @@ export default function HomeView({
             </div>
             <figure className="mf__pup" data-scroll="parallax" data-ph="Kira con suéter">
               <img
-                src="/images/kira_sweater_alpha.png"
+                src="/images/kira_sweater_alpha.png?v=2"
                 alt="Kira, Samoyedo de Patitas del Sur con suéter"
                 width="770"
                 height="1115"
@@ -1877,7 +1479,7 @@ export default function HomeView({
 
           <figure className="rc__perch" data-reveal="rise" aria-hidden="true">
             <img
-              src="/images/jack_perch_alpha.png"
+              src="/images/jack_perch_alpha.png?v=2"
               alt="Jack asomándose sobre las recetas"
               width="1024"
               height="1024"
@@ -1976,163 +1578,15 @@ export default function HomeView({
         </section>
 
         {/* ═══════════════════════════════════════════════════════════════════
-            4 · INGREDIENTS BOWL EXPLORER & POLAROID GALLERY (#ingredientes)
+            4 · POLAROID GALLERY (#ingredientes)
             ═══════════════════════════════════════════════════════════════════ */}
         <section
           className="sec sec--ing card card--blush"
           id="ingredientes"
-          aria-labelledby="ing-title"
+          aria-label="Nutrición biológicamente apropiada"
         >
-          <div className="ing__head">
-            <p className="pill-label" data-reveal="rise">
-              <svg className="paw" viewBox="0 0 24 24" aria-hidden="true">
-                <use href="#i-paw" />
-              </svg>
-              Lo que lleva cada plato
-            </p>
-            <h2 className="ing__giant" id="ing-title">
-              <span>ingredientes</span>
-            </h2>
-            <span
-              className="sticker"
-              style={{ '--x': '6%', '--y': '18%', '--r': '-14deg', '--depth': 40 }}
-              aria-hidden="true"
-            >
-              Salmón Austral
-            </span>
-            <span
-              className="sticker"
-              style={{ '--x': '34%', '--y': '4%', '--r': '9deg', '--depth': 24 }}
-              aria-hidden="true"
-            >
-              Camote y Calabaza
-            </span>
-            <span
-              className="sticker"
-              style={{ '--x': '58%', '--y': '22%', '--r': '-7deg', '--depth': 32 }}
-              aria-hidden="true"
-            >
-              Omega 3 y 6
-            </span>
-            <span
-              className="sticker"
-              style={{ '--x': '82%', '--y': '6%', '--r': '15deg', '--depth': 20 }}
-              aria-hidden="true"
-            >
-              Arándanos
-            </span>
-            <p className="ing__sub" data-reveal="rise">
-              Nada que no puedas pronunciar. Todo lo que el cuerpo de tu perro o gato necesita.
-            </p>
-          </div>
-
-          <div ref={bowlRef} className="bowl" data-reveal="bowl">
-            <ol className="bowl__list" data-reveal="stagger">
-              {BOWL_INGREDIENTS.map((item, idx) => {
-                const isAct = activeIng === idx;
-                return (
-                  <li key={item.num} style={{ '--i': idx }}>
-                    <button
-                      type="button"
-                      className={`ing__pt ${isAct ? 'is-active' : ''}`}
-                      aria-pressed={isAct}
-                      onPointerEnter={(e) => {
-                        if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                          setActiveIng(idx);
-                        }
-                      }}
-                      onFocus={() => setActiveIng(idx)}
-                      onClick={() => setActiveIng(idx)}
-                    >
-                      <span className="ing__pin" aria-hidden="true">
-                        {item.num}
-                      </span>
-                      <span className="ing__name">{item.name}</span>
-                      <span className="ing__pill">{item.pill}</span>
-                      <span className="ing__desc">{item.desc}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-
-            <svg ref={bowlLinesSvgRef} className="bowl__lines" aria-hidden="true">
-              {BOWL_INGREDIENTS.map((item, idx) => (
-                <React.Fragment key={item.num}>
-                  <path className="bowl__line" />
-                  <path
-                    className={`bowl__line--on ${activeIng === idx ? 'is-on' : ''}`}
-                    pathLength="1"
-                  />
-                </React.Fragment>
-              ))}
-            </svg>
-
-            <div className="bowl__stage">
-              <figure className="bowl__dish" data-ph="Bol con comida · vista cenital">
-                <img
-                  src="https://media.kolpusites.com/kibory/bol.webp"
-                  alt="Cuenco lleno de alimento natural visto desde arriba"
-                  width="1847"
-                  height="1868"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </figure>
-
-              {BOWL_INGREDIENTS.map((item, idx) => (
-                <span
-                  key={item.num}
-                  className={`bowl__wedge ${activeIng === idx ? 'is-active' : ''}`}
-                  data-c={item.c}
-                  style={{ '--p0': item.p0, '--pm': item.pm, '--p1': item.p1 }}
-                  aria-hidden="true"
-                >
-                  <img src={item.img} alt="" width="1200" height="1200" />
-                </span>
-              ))}
-
-              <svg className="bowl__cuts" viewBox="0 0 100 100" aria-hidden="true">
-                {[
-                  [50, 6],
-                  [88.11, 28],
-                  [88.11, 72],
-                  [50, 94],
-                  [11.89, 72],
-                  [11.89, 28],
-                ].map(([x2, y2], idx) => (
-                  <line
-                    key={idx}
-                    className={`bowl__cut ${idx === cut0 || idx === cut1 ? 'is-on' : ''}`}
-                    x1="50"
-                    y1="50"
-                    x2={x2}
-                    y2={y2}
-                  />
-                ))}
-              </svg>
-
-              {BOWL_INGREDIENTS.map((item, idx) => (
-                <span
-                  key={item.num}
-                  className={`bowl__spot ${activeIng === idx ? 'is-active' : ''}`}
-                  style={{ '--hx': item.hx, '--hy': item.hy, '--i': idx }}
-                  aria-hidden="true"
-                  onPointerEnter={(e) => {
-                    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                      setActiveIng(idx);
-                    }
-                  }}
-                  onClick={() => setActiveIng(idx)}
-                >
-                  {item.num}
-                </span>
-              ))}
-            </div>
-          </div>
-
           {/* Polaroid Fan Gallery */}
-          <div className="gal">
+          <div className="gal" style={{ marginTop: 0 }}>
             <header className="gal__head" data-reveal="rise">
               <h3 className="gal__title">Nutrición biológicamente apropiada</h3>
               <span className="gal__note" aria-hidden="true">
@@ -2187,8 +1641,8 @@ export default function HomeView({
         <section className="card sec--photo" data-reveal="photo" aria-labelledby="ph-title">
           <figure className="ph__bg" data-ph="Kira y Jack en la Patagonia">
             <img
-              src="/images/frutillar_mascot_story.jpg"
-              alt="Perro y gato contemplando el Volcán Osorno y el Lago Llanquihue"
+              src="/images/frutillar_mascot_story.jpg?v=3"
+              alt="Kira y Jack contemplando el Volcán Osorno y el Lago Llanquihue"
               width="2048"
               height="1152"
               loading="lazy"
@@ -2200,8 +1654,9 @@ export default function HomeView({
               Del Lago Llanquihue directo a su plato
             </h2>
             <p className="ph__text" data-reveal="rise">
-              Despachamos directo a tu puerta en {dispatchSummary.citiesLabel}. Tu regalón solo
-              tiene que disfrutar su comida; nosotros nos encargamos del resto.
+              Despachamos directo a tu puerta en Frutillar, Llanquihue, Puerto Octay, Totoral,
+              Fresia, Tegualda y alrededores. Tu regalón solo tiene que disfrutar su comida;
+              nosotros nos encargamos del resto.
             </p>
           </div>
         </section>

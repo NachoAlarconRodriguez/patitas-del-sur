@@ -5,6 +5,7 @@ import { fetchProductsFromSupabase, updateProductInSupabase, cleanIngredientName
 import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import AppleNutritionSpecs from '../components/AppleNutritionSpecs';
+import ProductIngredientsBowl from '../components/ProductIngredientsBowl';
 import SEOHead from '../components/SEOHead';
 import { getProductSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
 import {
@@ -1642,6 +1643,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
         </div>
       </div>
     </section>
+
+      {/* 3.5 Interactive Ingredients Bowl Explorer */}
+      <div className="max-w-[1280px] mx-auto px-4 sm:px-6 mb-12">
+        <ProductIngredientsBowl product={product} />
+      </div>
 
       {/* 4. Related Products Showcase */}
       {relatedProducts.length > 0 && (

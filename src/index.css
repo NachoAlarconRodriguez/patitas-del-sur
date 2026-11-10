@@ -716,6 +716,18 @@ h1, h2, h3, h4, .font-heading {
   padding-bottom: var(--frame-pad);
   position: relative;
 }
+.kibo-page.kibo-bowl-section {
+  background: transparent;
+  padding-bottom: 0;
+}
+.kibo-page.kibo-bowl-section .sec--ing {
+  margin: 0;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  box-shadow: 0 20px 50px -24px rgba(29, 29, 31, 0.08);
+}
+.kibo-page.kibo-bowl-section .ing__giant {
+  font-size: min(12.2vw, 168px);
+}
 .kibo-page *,
 .kibo-page *::before,
 .kibo-page *::after {
@@ -1349,7 +1361,7 @@ html.motion .kibo-page .in .hand-note svg path {
   display: block;
 }
 
-/* Kira & Jack Stage (dog-clip -> dog-wrap -> dog) */
+/* Kira Hero Stage (dog-clip -> dog-wrap -> dog) */
 .kibo-page .dog-clip {
   position: absolute;
   left: 0;
@@ -1361,11 +1373,11 @@ html.motion .kibo-page .in .hand-note svg path {
 }
 .kibo-page .dog-wrap {
   position: absolute;
-  bottom: calc(120 * var(--u));
+  bottom: calc(-30 * var(--u));
   left: 50%;
-  width: calc(780 * var(--u));
-  height: calc(490 * var(--u));
-  margin-left: calc(-390 * var(--u));
+  width: calc(528 * var(--u));
+  height: calc(660 * var(--u));
+  margin-left: calc(-264 * var(--u));
 }
 .kibo-page .dog {
   position: absolute;
@@ -1383,7 +1395,6 @@ html.motion .kibo-page .in .hand-note svg path {
   max-width: none;
   object-fit: contain;
   object-position: 50% 100%;
-  filter: drop-shadow(0 24px 36px rgba(29, 29, 31, 0.35));
 }
 .kibo-page .dog__video {
   opacity: 0;
@@ -1397,29 +1408,21 @@ html.motion .kibo-page .in .hand-note svg path {
   object-position: 50% 100%;
   opacity: 0;
   pointer-events: none;
-  filter: drop-shadow(0 24px 36px rgba(29, 29, 31, 0.35));
 }
 .kibo-page .dog.has-video .dog__canvas,
 .kibo-page .dog.is-capturing .dog__canvas {
   opacity: 1;
 }
 .kibo-page .dog__still {
-  transition: opacity 0.15s linear;
+  transition: opacity 0.12s linear;
 }
 .kibo-page .dog.has-video .dog__still {
   opacity: 0;
 }
 .kibo-page .dog__head {
   position: absolute;
-  left: 34%;
-  top: 38%;
-  width: 1px;
-  height: 1px;
-}
-.kibo-page .dog__head--jack {
-  position: absolute;
-  left: 68%;
-  top: 44%;
+  left: 50%;
+  top: 21%;
   width: 1px;
   height: 1px;
 }
@@ -1461,10 +1464,10 @@ html.motion .kibo-page .in .hand-note svg path {
   white-space: nowrap;
   rotate: var(--r);
 }
-.kibo-page .pill--1 { left: calc(320 * var(--u)); bottom: calc(580 * var(--u)); --bob: 3.4s; --bd: -0.4s; }
-.kibo-page .pill--2 { left: calc(910 * var(--u)); bottom: calc(610 * var(--u)); --bob: 4.1s; --bd: -1.6s; }
-.kibo-page .pill--3 { left: calc(350 * var(--u)); bottom: calc(210 * var(--u)); --bob: 3.8s; --bd: -0.9s; }
-.kibo-page .pill--4 { left: calc(930 * var(--u)); bottom: calc(250 * var(--u)); --bob: 4.4s; --bd: -2.2s; }
+.kibo-page .pill--1 { left: calc(420 * var(--u)); bottom: calc(556 * var(--u)); --bob: 3.4s; --bd: -0.4s; }
+.kibo-page .pill--2 { left: calc(846 * var(--u)); bottom: calc(642 * var(--u)); --bob: 4.1s; --bd: -1.6s; }
+.kibo-page .pill--3 { left: calc(438 * var(--u)); bottom: calc(236 * var(--u)); --bob: 3.8s; --bd: -0.9s; }
+.kibo-page .pill--4 { left: calc(862 * var(--u)); bottom: calc(292 * var(--u)); --bob: 4.4s; --bd: -2.2s; }
 .kibo-page .paw--b1,
 .kibo-page .paw--b2 {
   position: absolute;
@@ -1472,8 +1475,8 @@ html.motion .kibo-page .in .hand-note svg path {
   color: var(--biscuit);
   rotate: var(--r);
 }
-.kibo-page .paw--b1 { left: calc(390 * var(--u)); bottom: calc(90 * var(--u)); width: calc(44 * var(--u)); height: calc(44 * var(--u)); }
-.kibo-page .paw--b2 { left: calc(450 * var(--u)); bottom: calc(150 * var(--u)); width: calc(36 * var(--u)); height: calc(36 * var(--u)); }
+.kibo-page .paw--b1 { left: calc(400 * var(--u)); bottom: calc(100 * var(--u)); width: calc(44 * var(--u)); height: calc(44 * var(--u)); }
+.kibo-page .paw--b2 { left: calc(456 * var(--u)); bottom: calc(160 * var(--u)); width: calc(36 * var(--u)); height: calc(36 * var(--u)); }
 
 /* Hero Copy & Aside */
 .kibo-page .hero__copy {
@@ -1916,20 +1919,22 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   position: relative;
   z-index: 2;
   margin: 14px 0 10px;
-  font: 700 var(--fs-h3)/1.1 var(--font-display);
+  font: 700 clamp(18px, 1.55vw, 22px)/1.14 var(--font-display);
   letter-spacing: -0.02em;
-  max-width: 18ch;
+  max-width: 52%;
+  text-wrap: balance;
 }
 .kibo-page .rc .tags {
   position: relative;
   z-index: 2;
+  max-width: 52%;
 }
 .kibo-page .rc__img {
   position: absolute;
   right: 14px;
   bottom: 14px;
-  width: 48%;
-  height: 66%;
+  width: 43%;
+  height: 62%;
   margin: 0;
   transform-origin: 50% 100%;
   transition: scale 0.6s var(--ease-spring), rotate 0.6s var(--ease-spring);
@@ -1940,6 +1945,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   height: 100%;
   object-fit: contain;
   object-position: 100% 100%;
+  border-radius: 14px;
   filter: drop-shadow(0 16px 24px rgba(29, 29, 31, 0.18));
 }
 .kibo-page .rc__price {
@@ -1968,13 +1974,20 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   background: #fff;
   color: var(--ink);
 }
+.kibo-page .rc--feat .rc__name {
+  font-size: var(--fs-h3);
+  max-width: 20ch;
+}
+.kibo-page .rc--feat .tags {
+  max-width: 100%;
+}
 .kibo-page .rc--feat .rc__img {
   right: auto;
   left: 50%;
   translate: -50% 0;
   bottom: 2%;
   width: 72%;
-  height: 58%;
+  height: 55%;
 }
 .kibo-page .rc--feat .rc__img img {
   object-position: 50% 100%;
@@ -3364,13 +3377,13 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     bottom: calc(8 * var(--u));
   }
   .kibo-page .dog-wrap {
-    bottom: calc(95 * var(--u));
-    width: calc(420 * var(--u));
-    height: calc(300 * var(--u));
-    margin-left: calc(-210 * var(--u));
+    bottom: -10px;
+    width: calc(512 * var(--u));
+    height: calc(640 * var(--u));
+    margin-left: calc(-256 * var(--u));
   }
-  .kibo-page .pill--1 { left: calc(10 * var(--u)); bottom: calc(460 * var(--u)); }
-  .kibo-page .pill--2 { left: calc(220 * var(--u)); bottom: calc(360 * var(--u)); }
+  .kibo-page .pill--1 { left: calc(16 * var(--u)); bottom: calc(460 * var(--u)); }
+  .kibo-page .pill--2 { left: calc(206 * var(--u)); bottom: calc(360 * var(--u)); }
   .kibo-page .pill__face {
     height: calc(32 * var(--u));
     font-size: max(11px, calc(12 * var(--u)));
