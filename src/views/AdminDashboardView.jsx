@@ -479,6 +479,14 @@ const formatPeriodLabel = (ym) => {
   return `${name} ${year}`;
 };
 
+// Helper centralizado: Costo Unitario Neto Total puesto en bodega (Producto Neto + Despacho/Flete Unitario Neto)
+const getProductUnitCostNetoTotal = (prod) => {
+  if (!prod) return 0;
+  const unitNeto = Number(prod.unitCostNeto ?? prod.unit_cost_neto) || 0;
+  const shippingUnitCost = Number(prod.shippingUnitCost ?? prod.shipping_unit_cost) || 0;
+  return unitNeto + shippingUnitCost;
+};
+
 // Helper centralizado: al Precio Unitario Neto y al Despacho Unitario Neto se les calcula el IVA (19%)
 // Si se pasa `order` y corresponde al lote histórico de la Factura #78954 (previo a Factura #81006 del 20/10/2026),
 // utiliza el prorrateo proporcional de transporte de la Factura #78954 ($20.084 neto / $23.900 c/IVA sobre $204.804 neto).
@@ -2075,7 +2083,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const brandB = (b.brand || '').trim();
         comparison = brandA.localeCompare(brandB, 'es', { sensitivity: 'base' });
       } else if (inventorySortKey === 'unitCostNeto') {
-        comparison = (Number(a.unitCostNeto) || 0) - (Number(b.unitCostNeto) || 0);
+        comparison = getProductUnitCostNetoTotal(a) - getProductUnitCostNetoTotal(b);
       } else if (inventorySortKey === 'unitCostWithIva') {
         const costIvaA = getProductUnitCostWithIva(a);
         const costIvaB = getProductUnitCostWithIva(b);
@@ -10730,11 +10738,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <div>
                                 <span className="text-[9px] font-semibold text-slate-400 block">Costo neto</span>
                                 <span className="text-xs font-mono font-bold text-slate-600 block">
-                                  {formatCLP(prod.unitCostNeto)}
+                                  {formatCLP(getProductUnitCostNetoTotal(prod))}
                                 </span>
                                 {Number(prod.shippingUnitCost) > 0 && (
-                                  <span className="text-[9px] font-mono text-slate-400 font-medium block leading-tight">
-                                    +{formatCLP(prod.shippingUnitCost)} desp.
+                                  <span className="text-[8.5px] font-mono text-slate-400 font-medium block leading-tight">
+                                    {formatCLP(prod.unitCostNeto)} + {formatCLP(prod.shippingUnitCost)} env.
                                   </span>
                                 )}
                               </div>
@@ -10743,11 +10751,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <span className="text-xs font-mono font-bold text-[#111827] block">
                                   {formatCLP(unitCostWithIva)}
                                 </span>
-                                {Number(prod.shippingUnitCost) > 0 && (
-                                  <span className="text-[9px] font-mono text-[#D97706] font-semibold block leading-tight">
-                                    +{formatCLP(Math.round(Number(prod.shippingUnitCost) * 1.19))} desp.
-                                  </span>
-                                )}
                               </div>
                               <div>
                                 <span className="text-[9px] font-semibold text-slate-400 block">PVP venta</span>
@@ -11056,12 +11059,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   </span>
                                 </td>
 
-                                {/* 3. Costo Neto (Sin texto pequeño inferior) */}
-                                <td className="py-3.5 px-4 font-mono font-bold text-slate-600 text-sm whitespace-nowrap">
-                                  {formatCLP(prod.unitCostNeto)}
+                                {/* 3. Costo Neto (Total neto puesto en bodega: Producto + Envío, con desglose cuando aplica flete) */}
+                                <td className="py-3.5 px-4 font-mono whitespace-nowrap">
+                                  <div className="font-bold text-slate-700 text-sm">
+                                    {formatCLP(getProductUnitCostNetoTotal(prod))}
+                                  </div>
+                                  {Number(prod.shippingUnitCost) > 0 && (
+                                    <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                                      Prod. {formatCLP(prod.unitCostNeto)} + Flete {formatCLP(prod.shippingUnitCost)}
+                                    </div>
+                                  )}
                                 </td>
 
-                                {/* 4. Costo c/ IVA (Sin texto pequeño inferior) */}
+                                {/* 4. Costo c/ IVA (19% exacto sobre el Costo Neto Total) */}
                                 <td className="py-3.5 px-4 font-mono font-bold text-[#111827] text-sm whitespace-nowrap">
                                   {formatCLP(unitCostWithIva)}
                                 </td>
@@ -21340,12 +21350,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
         const unitCostNeto = Number(prod.unitCostNeto) || 0;
         const shippingUnitNeto = Number(prod.shippingUnitCost) || 0;
+        const totalUnitCostNeto = getProductUnitCostNetoTotal(prod);
         const shippingUnitWithIva = Math.round(shippingUnitNeto * 1.19);
         const unitCostWithIva = getProductUnitCostWithIva(prod);
         const salePrice = Number(prod.salePrice) || 0;
         const unitProfit = salePrice - unitCostWithIva;
         const unitMarginPct = salePrice > 0 ? Math.round((unitProfit / salePrice) * 100) : 0;
-        const totalSkuNetValue = (Number(prod.stock) || 0) * unitCostNeto;
+        const totalSkuNetValue = (Number(prod.stock) || 0) * totalUnitCostNeto;
         const formatLabel = prod.format || extractProductFormat(prod);
 
         const handleOpenEditFromModal = () => {
@@ -21507,22 +21518,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Neto</span>
-                      <span className="text-sm font-mono font-bold text-slate-800 mt-0.5 block">{formatCLP(unitCostNeto)}</span>
-                      {shippingUnitNeto > 0 && (
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Neto Total</span>
+                      <span className="text-sm font-mono font-bold text-slate-800 mt-0.5 block">{formatCLP(totalUnitCostNeto)}</span>
+                      {shippingUnitNeto > 0 ? (
                         <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
-                          +{formatCLP(shippingUnitNeto)} desp. neto
+                          Prod. {formatCLP(unitCostNeto)} + Flete {formatCLP(shippingUnitNeto)}
                         </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 block mt-0.5">Sin recargo de flete</span>
                       )}
                     </div>
                     <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Total c/IVA</span>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Total c/IVA (19%)</span>
                       <span className="text-sm font-mono font-bold text-slate-900 mt-0.5 block">{formatCLP(unitCostWithIva)}</span>
-                      {shippingUnitWithIva > 0 && (
-                        <span className="text-[10px] font-mono text-[#D97706] font-semibold block mt-0.5">
-                          Incluye +{formatCLP(shippingUnitWithIva)} desp. c/IVA
-                        </span>
-                      )}
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {shippingUnitWithIva > 0 ? `Prod. + Flete con 19% IVA` : `Costo Neto × 1,19`}
+                      </span>
                     </div>
                     <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
                       <span className="text-[10px] font-semibold text-slate-400 uppercase block">Precio de Venta</span>
