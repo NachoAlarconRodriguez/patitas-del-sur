@@ -5904,18 +5904,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const calculateRouteDeliveryInfo = useCallback(
     (address, city = '', deliveryZone = '', orderId = '', notes = '', driverName = '') => {
       const notesStr = String(notes || '');
-      const isFreeDeliveryOverride = /DespachoGratis:\s*Si/i.test(notesStr) || orderId === 'PED-0005';
       const loc = `${city || ''} ${address || ''} ${deliveryZone || ''}`.toLowerCase();
+      const isFreeDeliveryOverride =
+        /DespachoGratis:\s*Si/i.test(notesStr) ||
+        ['PED-0001', 'PED-0002', 'PED-0003', 'PED-0004', 'PED-0005', 'PED-0008', 'PED-0009', 'PED-0010'].includes(orderId) ||
+        loc.includes('espacio frutillar parcela 110');
       let kmRoundTrip = 14;
       let baseFixed = 0;
       let zoneName = 'Frutillar';
       let zoneDesc = 'Reparto local Frutillar (~14 km ida y vuelta)';
 
       if (loc.includes('espacio frutillar') || orderId === 'PED-0001') {
-        kmRoundTrip = 1;
+        kmRoundTrip = 0;
         baseFixed = 0;
         zoneName = 'Espacio Frutillar';
-        zoneDesc = 'Reparto interno Loteo Espacio Frutillar (~1 km ida y vuelta)';
+        zoneDesc = 'Reparto interno Loteo Espacio Frutillar (Sin costo de traslado)';
       } else if (loc.includes('frutillar')) {
         kmRoundTrip = 14;
         baseFixed = 0;
