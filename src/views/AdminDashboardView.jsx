@@ -1556,64 +1556,79 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     };
   }, []);
 
-  // 3. Sincronizar Clientes y Tutores con Supabase
+  // 3. Sincronizar Clientes y Tutores con Supabase (excluyendo administradores y cruzando con historial real de pedidos)
   useEffect(() => {
     let isMounted = true;
-    fetchAllCustomersForAdmin().then((dbCustomers) => {
-      if (!isMounted) return;
-      if (dbCustomers && dbCustomers.length > 0) {
-        const mapped = dbCustomers.map((c) => {
-          const rawPets = Array.isArray(c.pets) ? c.pets : [];
-          const mappedPets = rawPets.map((p) => ({
-            id: p.id,
-            name: p.name || 'Mascota',
-            type: p.type || 'perro',
-            breed: p.breed || 'Mestizo',
-            birthdate: p.birthdate || null,
-            age: p.age || '',
-            weight: p.weight || '5.0 kg',
-            sterilized: p.sterilized || 'Sí',
-            favoriteFood: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
-            foodName: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
-            bagSize: p.bag_size || '12 kg',
-            bagDurationDays: p.total_days_duration || 30,
-            daysRemaining: p.days_remaining ?? 30,
-            vaccines: p.vaccines || 'Al día ✓',
-            deworming: p.deworming || 'Al día ✓',
-            dewormingExternal: p.deworming_external || '',
-            dewormingInternal: p.deworming_internal || '',
-            vetClinic: p.vet_clinic || '',
-            allergies: p.allergies || 'Ninguna conocida',
-            notes: p.notes || '',
-          }));
+    const syncCustomers = async () => {
+      try {
+        const dbCustomers = await fetchAllCustomersForAdmin();
+        if (!isMounted) return;
+        if (dbCustomers && dbCustomers.length > 0) {
+          const nonAdminCustomers = dbCustomers.filter(
+            (c) => String(c.role || 'cliente').toLowerCase() !== 'admin'
+          );
 
-          return {
-            id: c.id,
-            name: c.full_name || 'Tutor Patitas',
-            email: c.email || '',
-            phone: c.phone || '+56 9 8456 1234',
-            city: c.city || 'Puerto Varas',
-            address: c.address || 'Dirección no registrada',
-            pets: mappedPets,
-            pet: mappedPets[0] || null,
-            petsSummary: mappedPets.map((p) => `${p.name} (${p.type})`).join(', ') || 'Sin mascotas',
-            points: c.points ?? 0,
-            totalSpent: Number(c.total_spent || 0),
-            ordersCount: c.orders_count || 0,
-            role: c.role || 'cliente',
-            memberSince: c.created_at
-              ? new Date(c.created_at).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
-              : 'Reciente',
-          };
-        });
+          const mapped = nonAdminCustomers.map((c) => {
+            const rawPets = Array.isArray(c.pets) ? c.pets : [];
+            const mappedPets = rawPets.map((p) => ({
+              id: p.id,
+              name: p.name || 'Mascota',
+              type: p.type || 'perro',
+              breed: p.breed || 'Mestizo',
+              birthdate: p.birthdate || null,
+              age: p.age || '',
+              weight: p.weight || '5.0 kg',
+              sterilized: p.sterilized || 'Sí',
+              favoriteFood: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
+              foodName: p.favorite_food_name || p.foodName || 'Bravery Salmón Adulto 12kg',
+              bagSize: p.bag_size || '12 kg',
+              bagDurationDays: p.total_days_duration || 30,
+              daysRemaining: p.days_remaining ?? 30,
+              vaccines: p.vaccines || 'Al día ✓',
+              deworming: p.deworming || 'Al día ✓',
+              dewormingExternal: p.deworming_external || '',
+              dewormingInternal: p.deworming_internal || '',
+              vetClinic: p.vet_clinic || '',
+              allergies: p.allergies || 'Ninguna conocida',
+              notes: p.notes || '',
+            }));
 
-        setCustomers(mapped);
-      } else {
-        setCustomers([]);
+            return {
+              id: c.id,
+              name: c.full_name || 'Tutor Patitas',
+              email: c.email || '',
+              phone: c.phone || '+56 9 8456 1234',
+              city: c.city || 'Frutillar',
+              address: c.address || 'Dirección no registrada',
+              pets: mappedPets,
+              pet: mappedPets[0] || null,
+              petsSummary: mappedPets.map((p) => `${p.name} (${p.type})`).join(', ') || 'Sin mascotas',
+              points: c.points ?? 0,
+              totalSpent: Number(c.total_spent || 0),
+              ordersCount: c.orders_count || 0,
+              role: c.role || 'cliente',
+              memberSince: c.created_at
+                ? new Date(c.created_at).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
+                : 'Reciente',
+            };
+          });
+
+          setCustomers(mapped);
+        } else {
+          setCustomers([]);
+        }
+      } catch (err) {
+        console.error('Error synchronizing customers with Supabase:', err);
       }
-    });
+    };
+
+    syncCustomers();
+    window.addEventListener('patitas_customers_updated', syncCustomers);
+    window.addEventListener('patitas_orders_updated', syncCustomers);
     return () => {
       isMounted = false;
+      window.removeEventListener('patitas_customers_updated', syncCustomers);
+      window.removeEventListener('patitas_orders_updated', syncCustomers);
     };
   }, []);
 
@@ -9803,8 +9818,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 const allPetsList = customers.flatMap((c) =>
                   Array.isArray(c.pets) && c.pets.length > 0 ? c.pets : c.pet ? [c.pet] : []
                 );
-                const totalCrmSpent = customers.reduce((acc, c) => acc + (Number(c.totalSpent) || 0), 0);
-                const totalCrmOrders = customers.reduce((acc, c) => acc + (Number(c.ordersCount) || 0), 0);
+                const validOrders = (orders || []).filter((o) => o.status !== 'cancelado');
+                const totalFromOrders = validOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+                const totalFromCustomers = customers.reduce((acc, c) => acc + (Number(c.totalSpent) || 0), 0);
+                const totalCrmSpent = Math.max(totalFromOrders, totalFromCustomers);
+                const totalCrmOrders = Math.max(
+                  validOrders.length,
+                  customers.reduce((acc, c) => acc + (Number(c.ordersCount) || 0), 0)
+                );
                 const urgentReplenishmentsCount = allPetsList.filter((p) => (p.daysRemaining ?? 99) < 10).length;
                 const birthdayMonthCount = allPetsList.filter((p) => getPetBirthdayDetails(p.birthdate).isCurrentMonth).length;
 
@@ -9855,7 +9876,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <span className="text-2xl xl:text-[26px] font-extrabold text-[#111827] tracking-tight leading-none">
                           {formatCLP(totalCrmSpent)}
                         </span>
-                        <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                       </div>
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">

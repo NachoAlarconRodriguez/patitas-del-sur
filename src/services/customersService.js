@@ -430,7 +430,9 @@ export async function fetchAllCustomersForAdmin() {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data || [];
+    return (data || []).filter(
+      (c) => String(c.role || 'cliente').toLowerCase() !== 'admin'
+    );
   } catch (err) {
     console.error('Error fetching customers for admin:', err);
     return [];

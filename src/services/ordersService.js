@@ -38,10 +38,74 @@ export async function createOrderInSupabase(orderData, items = []) {
     const finalOrderId = orderData.id || (await getNextOrderId());
     const seqMatch = String(finalOrderId).match(/PED-(\d+)/i);
     const seqNum = seqMatch ? seqMatch[1] : '0001';
+    const orderTotalNum = Number(orderData.total || 0);
+    const earnedPts =
+      orderData.pointsEarned !== undefined
+        ? Number(orderData.pointsEarned) || 0
+        : Math.floor(orderTotalNum / 1000);
+
+    // 1. Vincular o registrar automáticamente al cliente en la tabla customers (CRM)
+    let resolvedCustomerId = orderData.customerId || null;
+    try {
+      const phone9 = String(orderData.customerPhone || '').replace(/\D/g, '').slice(-9);
+      const cleanEmail = String(orderData.customerEmail || '').trim().toLowerCase();
+      const cleanName = String(orderData.customerName || 'Cliente Patitas').trim();
+
+      const { data: allCusts } = await supabase
+        .from('customers')
+        .select('id, full_name, email, phone, role, points, total_spent, address, city');
+
+      let matchedCust = (allCusts || []).find((c) => {
+        if (resolvedCustomerId && c.id === resolvedCustomerId) return true;
+        const cPhone9 = String(c.phone || '').replace(/\D/g, '').slice(-9);
+        if (phone9 && phone9.length === 9 && cPhone9 === phone9) return true;
+        if (cleanEmail && c.email && c.email.toLowerCase() === cleanEmail) return true;
+        return false;
+      });
+
+      if (matchedCust && String(matchedCust.role || 'cliente').toLowerCase() !== 'admin') {
+        resolvedCustomerId = matchedCust.id;
+        await supabase
+          .from('customers')
+          .update({
+            total_spent: (Number(matchedCust.total_spent) || 0) + orderTotalNum,
+            points: (Number(matchedCust.points) || 0) + earnedPts,
+            address: orderData.address || matchedCust.address || '',
+            city: orderData.city || matchedCust.city || 'Frutillar',
+          })
+          .eq('id', matchedCust.id);
+      } else if (!matchedCust && (phone9 || cleanName)) {
+        const { data: createdCust } = await supabase
+          .from('customers')
+          .insert({
+            full_name: cleanName,
+            email: cleanEmail || null,
+            phone: orderData.customerPhone || '',
+            city: orderData.city || 'Frutillar',
+            address: orderData.address || '',
+            role: 'cliente',
+            points: earnedPts,
+            total_spent: orderTotalNum,
+            whatsapp_notifications: true,
+          })
+          .select('id')
+          .single();
+
+        if (createdCust?.id) {
+          resolvedCustomerId = createdCust.id;
+        }
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('patitas_customers_updated'));
+      }
+    } catch (crmSyncErr) {
+      console.warn('Error sincronizando cliente en CRM al crear pedido:', crmSyncErr);
+    }
 
     const orderPayload = {
       id: finalOrderId,
-      customer_id: orderData.customerId || null,
+      customer_id: resolvedCustomerId,
       customer_name: orderData.customerName || 'Cliente Web',
       customer_email: orderData.customerEmail || null,
       customer_phone: orderData.customerPhone || null,
@@ -54,8 +118,8 @@ export async function createOrderInSupabase(orderData, items = []) {
       subtotal: orderData.subtotal || 0,
       shipping_cost: orderData.shippingCost || 0,
       discount: orderData.discount || 0,
-      total: orderData.total || 0,
-      points_earned: orderData.pointsEarned !== undefined ? orderData.pointsEarned : Math.floor((orderData.total || 0) / 1000),
+      total: orderTotalNum,
+      points_earned: earnedPts,
       delivery_day_text: orderData.deliveryDayText || 'Hoy Mismo',
       delivery_date:
         orderData.deliveryDate ||
