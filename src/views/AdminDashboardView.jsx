@@ -165,6 +165,7 @@ import {
   getPlaceDetails,
   getSingleOrderNavigationUrl,
   optimizeDeliveryRoute,
+  detectCommuneFromAddress,
   CENTRAL_HUB,
   ALLOWED_COMMUNES,
 } from '../services/googleMapsService.js';
@@ -2200,7 +2201,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     phone: '',
     email: '',
     address: '',
-    city: 'Puerto Varas',
+    city: '',
     petName: '',
     petType: '🐶 Perro',
     notes: '',
@@ -2225,6 +2226,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [showMapsDropdown, setShowMapsDropdown] = useState(false);
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
   const [selectedFromMaps, setSelectedFromMaps] = useState(false);
+  const mapsSearchTimerRef = useRef(null);
+  const mapsSearchReqIdRef = useRef(0);
+  const orderMapsSearchTimerRef = useRef(null);
+  const orderMapsSearchReqIdRef = useRef(0);
 
   // Estado para editar la dirección de entrega de un pedido existente con Google Maps API
   const [isEditingOrderAddress, setIsEditingOrderAddress] = useState(false);
@@ -2239,30 +2244,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     setShowOrderMapsDropdown(false);
   }, [selectedOrderModal?.id]);
 
-  const handleOrderAddressMapsSearch = async (val) => {
+  const handleOrderAddressMapsSearch = (val) => {
     setOrderAddressEditQuery(val);
+    if (orderMapsSearchTimerRef.current) {
+      clearTimeout(orderMapsSearchTimerRef.current);
+    }
+
     if (!val || val.trim().length < 2) {
       setOrderAddressEditResults([]);
       setShowOrderMapsDropdown(false);
+      setIsSearchingOrderMaps(false);
       return;
     }
 
     setIsSearchingOrderMaps(true);
     setShowOrderMapsDropdown(true);
+    const reqId = ++orderMapsSearchReqIdRef.current;
 
-    try {
-      const results = await getGooglePlacePredictions(val);
-      setOrderAddressEditResults(results);
-    } catch {
-      const clean = val.trim().toLowerCase();
-      const localMatches = POPULAR_MAPS_ADDRESSES.filter(
-        (item) =>
-          item.address.toLowerCase().includes(clean) || item.city.toLowerCase().includes(clean)
-      );
-      setOrderAddressEditResults(localMatches.slice(0, 5));
-    } finally {
-      setIsSearchingOrderMaps(false);
-    }
+    orderMapsSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await getGooglePlacePredictions(val);
+        if (orderMapsSearchReqIdRef.current === reqId) {
+          setOrderAddressEditResults(results);
+        }
+      } catch {
+        if (orderMapsSearchReqIdRef.current === reqId) {
+          setOrderAddressEditResults([]);
+        }
+      } finally {
+        if (orderMapsSearchReqIdRef.current === reqId) {
+          setIsSearchingOrderMaps(false);
+        }
+      }
+    }, 200);
   };
 
   const handleSaveOrderAddress = async (orderId, newAddress, newCity) => {
@@ -2315,7 +2329,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const typedQuery = (orderAddressEditQuery || '').trim();
     const typedNumberMatch = typedQuery.match(/\b(\d+[a-zA-Z]?)\b/);
     let streetName = item.mainText || item.address || item.fullAddress;
-    let cityName = item.city || orderAddressEditCity || selectedOrderModal?.city || 'Frutillar';
+    let cityName =
+      item.city ||
+      detectCommuneFromAddress(item.fullAddress || item.address) ||
+      orderAddressEditCity ||
+      selectedOrderModal?.city ||
+      'Frutillar';
 
     if (item.placeId && item.source === 'google') {
       try {
@@ -2387,36 +2406,50 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     );
   };
 
-  const handleMapsSearch = async (val) => {
+  const handleMapsSearch = (val) => {
     setMapsSearchQuery(val);
+    if (mapsSearchTimerRef.current) {
+      clearTimeout(mapsSearchTimerRef.current);
+    }
+
     if (!val || val.trim().length < 2) {
       setMapsSearchResults([]);
       setShowMapsDropdown(false);
+      setIsSearchingMaps(false);
       return;
     }
 
     setIsSearchingMaps(true);
     setShowMapsDropdown(true);
+    const reqId = ++mapsSearchReqIdRef.current;
 
-    try {
-      const results = await getGooglePlacePredictions(val);
-      setMapsSearchResults(results);
-    } catch {
-      const clean = val.trim().toLowerCase();
-      const localMatches = POPULAR_MAPS_ADDRESSES.filter((item) =>
-        item.address.toLowerCase().includes(clean) || item.city.toLowerCase().includes(clean)
-      );
-      setMapsSearchResults(localMatches.slice(0, 5));
-    } finally {
-      setIsSearchingMaps(false);
-    }
+    mapsSearchTimerRef.current = setTimeout(async () => {
+      try {
+        const results = await getGooglePlacePredictions(val);
+        if (mapsSearchReqIdRef.current === reqId) {
+          setMapsSearchResults(results);
+        }
+      } catch {
+        if (mapsSearchReqIdRef.current === reqId) {
+          setMapsSearchResults([]);
+        }
+      } finally {
+        if (mapsSearchReqIdRef.current === reqId) {
+          setIsSearchingMaps(false);
+        }
+      }
+    }, 200);
   };
 
   const handleSelectMapsAddress = async (item) => {
     const typedQuery = (mapsSearchQuery || '').trim();
     const typedNumberMatch = typedQuery.match(/\b(\d+[a-zA-Z]?)\b/);
     let streetName = item.mainText || item.address || item.fullAddress;
-    let cityName = item.city || manualOrderCustomer.city || 'Puerto Varas';
+    let cityName =
+      item.city ||
+      detectCommuneFromAddress(item.fullAddress || item.address) ||
+      manualOrderCustomer.city ||
+      'Frutillar';
     let resolvedLat = item.lat || null;
     let resolvedLng = item.lng || null;
 
@@ -3934,10 +3967,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return;
     }
 
+    const resolvedManualCity =
+      manualOrderCustomer.city ||
+      detectCommuneFromAddress(cleanAddress) ||
+      'Frutillar';
     const subtotal = manualOrderItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
     const routeDeliveryInfo = calculateRouteDeliveryInfo(
       cleanAddress,
-      manualOrderCustomer.city || 'Frutillar'
+      resolvedManualCity
     );
     const isFreeShippingManual = Boolean(manualOrderCustomer.freeShippingOverride);
     const shipping = isFreeShippingManual ? 0 : routeDeliveryInfo.routeBaseCost;
@@ -3999,10 +4036,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       tracking: `CHI-${Math.floor(8000000 + Math.random() * 1000000)}`,
       invoiceNumber: invoiceNum,
       address: cleanAddress,
-      city: manualOrderCustomer.city || 'Puerto Varas',
+      city: resolvedManualCity,
       lat: manualOrderCustomer.lat || null,
       lng: manualOrderCustomer.lng || null,
-      deliveryZone: `Entrega ${manualOrderCustomer.city || 'Puerto Varas'}`,
+      deliveryZone: `Entrega ${resolvedManualCity}`,
       deliveredByName: currentAdminName,
       notes: `${manualOrderCustomer.notes || 'Pedido creado manualmente en el panel'} | Repartidor: ${currentAdminName}${isFreeShippingManual ? ' | DespachoGratis: Si' : ''}`,
     };
@@ -4065,7 +4102,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       phone: '',
       email: '',
       address: '',
-      city: 'Puerto Varas',
+      city: '',
       petName: '',
       petType: '🐶 Perro',
       notes: '',
@@ -15553,6 +15590,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           setOrderPetTypeFilter(resolvedPetType.includes('Gato') ? 'gatos' : 'perros');
           if (validCustAddress) {
             setMapsSearchQuery(validCustAddress);
+            setSelectedFromMaps(true);
             setManualOrderAddressTouched(false);
           }
           setShowPhoneSuggestions(false);
@@ -16886,9 +16924,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             placeholder="Buscar dirección obligatoria en Google Maps (ej: San Pedro 11)..."
                             value={mapsSearchQuery}
                             onChange={(e) => {
-                              handleMapsSearch(e.target.value);
-                              setManualOrderCustomer((prev) => ({ ...prev, address: e.target.value }));
-                              if (e.target.value.trim()) {
+                              const val = e.target.value;
+                              setSelectedFromMaps(false);
+                              handleMapsSearch(val);
+                              const autoCity = detectCommuneFromAddress(val);
+                              setManualOrderCustomer((prev) => ({
+                                ...prev,
+                                address: val,
+                                lat: null,
+                                lng: null,
+                                ...(autoCity ? { city: autoCity } : {}),
+                              }));
+                              if (val.trim()) {
                                 setManualOrderAddressTouched(false);
                               }
                             }}
@@ -16913,7 +16960,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 setMapsSearchResults([]);
                                 setShowMapsDropdown(false);
                                 setSelectedFromMaps(false);
-                                setManualOrderCustomer((prev) => ({ ...prev, address: '' }));
+                                setManualOrderCustomer((prev) => ({
+                                  ...prev,
+                                  address: '',
+                                  city: '',
+                                  lat: null,
+                                  lng: null,
+                                }));
                                 setManualOrderAddressTouched(true);
                               }}
                               className="p-1 text-slate-400 hover:text-slate-600 rounded-full cursor-pointer"
@@ -16936,11 +16989,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-amber-200/90 rounded-2xl shadow-xl overflow-hidden z-30 divide-y divide-amber-100/70 max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
                             <div className="px-3 py-1.5 bg-amber-50/70 flex items-center justify-between text-[10px] font-bold text-[#92400E]/80 uppercase tracking-wider">
                               <span>Direcciones en Google Maps</span>
-                              <span className="text-[#D97706] font-bold">Dirección Exacta</span>
+                              <span className="text-[#D97706] font-bold">Cobertura Los Lagos</span>
                             </div>
                             {mapsSearchResults.map((res, idx) => (
                               <button
-                                key={idx}
+                                key={res.placeId || idx}
                                 type="button"
                                 onClick={() => handleSelectMapsAddress(res)}
                                 className="w-full text-left px-3.5 py-2.5 hover:bg-amber-50/60 transition-colors flex items-start gap-2.5 cursor-pointer group"
@@ -16949,24 +17002,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   <MapPin className="w-3.5 h-3.5 fill-[#F5BA13] text-[#D97706]" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-[#D97706] transition-colors">
-                                    {res.address}
-                                  </p>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <p className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-[#D97706] transition-colors">
+                                      {res.address}
+                                    </p>
+                                    {res.city && (
+                                      <span className="text-[9px] font-black text-[#92400E] bg-amber-100/80 border border-amber-200 px-1.5 py-0.2 rounded shrink-0">
+                                        {res.city}
+                                      </span>
+                                    )}
+                                  </div>
                                   <p className="text-[11px] text-slate-500 font-medium truncate">
-                                    {res.city}, {res.region || 'Región de Los Lagos'}
+                                    {res.secondaryText || `${res.city || 'Zona de Despacho'}, ${res.region || 'Región de Los Lagos'}`}
                                   </p>
                                 </div>
-                                <span className="text-[10px] font-bold text-[#92400E] bg-[#F5BA13]/25 px-2 py-0.5 rounded-full shrink-0">
+                                <span className="text-[10px] font-bold text-[#92400E] bg-[#F5BA13]/25 px-2 py-0.5 rounded-full shrink-0 self-center">
                                   Fijar
                                 </span>
                               </button>
                             ))}
                           </div>
                         )}
+
+                        {showMapsDropdown && !isSearchingMaps && mapsSearchQuery.trim().length >= 3 && mapsSearchResults.length === 0 && (
+                          <div className="mt-1.5 px-3.5 py-2.5 bg-amber-50/60 border border-amber-200/80 rounded-2xl text-[11px] text-[#92400E] font-semibold flex items-center gap-2">
+                            <AlertCircle className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                            <span>No se encontraron coincidencias en Google Maps dentro de la zona de reparto.</span>
+                          </div>
+                        )}
                       </div>
 
                       {/* Tarjeta de dirección exacta fijada desde Maps */}
-                      {(manualOrderCustomer.address || selectedFromMaps) && (
+                      {selectedFromMaps && manualOrderCustomer.address && (
                         <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-amber-950 flex items-center justify-between gap-3 text-xs animate-in fade-in shadow-2xs">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="w-7 h-7 rounded-xl bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-xs">
@@ -16977,7 +17044,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 {manualOrderCustomer.address}
                               </p>
                               <p className="text-[11px] text-[#92400E] font-semibold truncate">
-                                {manualOrderCustomer.city || 'Puerto Varas'}, Región de Los Lagos
+                                {manualOrderCustomer.city || detectCommuneFromAddress(manualOrderCustomer.address) || 'Frutillar'}, Región de Los Lagos
                               </p>
                             </div>
                           </div>

@@ -80,17 +80,20 @@ export default function GoogleAddressAutocomplete({
 
   const handleSelectPrediction = async (pred) => {
     setIsLoading(true);
+    const typedQuery = (query || '').trim();
+    const typedNumberMatch = typedQuery.match(/\b(\d+[a-zA-Z]?)\b/);
+
     const initialDetectedCity =
       pred.city ||
       detectCommuneFromAddress(pred.fullAddress || pred.mainText) ||
-      'Puerto Varas';
+      '';
 
     let selectedData = {
       street: pred.mainText || pred.fullAddress,
       city: initialDetectedCity,
       formattedAddress: pred.fullAddress,
-      lat: null,
-      lng: null,
+      lat: pred.lat || null,
+      lng: pred.lng || null,
       isAllowedZone: pred.isAllowedZone,
     };
 
@@ -104,13 +107,21 @@ export default function GoogleAddressAutocomplete({
             street: details.street || selectedData.street,
             city: details.city || selectedData.city,
             formattedAddress: details.formattedAddress || selectedData.formattedAddress,
-            lat: details.lat,
-            lng: details.lng,
+            lat: details.lat ?? selectedData.lat,
+            lng: details.lng ?? selectedData.lng,
           };
         }
       } catch (e) {
         console.warn('Details lookup error:', e);
       }
+    }
+
+    if (
+      typedNumberMatch &&
+      selectedData.street &&
+      !new RegExp(`\\b${typedNumberMatch[1]}\\b`).test(selectedData.street)
+    ) {
+      selectedData.street = `${selectedData.street} ${typedNumberMatch[1]}`.trim();
     }
 
     setIsLoading(false);

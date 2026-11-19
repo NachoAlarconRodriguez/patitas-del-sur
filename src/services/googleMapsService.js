@@ -33,6 +33,45 @@ export const ALLOWED_COMMUNES = [
   'Puerto Octay',
 ];
 
+// Límites geográficos exactos que envuelven las 7 comunas de despacho en la Cuenca del Lago Llanquihue
+// (Puerto Octay al norte, Puerto Varas al sur, Fresia al oeste, Totoral/Ensenada al este)
+export const DELIVERY_AREA_BOUNDS = {
+  south: -41.36,
+  west: -73.48,
+  north: -40.96,
+  east: -72.50,
+};
+
+// Comunas vecinas fuera de la zona habitual (para evitar falsos positivos con "Provincia de Llanquihue")
+const NON_ALLOWED_NEIGHBOR_COMMUNES = [
+  'Puerto Montt',
+  'Alerce',
+  'Purranque',
+  'Corte Alto',
+  'Río Negro',
+  'Rio Negro',
+  'Osorno',
+  'Los Muermos',
+  'Calbuco',
+  'Maullín',
+  'Maullin',
+  'Cochamó',
+  'Cochamo',
+  'Ancud',
+  'Castro',
+];
+
+// Localidades y sectores conocidos que pertenecen a una de las 7 comunas permitidas
+const LOCALITY_TO_COMMUNE_MAP = [
+  { keywords: ['frutillar alto', 'frutillar bajo', 'punta larga', 'quilanto', 'pantanosa', 'los bajos'], commune: 'Frutillar' },
+  { keywords: ['casma'], commune: 'Casma' },
+  { keywords: ['fresia', 'tegualda', 'parga'], commune: 'Fresia' },
+  { keywords: ['totoral'], commune: 'Totoral' },
+  { keywords: ['puerto octay', 'las cascadas', 'centinela', 'nochaco'], commune: 'Puerto Octay' },
+  { keywords: ['nueva braunau', 'ensenada', 'colonia tres puentes', 'peulla', 'ralún', 'ralun'], commune: 'Puerto Varas' },
+  { keywords: ['los pellines', 'colegual', 'loncotoro'], commune: 'Llanquihue' },
+];
+
 // Coordenadas de referencia para cada comuna (para cálculo de proximidad y fallback)
 export const TOWN_COORDINATES = {
   'Puerto Varas': { lat: -41.3195, lng: -72.9854 },
@@ -168,7 +207,7 @@ export function normalizeCommune(cityName = '') {
 /**
  * Detecta de forma inteligente y exacta la comuna de despacho a partir de un texto
  * de dirección o de los addressComponents de Google Maps.
- * Evita el falso positivo de 'Provincia de Llanquihue' frente a comunas como Frutillar, Fresia, etc.
+ * Evita el falso positivo de 'Provincia de Llanquihue' frente a comunas como Frutillar, Fresia, Puerto Montt, etc.
  */
 export function detectCommuneFromAddress(fullText = '', addressComponents = []) {
   // 1. Si tenemos addressComponents de Google Maps
@@ -177,45 +216,57 @@ export function detectCommuneFromAddress(fullText = '', addressComponents = []) 
     const admin3 = addressComponents.find((c) =>
       c.types?.includes('administrative_area_level_3')
     );
-    const admin3Name = admin3?.longText || admin3?.long_name || '';
+    const admin3Name = (admin3?.longText || admin3?.long_name || '').trim();
     if (admin3Name) {
+      const admin3Lower = admin3Name.toLowerCase();
       for (const com of ALLOWED_COMMUNES) {
         if (
-          admin3Name.toLowerCase().includes(com.toLowerCase()) ||
-          com.toLowerCase().includes(admin3Name.toLowerCase())
+          admin3Lower.includes(com.toLowerCase()) ||
+          com.toLowerCase().includes(admin3Lower)
         ) {
           return com;
         }
       }
-    }
-
-    // Prioridad 2: locality (Ciudad o pueblo, ej: Frutillar, Puerto Varas)
-    const localityComp = addressComponents.find((c) =>
-      c.types?.includes('locality')
-    );
-    const localityName = localityComp?.longText || localityComp?.long_name || '';
-    if (localityName) {
-      for (const com of ALLOWED_COMMUNES) {
-        if (
-          localityName.toLowerCase().includes(com.toLowerCase()) ||
-          com.toLowerCase().includes(localityName.toLowerCase())
-        ) {
-          return com;
-        }
+      // Si Google informa una comuna oficial (ej. "Puerto Montt") que NO está en ALLOWED_COMMUNES,
+      // no seguir buscando para no confundir "Provincia de Llanquihue" con la comuna de Llanquihue
+      if (
+        NON_ALLOWED_NEIGHBOR_COMMUNES.some(
+          (n) => admin3Lower.includes(n.toLowerCase()) || n.toLowerCase().includes(admin3Lower)
+        )
+      ) {
+        return null;
       }
     }
 
-    // Prioridad 3: sublocality / neighborhood
-    const subComp = addressComponents.find((c) =>
-      c.types?.includes('sublocality') || c.types?.includes('neighborhood')
+    // Prioridad 2: sublocality / neighborhood / locality (validando primero localidades específicas)
+    const localityComp = addressComponents.find((c) => c.types?.includes('locality'));
+    const subComp = addressComponents.find(
+      (c) => c.types?.includes('sublocality') || c.types?.includes('neighborhood')
     );
-    const subName = subComp?.longText || subComp?.long_name || '';
-    if (subName) {
-      for (const com of ALLOWED_COMMUNES) {
-        if (
-          subName.toLowerCase().includes(com.toLowerCase()) ||
-          com.toLowerCase().includes(subName.toLowerCase())
-        ) {
+    const combinedCompText = `${subComp?.longText || subComp?.long_name || ''} ${
+      localityComp?.longText || localityComp?.long_name || ''
+    }`
+      .trim()
+      .toLowerCase();
+
+    if (combinedCompText) {
+      for (const entry of LOCALITY_TO_COMMUNE_MAP) {
+        if (entry.keywords.some((kw) => combinedCompText.includes(kw))) {
+          return entry.commune;
+        }
+      }
+      // Priorizar comunas específicas antes que Llanquihue
+      const specificCommunes = [
+        'Frutillar',
+        'Puerto Varas',
+        'Puerto Octay',
+        'Fresia',
+        'Casma',
+        'Totoral',
+        'Llanquihue',
+      ];
+      for (const com of specificCommunes) {
+        if (combinedCompText.includes(com.toLowerCase())) {
           return com;
         }
       }
@@ -230,54 +281,274 @@ export function detectCommuneFromAddress(fullText = '', addressComponents = []) 
     .replace(/provincia\s+de\s+llanquihue/gi, '')
     .toLowerCase();
 
-  // Priorizar comunas más específicas primero (Llanquihue al final)
-  const prioritizedCommunes = [
+  // Revisar primero sectores/localidades conocidos (ej. "Frutillar Alto", "Nueva Braunau", "Las Cascadas")
+  for (const entry of LOCALITY_TO_COMMUNE_MAP) {
+    if (entry.keywords.some((kw) => cleanedText.includes(kw))) {
+      return entry.commune;
+    }
+  }
+
+  // Priorizar comunas específicas primero (sin Llanquihue aún)
+  const specificAllowedCommunes = [
     'Frutillar',
     'Puerto Varas',
     'Puerto Octay',
     'Fresia',
     'Casma',
     'Totoral',
-    'Llanquihue',
   ];
 
-  for (const com of prioritizedCommunes) {
+  for (const com of specificAllowedCommunes) {
     const regex = new RegExp(`\\b${com.toLowerCase()}\\b`, 'i');
     if (regex.test(cleanedText)) {
       return com;
     }
   }
 
-  for (const com of prioritizedCommunes) {
+  for (const com of specificAllowedCommunes) {
     if (cleanedText.includes(com.toLowerCase())) {
       return com;
     }
+  }
+
+  // Antes de asumir "Llanquihue", verificar que no sea otra comuna de la Provincia de Llanquihue (ej. "Puerto Montt, Llanquihue")
+  for (const neighbor of NON_ALLOWED_NEIGHBOR_COMMUNES) {
+    if (cleanedText.includes(neighbor.toLowerCase())) {
+      return null;
+    }
+  }
+
+  if (/\bllanquihue\b/i.test(cleanedText) || cleanedText.includes('llanquihue')) {
+    return 'Llanquihue';
   }
 
   return null;
 }
 
 /**
- * Verifica si una dirección o comuna está dentro de las comunas permitidas
+ * Extrae la ciudad/comuna real informada por Google cuando la dirección no pertenece a las 7 comunas de reparto,
+ * evitando sobreescribirla falsamente con 'Puerto Varas'.
  */
-export function isAllowedDeliveryArea(text = '') {
-  const lower = (text || '').toLowerCase();
-  return ALLOWED_COMMUNES.some((commune) => lower.includes(commune.toLowerCase()));
+export function extractRealCityFromText(fullDescription = '', secondaryText = '', addressComponents = []) {
+  const allowed =
+    detectCommuneFromAddress(fullDescription, addressComponents) ||
+    detectCommuneFromAddress(secondaryText);
+  if (allowed) return allowed;
+
+  if (Array.isArray(addressComponents) && addressComponents.length > 0) {
+    const admin3 = addressComponents.find((c) => c.types?.includes('administrative_area_level_3'));
+    const locality = addressComponents.find((c) => c.types?.includes('locality'));
+    const compCity = (admin3?.longText || admin3?.long_name || locality?.longText || locality?.long_name || '').trim();
+    if (compCity) return compCity;
+  }
+
+  const combined = `${secondaryText || ''}, ${fullDescription || ''}`;
+  for (const neighbor of NON_ALLOWED_NEIGHBOR_COMMUNES) {
+    if (combined.toLowerCase().includes(neighbor.toLowerCase())) {
+      return neighbor;
+    }
+  }
+
+  if (secondaryText && typeof secondaryText === 'string') {
+    const parts = secondaryText
+      .split(',')
+      .map((p) => p.replace(/\b\d{5,8}\b/g, '').trim())
+      .filter(
+        (p) =>
+          p &&
+          !/^(chile|los lagos|regi[oó]n de los lagos|provincia de llanquihue)$/i.test(p)
+      );
+    if (parts.length > 0) {
+      return parts[parts.length - 1];
+    }
+  }
+
+  return '';
 }
 
 /**
- * Obtiene sugerencias de autocompletado desde Google Places Autocomplete
- * Restringido a Chile y con sesgo geográfico a la cuenca del Lago Llanquihue
+ * Limpia el texto secundario de Google Maps para eliminar el nombre provincial redundante "Llanquihue"
+ * cuando la dirección pertenece en realidad a Frutillar, Puerto Varas, Fresia, etc.
+ * (Ej: "Llanquihue, Frutillar" -> "Frutillar, Región de Los Lagos")
+ */
+export function formatCleanSecondaryText(rawSecondaryText = '', detectedCity = '') {
+  const cleanCity = (detectedCity || '').trim();
+  const rawParts = String(rawSecondaryText || '')
+    .split(',')
+    .map((p) => p.replace(/\b\d{5,8}\b/g, '').trim())
+    .filter(Boolean);
+
+  const filteredParts = rawParts.filter((part) => {
+    const lower = part.toLowerCase();
+    if (lower === 'chile' || lower === 'los lagos' || lower === 'región de los lagos' || lower === 'region de los lagos') {
+      return false;
+    }
+    if (lower === 'provincia de llanquihue') {
+      return false;
+    }
+    // Si la comuna detectada es Frutillar, Puerto Varas, Fresia, etc. (distinta de Llanquihue),
+    // quitar "Llanquihue" suelto que Google agrega por la Provincia de Llanquihue
+    if (cleanCity && cleanCity.toLowerCase() !== 'llanquihue' && lower === 'llanquihue') {
+      return false;
+    }
+    return true;
+  });
+
+  if (
+    cleanCity &&
+    !filteredParts.some((p) => p.toLowerCase() === cleanCity.toLowerCase())
+  ) {
+    filteredParts.push(cleanCity);
+  }
+
+  if (filteredParts.length === 0) {
+    return 'Región de Los Lagos';
+  }
+
+  return `${filteredParts.join(', ')}, Región de Los Lagos`;
+}
+
+/**
+ * Verifica si una dirección o comuna está dentro de las comunas permitidas
+ */
+export function isAllowedDeliveryArea(text = '', addressComponents = []) {
+  return Boolean(detectCommuneFromAddress(text, addressComponents));
+}
+
+/**
+ * Formatea una sugerencia cruda de Places API (New) en el objeto estándar de la aplicación
+ */
+function formatPlacePredictionItem(pred, extractText) {
+  if (!pred) return null;
+
+  const placeId = pred.placeId || pred.place_id;
+  const structured = pred.structuredFormat || pred.structured_formatting;
+  const mainText =
+    extractText(pred.mainText) ||
+    extractText(structured?.mainText) ||
+    extractText(structured?.main_text) ||
+    extractText(pred.text) ||
+    extractText(pred.description);
+  const rawSecondaryText =
+    extractText(pred.secondaryText) ||
+    extractText(structured?.secondaryText) ||
+    extractText(structured?.secondary_text) ||
+    '';
+  const fullDescription =
+    extractText(pred.text) ||
+    extractText(pred.description) ||
+    (rawSecondaryText ? `${mainText}, ${rawSecondaryText}` : mainText);
+
+  const allowedCommune =
+    detectCommuneFromAddress(fullDescription) ||
+    detectCommuneFromAddress(rawSecondaryText) ||
+    detectCommuneFromAddress(mainText);
+
+  const realCity =
+    allowedCommune ||
+    extractRealCityFromText(fullDescription, rawSecondaryText) ||
+    '';
+
+  const inZone = Boolean(allowedCommune);
+  const cleanSecondary = formatCleanSecondaryText(rawSecondaryText, realCity);
+
+  return {
+    placeId,
+    address: mainText,
+    mainText,
+    secondaryText: cleanSecondary,
+    rawSecondaryText,
+    region: 'Región de Los Lagos',
+    fullAddress: fullDescription,
+    city: realCity,
+    isAllowedZone: inZone,
+    source: 'google',
+  };
+}
+
+/**
+ * Obtiene sugerencias de autocompletado desde Google Places API (New)
+ * Restringido geográficamente a las 7 comunas de cobertura en la Cuenca del Lago Llanquihue
  */
 export async function getGooglePlacePredictions(inputQuery) {
   if (!inputQuery || inputQuery.trim().length < 2) return [];
 
   const query = inputQuery.trim();
 
+  // Helper para extraer texto seguro de los objetos FormattedText de Google
+  const extractText = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val.text === 'string') return val.text;
+    if (typeof val.toString === 'function') return val.toString();
+    return String(val);
+  };
+
+  const sortAndFilterPredictions = (list) => {
+    const valid = list.filter(Boolean);
+    valid.sort((a, b) => {
+      if (a.isAllowedZone && !b.isAllowedZone) return -1;
+      if (!a.isAllowedZone && b.isAllowedZone) return 1;
+      return 0;
+    });
+    return valid.slice(0, 6);
+  };
+
+  // 1. Método directo Places API (New) REST Endpoint con locationRestriction.rectangle exacto
+  // (No requiere esperar la descarga del script Maps JS y filtra estrictamente al polígono de las 7 comunas)
+  if (typeof fetch === 'function' && GOOGLE_MAPS_API_KEY) {
+    try {
+      const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+        },
+        body: JSON.stringify({
+          input: query,
+          languageCode: 'es',
+          regionCode: 'cl',
+          includedRegionCodes: ['cl'],
+          locationRestriction: {
+            rectangle: {
+              low: {
+                latitude: DELIVERY_AREA_BOUNDS.south,
+                longitude: DELIVERY_AREA_BOUNDS.west,
+              },
+              high: {
+                latitude: DELIVERY_AREA_BOUNDS.north,
+                longitude: DELIVERY_AREA_BOUNDS.east,
+              },
+            },
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const suggestions = data?.suggestions || [];
+        if (Array.isArray(suggestions) && suggestions.length > 0) {
+          const formatted = suggestions
+            .map((sug) => formatPlacePredictionItem(sug.placePrediction, extractText))
+            .filter(Boolean);
+
+          if (formatted.length > 0) {
+            return sortAndFilterPredictions(formatted);
+          }
+        } else {
+          // Si Google respondió 200 OK y la dirección no existe dentro del polígono de las 7 comunas,
+          // complementar únicamente si hay coincidencia en el catálogo de loteos locales (ej. "Espacio Frutillar")
+          return getFallbackPredictions(query);
+        }
+      }
+    } catch (restErr) {
+      console.warn('Direct Places API (New) autocomplete fetch warning:', restErr);
+    }
+  }
+
   try {
     const maps = await loadGoogleMapsScript();
 
-    // Importar librería moderna de places
     let placesLib = null;
     if (typeof maps.importLibrary === 'function') {
       try {
@@ -290,26 +561,13 @@ export async function getGooglePlacePredictions(inputQuery) {
       placesLib = maps.places;
     }
 
-    // Helper para extraer texto seguro de los objetos FormattedText de Google
-    const extractText = (val) => {
-      if (!val) return '';
-      if (typeof val === 'string') return val;
-      if (typeof val.text === 'string') return val.text;
-      if (typeof val.toString === 'function') return val.toString();
-      return String(val);
-    };
-
-    // 1. Método moderno: Places API (New) - AutocompleteSuggestion
+    // 2. Método JS SDK: Places API (New) - AutocompleteSuggestion con LatLngBoundsLiteral
     if (placesLib?.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
       try {
-        const centerLocation = new maps.LatLng(-41.25, -72.95);
         const request = {
           input: query,
           includedRegionCodes: ['cl'],
-          locationBias: new maps.Circle({
-            center: centerLocation,
-            radius: 45000,
-          }),
+          locationRestriction: DELIVERY_AREA_BOUNDS,
         };
 
         const response = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions(request);
@@ -317,47 +575,11 @@ export async function getGooglePlacePredictions(inputQuery) {
 
         if (Array.isArray(suggestions) && suggestions.length > 0) {
           const formatted = suggestions
-            .map((sug) => {
-              const pred = sug.placePrediction;
-              if (!pred) return null;
-
-              const placeId = pred.placeId;
-              const mainText = extractText(pred.mainText) || extractText(pred.text);
-              const secondaryText = extractText(pred.secondaryText);
-              const fullDescription =
-                extractText(pred.text) || (secondaryText ? `${mainText}, ${secondaryText}` : mainText);
-
-              // Detectar comuna de la predicción de forma exacta
-              const detectedCity =
-                detectCommuneFromAddress(fullDescription) ||
-                detectCommuneFromAddress(secondaryText) ||
-                detectCommuneFromAddress(mainText) ||
-                'Puerto Varas';
-
-              const inZone = isAllowedDeliveryArea(fullDescription) || isAllowedDeliveryArea(secondaryText);
-
-              return {
-                placeId,
-                address: mainText,
-                mainText,
-                secondaryText,
-                region: 'Región de Los Lagos',
-                fullAddress: fullDescription,
-                city: detectedCity,
-                isAllowedZone: inZone,
-                source: 'google',
-              };
-            })
+            .map((sug) => formatPlacePredictionItem(sug.placePrediction, extractText))
             .filter(Boolean);
 
           if (formatted.length > 0) {
-            formatted.sort((a, b) => {
-              if (a.isAllowedZone && !b.isAllowedZone) return -1;
-              if (!a.isAllowedZone && b.isAllowedZone) return 1;
-              return 0;
-            });
-
-            return formatted.slice(0, 6);
+            return sortAndFilterPredictions(formatted);
           }
         }
       } catch (newApiErr) {
@@ -365,71 +587,72 @@ export async function getGooglePlacePredictions(inputQuery) {
       }
     }
 
-    // 2. Fallback método clásico: AutocompleteService
-    if (placesLib?.AutocompleteService) {
-      if (!autocompleteServiceInstance) {
-        autocompleteServiceInstance = new placesLib.AutocompleteService();
-      }
+    // 3. Respaldo con Geocoding API (habilitada en Google Cloud) restringido a la cuenca del Lago Llanquihue
+    if (maps?.Geocoder) {
+      try {
+        const geocoder = new maps.Geocoder();
+        const geocodeResults = await new Promise((resolve) => {
+          const timer = setTimeout(() => resolve([]), 2500);
+          geocoder.geocode(
+            {
+              address: `${query}, Región de Los Lagos, Chile`,
+              componentRestrictions: { country: 'CL' },
+              bounds: DELIVERY_AREA_BOUNDS,
+            },
+            (results, status) => {
+              clearTimeout(timer);
+              if (status === 'OK' && Array.isArray(results)) {
+                resolve(results);
+              } else {
+                resolve([]);
+              }
+            }
+          );
+        });
 
-      return await new Promise((resolve) => {
-        const centerLocation = new maps.LatLng(-41.25, -72.95);
-        const request = {
-          input: query,
-          componentRestrictions: { country: 'cl' },
-          locationBias: new maps.Circle({
-            center: centerLocation,
-            radius: 45000,
-          }),
-        };
+        if (geocodeResults.length > 0) {
+          const formatted = geocodeResults
+            .map((res) => {
+              const comps = res.address_components || [];
+              const route = comps.find((c) => c.types?.includes('route'))?.long_name || '';
+              const streetNum = comps.find((c) => c.types?.includes('street_number'))?.long_name || '';
+              const mainText = route
+                ? streetNum
+                  ? `${route} ${streetNum}`
+                  : route
+                : (res.formatted_address || '').split(',')[0] || query;
 
-        autocompleteServiceInstance.getPlacePredictions(request, (predictions, status) => {
-          if (
-            status === (maps.places?.PlacesServiceStatus?.OK || 'OK') &&
-            Array.isArray(predictions) &&
-            predictions.length > 0
-          ) {
-            const formatted = predictions.map((pred) => {
-              const mainText = pred.structured_formatting?.main_text || pred.description;
-              const secondaryText = pred.structured_formatting?.secondary_text || '';
-              const fullDescription = pred.description || '';
-
-              // Detectar comuna de la predicción de forma exacta
-              const detectedCity =
-                detectCommuneFromAddress(fullDescription) ||
-                detectCommuneFromAddress(secondaryText) ||
-                detectCommuneFromAddress(mainText) ||
-                'Puerto Varas';
-
-              const inZone = isAllowedDeliveryArea(fullDescription) || isAllowedDeliveryArea(secondaryText);
+              const allowedCommune = detectCommuneFromAddress(res.formatted_address, comps);
+              const realCity =
+                allowedCommune ||
+                extractRealCityFromText(res.formatted_address, '', comps) ||
+                '';
 
               return {
-                placeId: pred.place_id,
+                placeId: res.place_id,
                 address: mainText,
                 mainText,
-                secondaryText,
+                secondaryText: formatCleanSecondaryText(res.formatted_address, realCity),
                 region: 'Región de Los Lagos',
-                fullAddress: fullDescription,
-                city: detectedCity,
-                isAllowedZone: inZone,
+                fullAddress: res.formatted_address || mainText,
+                city: realCity,
+                lat: res.geometry?.location?.lat?.() || null,
+                lng: res.geometry?.location?.lng?.() || null,
+                isAllowedZone: Boolean(allowedCommune),
                 source: 'google',
               };
-            });
+            })
+            .filter((item) => item.city);
 
-            formatted.sort((a, b) => {
-              if (a.isAllowedZone && !b.isAllowedZone) return -1;
-              if (!a.isAllowedZone && b.isAllowedZone) return 1;
-              return 0;
-            });
-
-            resolve(formatted.slice(0, 6));
-          } else {
-            resolve(getFallbackPredictions(query));
+          if (formatted.length > 0) {
+            return sortAndFilterPredictions(formatted);
           }
-        });
-      });
+        }
+      } catch (geoErr) {
+        console.warn('Geocoder fallback warning:', geoErr);
+      }
     }
 
-    // Respaldo offline garantizado
     return getFallbackPredictions(query);
   } catch (err) {
     console.warn('Error fetching Google Place predictions:', err);
@@ -438,20 +661,15 @@ export async function getGooglePlacePredictions(inputQuery) {
 }
 
 /**
- * Respaldo local inteligente para búsquedas de calles cuando no hay red o cuota
+ * Respaldo local inteligente para loteos y calles conocidas cuando no hay red.
+ * NUNCA inventa direcciones falsas en Puerto Varas si la calle no existe en el catálogo.
  */
 export function getFallbackPredictions(query) {
   const clean = (query || '').toLowerCase().trim();
   if (!clean || clean.length < 2) return [];
 
-  // 1. Detectar si el usuario escribió o mencionó explícitamente alguna comuna en su texto (ej: "Espacio Frutillar")
-  let detectedCommune = null;
-  for (const commune of ALLOWED_COMMUNES) {
-    if (clean.includes(commune.toLowerCase())) {
-      detectedCommune = commune;
-      break;
-    }
-  }
+  // 1. Detectar si el usuario escribió explícitamente alguna comuna en su texto (ej: "Espacio Frutillar")
+  const detectedCommune = detectCommuneFromAddress(clean);
 
   // 2. Buscar en el catálogo local de calles y loteos reales
   const matched = LOCAL_FALLBACK_STREETS.filter((p) => {
@@ -459,7 +677,6 @@ export function getFallbackPredictions(query) {
     const cLower = p.city.toLowerCase();
     const secLower = (p.sector || '').toLowerCase();
 
-    // Si el usuario especificó una comuna (ej. "Frutillar"), restringir estrictamente a esa comuna
     if (detectedCommune && cLower !== detectedCommune.toLowerCase()) {
       return false;
     }
@@ -476,7 +693,7 @@ export function getFallbackPredictions(query) {
     placeId: `local-${m.street}-${m.city}`,
     address: m.street,
     mainText: m.street,
-    secondaryText: `${m.city}, Región de Los Lagos, Chile`,
+    secondaryText: `${m.city}, Región de Los Lagos`,
     region: 'Región de Los Lagos',
     fullAddress: `${m.street}, ${m.city}, Chile`,
     city: m.city,
@@ -484,44 +701,7 @@ export function getFallbackPredictions(query) {
     source: 'local',
   }));
 
-  // 3. Si escribió una comuna explícita (ej. "Espacio Frutillar", "Philippi Frutillar"):
-  if (detectedCommune) {
-    // Asegurar que exista una sugerencia única para esa comuna, ¡y NUNCA duplicar a otras comunas!
-    const alreadyPresent = results.some(
-      (r) => r.city.toLowerCase() === detectedCommune.toLowerCase() && r.mainText.toLowerCase() === query.trim().toLowerCase()
-    );
-
-    if (!alreadyPresent) {
-      results.unshift({
-        placeId: `gen-${detectedCommune}-${clean}`,
-        address: query.trim(),
-        mainText: query.trim(),
-        secondaryText: `${detectedCommune}, Región de Los Lagos, Chile`,
-        region: 'Región de Los Lagos',
-        fullAddress: `${query.trim()}, ${detectedCommune}, Chile`,
-        city: detectedCommune,
-        isAllowedZone: true,
-        source: 'local',
-      });
-    }
-  } else if (results.length === 0) {
-    // Si NO mencionó ninguna comuna y no coincidió con ninguna calle del catálogo:
-    // Mostrar UNA SOLA opción limpia con la dirección ingresada en la Región de Los Lagos
-    // (sin clonarla absurdamente en 5 ciudades distintas).
-    results.push({
-      placeId: `custom-address-${clean}`,
-      address: query.trim(),
-      mainText: query.trim(),
-      secondaryText: `Zona de Despacho, Región de Los Lagos, Chile`,
-      region: 'Región de Los Lagos',
-      fullAddress: `${query.trim()}, Región de Los Lagos, Chile`,
-      city: 'Puerto Varas', // Comuna sugerida por defecto
-      isAllowedZone: true,
-      source: 'local',
-    });
-  }
-
-  // 4. Deduplicar estrictamente por combinación única de (mainText + city)
+  // 3. Deduplicar estrictamente por combinación única de (mainText + city)
   const unique = [];
   const seen = new Set();
   for (const item of results) {
@@ -536,11 +716,73 @@ export function getFallbackPredictions(query) {
 }
 
 /**
- * Obtiene los detalles específicos de un Place de Google (calle, número, comuna, lat/lng)
+ * Obtiene los detalles específicos de un Place de Google (calle, número, comuna oficial, lat/lng)
  */
 export async function getPlaceDetails(placeId) {
-  if (!placeId || placeId.startsWith('local-') || placeId.startsWith('gen-')) {
+  if (!placeId || placeId.startsWith('local-') || placeId.startsWith('gen-') || placeId.startsWith('custom-')) {
     return null;
+  }
+
+  // 1. Método directo REST Places API (New) v1/places/{placeId}
+  if (typeof fetch === 'function' && GOOGLE_MAPS_API_KEY) {
+    try {
+      const response = await fetch(
+        `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}?languageCode=es&regionCode=cl`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+            'X-Goog-FieldMask': 'id,displayName,formattedAddress,addressComponents,location',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const place = await response.json();
+        let streetNumber = '';
+        let route = '';
+        let locality = '';
+
+        if (Array.isArray(place.addressComponents)) {
+          for (const comp of place.addressComponents) {
+            const types = comp.types || [];
+            const text = comp.longText || comp.shortText || '';
+            if (types.includes('street_number')) streetNumber = text;
+            if (types.includes('route')) route = text;
+            if (types.includes('administrative_area_level_3')) locality = text;
+            if (types.includes('locality') && !locality) locality = text;
+          }
+        }
+
+        const displayNameText =
+          typeof place.displayName === 'string'
+            ? place.displayName
+            : place.displayName?.text || '';
+
+        const cleanStreet = route
+          ? streetNumber
+            ? `${route} ${streetNumber}`
+            : route
+          : displayNameText || '';
+
+        const detectedCity =
+          detectCommuneFromAddress(place.formattedAddress, place.addressComponents) ||
+          detectCommuneFromAddress(cleanStreet) ||
+          extractRealCityFromText(place.formattedAddress, '', place.addressComponents) ||
+          normalizeCommune(locality);
+
+        return {
+          street: cleanStreet,
+          number: streetNumber,
+          city: detectedCity,
+          formattedAddress: place.formattedAddress || '',
+          lat: place.location?.latitude ?? null,
+          lng: place.location?.longitude ?? null,
+        };
+      }
+    } catch (restDetailErr) {
+      console.warn('Direct Place details REST warning:', restDetailErr);
+    }
   }
 
   try {
@@ -556,7 +798,7 @@ export async function getPlaceDetails(placeId) {
       placesLib = maps.places;
     }
 
-    // 1. Método moderno: Places API (New) - Place.fetchFields
+    // 2. Método JS SDK: Places API (New) - Place.fetchFields
     if (placesLib?.Place) {
       try {
         const place = new placesLib.Place({
@@ -572,7 +814,6 @@ export async function getPlaceDetails(placeId) {
         let streetNumber = '';
         let route = '';
         let locality = '';
-        let adminArea2 = '';
 
         if (Array.isArray(place.addressComponents)) {
           for (const comp of place.addressComponents) {
@@ -580,9 +821,8 @@ export async function getPlaceDetails(placeId) {
             const text = comp.longText || comp.shortText || comp.long_name || comp.short_name || '';
             if (types.includes('street_number')) streetNumber = text;
             if (types.includes('route')) route = text;
-            if (types.includes('locality')) locality = text;
-            if (types.includes('administrative_area_level_3')) locality = locality || text;
-            if (types.includes('administrative_area_level_2')) adminArea2 = comp.longText || comp.long_name || text;
+            if (types.includes('administrative_area_level_3')) locality = text;
+            if (types.includes('locality') && !locality) locality = text;
           }
         }
 
@@ -595,7 +835,8 @@ export async function getPlaceDetails(placeId) {
         const detectedCity =
           detectCommuneFromAddress(place.formattedAddress, place.addressComponents) ||
           detectCommuneFromAddress(cleanStreet) ||
-          normalizeCommune(locality || 'Puerto Varas');
+          extractRealCityFromText(place.formattedAddress, '', place.addressComponents) ||
+          normalizeCommune(locality);
 
         const latVal = typeof place.location?.lat === 'function' ? place.location.lat() : place.location?.lat || null;
         const lngVal = typeof place.location?.lng === 'function' ? place.location.lng() : place.location?.lng || null;
@@ -609,65 +850,8 @@ export async function getPlaceDetails(placeId) {
           lng: lngVal,
         };
       } catch (placeErr) {
-        console.warn('Place.fetchFields warning, trying fallback:', placeErr);
+        console.warn('Place.fetchFields warning:', placeErr);
       }
-    }
-
-    // 2. Fallback clásico: PlacesService
-    if (!placesServiceInstance && placesLib?.PlacesService) {
-      const dummyElem = document.createElement('div');
-      placesServiceInstance = new placesLib.PlacesService(dummyElem);
-    }
-
-    if (placesServiceInstance) {
-      return new Promise((resolve) => {
-        placesServiceInstance.getDetails(
-          {
-            placeId,
-            fields: ['address_components', 'formatted_address', 'geometry', 'name'],
-          },
-          (place, status) => {
-            if (status === (maps.places?.PlacesServiceStatus?.OK || 'OK') && place) {
-              let streetNumber = '';
-              let route = '';
-              let locality = '';
-              let adminArea2 = '';
-
-              if (Array.isArray(place.address_components)) {
-                for (const comp of place.address_components) {
-                  if (comp.types.includes('street_number')) streetNumber = comp.long_name;
-                  if (comp.types.includes('route')) route = comp.long_name;
-                  if (comp.types.includes('locality')) locality = comp.long_name;
-                  if (comp.types.includes('administrative_area_level_3')) locality = locality || comp.long_name;
-                  if (comp.types.includes('administrative_area_level_2')) adminArea2 = comp.long_name;
-                }
-              }
-
-              const cleanStreet = route
-                ? streetNumber
-                  ? `${route} ${streetNumber}`
-                  : route
-                : place.name || '';
-
-              const detectedCity =
-                detectCommuneFromAddress(place.formatted_address, place.address_components) ||
-                detectCommuneFromAddress(cleanStreet) ||
-                normalizeCommune(locality || 'Puerto Varas');
-
-              resolve({
-                street: cleanStreet,
-                number: streetNumber,
-                city: detectedCity,
-                formattedAddress: place.formatted_address || '',
-                lat: place.geometry?.location?.lat?.() || null,
-                lng: place.geometry?.location?.lng?.() || null,
-              });
-            } else {
-              resolve(null);
-            }
-          }
-        );
-      });
     }
 
     return null;
