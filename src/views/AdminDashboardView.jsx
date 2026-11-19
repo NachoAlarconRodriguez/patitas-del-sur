@@ -3977,7 +3977,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       resolvedManualCity
     );
     const isFreeShippingManual = Boolean(manualOrderCustomer.freeShippingOverride);
-    const shipping = isFreeShippingManual ? 0 : routeDeliveryInfo.routeBaseCost;
+    const qualifiesForFreeShipping = subtotal >= 25000;
+    const shipping = isFreeShippingManual || qualifiesForFreeShipping ? 0 : routeDeliveryInfo.routeBaseCost;
     const total = subtotal + shipping;
 
     const orderDateStr = manualOrderCustomer.date || getChileDateString();
@@ -15415,7 +15416,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         );
         const routeShippingAmount = currentOrderAddress ? routeDeliveryInfo.routeBaseCost : 0;
         const isFreeShippingManual = Boolean(manualOrderCustomer.freeShippingOverride);
-        const shipping = isFreeShippingManual ? 0 : routeShippingAmount;
+        const qualifiesForFreeShipping = subtotal >= 25000;
+        const shipping = isFreeShippingManual || qualifiesForFreeShipping ? 0 : routeShippingAmount;
         const total = subtotal + shipping;
 
         // Catálogo real conectado al inventario de la base de datos (Supabase)
@@ -16863,20 +16865,27 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             freeShippingOverride: !prev.freeShippingOverride,
                           }))
                         }
-                        className={`px-3 py-1.5 rounded-full text-[11px] font-black border flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${isFreeShippingManual
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-black border flex items-center gap-1.5 whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${isFreeShippingManual || qualifiesForFreeShipping
                           ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200/80'
                           : 'bg-amber-50 hover:bg-amber-100 text-[#92400E] border-amber-300'
                           }`}
                         title={
                           isFreeShippingManual
-                            ? `Clic para cobrar despacho por ruta (${formatCLP(routeShippingAmount)})`
-                            : 'Clic para dejar el despacho gratis (ej: vecino)'
+                            ? `Clic para reactivar costo interno de ruta (${formatCLP(routeShippingAmount)})`
+                            : qualifiesForFreeShipping
+                              ? 'Envío gratis al cliente (> $25.000). Clic si además es entrega a vecino sin gasto de ruta.'
+                              : 'Clic para dejar el despacho gratis (ej: vecino)'
                         }
                       >
                         {isFreeShippingManual ? (
                           <>
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
                             <span>Despacho Gratis (Vecino)</span>
+                          </>
+                        ) : qualifiesForFreeShipping ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>Envío Gratis (&gt; $25.000) · Ruta {routeDeliveryInfo.zoneName}</span>
                           </>
                         ) : (
                           <>
@@ -17162,23 +17171,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider">
                             Resumen Total
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setManualOrderCustomer((prev) => ({
-                                ...prev,
-                                freeShippingOverride: !prev.freeShippingOverride,
-                              }))
-                            }
-                            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer active:scale-95 ${isFreeShippingManual
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                              : 'bg-amber-100/80 text-[#92400E] border-amber-300 hover:bg-[#F5BA13] hover:text-[#1D1D1F]'
-                              }`}
-                          >
-                            {isFreeShippingManual
-                              ? `Cobrar ruta (${formatCLP(routeShippingAmount)})`
-                              : 'Dejar Despacho Gratis'}
-                          </button>
+                          {qualifiesForFreeShipping && !isFreeShippingManual ? (
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                              <Check className="w-3 h-3 stroke-[3]" />
+                              <span>Envío Gratis (&gt; $25.000)</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setManualOrderCustomer((prev) => ({
+                                  ...prev,
+                                  freeShippingOverride: !prev.freeShippingOverride,
+                                }))
+                              }
+                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer active:scale-95 ${isFreeShippingManual
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-amber-100/80 text-[#92400E] border-amber-300 hover:bg-[#F5BA13] hover:text-[#1D1D1F]'
+                                }`}
+                            >
+                              {isFreeShippingManual
+                                ? `Reactivar ruta (${formatCLP(routeShippingAmount)})`
+                                : 'Dejar Despacho Gratis'}
+                            </button>
+                          )}
                         </div>
                         <div className="bg-white rounded-2xl border border-amber-200/80 p-3.5 shadow-xs space-y-1.5 text-xs">
                           <div className="flex justify-between text-slate-500">
