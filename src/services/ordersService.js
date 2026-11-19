@@ -117,32 +117,48 @@ export async function createOrderInSupabase(orderData, items = []) {
         console.warn('Error inserting order items into Supabase:', itemsError.message);
       }
 
-      // Descontar stock en Supabase de forma centralizada y atómica sobre la variante exacta
+      // Descontar stock en Supabase de forma centralizada y atómica agrupando por variante exacta
+      const deductionsByProdId = new Map();
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
+        const qtyToDeduct = Math.max(1, Number(item.quantity || item.qty || 1));
+        const resolvedVariant = resolveInventoryVariant(allDbProducts || [], item);
+        const targetProductId =
+          itemsPayload[i]?.product_id ||
+          resolvedVariant?.id ||
+          item.productId ||
+          item.product_id ||
+          (typeof item.id === 'string' && item.id.startsWith('PROD-') ? item.id : null);
+
+        if (targetProductId) {
+          deductionsByProdId.set(
+            targetProductId,
+            (deductionsByProdId.get(targetProductId) || 0) + qtyToDeduct
+          );
+        }
+      }
+
+      for (const [targetProductId, totalQtyToDeduct] of deductionsByProdId.entries()) {
         try {
-          const qtyToDeduct = Number(item.quantity || item.qty || 1);
-          const targetProductId = itemsPayload[i]?.product_id || item.productId || item.product_id || item.id || null;
+          const { data: prodData } = await supabase
+            .from('products')
+            .select('id, stock')
+            .eq('id', targetProductId)
+            .maybeSingle();
 
-          if (targetProductId) {
-            // Consultar stock fresco en base de datos para descontar con precisión
-            const { data: prodData } = await supabase
+          if (prodData) {
+            const currentStock = Number(prodData.stock) || 0;
+            const newStock = Math.max(0, currentStock - totalQtyToDeduct);
+            await supabase
               .from('products')
-              .select('id, stock')
-              .eq('id', targetProductId)
-              .maybeSingle();
-
-            if (prodData) {
-              const currentStock = Number(prodData.stock) || 0;
-              const newStock = Math.max(0, currentStock - qtyToDeduct);
-              await supabase
-                .from('products')
-                .update({ stock: newStock })
-                .eq('id', targetProductId);
-            }
+              .update({
+                stock: newStock,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', targetProductId);
           }
         } catch (stockDeductErr) {
-          console.warn('Error descontando stock en Supabase para ítem:', item, stockDeductErr);
+          console.warn('Error descontando stock en Supabase para producto:', targetProductId, stockDeductErr);
         }
       }
 
