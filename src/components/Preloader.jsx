@@ -1,77 +1,168 @@
 import React, { useState, useEffect } from 'react';
-import ModernPetLoadingSpinner from './ModernPetLoadingSpinner';
 
 export default function Preloader({ onLoaded }) {
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(12);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [isRemoved, setIsRemoved] = useState(false);
 
   useEffect(() => {
-    // Incremento suave del progreso
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          return 100;
+    let isCancelled = false;
+    let rafId = null;
+    let removeTimer = null;
+    let assetsReady = false;
+    let currentProgress = 12;
+
+    const fontsReady =
+      typeof document !== 'undefined' && document.fonts && document.fonts.ready
+        ? document.fonts.ready.catch(() => {})
+        : Promise.resolve();
+
+    const heroOrWindowReady = new Promise((resolve) => {
+      if (typeof window === 'undefined') {
+        resolve();
+        return;
+      }
+
+      if (window.location.pathname === '/') {
+        const heroImg = new Image();
+        heroImg.onload = () => resolve();
+        heroImg.onerror = () => resolve();
+        heroImg.src = '/images/kira_hero_still_alpha.png?v=5';
+        if (heroImg.complete) {
+          resolve();
         }
-        const increment = Math.floor(Math.random() * 18) + 14;
-        return Math.min(prev + increment, 100);
-      });
-    }, 85);
+        return;
+      }
 
-    return () => clearInterval(interval);
-  }, []);
+      if (document.readyState === 'complete') {
+        resolve();
+      } else {
+        window.addEventListener('load', () => resolve(), { once: true });
+      }
+    });
 
-  useEffect(() => {
-    if (progress === 100) {
-      const fadeTimer = setTimeout(() => {
-        setIsFadingOut(true);
-      }, 250);
+    // Tope máximo de seguridad para que nunca retenga al usuario de más
+    const maxWaitFallback = new Promise((resolve) => {
+      setTimeout(resolve, 750);
+    });
 
-      const removeTimer = setTimeout(() => {
-        setIsRemoved(true);
-        if (onLoaded) onLoaded();
-      }, 850);
+    Promise.race([Promise.all([fontsReady, heroOrWindowReady]), maxWaitFallback]).then(() => {
+      assetsReady = true;
+    });
 
-      return () => {
-        clearTimeout(fadeTimer);
-        clearTimeout(removeTimer);
-      };
-    }
-  }, [progress, onLoaded]);
+    const tick = () => {
+      if (isCancelled) return;
+
+      if (!assetsReady) {
+        // Avance orgánico mientras cargan los recursos reales (hasta 86%)
+        currentProgress += (86 - currentProgress) * 0.08;
+        setProgress(currentProgress);
+        rafId = requestAnimationFrame(tick);
+      } else {
+        // Cuando la portada ya está lista, completa fluidamente hasta el 100%
+        currentProgress += Math.max(2.6, (100 - currentProgress) * 0.24);
+        if (currentProgress >= 99.6) {
+          setProgress(100);
+          requestAnimationFrame(() => {
+            if (isCancelled) return;
+            setIsFadingOut(true);
+            removeTimer = setTimeout(() => {
+              if (isCancelled) return;
+              setIsRemoved(true);
+              if (onLoaded) onLoaded();
+            }, 480);
+          });
+          return;
+        }
+        setProgress(currentProgress);
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      isCancelled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (removeTimer) clearTimeout(removeTimer);
+    };
+  }, [onLoaded]);
 
   if (isRemoved) return null;
 
+  const clipRight = Math.max(0, 100 - progress);
+
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#FAF9F6] select-none transition-all duration-700 ease-out px-4 ${
-        isFadingOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100 pointer-events-auto'
+      aria-hidden={isFadingOut}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 100,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FAF8F4',
+        padding: '24px',
+        userSelect: 'none',
+      }}
+      className={`transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        isFadingOut ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
       }`}
     >
-      {/* Luces Ambientales Patagónicas (Ámbar y Verde Azulado) */}
-      <div className="absolute top-1/3 left-1/3 -translate-x-1/2 -translate-y-1/2 w-80 h-80 sm:w-96 sm:h-96 rounded-full bg-[#F5BA13]/12 blur-3xl pointer-events-none animate-pulse" />
-      <div className="absolute bottom-1/3 right-1/3 translate-x-1/2 translate-y-1/2 w-80 h-80 sm:w-96 sm:h-96 rounded-full bg-[#0E8388]/12 blur-3xl pointer-events-none animate-pulse" />
-
-      {/* Contenedor del Spinner de Carga Moderno */}
-      <div className="relative z-10 w-full max-w-md">
-        <ModernPetLoadingSpinner
-          petType="both"
-          showSkeletons={false}
-          customMessage={
-            progress < 45
-              ? 'Preparando recetas holísticas de la Patagonia...'
-              : progress < 90
-              ? 'Sincronizando stock fresco para despacho express...'
-              : '¡Todo listo!'
-          }
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '22px',
+        }}
+        className={`transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          isFadingOut ? 'scale-[0.985]' : 'scale-100'
+        }`}
+      >
+        <img
+          src="/images/logo_patitas_del_sur_amber.svg"
+          alt="Patitas del Sur"
+          style={{
+            width: 'clamp(230px, 34vw, 300px)',
+            height: 'auto',
+            display: 'block',
+          }}
         />
 
-        {/* Micro barra sutil de progreso coordinada */}
-        <div className="w-36 h-1 bg-slate-200/80 rounded-full overflow-hidden mx-auto -mt-3 relative shadow-inner">
-          <div
-            className="h-full bg-gradient-to-r from-[#F5BA13] via-[#D97706] to-[#0E8388] rounded-full transition-all duration-150 ease-out"
-            style={{ width: `${progress}%` }}
-          />
+        <div
+          style={{
+            position: 'relative',
+            display: 'inline-block',
+            fontFamily: "'Bricolage Grotesque', 'Outfit', system-ui, -apple-system, sans-serif",
+            fontSize: 'clamp(2.35rem, 5.5vw, 4rem)',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            lineHeight: 1.08,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {/* Capa base sin rellenar */}
+          <span style={{ color: '#D4CFC7' }}>Patitas del Sur</span>
+
+          {/* Capa de color que va llenando las letras de 0% a 100% */}
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              color: '#D97706',
+              background: 'linear-gradient(95deg, #1D1D1F 0%, #B45309 38%, #D97706 68%, #F5BA13 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              clipPath: `inset(0 ${clipRight.toFixed(2)}% 0 0)`,
+            }}
+          >
+            Patitas del Sur
+          </span>
         </div>
       </div>
     </div>

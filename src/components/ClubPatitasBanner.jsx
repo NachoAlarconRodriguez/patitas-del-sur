@@ -348,7 +348,7 @@ export default function ClubPatitasBanner({ className = '' }) {
                         pattern="[0-9]{9}"
                         maxLength={9}
                         required
-                        placeholder="9 8765 4321"
+                        placeholder="9 5333 2492"
                         value={phone}
                         onChange={handlePhoneChange}
                         className="w-full px-3 py-2.5 bg-transparent text-slate-900 placeholder-slate-400 text-sm focus:outline-none font-mono tracking-wider"

@@ -1,10 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Heart, Globe, Mail } from 'lucide-react';
-import Logo from './Logo';
 import { COMPANY_INFO } from '../constants';
-import { WhatsAppIcon, InstagramIcon, FacebookIcon } from './OfficialIcons';
-import ClubPatitasBanner from './ClubPatitasBanner';
+import { WhatsAppIcon } from './OfficialIcons';
 
 export default function Footer() {
   const location = useLocation();
@@ -18,106 +15,100 @@ export default function Footer() {
     return null;
   }
 
-  const socialBtnStyle =
-    'w-11 h-11 rounded-full bg-white/5 hover:bg-amber-500 hover:text-slate-950 text-slate-300 border border-white/10 hover:border-amber-400 flex items-center justify-center transition-all duration-200 active:scale-95 shadow-xs cursor-pointer';
-
-  const legalBtnStyle =
-    'px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/10 text-xs font-semibold transition-all duration-200';
-
   return (
-    <footer className="bg-slate-950 text-white pt-12 pb-24 md:pb-12 border-t border-white/10 relative overflow-hidden">
-      {/* Background Decorative Glow */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#F5BA13]/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#D97706]/10 rounded-full blur-3xl pointer-events-none" />
-
-      <div className="max-w-7xl mx-auto px-6 md:px-12 relative z-10 space-y-10">
-        {/* Banner de Invitación al Club Patitas */}
-        <div>
-          <ClubPatitasBanner />
-        </div>
-
-        {/* Footer Minimalista en 1 Sola Fila: Logo (izq), Botones Legales (centro), Redes (der) */}
-        <div className="pt-6 flex flex-col lg:flex-row items-center justify-between gap-5 border-t border-white/10">
-          {/* 1. Logo Oficial */}
-          <Link to="/" className="cursor-pointer transition-opacity hover:opacity-90 shrink-0">
-            <Logo className="h-9 sm:h-10" variant="light" />
-          </Link>
-
-          {/* 2. Botones de Información Legal (Al centro en la misma línea) */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <Link to="/politicas-de-privacidad" className={legalBtnStyle}>
-              Políticas de Privacidad
-            </Link>
-            <Link to="/terminos-y-condiciones" className={legalBtnStyle}>
-              Términos y Condiciones
-            </Link>
-            <Link to="/politicas-de-despacho" className={legalBtnStyle}>
-              Políticas de Despacho
-            </Link>
-            <Link to="/cambios-y-devoluciones" className={legalBtnStyle}>
-              Garantía Legal & Devoluciones
-            </Link>
-          </div>
-
-          {/* 3. Iconos de Redes y Contacto (A la derecha) */}
-          <div className="flex items-center gap-2 shrink-0">
+    <div className="kibo-page kibo-foot-shell">
+      <footer className="foot">
+        <div className="foot__row">
+          <p className="foot__claim">
+            Que nunca le falte <span>su comida preferida.</span>
+          </p>
+          <nav className="foot__links" aria-label="Pie">
+            <Link to="/politicas-de-privacidad">Privacidad</Link>
+            <Link to="/politicas-de-despacho">Despachos</Link>
+            <Link to="/terminos-y-condiciones">Términos y condiciones</Link>
+            <Link to="/cambios-y-devoluciones">Cambios y devoluciones</Link>
+            <Link to="/nosotros">Nosotros</Link>
+          </nav>
+          <div className="foot__social">
             <a
-              href={COMPANY_INFO.whatsappUrl}
+              className="foot__ico"
+              href={COMPANY_INFO.instagramUrl || 'https://instagram.com/patitasdelsur.cl'}
               target="_blank"
               rel="noopener noreferrer"
-              className={socialBtnStyle}
-              aria-label="WhatsApp"
-              title="Escríbenos por WhatsApp"
-            >
-              <WhatsAppIcon className="w-4 h-4" colored={false} />
-            </a>
-
-            <Link to="/" className={socialBtnStyle} aria-label="Sitio Web Oficial" title="Sitio Web">
-              <Globe className="w-4 h-4" />
-            </Link>
-
-            <a
-              href="https://instagram.com/patitasdelsur.cl"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={socialBtnStyle}
               aria-label="Instagram"
-              title="Instagram Oficial"
             >
-              <InstagramIcon className="w-4 h-4" />
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="2" y="2" width="20" height="20" rx="5" />
+                <circle cx="12" cy="12" r="4" />
+                <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+              </svg>
             </a>
-
             <a
-              href="https://facebook.com/patitasdelsur"
+              className="foot__ico"
+              href={COMPANY_INFO.whatsappUrl || 'https://wa.me/56953332492'}
               target="_blank"
               rel="noopener noreferrer"
-              className={socialBtnStyle}
-              aria-label="Facebook"
-              title="Facebook Oficial"
+              aria-label="WhatsApp"
             >
-              <FacebookIcon className="w-4 h-4" />
-            </a>
-
-            <a
-              href={`mailto:${COMPANY_INFO.email}`}
-              className={socialBtnStyle}
-              aria-label="Correo Electrónico"
-              title="contacto@patitasdelsur.cl"
-            >
-              <Mail className="w-4 h-4" />
+              <WhatsAppIcon className="w-5 h-5" colored={false} />
             </a>
           </div>
         </div>
 
-        {/* Bottom copyright y créditos */}
-        <div className="pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-medium text-center sm:text-left">
-          <p>© {new Date().getFullYear()} Patitas del Sur®. Comercial Kira SpA.</p>
-          <p className="flex items-center gap-1.5 justify-center text-slate-400">
-            Diseñado con <Heart className="w-3.5 h-3.5 text-orange-500 fill-orange-500 inline shrink-0" /> por{' '}
-            <span className="text-orange-500 font-bold">Orange Design</span> para el bienestar animal.
+        <div className="foot__stage">
+          <Link
+            className="foot__wm"
+            to="/"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Patitas del Sur, volver al inicio"
+          >
+            patitas
+          </Link>
+          <div className="foot__dogs in" data-reveal="dogs">
+            <img
+              src="/images/mascotas-fila.png?v=2"
+              alt="Perros y gatos de Patitas del Sur"
+              width="2010"
+              height="687"
+              loading="lazy"
+              decoding="async"
+            />
+          </div>
+        </div>
+
+        <div className="foot__legal">
+          <span>© 2026 Patitas del Sur · Comercial Kira SpA</span>
+          <p style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '5px', minHeight: '44px' }}>
+            Desarrollado con{' '}
+            <svg
+              viewBox="0 0 24 24"
+              width="14"
+              height="14"
+              fill="#F97316"
+              aria-label="cariño"
+              style={{ display: 'inline-block', flexShrink: 0 }}
+            >
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
+            </svg>{' '}
+            por{' '}
+            <a
+              href="https://www.orangedesign.cl"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontWeight: 800, color: '#F97316' }}
+            >
+              Orange Design
+            </a>
           </p>
         </div>
-      </div>
-    </footer>
+      </footer>
+    </div>
   );
 }

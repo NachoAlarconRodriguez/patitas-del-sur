@@ -476,35 +476,35 @@ export default function DispatchGoogleMap({
   };
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-sm flex flex-col h-full relative">
-      {/* Header del Mapa & Barra de Herramientas */}
-      <div className="p-3.5 sm:p-4 border-b border-slate-100 bg-slate-50/90 flex flex-wrap items-center justify-between gap-3 shrink-0">
+    <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl overflow-hidden flex flex-col h-full relative">
+      {/* Header del Mapa & Barra de Herramientas FinSet */}
+      <div className="p-4 sm:p-5 border-b border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-white flex items-center justify-center shadow-xs shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-[#EBF5F3] text-[#0E8388] border border-[#CBE4DE] flex items-center justify-center shrink-0">
             <Compass className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <span className="font-black text-slate-900 text-base block truncate flex items-center gap-1.5">
-              <span>Mapa de Cobertura y Distancias</span>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase tracking-wider">
-                Google Maps Real
+            <span className="font-bold text-[#111827] text-base truncate flex items-center gap-2">
+              <span>Mapa de cobertura y distancias</span>
+              <span className="px-2.5 py-0.5 rounded-full bg-[#EBF5F3] text-[#0E8388] border border-[#CBE4DE] text-[10px] font-bold">
+                Google Maps
               </span>
             </span>
-            <p className="text-xs text-slate-500 font-medium truncate">
-              Bodega Central: {CENTRAL_HUB.address}
+            <p className="text-xs text-slate-500 font-medium truncate mt-0.5">
+              Bodega central: {CENTRAL_HUB.address}
             </p>
           </div>
         </div>
 
-        {/* Controles de Vista & Zoom */}
+        {/* Controles de Vista & Zoom Pill */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Selector de Tipo de Mapa */}
-          <div className="hidden sm:inline-flex items-center bg-white rounded-xl border border-slate-200 p-0.5 text-xs shadow-2xs">
+          <div className="hidden sm:inline-flex items-center bg-[#F8FAFC] rounded-full border border-[#EAECEF] p-1 text-xs">
             <button
               type="button"
               onClick={() => handleMapTypeChange('roadmap')}
-              className={`px-2.5 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer ${
-                mapType === 'roadmap' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-full font-semibold transition-all text-xs cursor-pointer ${
+                mapType === 'roadmap' ? 'bg-[#0E8388] text-white shadow-2xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
               Mapa
@@ -512,8 +512,8 @@ export default function DispatchGoogleMap({
             <button
               type="button"
               onClick={() => handleMapTypeChange('hybrid')}
-              className={`px-2.5 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer ${
-                mapType === 'hybrid' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-full font-semibold transition-all text-xs cursor-pointer ${
+                mapType === 'hybrid' ? 'bg-[#0E8388] text-white shadow-2xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
               Satélite
@@ -521,8 +521,8 @@ export default function DispatchGoogleMap({
             <button
               type="button"
               onClick={() => handleMapTypeChange('terrain')}
-              className={`px-2.5 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer ${
-                mapType === 'terrain' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3 py-1 rounded-full font-semibold transition-all text-xs cursor-pointer ${
+                mapType === 'terrain' ? 'bg-[#0E8388] text-white shadow-2xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
               Relieve
@@ -530,11 +530,11 @@ export default function DispatchGoogleMap({
           </div>
 
           {/* Zoom & Centrado */}
-          <div className="inline-flex items-center bg-white rounded-xl border border-slate-200 p-0.5 text-xs shadow-2xs">
+          <div className="inline-flex items-center bg-[#F8FAFC] rounded-full border border-[#EAECEF] p-1 text-xs gap-0.5">
             <button
               type="button"
               onClick={handleZoomIn}
-              className="w-8 h-8 flex items-center justify-center text-slate-700 hover:text-slate-900 font-black cursor-pointer text-base rounded-lg hover:bg-slate-100"
+              className="w-7 h-7 flex items-center justify-center text-slate-700 hover:text-[#0E8388] font-bold cursor-pointer text-sm rounded-full hover:bg-white transition-colors"
               title="Acercar mapa"
             >
               +
@@ -542,7 +542,7 @@ export default function DispatchGoogleMap({
             <button
               type="button"
               onClick={handleZoomOut}
-              className="w-8 h-8 flex items-center justify-center text-slate-700 hover:text-slate-900 font-black cursor-pointer border-l border-slate-200 text-base rounded-lg hover:bg-slate-100"
+              className="w-7 h-7 flex items-center justify-center text-slate-700 hover:text-[#0E8388] font-bold cursor-pointer text-sm rounded-full hover:bg-white transition-colors"
               title="Alejar mapa"
             >
               −
@@ -550,7 +550,7 @@ export default function DispatchGoogleMap({
             <button
               type="button"
               onClick={handleRecenter}
-              className="px-2.5 h-8 flex items-center justify-center text-slate-700 hover:text-[#0E8388] font-bold cursor-pointer border-l border-slate-200 text-xs rounded-lg hover:bg-slate-100"
+              className="px-3 h-7 flex items-center justify-center text-slate-700 hover:text-[#0E8388] font-semibold cursor-pointer text-xs rounded-full hover:bg-white transition-colors"
               title="Re-centrar en Bodega Central"
             >
               Centrar
@@ -560,12 +560,12 @@ export default function DispatchGoogleMap({
       </div>
 
       {/* Contenedor del Mapa Real de Google */}
-      <div className="relative w-full h-[580px] bg-slate-100 flex-1">
-        {/* Barra Flotante de Búsqueda y Prueba de Dirección con Autocomplete */}
+      <div className="relative w-full h-[580px] bg-[#F8FAFC] flex-1">
+        {/* Barra Flotante Pill de Búsqueda y Prueba de Dirección con Autocomplete */}
         <div className="absolute top-3.5 left-3.5 right-3.5 z-20 pointer-events-auto">
           <form
             onSubmit={handleManualSearch}
-            className="bg-white/95 backdrop-blur-md shadow-lg border border-slate-200/90 rounded-2xl px-4 py-2.5 flex items-center gap-2.5 w-full transition-all focus-within:ring-2 focus-within:ring-[#0E8388]"
+            className="bg-white/95 backdrop-blur-md shadow-md border border-[#EAECEF] rounded-full px-4 py-2.5 flex items-center gap-2.5 w-full transition-all focus-within:border-[#0E8388]"
           >
             <Search className="w-4 h-4 text-slate-400 shrink-0" />
             <input
@@ -574,7 +574,7 @@ export default function DispatchGoogleMap({
               placeholder="Escribe una dirección para probar (ej. Llanquihue, Frutillar, Alerce, Puerto Montt)..."
               value={localSearchQuery}
               onChange={(e) => setLocalSearchQuery(e.target.value)}
-              className="w-full bg-transparent text-slate-900 text-xs font-bold focus:outline-hidden placeholder:text-slate-400 placeholder:font-medium"
+              className="w-full bg-transparent text-[#111827] text-xs font-semibold focus:outline-hidden placeholder:text-slate-400 placeholder:font-normal"
             />
             {isSearching && (
               <span className="text-[10px] text-slate-400 font-medium shrink-0 animate-pulse">
@@ -582,7 +582,7 @@ export default function DispatchGoogleMap({
               </span>
             )}
             {simulatedDistanceKm > 0 && (
-              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs shrink-0 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+              <span className="px-3 py-1 rounded-full bg-[#EBF5F3] text-[#0E8388] font-bold text-xs shrink-0 border border-[#CBE4DE] flex items-center gap-1">
                 <span>📍</span>
                 <span>{simulatedDistanceKm} km</span>
               </span>
@@ -595,11 +595,11 @@ export default function DispatchGoogleMap({
 
         {/* Estado de carga con indicador elegante */}
         {!isMapLoaded && !loadError && (
-          <div className="absolute inset-0 bg-slate-50 flex flex-col items-center justify-center p-6 text-center z-10 animate-pulse">
-            <div className="w-12 h-12 rounded-2xl bg-[#0E8388]/10 text-[#0E8388] flex items-center justify-center mb-3">
+          <div className="absolute inset-0 bg-[#F8FAFC] flex flex-col items-center justify-center p-6 text-center z-10 animate-pulse">
+            <div className="w-12 h-12 rounded-2xl bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center mb-3">
               <Compass className="w-6 h-6 animate-spin" />
             </div>
-            <span className="text-sm font-black text-slate-800">Cargando Google Maps en tiempo real...</span>
+            <span className="text-sm font-bold text-[#111827]">Cargando Google Maps en tiempo real...</span>
             <p className="text-xs text-slate-500 font-medium mt-1">Conectando con la API de mapas y trazando cuadrante de Los Lagos.</p>
           </div>
         )}
@@ -608,12 +608,12 @@ export default function DispatchGoogleMap({
         {loadError && (
           <div className="absolute inset-0 bg-rose-50/95 flex flex-col items-center justify-center p-6 text-center z-10">
             <AlertCircle className="w-10 h-10 text-rose-600 mb-2" />
-            <span className="text-sm font-black text-rose-900">No se pudo cargar Google Maps</span>
+            <span className="text-sm font-bold text-rose-900">No se pudo cargar Google Maps</span>
             <p className="text-xs text-rose-700 max-w-sm mt-1">{loadError}</p>
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-3 px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold shadow-xs hover:bg-rose-700"
+              className="mt-3 px-4 py-2 bg-rose-600 text-white rounded-full text-xs font-semibold hover:bg-rose-700 cursor-pointer"
             >
               Reintentar
             </button>
@@ -621,15 +621,15 @@ export default function DispatchGoogleMap({
         )}
 
         {/* Watermark / Badge informativo inferior */}
-        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-700 shadow-md">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Google Maps API Activa • Región de Los Lagos</span>
+        <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-[#EAECEF] text-[10px] font-semibold text-slate-600 shadow-sm">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Google Maps activo • Región de Los Lagos</span>
         </div>
 
         {/* Leyenda flotante de Zonas Activas */}
         {dispatchZones.length > 0 && (
-          <div className="absolute bottom-3 right-3 z-10 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/90 shadow-lg hidden md:flex items-center gap-2.5 text-[11px] font-bold text-slate-800">
-            <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider mr-0.5">
+          <div className="absolute bottom-3 right-3 z-10 bg-white/95 backdrop-blur-md p-1.5 px-2.5 rounded-full border border-[#EAECEF] shadow-sm hidden md:flex items-center gap-1.5 text-[11px] font-semibold text-[#111827]">
+            <span className="text-[10px] font-semibold text-slate-400 pl-1">
               Zonas:
             </span>
             {dispatchZones.map((z, idx) => (
@@ -637,15 +637,15 @@ export default function DispatchGoogleMap({
                 key={z.id || idx}
                 type="button"
                 onClick={() => onSelectZone(z.id)}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full transition-all cursor-pointer ${
                   z.id === selectedZoneId
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
+                    ? 'bg-[#0E8388] text-white shadow-2xs'
+                    : 'bg-[#F8FAFC] hover:bg-[#EBF5F3] text-slate-700 border border-[#EAECEF]'
                 }`}
               >
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: z.color || '#10B981' }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: z.color || '#10B981' }} />
                 <span>{z.name || `Zona ${idx + 1}`}</span>
-                <span className="text-[10px] opacity-75 font-mono">({z.radiusMaxKm}k)</span>
+                <span className="text-[10px] opacity-80 font-mono">({z.radiusMaxKm}k)</span>
               </button>
             ))}
           </div>

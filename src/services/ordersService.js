@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js';
+import { resolveInventoryVariant } from '../utils/productVariants.js';
 
 /**
  * Servicio de Órdenes y Checkout con Supabase
@@ -86,15 +87,27 @@ export async function createOrderInSupabase(orderData, items = []) {
 
     // Insertar ítems del pedido
     if (items && items.length > 0) {
-      const itemsPayload = items.map((item) => ({
-        order_id: orderPayload.id,
-        product_id: item.id || null,
-        product_name: item.name,
-        weight: item.weight || item.selectedWeight || '1 unidad',
-        quantity: item.quantity || 1,
-        unit_price: item.price || 0,
-        subtotal: (item.price || 0) * (item.quantity || 1),
-      }));
+      // Cargar catálogo de productos para garantizar resolución exacta de variante (ID + formato)
+      const { data: allDbProducts } = await supabase
+        .from('products')
+        .select('id, name, brand, sku, weights, stock, unit_cost_neto');
+
+      const itemsPayload = items.map((item) => {
+        const directProdId = item.productId || item.product_id || (typeof item.id === 'string' && item.id.startsWith('PROD-') ? item.id : null);
+        const resolvedVariant = directProdId
+          ? (allDbProducts || []).find((p) => p.id === directProdId)
+          : resolveInventoryVariant(allDbProducts || [], item);
+
+        return {
+          order_id: orderPayload.id,
+          product_id: resolvedVariant?.id || directProdId || item.id || null,
+          product_name: item.name,
+          weight: item.weight || item.selectedWeight || item.format || '1 unidad',
+          quantity: item.quantity || 1,
+          unit_price: item.price || 0,
+          subtotal: (item.price || 0) * (item.quantity || 1),
+        };
+      });
 
       const { error: itemsError } = await supabase
         .from('order_items')
@@ -104,32 +117,12 @@ export async function createOrderInSupabase(orderData, items = []) {
         console.warn('Error inserting order items into Supabase:', itemsError.message);
       }
 
-      // Descontar stock en Supabase de forma centralizada y atómica
-      for (const item of items) {
+      // Descontar stock en Supabase de forma centralizada y atómica sobre la variante exacta
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
         try {
           const qtyToDeduct = Number(item.quantity || item.qty || 1);
-          let targetProductId = item.id || item.product_id || item.productId || null;
-
-          // Si no tenemos ID directo, buscar por nombre o SKU
-          if (!targetProductId && item.name) {
-            const { data: matched } = await supabase
-              .from('products')
-              .select('id, stock')
-              .ilike('name', `%${String(item.name).trim()}%`)
-              .limit(1)
-              .maybeSingle();
-
-            if (matched) {
-              targetProductId = matched.id;
-              const currentStock = Number(matched.stock) || 0;
-              const newStock = Math.max(0, currentStock - qtyToDeduct);
-              await supabase
-                .from('products')
-                .update({ stock: newStock })
-                .eq('id', targetProductId);
-              continue;
-            }
-          }
+          const targetProductId = itemsPayload[i]?.product_id || item.productId || item.product_id || item.id || null;
 
           if (targetProductId) {
             // Consultar stock fresco en base de datos para descontar con precisión
@@ -300,6 +293,45 @@ export async function updateOrderMercadoPagoData(orderId, { mpOrderId, mpPayment
     return { success: true, data };
   } catch (err) {
     console.error('Error updating order Mercado Pago data in Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+
+/**
+ * Elimina un pedido y sus ítems permanentemente de Supabase (ideal para limpiar pedidos de prueba o cancelados)
+ */
+export async function deleteOrderFromSupabase(orderId) {
+  if (!orderId) return { success: false };
+  try {
+    await supabase.from('order_items').delete().eq('order_id', orderId);
+    const { error } = await supabase.from('orders').delete().eq('id', orderId);
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    console.error('Error deleting order from Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+
+/**
+ * Elimina todos los pedidos en estado 'cancelado' y re-secuencia los IDs si quedaron huecos
+ */
+export async function deleteCancelledOrdersFromSupabase() {
+  try {
+    const { data: cancelled } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('status', 'cancelado');
+
+    if (cancelled && cancelled.length > 0) {
+      for (const c of cancelled) {
+        await supabase.from('order_items').delete().eq('order_id', c.id);
+        await supabase.from('orders').delete().eq('id', c.id);
+      }
+    }
+    return { success: true, deletedCount: cancelled?.length || 0 };
+  } catch (err) {
+    console.error('Error deleting cancelled orders from Supabase:', err);
     return { success: false, error: err };
   }
 }

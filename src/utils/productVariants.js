@@ -123,7 +123,111 @@ export function cleanBaseProductName(rawName, brand = '') {
     name = 'Fit Cachorro';
   }
 
+  // Normalizar singular/plural en tamaños de raza para agrupar formatos del mismo producto
+  name = name
+    .replace(/\brazas\s+pequeñas\b/gi, 'Raza Pequeña')
+    .replace(/\brazas\s+medianas\b/gi, 'Raza Mediana')
+    .replace(/\brazas\s+grandes\b/gi, 'Raza Grande');
+
   return name || String(rawName).trim();
+}
+
+/**
+ * Resuelve de forma determinista y sin falsos positivos a qué registro de inventario
+ * (variante física con su propio ID, formato, precio y costo) corresponde un ítem de pedido o carrito.
+ *
+ * Orden de prioridad estricto:
+ *  1. Coincidencia exacta por `productId` / `product_id` (ej: "PROD-09")
+ *  2. Coincidencia exacta por `id` de producto (cuando no es el UUID de la fila order_items)
+ *  3. Coincidencia exacta por código `SKU`
+ *  4. Coincidencia exacta de Nombre Base normalizado + Formato/Peso normalizado (ej: "Nomade Adulto Raza Pequeña" + "10 kg")
+ *  5. Coincidencia exacta de Nombre Completo + Formato/Peso
+ *  6. Coincidencia exacta de Nombre Base normalizado (solo si no existe ambigüedad con otro nombre distinto)
+ *
+ * @param {Array} inventoryList
+ * @param {Object} item
+ * @returns {Object|null}
+ */
+export function resolveInventoryVariant(inventoryList, item) {
+  if (!Array.isArray(inventoryList) || inventoryList.length === 0 || !item) {
+    return null;
+  }
+
+  const normalizeStr = (s) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const normalizeFormat = (s) =>
+    normalizeStr(s)
+      .replace(/,/g, '.')
+      .replace(/\b(kilos|kilo)\b/g, 'kg')
+      .replace(/\b(gramos|gr)\b/g, 'g');
+
+  const explicitProdId = String(item.productId || item.product_id || '').trim();
+  const rawItemId = String(item.id || '').trim();
+  const itemSku = String(item.sku || item.code || '')
+    .replace(/^SKU-/i, '')
+    .trim()
+    .toLowerCase();
+
+  // 1. Prioridad absoluta: productId explícito
+  if (explicitProdId) {
+    const byProdId = inventoryList.find((p) => p && String(p.id).trim() === explicitProdId);
+    if (byProdId) return byProdId;
+  }
+
+  // 2. Coincidencia por item.id cuando corresponde a un ID de producto (ej. PROD-XX)
+  if (rawItemId) {
+    const byId = inventoryList.find((p) => p && String(p.id).trim() === rawItemId);
+    if (byId) return byId;
+  }
+
+  // 3. Coincidencia exacta por SKU
+  if (itemSku && itemSku !== 'prod') {
+    const bySku = inventoryList.find(
+      (p) =>
+        p &&
+        ((p.sku && String(p.sku).trim().toLowerCase() === itemSku) ||
+          (p.id && String(p.id).trim().toLowerCase() === itemSku))
+    );
+    if (bySku) return bySku;
+  }
+
+  const rawItemName = String(item.name || item.product_name || '').trim();
+  const cleanItemBase = normalizeStr(cleanBaseProductName(rawItemName));
+  const rawItemNameNorm = normalizeStr(rawItemName);
+
+  const itemFmtRaw = item.format || item.weight || extractProductFormat({ name: rawItemName });
+  const itemFmtNorm = normalizeFormat(itemFmtRaw);
+
+  // 4. Coincidencia exacta: Nombre Base normalizado + Formato/Peso exacto
+  if (cleanItemBase && itemFmtNorm && itemFmtNorm !== 'estandar' && itemFmtNorm !== '1 un.') {
+    const byBaseAndFormat = inventoryList.find((p) => {
+      if (!p) return false;
+      const pBase = normalizeStr(cleanBaseProductName(p.name, p.brand));
+      const pFull = normalizeStr(p.name);
+      const pFmt = normalizeFormat(p.format || extractProductFormat(p));
+      return (pBase === cleanItemBase || pFull === rawItemNameNorm) && pFmt === itemFmtNorm;
+    });
+    if (byBaseAndFormat) return byBaseAndFormat;
+  }
+
+  // 5. Coincidencia exacta por nombre completo o nombre base (nunca usando .includes() parcial entre productos distintos)
+  if (cleanItemBase) {
+    const byExactName = inventoryList.find((p) => {
+      if (!p) return false;
+      const pBase = normalizeStr(cleanBaseProductName(p.name, p.brand));
+      const pFull = normalizeStr(p.name);
+      return pFull === rawItemNameNorm || pBase === cleanItemBase;
+    });
+    if (byExactName) return byExactName;
+  }
+
+  return null;
 }
 
 /**
@@ -255,6 +359,7 @@ export function groupProductsForStore(rawProducts) {
       const salePrice = Number(item.salePrice || item.price) || 0;
       const originalPrice = item.originalPrice ? Number(item.originalPrice) : null;
       const unitCostNeto = Number(item.unitCostNeto || item.unit_cost_neto) || 0;
+      const shippingUnitCost = Number(item.shippingUnitCost || item.shipping_unit_cost) || 0;
       const stock = typeof item.stock === 'number' ? item.stock : 10;
       const isPaused = Boolean(item.isPaused || item.is_paused);
       const isActive = item.isActive !== false && item.is_active !== false;
@@ -268,6 +373,7 @@ export function groupProductsForStore(rawProducts) {
         price: salePrice,
         originalPrice: originalPrice,
         unitCostNeto: unitCostNeto,
+        shippingUnitCost: shippingUnitCost,
         stock: stock,
         minStock: item.minStock || 5,
         isPaused: isPaused,

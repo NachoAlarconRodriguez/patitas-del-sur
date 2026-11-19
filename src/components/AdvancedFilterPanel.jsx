@@ -24,26 +24,26 @@ function FilterDropdown({
       <button
         type="button"
         onClick={onToggle}
-        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all border shadow-xs cursor-pointer select-none active:scale-95 ${
+        className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold transition-all border cursor-pointer select-none active:scale-95 ${
           isSelected
-            ? 'bg-amber-100 text-[#78350F] border-[#F5BA13] shadow-sm ring-2 ring-[#F5BA13]/25'
+            ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40'
             : isOpen
-            ? 'bg-slate-100 text-slate-900 border-slate-300'
-            : 'bg-white text-slate-700 border-slate-200/90 hover:bg-amber-50/50 hover:border-amber-200'
+            ? 'bg-[#FEF3C7] text-[#1D1D1F] border-[#F5BA13]'
+            : 'bg-white text-[#1D1D1F] border-[#1D1D1F]/12 hover:bg-[#FEF3C7]/60 hover:border-[#F5BA13] shadow-[0_8px_20px_-14px_rgba(29,29,31,0.22)]'
         }`}
         aria-expanded={isOpen}
       >
         <div
-          className={`w-5 h-5 rounded-lg flex items-center justify-center text-xs shrink-0 ${
-            isSelected ? 'bg-[#F5BA13] text-[#1D1D1F]' : 'bg-slate-100 text-slate-500'
+          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0 ${
+            isSelected ? 'bg-[#F5BA13] text-[#1D1D1F]' : 'bg-[#FEF3C7] text-[#B45309]'
           }`}
         >
-          <Icon className="w-3.5 h-3.5" />
+          <Icon className="w-3 h-3" />
         </div>
 
         <span className="truncate max-w-[140px] sm:max-w-[180px]">
           {isSelected ? `${label}: ` : ''}
-          <strong className={isSelected ? 'text-[#78350F]' : 'text-slate-800'}>
+          <strong className={isSelected ? 'text-[#F5BA13]' : 'text-[#1D1D1F]'}>
             {displayLabel}
           </strong>
         </span>
@@ -54,7 +54,7 @@ function FilterDropdown({
               e.stopPropagation();
               onChange(defaultValues[0]);
             }}
-            className="w-4 h-4 rounded-full bg-[#F5BA13]/30 hover:bg-[#F5BA13]/50 text-[#78350F] flex items-center justify-center text-[10px] ml-0.5 transition-colors cursor-pointer"
+            className="w-4 h-4 rounded-full bg-white/15 hover:bg-white/30 text-white flex items-center justify-center text-[10px] ml-0.5 transition-colors cursor-pointer"
             title="Quitar filtro"
           >
             ×
@@ -62,21 +62,21 @@ function FilterDropdown({
         )}
 
         <ChevronDown
-          className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-slate-700' : ''
-          }`}
+          className={`w-3.5 h-3.5 transition-transform duration-200 ${
+            isSelected ? 'text-[#F5BA13]' : 'text-slate-400'
+          } ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
       {/* Floating Dropdown Menu */}
       {isOpen && (
-        <div className="absolute left-0 top-full mt-2 min-w-[220px] max-w-[280px] bg-white rounded-2xl shadow-xl border border-slate-200/90 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
-          <div className="px-3.5 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
+        <div className="absolute left-0 top-full mt-2 min-w-[230px] max-w-[290px] bg-white rounded-3xl shadow-2xl border border-[#1D1D1F]/10 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+          <div className="px-4 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 flex items-center justify-between">
             <span>{label}</span>
             <span>{options.length} opciones</span>
           </div>
 
-          <div className="max-h-64 overflow-y-auto py-1 scrollbar-thin">
+          <div className="max-h-64 overflow-y-auto py-1 px-1.5 scrollbar-thin">
             {options.map((opt) => {
               const isActive = opt.value === currentValue;
               return (
@@ -86,10 +86,10 @@ function FilterDropdown({
                   onClick={() => {
                     onChange(opt.value);
                   }}
-                  className={`w-full flex items-center justify-between px-3.5 py-2 text-xs text-left transition-colors cursor-pointer ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors cursor-pointer ${
                     isActive
-                      ? 'bg-amber-100 text-[#78350F] font-black'
-                      : 'hover:bg-amber-50/50 text-slate-700 font-semibold'
+                      ? 'bg-[#FEF3C7] text-[#78350F] font-black'
+                      : 'hover:bg-[#FAF8F4] text-slate-700 font-semibold'
                   }`}
                 >
                   <div className="flex items-center gap-2 truncate pr-2">
@@ -99,7 +99,7 @@ function FilterDropdown({
                   <div className="flex items-center gap-1.5 shrink-0">
                     {typeof opt.count === 'number' && (
                       <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                           isActive ? 'bg-[#F5BA13] text-[#1D1D1F]' : 'bg-slate-100 text-slate-500'
                         }`}
                       >
@@ -314,18 +314,23 @@ export default function AdvancedFilterPanel({
   return (
     <div
       ref={containerRef}
-      className="bg-white/90 backdrop-blur-xl rounded-2xl md:rounded-full px-4 sm:px-6 py-3 sm:py-3.5 shadow-sm border border-slate-200/80 mb-8 select-none overflow-visible transition-all"
+      className="bg-white rounded-3xl md:rounded-full px-4 sm:px-6 py-3 sm:py-3.5 shadow-[0_14px_34px_-18px_rgba(29,29,31,0.18)] border border-[#1D1D1F]/10 mb-10 select-none overflow-visible transition-all"
     >
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Left Side: Clean Category Identifier & Live Recipe Count */}
         <div className="flex items-center justify-between md:justify-start gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-sm shrink-0">
-              {petType === 'gatos' ? '🐱' : '🐶'}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#FEF3C7] border border-[#F5BA13]/40 flex items-center justify-center text-[#D97706] shrink-0">
+              <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-paw" />
+              </svg>
             </div>
             <div>
-              <div className="font-heading font-black text-sm text-slate-900 tracking-tight leading-none">
-                {petType === 'gatos' ? 'Nutrición para Gatos' : 'Nutrición para Perros'}
+              <div
+                className="font-extrabold text-sm text-[#1D1D1F] tracking-tight leading-none"
+                style={{ fontFamily: 'var(--font-display)' }}
+              >
+                {petType === 'gatos' ? 'Filtrar Recetas para Gatos' : 'Filtrar Recetas para Perros'}
               </div>
               <div className="text-[11px] font-semibold text-slate-500 mt-0.5">
                 {isLoading ? (
@@ -338,7 +343,8 @@ export default function AdvancedFilterPanel({
                   </span>
                 ) : (
                   <span>
-                    {totalResultsCount} {totalResultsCount === 1 ? 'receta disponible' : 'recetas disponibles'}
+                    Mostrando <strong className="text-[#1D1D1F]">{totalResultsCount}</strong>{' '}
+                    {totalResultsCount === 1 ? 'receta en stock' : 'recetas en stock'}
                   </span>
                 )}
               </div>
@@ -350,7 +356,7 @@ export default function AdvancedFilterPanel({
             <button
               type="button"
               onClick={() => setIsMobileDrawerOpen(true)}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs active:scale-95 cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1D1D1F] text-white font-extrabold text-xs shadow-xs active:scale-95 cursor-pointer"
             >
               <Layers className="w-3.5 h-3.5 text-[#F5BA13]" />
               <span>Filtros</span>
@@ -365,7 +371,7 @@ export default function AdvancedFilterPanel({
               <button
                 type="button"
                 onClick={onResetFilters}
-                className="p-2 rounded-xl bg-red-50 text-red-600 border border-red-100 active:scale-95 cursor-pointer"
+                className="p-2 rounded-full bg-[#FEF3C7] text-[#78350F] border border-[#F5BA13]/40 active:scale-95 cursor-pointer"
                 title="Limpiar filtros"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
@@ -376,6 +382,20 @@ export default function AdvancedFilterPanel({
 
         {/* Desktop Filter Dropdowns Row */}
         <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+          {/* Active Search Query Pill */}
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange && onSearchChange('')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FEF3C7] text-[#78350F] border border-[#F5BA13] text-xs font-extrabold cursor-pointer hover:bg-[#FDE68A] transition-colors"
+              title="Quitar búsqueda"
+            >
+              <Search className="w-3 h-3 text-[#D97706]" />
+              <span className="max-w-[140px] truncate">"{searchQuery}"</span>
+              <X className="w-3 h-3 ml-0.5" />
+            </button>
+          )}
+
           {/* DROPDOWN 1: MARCA */}
           <FilterDropdown
             id="brand"
@@ -444,7 +464,7 @@ export default function AdvancedFilterPanel({
           {activeFiltersCount > 0 && (
             <button
               onClick={onResetFilters}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-red-50 text-red-600 hover:bg-red-100 font-extrabold text-xs transition-all border border-red-100 active:scale-95 shadow-xs cursor-pointer ml-1"
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-[#FEF3C7] text-[#78350F] hover:bg-[#F5BA13] hover:text-[#1D1D1F] font-extrabold text-xs transition-all border border-[#F5BA13]/50 active:scale-95 shadow-xs cursor-pointer ml-1"
             >
               <RefreshCw className="w-3 h-3" />
               <span>Limpiar ({activeFiltersCount})</span>

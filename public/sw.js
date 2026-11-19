@@ -1,12 +1,14 @@
 // Service Worker for Patitas del Sur PWA
-const CACHE_NAME = 'patitas-pwa-v2';
+const CACHE_NAME = 'patitas-pwa-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/favicon.svg',
-  '/logo.svg',
-  '/images/logo_patitas_del_sur.svg'
+  '/pwa-icon-192.png',
+  '/pwa-icon-512.png',
+  '/apple-touch-icon.png',
+  '/images/logo_patitas_del_sur_amber.svg'
 ];
 
 self.addEventListener('install', (event) => {

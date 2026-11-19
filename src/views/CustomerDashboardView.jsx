@@ -58,6 +58,7 @@ import CustomDropdown from '../components/CustomDropdown';
 import { WhatsAppIcon } from '../components/OfficialIcons';
 import VeterinaryConsultationModal from '../components/VeterinaryConsultationModal';
 import AntiparasiticModal from '../components/AntiparasiticModal';
+import SEOHead from '../components/SEOHead';
 import CustomerProfileModal from '../components/CustomerProfileModal';
 import RedeemPointsModal from '../components/RedeemPointsModal';
 import CustomerMembershipCard from './customer/CustomerMembershipCard';
@@ -2588,6 +2589,12 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] pt-4 pb-20 px-4 md:px-8">
+      <SEOHead
+        title="Mi Cuenta · Club Patitas"
+        description="Portal privado de tutor y membresía Club Patitas del Sur."
+        canonical="/mi-cuenta"
+        noindex={true}
+      />
       
       {/* PERSISTENT FLOATING TOP PET SELECTOR & NAVIGATION BAR */}
       <header className="sticky top-3 z-40 mb-6 w-full max-w-xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl mx-auto px-2 sm:px-4">
@@ -6125,7 +6132,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 </div>
 
                 <a
-                  href={`https://wa.me/56987654321?text=${encodeURIComponent(`Hola, tengo una consulta sobre mi entrega del pedido ${liveTrackingOrder.id}.`)}`}
+                  href={`https://wa.me/56953332492?text=${encodeURIComponent(`Hola, tengo una consulta sobre mi entrega del pedido ${liveTrackingOrder.id}.`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"

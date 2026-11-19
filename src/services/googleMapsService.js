@@ -729,20 +729,115 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
 }
 
 /**
- * Resuelve las coordenadas aproximadas o exactas de una orden
+ * Catálogo geográfico local gratuito ($0 llamadas a API) de sectores, barrios y calles
+ * de la Cuenca del Lago Llanquihue para precisión calle a calle en el algoritmo Vecino Más Cercano
+ */
+const LOCAL_SECTOR_COORDINATES = [
+  // Frutillar — Loteo Espacio Frutillar & Sector Norte / Pantanosa
+  { match: ['espacio frutillar', 'parcela 115'], lat: -41.08985, lng: -73.08013 },
+  { match: ['pantanosa', 'tegualda', 'v-155'], lat: -41.1045, lng: -73.0715 },
+  { match: ['quilanto', 'los bajos'], lat: -41.052, lng: -72.978 },
+  // Frutillar Alto (Eje Comercial y Residencial)
+  {
+    match: [
+      'carlos richter',
+      'arturo alessandri',
+      'cristino winkler',
+      'carlos sprenger',
+      'alianza cristiana',
+      'vermont',
+      'reserva frutillar',
+      'los colonos frutillar',
+      'frutillar alto',
+    ],
+    lat: -41.1245,
+    lng: -73.0585,
+  },
+  // Frutillar Bajo & Costanera
+  {
+    match: ['bernardo philippi', 'costanera', 'punta larga', 'teatro del lago', 'frutillar bajo'],
+    lat: -41.1388,
+    lng: -73.0265,
+  },
+  // Casma
+  { match: ['casma', 'los laureles'], lat: -41.05, lng: -73.1833 },
+  // Fresia
+  { match: ['fresia', 'trautmann', 'san carlos'], lat: -41.15, lng: -73.4167 },
+  // Totoral
+  { match: ['totoral'], lat: -41.218, lng: -73.012 },
+  // Llanquihue
+  {
+    match: ['baquedano', 'los volcanes', 'errazuriz', 'errázuriz', 'llanquihue'],
+    lat: -41.2547,
+    lng: -73.0075,
+  },
+  // Puerto Varas — Acceso Norte / Gramado / Santa Rosa
+  {
+    match: ['gramado', 'santa rosa', 'los colonos', 'parque doña ema', 'dona ema'],
+    lat: -41.3125,
+    lng: -72.987,
+  },
+  // Puerto Varas — Centro
+  {
+    match: ['san francisco', 'del salvador', 'walker martinez', 'walker martínez', 'san pedro', 'imperial'],
+    lat: -41.3195,
+    lng: -72.9854,
+  },
+  // Puerto Varas — Puerto Chico / Costanera Sur / Ensenada
+  {
+    match: ['perez rosales', 'pérez rosales', 'puerto chico', 'ensenada', 'decher', 'mirador'],
+    lat: -41.3265,
+    lng: -72.964,
+  },
+  // Puerto Octay
+  { match: ['puerto octay', 'centinela', 'pedro montt', 'independencia'], lat: -40.9739, lng: -72.8856 },
+  // Alerce / Puerto Montt
+  { match: ['alerce', 'puerto montt'], lat: -41.3965, lng: -72.9102 },
+];
+
+/**
+ * Resuelve las coordenadas exactas o de sector local de una orden (100% local, $0 costo API)
  */
 export function resolveOrderCoordinates(order) {
-  if (order.lat && order.lng) {
-    return { lat: Number(order.lat), lng: Number(order.lng) };
+  if (!order) return TOWN_COORDINATES['Frutillar'];
+
+  const exactLat = Number(order.lat ?? order.delivery_lat ?? order.latitude);
+  const exactLng = Number(order.lng ?? order.delivery_lng ?? order.longitude);
+  if (Number.isFinite(exactLat) && Number.isFinite(exactLng) && exactLat !== 0 && exactLng !== 0) {
+    return { lat: exactLat, lng: exactLng };
   }
-  const city = normalizeCommune(order.city || 'Puerto Varas');
-  return TOWN_COORDINATES[city] || TOWN_COORDINATES['Puerto Varas'];
+
+  const rawAddress = String(order.address || '').toLowerCase().trim();
+  const rawCity = String(order.city || 'Frutillar').toLowerCase().trim();
+  const combined = `${rawAddress} ${rawCity}`;
+
+  // Extraer numeración de calle para micro-ordenar secuencialmente pedidos dentro de la misma calle/sector
+  const numMatch = rawAddress.match(/\b(\d{1,5})\b/);
+  const streetNum = numMatch ? parseInt(numMatch[1], 10) : 0;
+  const microOffsetLat = ((streetNum % 500) - 250) * 0.000012;
+  const microOffsetLng = ((streetNum % 300) - 150) * 0.000012;
+
+  for (const sector of LOCAL_SECTOR_COORDINATES) {
+    if (sector.match.some((kw) => combined.includes(kw))) {
+      return {
+        lat: sector.lat + microOffsetLat,
+        lng: sector.lng + microOffsetLng,
+      };
+    }
+  }
+
+  const city = normalizeCommune(order.city || 'Frutillar');
+  const baseCoords = TOWN_COORDINATES[city] || TOWN_COORDINATES['Frutillar'];
+  return {
+    lat: baseCoords.lat + microOffsetLat,
+    lng: baseCoords.lng + microOffsetLng,
+  };
 }
 
 /**
- * Optimizador inteligente de rutas multiparada para despachos (Algoritmo Vecino Más Cercano)
- * Ordena las entregas desde la Bodega Central minimizando el kilometraje y tiempo.
- * Genera la URL universal multiparada de Google Maps (100% Gratuita, sin consumir APIs de pago).
+ * Optimizador inteligente de rutas multiparada para despachos (Algoritmo Vecino Más Cercano / TSP)
+ * Ordena las entregas encadenando: Origen -> Parada #1 (más cercana al origen) -> Parada #2 (más cercana a la #1) -> etc.
+ * 100% Gratuito ($0 costo de API: cálculo geométrico local + URL universal gratuita de Google Maps).
  */
 export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB) {
   if (!orders || orders.length === 0) {
@@ -753,22 +848,37 @@ export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB) {
     };
   }
 
+  const startHub =
+    hub && Number.isFinite(Number(hub.lat)) && Number.isFinite(Number(hub.lng))
+      ? hub
+      : CENTRAL_HUB;
+  const originLabel = startHub.isLiveGps ? 'tu GPS' : 'Bodega';
+
   // Si hay una sola orden
   if (orders.length === 1) {
     const single = orders[0];
     const coords = resolveOrderCoordinates(single);
-    const dist = calculateHaversineDistance(hub.lat, hub.lng, coords.lat, coords.lng);
+    const dist = Math.max(0.1, calculateHaversineDistance(startHub.lat, startHub.lng, coords.lat, coords.lng));
+    const roundedDist = Number(dist.toFixed(1));
     return {
-      optimizedOrders: [{ ...single, stopNumber: 1, legDistanceKm: Number(dist.toFixed(1)) }],
+      optimizedOrders: [
+        {
+          ...single,
+          stopNumber: 1,
+          legDistanceKm: roundedDist,
+          cumulativeDistanceKm: roundedDist,
+          previousStopLabel: `desde ${originLabel}`,
+        },
+      ],
       googleMapsUrl: getSingleOrderNavigationUrl(single),
-      totalDistanceKm: Number(dist.toFixed(1)),
+      totalDistanceKm: roundedDist,
     };
   }
 
-  // Algoritmo Greedy Nearest Neighbor desde Bodega Central
+  // Algoritmo Greedy Nearest Neighbor encadenado parada a parada
   const unvisited = [...orders];
   const optimized = [];
-  let currentLocation = { lat: hub.lat, lng: hub.lng };
+  let currentLocation = { lat: Number(startHub.lat), lng: Number(startHub.lng) };
   let totalKm = 0;
   let stopCounter = 1;
 
@@ -792,30 +902,43 @@ export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB) {
 
     const [nearestOrder] = unvisited.splice(nearestIndex, 1);
     const nextCoords = resolveOrderCoordinates(nearestOrder);
-    totalKm += shortestDist;
+    const legKm = Math.max(0.1, Number(shortestDist.toFixed(1)));
+    totalKm += legKm;
+    const currentStopNum = stopCounter++;
 
     optimized.push({
       ...nearestOrder,
-      stopNumber: stopCounter++,
-      legDistanceKm: Number(shortestDist.toFixed(1)),
+      stopNumber: currentStopNum,
+      legDistanceKm: legKm,
+      cumulativeDistanceKm: Number(totalKm.toFixed(1)),
+      previousStopLabel:
+        currentStopNum === 1 ? `desde ${originLabel}` : `desde Parada #${currentStopNum - 1}`,
     });
 
     currentLocation = nextCoords;
   }
 
-  // Construir la URL universal de Google Maps con waypoints
-  const origin = encodeURIComponent(hub.address);
+  // Construir la URL universal gratuita de Google Maps con todas las paradas encadenadas
+  const originParam =
+    startHub.lat && startHub.lng
+      ? `${startHub.lat},${startHub.lng}`
+      : encodeURIComponent(startHub.address || CENTRAL_HUB.address);
   const lastOrder = optimized[optimized.length - 1];
-  const destination = encodeURIComponent(
-    `${lastOrder.address || ''}, ${lastOrder.city || 'Puerto Varas'}, Chile`
-  );
+  const destination =
+    lastOrder.lat && lastOrder.lng
+      ? `${lastOrder.lat},${lastOrder.lng}`
+      : encodeURIComponent(`${lastOrder.address || ''}, ${lastOrder.city || 'Frutillar'}, Región de Los Lagos, Chile`);
 
   const intermediateOrders = optimized.slice(0, optimized.length - 1);
   const waypoints = intermediateOrders
-    .map((o) => encodeURIComponent(`${o.address || ''}, ${o.city || 'Puerto Varas'}, Chile`))
+    .map((o) =>
+      o.lat && o.lng
+        ? `${o.lat},${o.lng}`
+        : encodeURIComponent(`${o.address || ''}, ${o.city || 'Frutillar'}, Región de Los Lagos, Chile`)
+    )
     .join('|');
 
-  let googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+  let googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${destination}&travelmode=driving`;
   if (waypoints) {
     googleMapsUrl += `&waypoints=${waypoints}`;
   }

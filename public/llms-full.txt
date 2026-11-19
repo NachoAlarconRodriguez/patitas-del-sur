@@ -4,11 +4,13 @@
 - **Nombre Comercial**: Patitas del Sur
 - **Razón Social**: Comercial Kira SpA
 - **RUT**: 77.892.451-2
-- **Dirección Operativa**: Puerto Varas, Región de Los Lagos, Chile (Coordenadas: -41.3195, -72.9854)
+- **Dirección Operativa / Centro de Distribución**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Coordenadas: -41.08985, -73.08013)
 - **E-mail Oficial**: contacto@patitasdelsur.cl
-- **WhatsApp Oficial de Asesoría y Pedidos**: +56 9 8765 4321
+- **E-mail Postventa**: postventa@patitasdelsur.cl
+- **WhatsApp Oficial de Asesoría y Pedidos**: +56 9 5333 2492 (https://wa.me/56953332492)
 - **Sitio Web Oficial**: https://patitasdelsur.cl
-- **Área Geográfica de Cobertura Directa**: Puerto Varas, Llanquihue, Frutillar, Puerto Montt.
+- **Instagram Oficial**: https://www.instagram.com/patitasdelsur.cl
+- **Área Geográfica de Cobertura Directa**: Frutillar, Llanquihue, Puerto Varas, Puerto Montt, Puerto Octay, Casma, Fresia y Totoral (zonas urbanas y parcelaciones rurales).
 
 ### Filosofía y Valores
 Patitas del Sur nació en la Patagonia chilena con el objetivo de elevar la calidad de vida de perros y gatos a través de la nutrición natural y biológicamente apropiada. Priorizamos fórmulas sin rellenos artificiales (sin maíz, sin trigo, sin soya), alimentos monoproteicos para mascotas alérgicas o con sensibilidad digestiva, premios 100% de carne deshidratada y asesoría veterinaria personalizada vía WhatsApp.
@@ -225,14 +227,18 @@ Patitas del Sur nació en la Patagonia chilena con el objetivo de elevar la cali
 
 ## 3. Logística, Cobertura y Despachos Regionales
 
-| Comuna | Plazo de Entrega | Tarifa Normal | Envío Gratis |
+| Comuna / Localidad | Plazo y Frecuencia de Entrega | Tarifa Base | Envío Gratis |
 |---|---|---|---|
-| **Puerto Varas** | Mismo día hábil (compras antes 14:00) o 24 hrs | $2.000 CLP | Sí, sobre $35.000 CLP |
-| **Llanquihue** | Mismo día hábil o máximo 24 hrs | $2.500 CLP | Sí, sobre $35.000 CLP |
-| **Frutillar (Bajo y Alto)** | 24 a 48 hrs hábiles programadas | $3.500 CLP | Sí, sobre $35.000 CLP |
-| **Puerto Montt** | 24 a 48 hrs hábiles | $3.500 CLP | Sí, sobre $35.000 CLP |
+| **Frutillar (Urbano y Parcelas)** | Mismo día hábil (compras antes 14:00) o 24 hrs (Lun a Sáb) | Desde $2.000 CLP | Sí, desde $25.000 CLP |
+| **Llanquihue (Urbano y Parcelas)** | Mismo día hábil o máximo 24 hrs (Lun a Sáb) | Desde $2.000 - $2.500 CLP | Sí, desde $25.000 CLP |
+| **Puerto Varas (Urbano y Parcelas)** | Mismo día hábil o máximo 24 hrs (Lun a Sáb) | Desde $2.000 CLP | Sí, desde $25.000 CLP |
+| **Puerto Montt (Urbano, Alerce, Valle Volcanes)** | 24 a 48 hrs hábiles | Según radio/sector | Según umbral comunal |
+| **Puerto Octay** | Ruta programada (Lun, Mié y Vie) | Según radio/sector | Según umbral comunal |
+| **Casma** | Ruta programada (Mar y Jue) | Según radio/sector | Según umbral comunal |
+| **Fresia** | Ruta programada (Mié y Vie) | Según radio/sector | Según umbral comunal |
+| **Totoral** | Ruta programada (Mar y Sáb) | Según radio/sector | Según umbral comunal |
 
-- **Flota Propia**: Contamos con vehículos acondicionados para proteger los sacos de alimento y medicamentos del clima húmedo de la zona.
+- **Flota Propia Climatizada**: Contamos con vehículos acondicionados para proteger los sacos de alimento y suplementos del clima húmedo del sur, llegando directamente a casas urbanas, condominios y parcelaciones rurales.
 - **Rastreo y Notificaciones**: El cliente recibe avisos de estado por WhatsApp y correo electrónico cuando el repartidor inicia la ruta hacia su domicilio.
 
 ---
@@ -240,14 +246,18 @@ Patitas del Sur nació en la Patagonia chilena con el objetivo de elevar la cali
 ## 4. Políticas Comerciales y Marco Legal (Chile)
 
 ### Medios de Pago Disponibles
-1. **Webpay Plus**: Pago seguro con tarjetas de crédito (Visa, Mastercard, American Express), débito Redcompra y tarjetas de prepago (Mach, Tenpo, etc.) con opción de cuotas según el banco emisor.
-2. **Transferencia Bancaria Directa**: Banco de Chile / Santander / BCI a nombre de Comercial Kira SpA con validación inmediata vía comprobante.
-3. **Efectivo Contra Entrega**: Habilitado en comunas de Puerto Varas y Llanquihue previa confirmación por WhatsApp.
+1. **Mercado Pago**: Pago seguro en línea con todas las tarjetas de crédito (Visa, Mastercard, American Express), débito Redcompra y tarjetas de prepago chilenas (Mach, Tenpo, etc.).
+2. **Transferencia Bancaria Directa**: A cuenta corriente de Comercial Kira SpA (RUT 77.892.451-2) con validación rápida vía comprobante en WhatsApp (+56 9 5333 2492) o pagos@patitasdelsur.cl.
+3. **Efectivo Contra Entrega**: Habilitado en zonas seleccionadas previa confirmación por WhatsApp.
+
+### Programa de Fidelización Club Patitas
+- Por cada **$1.000 CLP** de compra como usuario registrado, el cliente acumula **1 punto Club Patitas**, canjeable por descuentos directos en futuras compras de alimento o snacks.
 
 ### Garantía Legal y Devoluciones
 - Conforme a la **Ley N° 19.496 sobre Protección de los Derechos de los Consumidores (SERNAC)**, todos los productos cuentan con **6 meses de garantía legal** ante fallas de fábrica, rotura de empaque original o defectos de sellado.
-- Para cambios por preferencia de sabor o tamaño de croqueta: se aceptan solicitudes dentro de los primeros **10 días corridos** desde la recepción, siempre que el envase permanezca 100% sellado e intacto.
-- Canal de devoluciones: E-mail a contacto@patitasdelsur.cl o directamente por WhatsApp al +56 9 8765 4321 indicando número de pedido.
+- **Cambios con envase sellado (10 días):** Se aceptan solicitudes de cambio de receta o formato dentro de los primeros **10 días corridos** desde la recepción, siempre que el envase permanezca 100% sellado e intacto.
+- **Garantía de Palatabilidad (5 días):** Si a la mascota no le agrada el sabor de una receta recién adquirida, se permite solicitar cambio por otra variedad dentro de los primeros **5 días hábiles**, conservando al menos el **80% de su contenido original** en óptimas condiciones higiénicas.
+- **Canal de postventa y devoluciones:** E-mail a postventa@patitasdelsur.cl o contacto@patitasdelsur.cl, o directamente por WhatsApp al +56 9 5333 2492 indicando número de pedido.
 
 ---
 

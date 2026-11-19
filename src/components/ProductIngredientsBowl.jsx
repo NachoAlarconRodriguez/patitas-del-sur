@@ -3,7 +3,7 @@ import { resolveProductBowlData } from '../utils/productBowlResolver';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
-export default function ProductIngredientsBowl({ product }) {
+export default function ProductIngredientsBowl({ product, embedded = false }) {
   const [activeIng, setActiveIng] = useState(0);
   const sectionRef = useRef(null);
   const bowlRef = useRef(null);
@@ -133,7 +133,10 @@ export default function ProductIngredientsBowl({ product }) {
   if (!product) return null;
 
   return (
-    <div ref={sectionRef} className="kibo-page kibo-bowl-section mt-8 md:mt-12">
+    <div
+      ref={sectionRef}
+      className={`kibo-page kibo-bowl-section ${embedded ? 'mt-0 is-embedded' : 'mt-8 md:mt-12'}`}
+    >
       <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: 'absolute' }}>
         <symbol id="i-paw-bowl" viewBox="0 0 24 24">
           <g fill="currentColor">

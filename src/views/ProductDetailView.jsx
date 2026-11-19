@@ -4,7 +4,7 @@ import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase, updateProductInSupabase, cleanIngredientName } from '../services/productsService';
 import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
-import AppleNutritionSpecs from '../components/AppleNutritionSpecs';
+import PawProgressLoader from '../components/PawProgressLoader';
 import ProductIngredientsBowl from '../components/ProductIngredientsBowl';
 import SEOHead from '../components/SEOHead';
 import { getProductSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
@@ -349,37 +349,70 @@ function getProteinBadge(mainProteinStr, productNameStr) {
   };
 }
 
-export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
+export default function ProductDetailView({ onAddToCart, onSelectProduct, cartItems = [] }) {
   const { id } = useParams();
   const navigate = useNavigate();
 
   const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
+  const [isLoading, setIsLoading] = useState(
+    () => !FALLBACK_PRODUCTS || FALLBACK_PRODUCTS.length === 0
+  );
+  const [loadProgress, setLoadProgress] = useState(10);
 
   useEffect(() => {
     let isMounted = true;
+    let progressTimer = null;
+    let finishTimer = null;
+
+    if (!allProducts || allProducts.length === 0) {
+      setIsLoading(true);
+      setLoadProgress(12);
+      progressTimer = setInterval(() => {
+        setLoadProgress((prev) => {
+          if (prev >= 90) return prev;
+          const step = Math.max(2, Math.round((92 - prev) * 0.22));
+          return Math.min(90, prev + step);
+        });
+      }, 85);
+    }
+
     const load = async () => {
-      const data = await fetchProductsFromSupabase();
-      if (isMounted && data && data.length > 0) {
-        setAllProducts(data);
+      try {
+        const data = await fetchProductsFromSupabase();
+        if (!isMounted) return;
+        if (data && data.length > 0) {
+          setAllProducts(data);
+        }
+      } finally {
+        if (!isMounted) return;
+        if (progressTimer) clearInterval(progressTimer);
+        setLoadProgress(100);
+        finishTimer = setTimeout(() => {
+          if (isMounted) setIsLoading(false);
+        }, 220);
       }
     };
     load();
     window.addEventListener('patitas_products_updated', load);
     return () => {
       isMounted = false;
+      if (progressTimer) clearInterval(progressTimer);
+      if (finishTimer) clearTimeout(finishTimer);
       window.removeEventListener('patitas_products_updated', load);
     };
   }, []);
 
-  // Find product by URL param or default to first product, resolving grouped variants
+  // Find product by URL param, resolving grouped variants without falling back to unrelated products (prevents Soft 404)
   const product = useMemo(() => {
-    if (!allProducts || allProducts.length === 0) return FALLBACK_PRODUCTS[0];
+    if (!allProducts || allProducts.length === 0) return null;
     const grouped = groupProductsForStore(allProducts);
-    let found = grouped.find((p) => p.id === id);
+    let found = grouped.find((p) => String(p.id) === String(id) || String(p.sku) === String(id));
     if (found) return found;
-    found = grouped.find((p) => p.variants && p.variants.some((v) => v.id === id || v.sku === id));
+    found = grouped.find(
+      (p) => p.variants && p.variants.some((v) => String(v.id) === String(id) || String(v.sku) === String(id))
+    );
     if (found) return found;
-    return allProducts.find((p) => p.id === id) || grouped[0] || FALLBACK_PRODUCTS[0];
+    return allProducts.find((p) => String(p.id) === String(id) || String(p.sku) === String(id)) || null;
   }, [allProducts, id]);
 
   const isDog = product?.petType === 'perros';
@@ -550,14 +583,28 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     }
   }, [id, product]);
 
+  if (isLoading) {
+    return <PawProgressLoader progress={loadProgress} />;
+  }
+
   if (!product) {
     return (
       <div className="pt-36 pb-24 max-w-4xl mx-auto px-6 text-center space-y-4">
-        <h2 className="text-2xl font-black text-slate-800">Producto no disponible</h2>
+        <SEOHead
+          title="Producto no encontrado"
+          description="El producto consultado no se encuentra disponible actualmente en nuestro catálogo."
+          noindex={true}
+        />
+        <h1 className="text-2xl font-black text-slate-800">Producto no disponible</h1>
         <p className="text-slate-500 text-sm">El catálogo se encuentra en actualización o el producto consultado no existe.</p>
-        <Link to="/perros" className="inline-block px-6 py-2.5 rounded-full bg-[#1D1D1F] hover:bg-black hover:text-[#F5BA13] text-white text-xs font-bold transition-all shadow-md active:scale-95">
-          Explorar Catálogo
-        </Link>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Link to="/perros" className="inline-block px-6 py-2.5 rounded-full bg-[#1D1D1F] hover:bg-black hover:text-[#F5BA13] text-white text-xs font-bold transition-all shadow-md active:scale-95">
+            Ver Catálogo Perros
+          </Link>
+          <Link to="/gatos" className="inline-block px-6 py-2.5 rounded-full bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 text-xs font-bold transition-all shadow-xs active:scale-95">
+            Ver Catálogo Gatos
+          </Link>
+        </div>
       </div>
     );
   }
@@ -632,6 +679,21 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     : (typeof product?.stock === 'number' ? product.stock : 10);
   const isOutOfStock = currentStock <= 0;
 
+  const activeVariantId = activeVariant?.id || product?.id;
+  const inCartQty = (cartItems || [])
+    .filter(
+      (ci) =>
+        (ci.id === activeVariantId || ci.productId === activeVariantId) &&
+        (ci.weight === selectedWeight || ci.selectedWeight === selectedWeight)
+    )
+    .reduce((sum, ci) => sum + (Number(ci.quantity) || 0), 0);
+  const remainingStock = Math.max(0, currentStock - inCartQty);
+  const isMaxStockInCart = !isOutOfStock && remainingStock <= 0;
+  const effectiveQuantity =
+    isOutOfStock || isMaxStockInCart
+      ? 0
+      : Math.max(1, Math.min(quantity, remainingStock));
+
   const formatCLP = (price) => {
     return new Intl.NumberFormat('es-CL', {
       style: 'currency',
@@ -641,7 +703,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
   };
 
   const handleAddToCart = () => {
-    if (isOutOfStock) return;
+    if (isOutOfStock || isMaxStockInCart) return;
     const variantName = activeVariant && activeVariant.format && activeVariant.format !== product.name
       ? `${product.name} (${activeVariant.format})`
       : product.name;
@@ -652,15 +714,19 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
     const itemToAdd = {
       ...product,
       id: activeVariant?.id || product.id,
+      productId: activeVariant?.id || product.id,
       name: variantName,
       sku: activeVariant?.sku || product.sku,
       price: currentPrice,
-      unitCostNeto: activeVariant?.unitCostNeto || product.unitCostNeto,
+      unitCostNeto: activeVariant?.unitCostNeto ?? product.unitCostNeto ?? 0,
+      shippingUnitCost: activeVariant?.shippingUnitCost ?? product.shippingUnitCost ?? 0,
+      format: selectedWeight,
       selectedWeight: selectedWeight,
       weight: selectedWeight,
       stock: activeVariantStock,
     };
-    onAddToCart(itemToAdd, selectedWeight, quantity);
+    onAddToCart(itemToAdd, selectedWeight, effectiveQuantity);
+    setQuantity(1);
     setAddedSuccess(true);
     setTimeout(() => setAddedSuccess(false), 2500);
   };
@@ -777,48 +843,43 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               <img
                 src={productImages[activeImageIndex] || product.image}
                 alt={`${product.name} - Vista ${activeImageIndex + 1}`}
-                className="w-full h-full object-contain drop-shadow-2xl hover:scale-105 transition-all duration-500"
+                className={`w-full h-full object-contain drop-shadow-2xl hover:scale-105 transition-all duration-500 ${
+                  productImages.length > 1 ? 'pb-14' : ''
+                }`}
               />
+
+              {/* Miniaturas de Galería superpuestas sobre la card de imagen */}
+              {productImages.length > 1 && (
+                <div className="absolute bottom-3.5 inset-x-4 z-20 flex items-center justify-center gap-3 py-1 overflow-x-auto scrollbar-none">
+                  {productImages.map((img, idx) => {
+                    const isActive = activeImageIndex === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setActiveImageIndex(idx)}
+                        className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl p-1.5 cursor-pointer flex-shrink-0 transition-all duration-200 border-2 bg-white/95 backdrop-blur-md ${
+                          isActive
+                            ? 'border-[#F5BA13] shadow-md ring-2 ring-[#F5BA13]/40 scale-105'
+                            : 'border-slate-200/90 hover:border-slate-300 opacity-80 hover:opacity-100 hover:scale-102 shadow-sm'
+                        }`}
+                        title={`Ver foto ${idx + 1}`}
+                        aria-label={`Ver foto ${idx + 1}`}
+                      >
+                        <img
+                          src={img}
+                          alt={`Miniatura ${idx + 1}`}
+                          className="w-full h-full object-contain rounded-xl"
+                        />
+                        {isActive && (
+                          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs bg-[#F5BA13]" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-
-            {/* Recuadros Pequeños (Miniaturas de Galería) ubicados en la posición entre la foto y la nutrición */}
-            {productImages.length > 1 && (
-              <div className="flex items-center justify-center gap-3 w-full py-2 overflow-x-auto scrollbar-none px-1">
-                {productImages.map((img, idx) => {
-                  const isActive = activeImageIndex === idx;
-                  return (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setActiveImageIndex(idx)}
-                      className={`relative w-16 h-16 sm:w-18 sm:h-18 rounded-2xl p-1.5 cursor-pointer flex-shrink-0 transition-all duration-200 border-2 bg-white ${
-                        isActive
-                          ? 'border-[#F5BA13] shadow-md ring-2 ring-[#F5BA13]/40 scale-105'
-                          : 'border-slate-200/90 hover:border-slate-300 opacity-75 hover:opacity-100 hover:scale-102 shadow-2xs'
-                      }`}
-                      title={`Ver foto ${idx + 1}`}
-                      aria-label={`Ver foto ${idx + 1}`}
-                    >
-                      <img
-                        src={img}
-                        alt={`Miniatura ${idx + 1}`}
-                        className="w-full h-full object-contain rounded-xl"
-                      />
-                      {isActive && (
-                        <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white shadow-xs bg-[#F5BA13]" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Apple Style Nutrition Rings & Spec Visualizer (Proteína Animal % + Libre de Grano) */}
-            <AppleNutritionSpecs
-              product={product}
-              activeFlavor={selectedWeight || ''}
-              className="w-full shadow-2xs mt-2"
-            />
           </div>
 
           {/* Right Column: Product Info, Purchase Action & Integrated Detail Tabs */}
@@ -958,27 +1019,27 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
               <div ref={mainCtaRef} className="flex items-center gap-3">
                 <div className="flex items-center border border-slate-200 rounded-xl bg-white p-0.5 shrink-0">
                   <button
-                    disabled={isOutOfStock}
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-50 cursor-pointer"
+                    disabled={isOutOfStock || isMaxStockInCart || effectiveQuantity <= 1}
+                    onClick={() => setQuantity(Math.max(1, effectiveQuantity - 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     -
                   </button>
-                  <span className="w-9 text-center text-sm font-black text-slate-900">{quantity}</span>
+                  <span className="w-9 text-center text-sm font-black text-slate-900">{effectiveQuantity}</span>
                   <button
-                    disabled={isOutOfStock}
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-50 cursor-pointer"
+                    disabled={isOutOfStock || isMaxStockInCart || effectiveQuantity >= remainingStock}
+                    onClick={() => setQuantity(Math.min(remainingStock, effectiveQuantity + 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-50 text-slate-800 font-extrabold text-sm flex items-center justify-center hover:bg-slate-100 shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     +
                   </button>
                 </div>
 
                 <button
-                  disabled={isOutOfStock}
+                  disabled={isOutOfStock || isMaxStockInCart}
                   onClick={handleAddToCart}
                   className={`flex-1 py-3 px-6 rounded-xl font-black text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${
-                    isOutOfStock
+                    isOutOfStock || isMaxStockInCart
                       ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                       : addedSuccess
                       ? 'bg-[#F5BA13] text-[#1D1D1F] font-black shadow-md'
@@ -987,6 +1048,8 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                 >
                   {isOutOfStock ? (
                     <span>Agotado en {selectedWeight}</span>
+                  ) : isMaxStockInCart ? (
+                    <span>STOCK MÁX. EN CARRITO ({inCartQty} un.)</span>
                   ) : addedSuccess ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 stroke-[3]" />
@@ -995,172 +1058,277 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
                   ) : (
                     <>
                       <ShoppingBag className="w-4 h-4" />
-                      <span>AGREGAR AL CARRITO ({formatCLP(currentPrice * quantity)})</span>
+                      <span>AGREGAR AL CARRITO ({formatCLP(currentPrice * effectiveQuantity)})</span>
                     </>
                   )}
                 </button>
               </div>
             </div>
 
-            {/* Integrated Tab Navigation Bar (Elevado junto con las demás secciones) */}
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5 overflow-x-auto scrollbar-none pt-1">
-              <button
-                type="button"
-                onClick={() => setActiveTab('ingredientes')}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-                  activeTab === 'ingredientes'
-                    ? 'bg-[#1D1D1F] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                <Utensils className="w-3.5 h-3.5 text-[#F5BA13]" />
-                <span>Ingredientes & Análisis</span>
-              </button>
+            {/* Compact Benefits & Loyalty Strip to balance the 2-column hero */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#FEF3C7]/60 border border-[#F5BA13]/35">
+                <span className="w-8 h-8 rounded-xl bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center font-black text-sm shrink-0">
+                  🐾
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black text-[#78350F] leading-tight">
+                    +{Math.max(1, Math.floor(((currentPrice || 0) * quantity) / 1000))} pts Club Patitas
+                  </div>
+                  <div className="text-[10px] font-semibold text-[#92400E]/80 truncate">
+                    Acumula en cada compra
+                  </div>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('racion')}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-                  activeTab === 'racion'
-                    ? 'bg-[#1D1D1F] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                <Scale className="w-3.5 h-3.5 text-amber-400" />
-                <span>Guía de Alimentación</span>
-              </button>
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Truck className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black text-slate-800 leading-tight">
+                    Despacho en el Sur
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500 truncate">
+                    Puerto Varas y alrededores
+                  </div>
+                </div>
+              </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('beneficios')}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-                  activeTab === 'beneficios'
-                    ? 'bg-[#1D1D1F] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Beneficios</span>
-              </button>
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black text-slate-800 leading-tight">
+                    Calidad Garantizada
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-500 truncate">
+                    Ingredientes seleccionados
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
 
-              <button
-                type="button"
-                onClick={() => setActiveTab('resenas')}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer ${
-                  activeTab === 'resenas'
-                    ? 'bg-[#1D1D1F] text-white shadow-xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
+          {/* =====================================================================
+              FULL-WIDTH 12-COLUMN TABS SECTION INSIDE THE SAME MAIN CARD
+             ===================================================================== */}
+          <div className="mt-8 pt-7 border-t border-slate-200/70 space-y-6">
+            {/* Centered Capsule Tab Navigation Bar (Kibo / Patitas del Sur 2.0 style) */}
+            <div className="flex justify-center w-full">
+              <div
+                role="tablist"
+                aria-label="Información detallada del producto"
+                className="inline-flex items-center justify-center flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-3xl sm:rounded-full bg-[#F6F3EC] border border-[#E6E0D3] shadow-[inset_0_1px_2px_rgba(20,20,20,0.04),0_8px_24px_-8px_rgba(20,20,20,0.07)] max-w-full overflow-x-auto scrollbar-none"
               >
-                <MessageSquare className="w-3.5 h-3.5 text-amber-400" />
-                <span>Reseñas ({product.reviewsCount})</span>
-              </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'ingredientes'}
+                  onClick={() => setActiveTab('ingredientes')}
+                  className={`group flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-[13px] font-extrabold tracking-tight transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
+                    activeTab === 'ingredientes'
+                      ? 'bg-[#141414] text-white shadow-[0_6px_16px_-4px_rgba(20,20,20,0.28)]'
+                      : 'bg-transparent text-stone-600 hover:bg-white/90 hover:text-[#141414] hover:shadow-2xs'
+                  }`}
+                >
+                  <span
+                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                      activeTab === 'ingredientes'
+                        ? 'bg-[#F5BA13] text-[#141414]'
+                        : 'bg-white/80 text-[#D97706] group-hover:bg-[#FEF3C7]'
+                    }`}
+                  >
+                    <Utensils className="w-3.5 h-3.5" />
+                  </span>
+                  <span>Ingredientes & Análisis</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'racion'}
+                  onClick={() => setActiveTab('racion')}
+                  className={`group flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-[13px] font-extrabold tracking-tight transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
+                    activeTab === 'racion'
+                      ? 'bg-[#141414] text-white shadow-[0_6px_16px_-4px_rgba(20,20,20,0.28)]'
+                      : 'bg-transparent text-stone-600 hover:bg-white/90 hover:text-[#141414] hover:shadow-2xs'
+                  }`}
+                >
+                  <span
+                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                      activeTab === 'racion'
+                        ? 'bg-[#F5BA13] text-[#141414]'
+                        : 'bg-white/80 text-[#D97706] group-hover:bg-[#FEF3C7]'
+                    }`}
+                  >
+                    <Scale className="w-3.5 h-3.5" />
+                  </span>
+                  <span>Guía de Alimentación</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'beneficios'}
+                  onClick={() => setActiveTab('beneficios')}
+                  className={`group flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-[13px] font-extrabold tracking-tight transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
+                    activeTab === 'beneficios'
+                      ? 'bg-[#141414] text-white shadow-[0_6px_16px_-4px_rgba(20,20,20,0.28)]'
+                      : 'bg-transparent text-stone-600 hover:bg-white/90 hover:text-[#141414] hover:shadow-2xs'
+                  }`}
+                >
+                  <span
+                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                      activeTab === 'beneficios'
+                        ? 'bg-[#F5BA13] text-[#141414]'
+                        : 'bg-white/80 text-emerald-600 group-hover:bg-emerald-50'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </span>
+                  <span>Beneficios</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'resenas'}
+                  onClick={() => setActiveTab('resenas')}
+                  className={`group flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-full text-xs sm:text-[13px] font-extrabold tracking-tight transition-all duration-200 shrink-0 cursor-pointer active:scale-95 ${
+                    activeTab === 'resenas'
+                      ? 'bg-[#141414] text-white shadow-[0_6px_16px_-4px_rgba(20,20,20,0.28)]'
+                      : 'bg-transparent text-stone-600 hover:bg-white/90 hover:text-[#141414] hover:shadow-2xs'
+                  }`}
+                >
+                  <span
+                    className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+                      activeTab === 'resenas'
+                        ? 'bg-[#F5BA13] text-[#141414]'
+                        : 'bg-white/80 text-[#D97706] group-hover:bg-[#FEF3C7]'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </span>
+                  <span>
+                    Reseñas{product.reviewsCount ? ` (${product.reviewsCount})` : ''}
+                  </span>
+                </button>
+              </div>
             </div>
 
-            {/* TAB 1: INGREDIENTES & ANÁLISIS GARANTIZADO */}
+            {/* TAB 1: PLATO INTERACTIVO DE INGREDIENTES + ANÁLISIS GARANTIZADO + LISTA COMPLETA */}
             {activeTab === 'ingredientes' && (
-              <div className="space-y-4 pt-1 animate-in fade-in duration-200">
-                {/* Ingredientes en texto fluido continuo con Top 5 destacados */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                      Lista de Ingredientes:
-                    </h3>
-                    {ingredientList.length > 5 && (
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        <span className="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1 align-middle"></span>
-                        Primeros 5 destacados
-                      </span>
+              <div className="space-y-7 pt-1 animate-in fade-in duration-200">
+                {/* 1. Interactive Ingredients Bowl Explorer (con plato y animaciones) */}
+                <ProductIngredientsBowl product={product} embedded={true} />
+
+                {/* 2. Análisis Nutricional Garantizado + Lista Completa de Ingredientes */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left/Top: Guaranteed Analysis Table */}
+                  <div className="lg:col-span-6 space-y-3 p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                        Análisis Nutricional Garantizado:
+                      </h3>
+                    </div>
+
+                    {/* 4 Métricas Principales destacadas */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {primaryGuaranteed.map((item) => (
+                        <div
+                          key={item.label}
+                          className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-center shadow-2xs"
+                        >
+                          <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-tight">
+                            {item.value}
+                          </div>
+                          <div className="text-[10px] sm:text-[11px] font-black text-slate-700 uppercase tracking-wider mt-1">
+                            {item.label}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Otros Componentes / Micronutrientes en formato más pequeño */}
+                    {secondaryGuaranteed.length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-slate-200/70">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Otros Componentes Garantizados:
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                          {secondaryGuaranteed.map((item) => (
+                            <div
+                              key={item.label}
+                              className="p-2 rounded-xl bg-white border border-slate-200/70 text-center hover:bg-slate-100/60 transition-colors"
+                            >
+                              <div className="text-xs sm:text-sm font-black text-slate-800 font-mono">
+                                {item.value}
+                              </div>
+                              <div
+                                className="text-[9px] font-bold text-slate-500 uppercase tracking-tight truncate mt-0.5"
+                                title={item.label}
+                              >
+                                {item.label}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
 
-                  {ingredientList.length > 0 ? (
-                    <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 text-xs sm:text-[13px] leading-relaxed">
-                      <p className="text-slate-600">
-                        {ingredientList.map((name, idx) => {
-                          const isTop5 = idx < 5;
-                          const isLast = idx === ingredientList.length - 1;
-                          return (
-                            <React.Fragment key={idx}>
-                              {isTop5 ? (
-                                <strong className="font-extrabold text-slate-900">
-                                  {name}
-                                </strong>
-                              ) : (
-                                <span>{name}</span>
-                              )}
-                              {!isLast ? ', ' : '.'}
-                            </React.Fragment>
-                          );
-                        })}
-                      </p>
-                      {ingredientList.length >= 5 && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] sm:text-[11px] text-slate-400 italic flex items-center gap-1.5">
-                          <Sparkles className="w-3 h-3 text-[#D97706] shrink-0" />
-                          <span>
-                            Los primeros 5 ingredientes en negrita constituyen la base principal de mayor concentración del alimento.
-                          </span>
-                        </div>
+                  {/* Right/Bottom: Ingredientes en texto fluido continuo con Top 5 destacados */}
+                  <div className="lg:col-span-6 space-y-2.5 p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                        Composición Completa de la Receta:
+                      </h3>
+                      {ingredientList.length > 5 && (
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          <span className="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1 align-middle"></span>
+                          Primeros 5 destacados
+                        </span>
                       )}
                     </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-400 italic">
-                      Ingredientes 100% naturales. Información nutricional detallada en proceso de actualización en ficha técnica.
-                    </p>
-                  )}
-                </div>
 
-                {/* Guaranteed Analysis Table */}
-                <div className="space-y-3 pt-1">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                      Análisis Nutricional Garantizado:
-                    </h3>
-                  </div>
-
-                  {/* 4 Métricas Principales destacadas */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {primaryGuaranteed.map((item) => (
-                      <div
-                        key={item.label}
-                        className="p-3 rounded-2xl bg-amber-50/50 border border-amber-200/70 text-center shadow-2xs"
-                      >
-                        <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-tight">
-                          {item.value}
-                        </div>
-                        <div className="text-[10px] sm:text-[11px] font-black text-slate-700 uppercase tracking-wider mt-1">
-                          {item.label}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Otros Componentes / Micronutrientes en formato más pequeño */}
-                  {secondaryGuaranteed.length > 0 && (
-                    <div className="space-y-1.5 pt-1.5 border-t border-slate-100">
-                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                        Otros Componentes Garantizados:
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                        {secondaryGuaranteed.map((item) => (
-                          <div
-                            key={item.label}
-                            className="p-2 rounded-xl bg-slate-50/90 border border-slate-200/70 text-center hover:bg-slate-100/60 transition-colors"
-                          >
-                            <div className="text-xs sm:text-sm font-black text-slate-800 font-mono">
-                              {item.value}
-                            </div>
-                            <div
-                              className="text-[9px] font-bold text-slate-500 uppercase tracking-tight truncate mt-0.5"
-                              title={item.label}
-                            >
-                              {item.label}
-                            </div>
+                    {ingredientList.length > 0 ? (
+                      <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/80 text-xs sm:text-[13px] leading-relaxed">
+                        <p className="text-slate-600">
+                          {ingredientList.map((name, idx) => {
+                            const isTop5 = idx < 5;
+                            const isLast = idx === ingredientList.length - 1;
+                            return (
+                              <React.Fragment key={idx}>
+                                {isTop5 ? (
+                                  <strong className="font-extrabold text-slate-900">
+                                    {name}
+                                  </strong>
+                                ) : (
+                                  <span>{name}</span>
+                                )}
+                                {!isLast ? ', ' : '.'}
+                              </React.Fragment>
+                            );
+                          })}
+                        </p>
+                        {ingredientList.length >= 5 && (
+                          <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] sm:text-[11px] text-slate-400 italic flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3 text-[#D97706] shrink-0" />
+                            <span>
+                              Los primeros 5 ingredientes en negrita constituyen la base principal de mayor concentración del alimento.
+                            </span>
                           </div>
-                        ))}
+                        )}
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-[11px] text-slate-400 italic">
+                        Ingredientes 100% naturales. Información nutricional detallada en proceso de actualización en ficha técnica.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1639,15 +1807,8 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
             )}
 
           </div>
-
         </div>
-      </div>
-    </section>
-
-      {/* 3.5 Interactive Ingredients Bowl Explorer */}
-      <div className="max-w-[1280px] mx-auto px-4 sm:px-6 mb-12">
-        <ProductIngredientsBowl product={product} />
-      </div>
+      </section>
 
       {/* 4. Related Products Showcase */}
       {relatedProducts.length > 0 && (
@@ -1702,14 +1863,21 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct }) {
           </div>
 
           <button
+            disabled={isOutOfStock || isMaxStockInCart}
             onClick={handleAddToCart}
             className={`py-2.5 px-4 rounded-xl font-black text-xs shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer ${
-              addedSuccess
+              isOutOfStock || isMaxStockInCart
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
+                : addedSuccess
                 ? 'bg-[#F5BA13] text-[#1D1D1F] font-black shadow-md'
                 : 'bg-[#1D1D1F] text-white hover:text-[#F5BA13] shadow-md'
             }`}
           >
-            {addedSuccess ? (
+            {isOutOfStock ? (
+              <span>AGOTADO</span>
+            ) : isMaxStockInCart ? (
+              <span>STOCK MÁX.</span>
+            ) : addedSuccess ? (
               <>
                 <CheckCircle2 className="w-4 h-4 stroke-[3]" />
                 <span>¡AGREGADO!</span>

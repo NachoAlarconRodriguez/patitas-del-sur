@@ -3,7 +3,9 @@
  * Compliant with Google Search Central & Schema.org specifications
  */
 
-export const BASE_URL = 'https://patitasdelsur.cl';
+import { COMPANY_INFO } from '../constants';
+
+export const BASE_URL = COMPANY_INFO.url || 'https://patitasdelsur.cl';
 
 /**
  * Global Organization Schema for Comercial Kira SpA / Patitas del Sur
@@ -13,33 +15,36 @@ export function getOrganizationSchema() {
     '@context': 'https://schema.org',
     '@type': 'Organization',
     '@id': `${BASE_URL}/#organization`,
-    name: 'Patitas del Sur',
-    legalName: 'Comercial Kira SpA',
-    taxID: '77.892.451-2',
+    name: COMPANY_INFO.name,
+    legalName: COMPANY_INFO.legalName,
+    taxID: COMPANY_INFO.taxId,
     url: BASE_URL,
     logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
     image: `${BASE_URL}/images/hero_dog.png`,
-    description: 'Comercializadora de alimento holístico, 100% libre de granos y snacks naturales para perros y gatos en la Patagonia chilena.',
-    telephone: '+56 9 8765 4321',
-    email: 'contacto@patitasdelsur.cl',
+    description: 'Comercializadora de alimento holístico, 100% libre de granos y snacks naturales para perros y gatos en la Cuenca del Lago Llanquihue y Sur de Chile.',
+    telephone: COMPANY_INFO.phone,
+    email: COMPANY_INFO.email,
     address: {
       '@type': 'PostalAddress',
-      addressLocality: 'Puerto Varas',
+      streetAddress: 'Loteo Espacio Frutillar',
+      addressLocality: COMPANY_INFO.hubCity,
       addressRegion: 'Región de Los Lagos',
+      postalCode: COMPANY_INFO.postalCode,
       addressCountry: 'CL',
     },
     contactPoint: [
       {
         '@type': 'ContactPoint',
-        telephone: '+56 9 8765 4321',
+        telephone: COMPANY_INFO.phone,
+        email: COMPANY_INFO.email,
         contactType: 'customer service',
         areaServed: 'CL',
         availableLanguage: ['es', 'Spanish'],
       },
     ],
     sameAs: [
-      'https://www.instagram.com/patitasdelsur.cl',
-      'https://www.facebook.com/patitasdelsur.cl',
+      COMPANY_INFO.instagramUrl,
+      COMPANY_INFO.facebookUrl,
     ],
   };
 }
@@ -207,29 +212,29 @@ export function getLocalBusinessSchema() {
     '@context': 'https://schema.org',
     '@type': 'PetStore',
     '@id': `${BASE_URL}/#localbusiness`,
-    name: 'Patitas del Sur',
-    legalName: 'Comercial Kira SpA',
-    taxID: '77.892.451-2',
+    name: COMPANY_INFO.name,
+    legalName: COMPANY_INFO.legalName,
+    taxID: COMPANY_INFO.taxId,
     image: `${BASE_URL}/images/hero_dog.png`,
     logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
     url: BASE_URL,
-    telephone: '+56 9 8765 4321',
-    email: 'contacto@patitasdelsur.cl',
+    telephone: COMPANY_INFO.phone,
+    email: COMPANY_INFO.email,
     priceRange: '$$ (CLP)',
     currenciesAccepted: 'CLP',
-    paymentAccepted: 'Webpay Plus, Tarjetas de Débito y Crédito, Transferencia Bancaria',
+    paymentAccepted: COMPANY_INFO.paymentMethods.join(', '),
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'Sector Costanera s/n',
-      addressLocality: 'Puerto Varas',
+      streetAddress: 'Loteo Espacio Frutillar',
+      addressLocality: COMPANY_INFO.hubCity,
       addressRegion: 'Región de Los Lagos',
-      postalCode: '5550000',
+      postalCode: COMPANY_INFO.postalCode,
       addressCountry: 'CL',
     },
     geo: {
       '@type': 'GeoCoordinates',
-      latitude: -41.3195,
-      longitude: -72.9854,
+      latitude: COMPANY_INFO.coordinates.hubLat,
+      longitude: COMPANY_INFO.coordinates.hubLng,
     },
     openingHoursSpecification: [
       {
@@ -242,27 +247,13 @@ export function getLocalBusinessSchema() {
         '@type': 'OpeningHoursSpecification',
         dayOfWeek: ['Saturday'],
         opens: '10:00',
-        closes: '18:00',
+        closes: '19:30',
       },
     ],
-    areaServed: [
-      {
-        '@type': 'AdministrativeArea',
-        name: 'Puerto Varas',
-      },
-      {
-        '@type': 'AdministrativeArea',
-        name: 'Llanquihue',
-      },
-      {
-        '@type': 'AdministrativeArea',
-        name: 'Frutillar',
-      },
-      {
-        '@type': 'AdministrativeArea',
-        name: 'Puerto Montt',
-      },
-    ],
+    areaServed: COMPANY_INFO.communes.map((city) => ({
+      '@type': 'AdministrativeArea',
+      name: city,
+    })),
     hasOfferCatalog: {
       '@type': 'OfferCatalog',
       name: 'Catálogo de Alimentos Holísticos y Snacks',

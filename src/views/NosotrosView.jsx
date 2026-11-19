@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import SEOHead from '../components/SEOHead';
 import { getOrganizationSchema } from '../utils/schemaGenerators';
+import { COMPANY_INFO } from '../constants';
 
 export default function NosotrosView() {
   return (
@@ -317,7 +318,7 @@ export default function NosotrosView() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
             {/* CTA Primario Destacado: WhatsApp */}
             <a
-              href="https://wa.me/56961205315?text=Hola!%20Leí%20la%20historia%20de%20Patitas%20del%20Sur%20y%20me%20gustaría%20consultar%20por%20el%20alimento%20de%20mi%20mascota."
+              href={`${COMPANY_INFO.whatsappUrl}?text=Hola!%20Le%C3%AD%20la%20historia%20de%20Patitas%20del%20Sur%20y%20me%20gustar%C3%ADa%20consultar%20por%20el%20alimento%20de%20mi%20mascota.`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-3.5 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white text-sm font-black transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"

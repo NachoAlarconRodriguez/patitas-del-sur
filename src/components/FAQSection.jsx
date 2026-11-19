@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
-import { ChevronDown, HelpCircle, MessageSquare, Truck, ShieldCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ChevronDown, HelpCircle, MessageSquare } from 'lucide-react';
+import { COMPANY_INFO } from '../constants';
 
 export const PERROS_FAQS = [
   {
     id: 'perros-donde-comprar',
     category: 'perros',
-    question: '¿Dónde comprar alimento super premium para perros en Puerto Varas y Llanquihue?',
+    question: '¿Dónde comprar alimento super premium para perros en Frutillar, Puerto Varas y Llanquihue?',
     shortAnswer: 'Puedes comprar alimento super premium y 100% natural para perros directamente en Patitas del Sur (patitasdelsur.cl).',
-    details: 'Ofrecemos marcas líderes como Bravery (100% Grain Free) y Patagonia Holística con despacho a domicilio el mismo día en Puerto Varas y Llanquihue, y en 24 a 48 horas en Frutillar y Puerto Montt. Despacho gratis en pedidos desde $35.000 CLP.',
+    details: 'Ofrecemos marcas líderes como Bravery (100% Grain Free), Acana y nutrición holística con despacho a domicilio el mismo día en Frutillar, Llanquihue y Puerto Varas, además de rutas programadas en Puerto Montt, Puerto Octay, Casma, Fresia y Totoral. Despacho gratis en pedidos desde $25.000 CLP según zona.',
   },
   {
     id: 'perros-beneficios-grain-free',
@@ -61,29 +62,29 @@ export const GENERAL_FAQS = [
     id: 'general-zonas-despacho',
     category: 'general',
     question: '¿A qué comunas realizan despacho y cuáles son los tiempos de entrega?',
-    shortAnswer: 'Despachamos en Puerto Varas, Llanquihue, Frutillar y Puerto Montt con flota propia.',
-    details: 'En Puerto Varas y Llanquihue entregamos el mismo día (compras antes de las 14:00 hrs) o en un máximo de 24 horas hábiles. En Frutillar y Puerto Montt las entregas se realizan en 24 a 48 horas hábiles.',
+    shortAnswer: 'Despachamos en Frutillar, Llanquihue, Puerto Varas, Puerto Montt, Puerto Octay, Casma, Fresia y Totoral con flota propia climatizada.',
+    details: 'En Frutillar, Llanquihue y Puerto Varas entregamos el mismo día (compras antes de las 14:00 hrs) o en un máximo de 24 horas hábiles. En Puerto Montt, Puerto Octay, Casma, Fresia y Totoral realizamos repartos programados directo a tu puerta o parcelación.',
   },
   {
     id: 'general-envio-gratis',
     category: 'general',
     question: '¿Cómo funciona el envío gratis en Patitas del Sur?',
-    shortAnswer: 'El envío es 100% gratuito en cualquier comuna de nuestra zona de cobertura (Puerto Varas, Llanquihue, Frutillar y Puerto Montt) para todas las compras desde $35.000 CLP.',
-    details: 'Para pedidos inferiores a $35.000 CLP, la tarifa es de sólo $2.000 en Puerto Varas, $2.500 en Llanquihue y $3.500 en Frutillar y Puerto Montt.',
+    shortAnswer: 'El envío es 100% gratuito en nuestras zonas principales de cobertura para compras desde $25.000 CLP (casi todos los sacos medianos y grandes califican de inmediato).',
+    details: 'Para pedidos inferiores al monto mínimo, la tarifa estándar parte desde sólo $2.000 CLP en Frutillar y Puerto Varas, calculándose automáticamente de forma transparente según tu comuna o parcelación antes de pagar.',
   },
   {
     id: 'general-medios-pago',
     category: 'general',
     question: '¿Qué medios de pago aceptan?',
-    shortAnswer: 'Aceptamos Webpay Plus (todas las tarjetas de crédito y débito chilenas), transferencia bancaria directa y pago en efectivo contra entrega.',
-    details: 'Todas las transacciones en línea son procesadas con cifrado SSL bancario de 256 bits, garantizando la total seguridad de tus datos.',
+    shortAnswer: 'Aceptamos Mercado Pago (todas las tarjetas de crédito, débito Redcompra y prepago chilenas), transferencia bancaria directa y pago en efectivo contra entrega.',
+    details: 'Todas las transacciones en línea son procesadas con cifrado SSL bancario de 256 bits a nombre de Comercial Kira SpA (RUT 77.892.451-2), garantizando la total seguridad de tus datos y emisión de boleta o factura electrónica.',
   },
   {
     id: 'general-garantia-cambios',
     category: 'general',
     question: '¿Puedo cambiar un alimento si me equivoqué de receta o sabor?',
-    shortAnswer: 'Sí. Aceptamos cambios dentro de los 10 primeros días de compra siempre que el envase permanezca sellado e intacto.',
-    details: 'Además, todos nuestros productos cuentan con la garantía legal de 6 meses de la Ley del Consumidor (SERNAC) ante cualquier falla de sellado o calidad.',
+    shortAnswer: 'Sí. Aceptamos cambios dentro de los 10 primeros días corridos siempre que el envase permanezca 100% sellado, y contamos además con Garantía de Palatabilidad de 5 días hábiles.',
+    details: 'Si tu mascota no tolera el sabor, nuestra Garantía de Palatabilidad permite cambiar el saco dentro de 5 días hábiles conservando al menos el 80% de su contenido. Además, todos los productos cuentan con los 6 meses de garantía legal de la Ley del Consumidor (Ley 19.496 / SERNAC).',
   },
 ];
 
@@ -198,7 +199,7 @@ export default function FAQSection({
         </div>
 
         <a
-          href="https://wa.me/56987654321?text=Hola%20Patitas%20del%20Sur%2C%20tengo%20una%20consulta%20nutricional"
+          href={`${COMPANY_INFO.whatsappUrl}?text=Hola%20Patitas%20del%20Sur%2C%20tengo%20una%20consulta%20nutricional`}
           target="_blank"
           rel="noopener noreferrer"
           className="shrink-0 px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-transform active:scale-95 shadow-md flex items-center gap-2 cursor-pointer"

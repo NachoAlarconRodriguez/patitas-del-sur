@@ -76,7 +76,7 @@ export function matchDispatchZone(distanceKm, zones = []) {
   const dist = parseFloat(distanceKm) || 0;
   const sorted = [...zones].sort((a, b) => (a.radiusMaxKm || 0) - (b.radiusMaxKm || 0));
   const matched = sorted.find((z) => dist <= (z.radiusMaxKm ?? 999));
-  return matched || sorted[sorted.length - 1];
+  return matched || null;
 }
 
 // =========================================================================
@@ -84,72 +84,92 @@ export function matchDispatchZone(distanceKm, zones = []) {
 // =========================================================================
 
 export const DELIVERY_SCHEDULES_KEY = 'delivery_schedules';
+export const DISPATCH_LIVE_STATUS_KEY = 'dispatch_live_status';
+
+export const OFFICIAL_MORNING_SLOT_LABEL = 'Mañana (10:00 - 13:00 hrs)';
+export const OFFICIAL_AFTERNOON_SLOT_LABEL = 'Tarde (15:30 - 19:30 hrs)';
+export const URGENT_EXPRESS_SLOT_LABEL = '⚡ Pedido Urgente (Fuera de ventana horaria)';
 
 export const DEFAULT_DELIVERY_SCHEDULES = [
   {
     id: 'SCHED-FRUTILLAR',
     city: 'Frutillar',
+    cityName: 'Frutillar',
     routeLabel: 'Ruta Local Frutillar',
+    coverageDays: 'Lunes a Sábado',
     active: true,
     slots: [
-      { id: 'FRUT-MANANA', label: 'Mañana (10:00 - 13:30 hrs)', days: 'Lunes a Sábado', active: true },
-      { id: 'FRUT-TARDE', label: 'Tarde (14:30 - 19:30 hrs)', days: 'Lunes a Sábado', active: true },
+      { id: 'FRUT-MANANA', label: 'Mañana (10:00 - 13:00 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 12:15 hrs', active: true },
+      { id: 'FRUT-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-LLANQUIHUE',
     city: 'Llanquihue',
+    cityName: 'Llanquihue',
     routeLabel: 'Ruta Llanquihue Urbano',
+    coverageDays: 'Lunes a Sábado',
     active: true,
     slots: [
-      { id: 'LLANQ-MANANA', label: 'Mañana (11:00 - 14:00 hrs)', days: 'Lunes a Sábado', active: true },
-      { id: 'LLANQ-TARDE', label: 'Tarde (15:00 - 19:00 hrs)', days: 'Lunes a Sábado', active: true },
+      { id: 'LLANQ-MANANA', label: 'Mañana (10:00 - 13:00 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 12:15 hrs', active: true },
+      { id: 'LLANQ-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-PUERTO-VARAS',
     city: 'Puerto Varas',
+    cityName: 'Puerto Varas',
     routeLabel: 'Ruta Puerto Varas & Nueva Braunau',
+    coverageDays: 'Lunes a Sábado',
     active: true,
     slots: [
-      { id: 'PV-MANANA', label: 'Mañana (10:30 - 14:00 hrs)', days: 'Lunes a Sábado', active: true },
-      { id: 'PV-TARDE', label: 'Tarde (15:00 - 19:30 hrs)', days: 'Lunes a Sábado', active: true },
+      { id: 'PV-MANANA', label: 'Mañana (10:00 - 13:00 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 12:15 hrs', active: true },
+      { id: 'PV-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-CASMA',
     city: 'Casma',
+    cityName: 'Casma',
     routeLabel: 'Ruta Norte / Casma',
+    coverageDays: 'Lunes a Sábado',
     active: true,
     slots: [
-      { id: 'CASMA-TARDE', label: 'Tarde (15:00 - 19:00 hrs)', days: 'Martes y Jueves', active: true },
+      { id: 'CASMA-MANANA', label: 'Mañana (10:00 - 13:00 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 12:15 hrs', active: true },
+      { id: 'CASMA-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Lunes a Sábado', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-FRESIA',
     city: 'Fresia',
+    cityName: 'Fresia',
     routeLabel: 'Ruta Poniente / Fresia',
+    coverageDays: 'Miércoles y Viernes',
     active: true,
     slots: [
-      { id: 'FRESIA-TARDE', label: 'Tarde (15:00 - 19:00 hrs)', days: 'Miércoles y Viernes', active: true },
+      { id: 'FRESIA-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Miércoles y Viernes', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-PTO-OCTAY',
     city: 'Puerto Octay',
+    cityName: 'Puerto Octay',
     routeLabel: 'Ruta Cuenca Lago / Puerto Octay',
+    coverageDays: 'Lunes, Miércoles y Viernes',
     active: true,
     slots: [
-      { id: 'OCTAY-TARDE', label: 'Tarde (14:00 - 18:30 hrs)', days: 'Lunes, Miércoles y Viernes', active: true },
+      { id: 'OCTAY-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Lunes, Miércoles y Viernes', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
   {
     id: 'SCHED-TOTORAL',
     city: 'Totoral',
+    cityName: 'Totoral',
     routeLabel: 'Ruta Costera Totoral',
+    coverageDays: 'Martes y Sábados',
     active: true,
     slots: [
-      { id: 'TOT-TARDE', label: 'Tarde (14:30 - 18:30 hrs)', days: 'Martes y Sábados', active: true },
+      { id: 'TOT-TARDE', label: 'Tarde (15:30 - 19:30 hrs)', days: 'Martes y Sábados', cutoffNote: 'Corte 18:45 hrs', active: true },
     ],
   },
 ];
@@ -236,9 +256,341 @@ export function getSlotsForCity(city, schedules = DEFAULT_DELIVERY_SCHEDULES) {
 
   // Fallback si la comuna no tiene horarios configurados personalizados
   return [
-    { value: 'Mañana (10:00 - 13:30 hrs)', label: 'Mañana (10:00 - 13:30 hrs)', desc: 'Lunes a Sábado' },
-    { value: 'Tarde (14:30 - 19:30 hrs)', label: 'Tarde (14:30 - 19:30 hrs)', desc: 'Lunes a Sábado' },
+    { value: OFFICIAL_MORNING_SLOT_LABEL, label: OFFICIAL_MORNING_SLOT_LABEL, desc: 'Lunes a Sábado' },
+    { value: OFFICIAL_AFTERNOON_SLOT_LABEL, label: OFFICIAL_AFTERNOON_SLOT_LABEL, desc: 'Lunes a Sábado' },
   ];
+}
+
+/**
+ * Obtiene la fecha y hora actual en zona horaria de Chile (America/Santiago)
+ */
+export function getChileNowParts(referenceDate = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Santiago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(referenceDate);
+    const map = {};
+    parts.forEach((p) => {
+      map[p.type] = p.value;
+    });
+    const year = parseInt(map.year, 10) || referenceDate.getFullYear();
+    const month = parseInt(map.month, 10) || referenceDate.getMonth() + 1;
+    const day = parseInt(map.day, 10) || referenceDate.getDate();
+    let hour = parseInt(map.hour, 10);
+    if (Number.isNaN(hour)) hour = referenceDate.getHours();
+    if (hour === 24) hour = 0;
+    const minute = parseInt(map.minute, 10) || 0;
+    const isoDate = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return {
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      totalMinutes: hour * 60 + minute,
+      isoDate,
+    };
+  } catch {
+    const hour = referenceDate.getHours();
+    const minute = referenceDate.getMinutes();
+    const yyyy = referenceDate.getFullYear();
+    const mm = String(referenceDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(referenceDate.getDate()).padStart(2, '0');
+    return {
+      year: yyyy,
+      month: referenceDate.getMonth() + 1,
+      day: referenceDate.getDate(),
+      hour,
+      minute,
+      totalMinutes: hour * 60 + minute,
+      isoDate: `${yyyy}-${mm}-${dd}`,
+    };
+  }
+}
+
+/**
+ * Consulta en tiempo real si el vehículo anda en reparto:
+ * 1) Revisa si hay pedidos con status === 'en_camino' en Supabase.
+ * 2) Revisa si el administrador activó el interruptor manual "En Reparto" en store_settings.
+ */
+export async function getLiveDispatchStatusFromSupabase() {
+  let manualOnRoute = false;
+  let activeEnCaminoCount = 0;
+
+  try {
+    const cached = localStorage.getItem('patitas_dispatch_live_status_v1');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && typeof parsed.manualOnRoute === 'boolean') {
+        manualOnRoute = parsed.manualOnRoute;
+      }
+    }
+  } catch {
+    // ignore localStorage read errors
+  }
+
+  try {
+    const [settingsRes, ordersRes] = await Promise.all([
+      supabase
+        .from('store_settings')
+        .select('value')
+        .eq('key', DISPATCH_LIVE_STATUS_KEY)
+        .maybeSingle(),
+      supabase
+        .from('orders')
+        .select('id, status')
+        .eq('status', 'en_camino'),
+    ]);
+
+    if (!settingsRes.error && settingsRes.data?.value && typeof settingsRes.data.value.manualOnRoute === 'boolean') {
+      manualOnRoute = Boolean(settingsRes.data.value.manualOnRoute);
+      try {
+        localStorage.setItem(
+          'patitas_dispatch_live_status_v1',
+          JSON.stringify({ manualOnRoute, updatedAt: settingsRes.data.value.updatedAt || new Date().toISOString() })
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!ordersRes.error && Array.isArray(ordersRes.data)) {
+      activeEnCaminoCount = ordersRes.data.length;
+    }
+  } catch (err) {
+    console.warn('Error fetching live dispatch status from Supabase:', err);
+  }
+
+  const isFleetOnRoute = Boolean(manualOnRoute || activeEnCaminoCount > 0);
+  return {
+    isFleetOnRoute,
+    manualOnRoute,
+    activeEnCaminoCount,
+  };
+}
+
+/**
+ * Permite al administrador activar o desactivar con 1 clic el estado "En Reparto"
+ */
+export async function saveManualDispatchStatusToSupabase(manualOnRoute) {
+  const payload = {
+    manualOnRoute: Boolean(manualOnRoute),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    localStorage.setItem('patitas_dispatch_live_status_v1', JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('patitas_dispatch_live_status_updated', { detail: payload })
+    );
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('store_settings')
+      .upsert(
+        {
+          key: DISPATCH_LIVE_STATUS_KEY,
+          value: payload,
+          updated_at: payload.updatedAt,
+        },
+        { onConflict: 'key' }
+      )
+      .select();
+
+    if (error) throw error;
+    return { success: true, data, payload };
+  } catch (err) {
+    console.error('Error saving manual dispatch status to Supabase:', err);
+    return { success: false, error: err, payload };
+  }
+}
+
+/**
+ * Motor inteligente de evaluación de ventanas de despacho (10:00-13:00 y 15:30-19:30 + Pedido Urgente)
+ */
+export function evaluateSmartDeliverySchedule({
+  isFleetOnRoute = false,
+  selectedDateIso = '',
+  referenceDate = new Date(),
+} = {}) {
+  const chileNow = getChileNowParts(referenceDate);
+  const { totalMinutes, isoDate: todayIso } = chileNow;
+
+  // Hitos horarios del día en minutos
+  const MORNING_START = 10 * 60;         // 10:00 (600)
+  const MORNING_CUTOFF = 12 * 60 + 15;   // 12:15 (735) - 45 min antes de las 13:00
+  const MORNING_END = 13 * 60;           // 13:00 (780)
+  const AFTERNOON_START = 15 * 60 + 30;  // 15:30 (930)
+  const AFTERNOON_CUTOFF = 18 * 60 + 45; // 18:45 (1125) - 45 min antes de las 19:30
+  const AFTERNOON_END = 19 * 60 + 30;    // 19:30 (1170)
+
+  // Determinar si HOY aún tiene ventanas estándar abiertas
+  // Si son >= 15:30 y se anda en reparto, o si ya pasó el corte de las 18:45, los pedidos estándar pasan a mañana a las 10:00 hrs
+  const isTodayClosedForStandard =
+    totalMinutes > AFTERNOON_CUTOFF ||
+    (totalMinutes >= AFTERNOON_START && isFleetOnRoute);
+
+  // Construir banner inteligente explicativo según la hora y si se anda en reparto
+  let statusBanner = {
+    type: 'available',
+    badge: 'Despacho Hoy',
+    title: 'Ventana de mañana disponible (10:00 a 13:00 hrs)',
+    message: 'Si pides ahora, tu pedido entra en la primera ventana de reparto de hoy.',
+  };
+
+  if (totalMinutes < MORNING_START) {
+    statusBanner = {
+      type: 'available',
+      badge: '1ª Ventana Hoy',
+      title: 'Entrega hoy entre 10:00 y 13:00 hrs',
+      message: 'Tu pedido se programará automáticamente para la ventana de esta mañana.',
+    };
+  } else if (totalMinutes >= MORNING_START && totalMinutes <= MORNING_CUTOFF) {
+    if (!isFleetOnRoute) {
+      statusBanner = {
+        type: 'available',
+        badge: 'Reparto Disponible',
+        title: '¡Tu pedido llegará hoy antes de las 13:00 hrs!',
+        message: 'No andamos en reparto en este momento, por lo que alcanzamos a preparar y entregarte hoy antes de las 13:00 hrs.',
+      };
+    } else {
+      statusBanner = {
+        type: 'on_route',
+        badge: 'Reparto Matutino en Ruta',
+        title: 'Programado para hoy en la ventana de 15:30 a 19:30 hrs',
+        message: 'Nuestro vehículo ya salió al reparto de la mañana. Tu pedido queda agendado para la ventana de hoy a las 15:30 hrs.',
+      };
+    }
+  } else if (totalMinutes > MORNING_CUTOFF && totalMinutes < AFTERNOON_START) {
+    statusBanner = {
+      type: 'available',
+      badge: '2ª Ventana Hoy',
+      title: 'Entrega hoy en la ventana de 15:30 a 19:30 hrs',
+      message:
+        totalMinutes < MORNING_END && isFleetOnRoute
+          ? 'Nuestro reparto de la mañana está en ruta. Tu pedido queda para la ventana de hoy de 15:30 a 19:30 hrs.'
+          : 'La ventana de la mañana ya cerró. Tu pedido se entregará hoy entre las 15:30 y 19:30 hrs.',
+    };
+  } else if (totalMinutes >= AFTERNOON_START && totalMinutes <= AFTERNOON_CUTOFF) {
+    if (!isFleetOnRoute) {
+      statusBanner = {
+        type: 'available',
+        badge: 'Reparto Disponible',
+        title: '¡Tu pedido se entregará hoy antes de las 19:30 hrs!',
+        message: 'Nuestro vehículo está disponible en bodega. Si confirmas ahora, te entregamos hoy mismo antes de las 19:30 hrs.',
+      };
+    } else {
+      statusBanner = {
+        type: 'next_day',
+        badge: 'Reparto Vespertino en Ruta',
+        title: 'Programado para mañana en la ventana de 10:00 a 13:00 hrs',
+        message: 'Ya nos encontramos en el reparto de la tarde. Tu pedido queda agendado para la primera ventana de mañana (10:00 a 13:00 hrs).',
+      };
+    }
+  } else {
+    statusBanner = {
+      type: 'next_day',
+      badge: 'Próxima Ventana 10:00 hrs',
+      title: 'Entrega en la primera ventana de mañana (10:00 a 13:00 hrs)',
+      message:
+        totalMinutes <= AFTERNOON_END && isFleetOnRoute
+          ? 'Nuestro reparto de la tarde ya está en ruta. Tu pedido queda para mañana de 10:00 a 13:00 hrs.'
+          : 'El horario de reparto estándar de hoy finalizó. Tu pedido llegará mañana entre las 10:00 y 13:00 hrs.',
+    };
+  }
+
+  const isSelectedToday = Boolean(selectedDateIso && selectedDateIso === todayIso);
+  const slots = [];
+
+  if (isSelectedToday) {
+    // Evaluar Ventana 1 (10:00 - 13:00) para HOY
+    if (totalMinutes < MORNING_START) {
+      slots.push({
+        value: OFFICIAL_MORNING_SLOT_LABEL,
+        label: 'Mañana (10:00 - 13:00 hrs)',
+        desc: '1ª ventana del día · Envío gratis sobre $25.000',
+        noFreeShipping: false,
+        isUrgent: false,
+      });
+    } else if (totalMinutes >= MORNING_START && totalMinutes <= MORNING_CUTOFF && !isFleetOnRoute) {
+      slots.push({
+        value: 'Hoy antes de las 13:00 hrs (Ventana 10:00 - 13:00)',
+        label: '🟢 Hoy antes de las 13:00 hrs (10:00 - 13:00)',
+        desc: 'Sin reparto en ruta: llega hoy antes de las 13:00 hrs',
+        noFreeShipping: false,
+        isUrgent: false,
+      });
+    }
+
+    // Evaluar Ventana 2 (15:30 - 19:30) para HOY
+    if (totalMinutes < AFTERNOON_START) {
+      slots.push({
+        value: OFFICIAL_AFTERNOON_SLOT_LABEL,
+        label: 'Tarde (15:30 - 19:30 hrs)',
+        desc: '2ª ventana del día · Envío gratis sobre $25.000',
+        noFreeShipping: false,
+        isUrgent: false,
+      });
+    } else if (totalMinutes >= AFTERNOON_START && totalMinutes <= AFTERNOON_CUTOFF && !isFleetOnRoute) {
+      slots.push({
+        value: 'Hoy antes de las 19:30 hrs (Ventana 15:30 - 19:30)',
+        label: '🟢 Hoy antes de las 19:30 hrs (15:30 - 19:30)',
+        desc: 'Sin reparto en ruta: se entrega hoy antes de las 19:30 hrs',
+        noFreeShipping: false,
+        isUrgent: false,
+      });
+    }
+  } else {
+    // Para Mañana o días futuros: ambas ventanas estándar están abiertas
+    slots.push(
+      {
+        value: OFFICIAL_MORNING_SLOT_LABEL,
+        label: 'Mañana (10:00 - 13:00 hrs)',
+        desc: '1ª ventana de reparto · Envío gratis sobre $25.000',
+        noFreeShipping: false,
+        isUrgent: false,
+      },
+      {
+        value: OFFICIAL_AFTERNOON_SLOT_LABEL,
+        label: 'Tarde (15:30 - 19:30 hrs)',
+        desc: '2ª ventana de reparto · Envío gratis sobre $25.000',
+        noFreeShipping: false,
+        isUrgent: false,
+      }
+    );
+  }
+
+  // Opción 3: Pedido Urgente (Fuera de ventana horaria -> Cobra despacho sí o sí aunque supere $25.000)
+  slots.push({
+    value: URGENT_EXPRESS_SLOT_LABEL,
+    label: URGENT_EXPRESS_SLOT_LABEL,
+    desc: 'Fuera de ventana: se cobra despacho sí o sí (sin envío gratis sobre $25.000)',
+    noFreeShipping: true,
+    isUrgent: true,
+  });
+
+  const recommendedSlotValue = slots[0]?.value || OFFICIAL_MORNING_SLOT_LABEL;
+
+  return {
+    chileNow,
+    isTodayClosedForStandard,
+    statusBanner,
+    slots,
+    recommendedSlotValue,
+  };
 }
 
 export const WEEKDAYS = [
@@ -266,13 +618,23 @@ export function formatDeliveryDaysSummary(days = [1, 2, 3, 4, 5, 6]) {
 /**
  * Retorna las próximas fechas disponibles de entrega según los días habilitados de la zona
  */
-export function getUpcomingDeliveryDates(allowedDays = [1, 2, 3, 4, 5, 6], maxDays = 6) {
+export function getUpcomingDeliveryDates(allowedDays = [1, 2, 3, 4, 5, 6], maxDays = 6, options = {}) {
   const dates = [];
   const now = new Date();
-  const currentHour = now.getHours();
+  const chileNow = getChileNowParts(now);
+  const { totalMinutes } = chileNow;
+  const isFleetOnRoute = Boolean(options?.isFleetOnRoute);
 
-  // Si hoy ya pasó de las 18:00 hrs, no se permite agendar para hoy
-  const startOffset = currentHour >= 18 ? 1 : 0;
+  // Hitos de cierre del día actual:
+  // - Después de las 18:45 hrs (corte de la ventana 15:30 - 19:30), o
+  // - De las 15:30 hrs en adelante si el vehículo ya anda en reparto (pasa a mañana a las 10:00 hrs)
+  const AFTERNOON_START = 15 * 60 + 30;  // 15:30
+  const AFTERNOON_CUTOFF = 18 * 60 + 45; // 18:45
+  const isTodayClosed =
+    totalMinutes > AFTERNOON_CUTOFF ||
+    (totalMinutes >= AFTERNOON_START && isFleetOnRoute);
+
+  const startOffset = isTodayClosed ? 1 : 0;
 
   for (let i = startOffset; i < 21 && dates.length < maxDays; i++) {
     const d = new Date();
@@ -306,3 +668,96 @@ export function getUpcomingDeliveryDates(allowedDays = [1, 2, 3, 4, 5, 6], maxDa
 
   return dates;
 }
+
+// =========================================================================
+// GESTOR DE VEHÍCULOS DE REPARTO ASIGNADOS POR SOCIO / USUARIO
+// =========================================================================
+
+export const DISPATCH_VEHICLES_KEY = 'dispatch_vehicles';
+
+export const DEFAULT_DISPATCH_VEHICLES = [
+  {
+    id: 'VEH-AVEO-CHDD60',
+    brand: 'Chevrolet Aveo',
+    plate: 'CHDD60',
+    efficiencyKmPerL: 10,
+    fuelPricePerL: 1400,
+    owner: 'Ignacio Alarcón',
+  },
+];
+
+export async function getVehiclesFromSupabase() {
+  try {
+    const { data, error } = await supabase
+      .from('store_settings')
+      .select('value')
+      .eq('key', DISPATCH_VEHICLES_KEY)
+      .maybeSingle();
+
+    if (!error && data && Array.isArray(data.value) && data.value.length > 0) {
+      const normalized = data.value.map((v) => ({
+        ...v,
+        owner: v.owner || 'Ignacio Alarcón',
+      }));
+      try {
+        localStorage.setItem('patitas_admin_vehicles_v1', JSON.stringify(normalized));
+      } catch {
+        // ignore storage error
+      }
+      return normalized;
+    }
+  } catch (err) {
+    console.warn('Error fetching vehicles from Supabase:', err);
+  }
+
+  try {
+    const cached = localStorage.getItem('patitas_admin_vehicles_v1');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((v) => ({
+          ...v,
+          owner: v.owner || 'Ignacio Alarcón',
+        }));
+      }
+    }
+  } catch {
+    // ignore storage error
+  }
+
+  return DEFAULT_DISPATCH_VEHICLES;
+}
+
+export async function saveVehiclesToSupabase(vehicles) {
+  const safeVehicles = (Array.isArray(vehicles) ? vehicles : []).map((v) => ({
+    ...v,
+    owner: v.owner || 'Ignacio Alarcón',
+  }));
+
+  try {
+    localStorage.setItem('patitas_admin_vehicles_v1', JSON.stringify(safeVehicles));
+  } catch {
+    // ignore storage error
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('store_settings')
+      .upsert(
+        {
+          key: DISPATCH_VEHICLES_KEY,
+          value: safeVehicles,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      )
+      .select();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.error('Error saving vehicles to Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+

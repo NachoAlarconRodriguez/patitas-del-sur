@@ -2,28 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { ShieldCheck, FileText, Truck, RotateCcw, ChevronRight, ArrowLeft } from 'lucide-react';
 import SEOHead from '../components/SEOHead';
+import { COMPANY_INFO } from '../constants';
 
 const SECTIONS = [
   {
     id: 'terminos',
+    path: '/terminos-y-condiciones',
     title: 'Términos y Condiciones',
     icon: FileText,
     badge: 'Comercio Digital',
   },
   {
     id: 'privacidad',
+    path: '/politicas-de-privacidad',
     title: 'Políticas de Privacidad',
     icon: ShieldCheck,
     badge: 'Ley 19.628',
   },
   {
     id: 'despacho',
+    path: '/politicas-de-despacho',
     title: 'Políticas de Despacho',
     icon: Truck,
     badge: 'Zona Lacustre',
   },
   {
     id: 'devoluciones',
+    path: '/cambios-y-devoluciones',
     title: 'Garantía y Devoluciones',
     icon: RotateCcw,
     badge: 'Garantía SERNAC',
@@ -90,15 +95,16 @@ export default function LegalView() {
           </p>
         </div>
 
-        {/* Tab Selection Navigation */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
+        {/* Tab Selection Navigation (Semantic URL Links) */}
+        <nav aria-label="Secciones legales" className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
           {SECTIONS.map((sec) => {
             const Icon = sec.icon;
             const isActive = activeTab === sec.id;
             return (
-              <button
+              <Link
                 key={sec.id}
-                onClick={() => setActiveTab(sec.id)}
+                to={sec.path}
+                aria-current={isActive ? 'page' : undefined}
                 className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
                   isActive
                     ? 'bg-gradient-to-br from-[#0A3E40] to-[#0E8388] text-white border-[#0E8388] shadow-lg shadow-[#0E8388]/20 scale-[1.02]'
@@ -124,10 +130,10 @@ export default function LegalView() {
                 <div>
                   <h3 className="font-extrabold text-xs sm:text-sm leading-snug">{sec.title}</h3>
                 </div>
-              </button>
+              </Link>
             );
           })}
-        </div>
+        </nav>
 
         {/* Content Section Container */}
         <div className="bg-white rounded-3xl p-8 md:p-12 border border-slate-200 shadow-sm leading-relaxed space-y-8 text-sm text-slate-700">
@@ -147,7 +153,7 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">1. Identificación del Vendedor</h3>
                 <p>
-                  El sitio web <strong>patitasdelsur.cl</strong> es operado y administrado por <strong>Comercial Kira SpA</strong>, Rol Único Tributario (RUT) <strong>77.892.451-2</strong>, con domicilio legal en Puerto Varas, Región de Los Lagos, Chile. Todas las compras realizadas a través de la plataforma se rigen por la legislación chilena vigente.
+                  El sitio web <strong>patitasdelsur.cl</strong> es operado y administrado por <strong>{COMPANY_INFO.legalName}</strong>, Rol Único Tributario (RUT) <strong>{COMPANY_INFO.rut}</strong>, con centro operativo en {COMPANY_INFO.hubAddress}. Todas las compras realizadas a través de la plataforma se rigen por la legislación chilena vigente.
                 </p>
               </section>
 
@@ -171,8 +177,9 @@ export default function LegalView() {
                   Los usuarios pueden realizar sus compras mediante:
                 </p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Tarjetas de Débito y Crédito (Webpay Plus):</strong> Transacciones seguras con cifrado bancario y autenticación de 3 factores.</li>
-                  <li><strong>Transferencia Bancaria Directa:</strong> A la cuenta corriente bancaria de Comercial Kira SpA, con validación de comprobante en menos de 60 minutos.</li>
+                  <li><strong>Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago):</strong> Transacciones seguras con cifrado bancario de 256 bits y autenticación 3D Secure.</li>
+                  <li><strong>Transferencia Bancaria Directa:</strong> A la cuenta corriente bancaria de {COMPANY_INFO.legalName} (RUT {COMPANY_INFO.rut}), con validación rápida vía comprobante.</li>
+                  <li><strong>Efectivo contra entrega:</strong> Disponible en zonas habilitadas previa coordinación por WhatsApp ({COMPANY_INFO.phoneDisplay}).</li>
                 </ul>
               </section>
             </div>
@@ -241,28 +248,29 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">1. Zona de Cobertura</h3>
                 <p>
-                  Despachamos directamente con flota propia y operadores locales en las comunas de:
+                  Despachamos directamente con flota propia climatizada desde nuestro centro de distribución en Frutillar hacia las comunas y localidades de:
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-bold text-xs text-[#0A3E40]">
-                  <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">📍 Puerto Varas</div>
-                  <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">📍 Llanquihue</div>
-                  <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">📍 Frutillar</div>
-                  <div className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">📍 Puerto Montt</div>
+                  {COMPANY_INFO.communes.map((city) => (
+                    <div key={city} className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">
+                      📍 {city}
+                    </div>
+                  ))}
                 </div>
               </section>
 
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">2. Tarifas y Despacho Gratuito</h3>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Envío Gratis:</strong> En todos los pedidos con un monto igual o superior a <strong>$30.000 CLP</strong>.</li>
-                  <li><strong>Tarifa Plana Estándar:</strong> <strong>$3.990 CLP</strong> para compras inferiores al umbral mínimo en todo el radio urbano lacustre.</li>
+                  <li><strong>Envío Gratis:</strong> Disponible en compras iguales o superiores a <strong>$25.000 CLP</strong> en nuestras zonas principales de cobertura (sujeto al umbral específico de cada comuna o parcelación informado en el calculador).</li>
+                  <li><strong>Tarifa Estándar:</strong> Desde <strong>$2.000 CLP</strong> para compras inferiores al umbral mínimo, calculada de forma transparente según la comuna antes de confirmar tu pedido.</li>
                 </ul>
               </section>
 
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">3. Tiempos y Ventanas Horarias de Entrega</h3>
                 <p>
-                  Los pedidos recibidos antes de las 13:00 hrs son entregados en la <strong>misma jornada (Tarde: 15:00 a 19:00 hrs)</strong>. Las compras realizadas con posterioridad se programan para el siguiente día hábil en la ventana matutina (09:00 a 13:00 hrs) o vespertina.
+                  En Frutillar, Llanquihue y Puerto Varas los pedidos recibidos antes de las 14:00 hrs se entregan en la <strong>misma jornada (Tarde: 14:30 a 19:30 hrs)</strong> o al siguiente día hábil en ventana matutina (10:00 a 13:30 hrs). En Puerto Montt, Puerto Octay, Casma, Fresia y Totoral las entregas se realizan según los días de ruta programados.
                 </p>
               </section>
             </div>
@@ -284,7 +292,7 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">1. Garantía Legal de 6 Meses (Ley Pro Consumidor)</h3>
                 <p>
-                  Si un producto presenta defectos de fábrica, fecha de vencimiento adulterada o no cumple con las condiciones técnicas informadas, el cliente tiene derecho a elegir entre tres alternativas durante los primeros <strong>6 meses</strong> desde su recepción:
+                  Si un producto presenta defectos de fábrica, fecha de vencimiento adulterada o no cumple con las condiciones técnicas informadas, el cliente tiene derecho a elegir entre tres alternativas durante los primeros <strong>{COMPANY_INFO.legalWarrantyMonths} meses</strong> desde su recepción:
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 font-bold text-xs text-slate-800">
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">1. Cambio inmediato por un producto nuevo idéntico.</div>
@@ -294,16 +302,16 @@ export default function LegalView() {
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-base font-bold text-slate-900">2. Garantía de Palatabilidad Patitas del Sur</h3>
+                <h3 className="text-base font-bold text-slate-900">2. Cambios por Receta Sellada (10 Días) y Garantía de Palatabilidad (5 Días)</h3>
                 <p>
-                  Sabemos que la transición nutricional puede ser exigente. Si a tu perro o gato no le agrada el sabor de una receta de alimento seco recién adquirida, te permitimos solicitar el cambio por otra variedad dentro de los primeros <strong>5 días hábiles</strong> posteriores a la compra, siempre que el saco conserve al menos el <strong>80% de su contenido original</strong> y el envase se encuentre en óptimas condiciones higiénicas.
+                  Aceptamos cambios de sabor o formato dentro de los primeros <strong>{COMPANY_INFO.returnPolicyDays} días corridos</strong> desde la recepción siempre que el saco permanezca <strong>100% sellado e intacto</strong>. Adicionalmente, si tu perro o gato no tolera el sabor de una receta recién abierta, nuestra <strong>Garantía de Palatabilidad</strong> permite solicitar el cambio por otra variedad dentro de los primeros <strong>{COMPANY_INFO.palatabilityGuaranteeDays} días hábiles</strong> posteriores a la compra, conservando al menos el <strong>80% de su contenido original</strong> en su envase en óptimas condiciones higiénicas.
                 </p>
               </section>
 
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">3. Procedimiento para Solicitar un Cambio</h3>
                 <p>
-                  Para gestionar una solicitud, contacta a nuestro equipo de postventa vía WhatsApp directo (+56 9 8765 4321) o escribiendo a <strong>postventa@patitasdelsur.cl</strong> indicando tu número de pedido (ej: `ORD-20261019-XXXX`). Nuestro equipo coordinará el retiro o cambio a domicilio en Puerto Varas o comunas vecinas.
+                  Para gestionar una solicitud, contacta a nuestro equipo de postventa vía WhatsApp directo (<a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-[#0E8388] font-bold underline">{COMPANY_INFO.phoneDisplay}</a>) o escribiendo a <strong>{COMPANY_INFO.supportEmail}</strong> indicando tu número de pedido (ej: `ORD-20261019-XXXX`). Nuestro equipo coordinará el retiro o cambio a domicilio en Frutillar, Llanquihue, Puerto Varas o comunas de cobertura.
                 </p>
               </section>
             </div>

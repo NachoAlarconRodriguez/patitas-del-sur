@@ -1,14 +1,15 @@
 # Patitas del Sur
 
-> Patitas del Sur es una tienda online especializada en nutrición holística, alimentos libres de grano (Grain Free), snacks deshidratados 100% naturales y farmacia veterinaria preventiva para perros y gatos en la Región de Los Lagos, Chile (Puerto Varas, Llanquihue, Frutillar y Puerto Montt).
+> Patitas del Sur es una tienda online especializada en nutrición holística, alimentos libres de grano (Grain Free), snacks deshidratados 100% naturales y farmacia veterinaria preventiva para perros y gatos en la Región de Los Lagos, Chile (Frutillar, Llanquihue, Puerto Varas, Puerto Montt, Puerto Octay, Casma, Fresia y Totoral).
 
 ## Información General y Empresa
 - **Razón Social**: Comercial Kira SpA
 - **RUT**: 77.892.451-2
-- **Ubicación Base**: Puerto Varas, Región de Los Lagos, Chile (Lat: -41.3195, Lon: -72.9854)
+- **Ubicación Base / Centro de Distribución**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Lat: -41.08985, Lon: -73.08013)
 - **Sitio Web Oficial**: https://patitasdelsur.cl
-- **Teléfono y WhatsApp**: +56 9 8765 4321
+- **Teléfono y WhatsApp**: +56 9 5333 2492 (https://wa.me/56953332492)
 - **Correo Electrónico**: contacto@patitasdelsur.cl
+- **Instagram Oficial**: https://www.instagram.com/patitasdelsur.cl
 - **Moneda de Venta**: Pesos Chilenos (CLP $)
 
 ## Catálogo de Productos y Líneas Principales
@@ -35,17 +36,18 @@
   - **Antiparasitarios Felinos**: Bravecto Plus Pipeta ($28.990), Revolution Plus 6 en 1 ($16.990).
 
 ## Cobertura Geográfica y Logística de Despacho
-Patitas del Sur atiende con despacho propio motorizado en la cuenca del Lago Llanquihue y Puerto Montt:
-- **Puerto Varas**: Entrega el mismo día hábil (pedidos hasta las 14:00 hrs) o en 24 hrs. Tarifa $2.000 CLP (Gratis sobre $35.000).
-- **Llanquihue**: Entrega en el día o máximo 24 hrs. Tarifa $2.500 CLP (Gratis sobre $35.000).
-- **Frutillar (Bajo y Alto)**: Despacho programado en 24 a 48 hrs. Tarifa $3.500 CLP (Gratis sobre $35.000).
-- **Puerto Montt**: Despacho en 24 a 48 hrs hábiles. Tarifa $3.500 CLP (Gratis sobre $35.000).
+Patitas del Sur atiende con despacho propio climatizado en la cuenca del Lago Llanquihue y comunas aledañas (zonas urbanas y parcelaciones rurales):
+- **Frutillar (Bajo, Alto, Punta Larga, Reserva Frutillar, Quilanto, Los Bajos)**: Entrega el mismo día hábil (pedidos hasta las 14:00 hrs) o en 24 hrs. Tarifa base desde $2.000 CLP (Gratis sobre $25.000 CLP).
+- **Llanquihue (Urbano, Los Pellines, Totoral, Loncotoro)**: Entrega en el día o máximo 24 hrs. Tarifa desde $2.000 - $2.500 CLP (Gratis desde $25.000 CLP según zona).
+- **Puerto Varas (Urbano, Puerto Chico, Camino a Ensenada, Línea Nueva, Los Riscos)**: Entrega el mismo día hábil o en 24 hrs. Tarifa desde $2.000 CLP (Gratis desde $25.000 CLP según zona).
+- **Puerto Montt, Puerto Octay, Casma, Fresia y Totoral**: Despacho en rutas programadas semanales directo a domicilio o parcelación.
 
 ## Preguntas Frecuentes y Políticas
-- **Envío Gratuito**: En compras iguales o superiores a $35.000 CLP en cualquiera de las 4 comunas de cobertura.
-- **Medios de Pago**: Webpay Plus (Tarjetas de Débito, Crédito, Prepago), Transferencia Bancaria Directa y Efectivo contra entrega en zonas habilitadas.
-- **Garantía y Devoluciones**: 6 meses de garantía legal conforme a la Ley del Consumidor en Chile (Ley 19.496 / SERNAC). Alimentos cerrados y sellados tienen hasta 10 días para cambio inmediato.
-- **Asesoría Nutricional**: Canal directo de WhatsApp con profesionales dedicados para elegir el alimento ideal según edad, raza, patologías digestivas o alergias alimentarias.
+- **Envío Gratuito**: Disponible en compras iguales o superiores a $25.000 CLP en las zonas principales de cobertura (calculado automáticamente según tu comuna o parcelación antes de pagar).
+- **Programa Club Patitas**: Los clientes registrados acumulan 1 punto por cada $1.000 CLP de compra, canjeables por descuentos directos en futuros pedidos.
+- **Medios de Pago**: Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago), Transferencia Bancaria Directa a Comercial Kira SpA y Efectivo contra entrega previa coordinación.
+- **Garantía y Devoluciones**: 6 meses de garantía legal conforme a la Ley del Consumidor en Chile (Ley 19.496 / SERNAC). Cambios de receta con envase 100% sellado hasta en 10 días corridos, más Garantía de Palatabilidad de 5 días hábiles (conservando al menos el 80% del contenido).
+- **Asesoría Nutricional**: Canal directo de WhatsApp (+56 9 5333 2492) para elegir el alimento ideal según edad, raza, sensibilidad digestiva o alergias alimentarias.
 
 ## Enlaces Clave
 - [Documento de Conocimiento Extendido (llms-full.txt)](https://patitasdelsur.cl/llms-full.txt)

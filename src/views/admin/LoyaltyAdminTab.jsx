@@ -373,108 +373,143 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
-      
-      {/* 1. TARJETAS DE ESTADÍSTICAS Y KPIS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="space-y-6 animate-in fade-in duration-200">
+      {/* 1. FINSET BENTO KPI ROW */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* KPI 1: Puntos en Circulación */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 block">
-              Puntos en Clientes
-            </span>
-            <span className="text-2xl font-black text-amber-950 block mt-1">
-              {totalCustomerPoints.toLocaleString('es-CL')} PTS
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
-              Saldo acumulado en {customers.length} tutores
+        <div className="finset-card bg-white p-5 rounded-3xl border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold text-slate-600">Puntos en clientes</span>
+            <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500">
+              PTS
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
-            <Award className="w-6 h-6" />
+          <div className="my-3 flex items-baseline gap-1">
+            <span className="text-[28px] leading-none font-extrabold text-[#111827] tracking-tight">
+              {totalCustomerPoints.toLocaleString('es-CL')}
+            </span>
+            <span className="text-sm font-semibold text-slate-400">pts</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EBF5F3] text-[#0E8388] text-[11px] font-bold">
+              {customers.length} tutores
+            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+              <span className="w-6 h-6 rounded-lg bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center">
+                <Award className="w-3.5 h-3.5" />
+              </span>
+              <span>Club Patitas</span>
+            </div>
           </div>
         </div>
 
         {/* KPI 2: Cupones Activos por Cobrar */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-amber-600 block">
-              Cupones Activos
-            </span>
-            <span className="text-2xl font-black text-slate-900 block mt-1">
-              {activeCouponsCount}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
-              Listos en billetera de clientes
+        <div className="finset-card bg-white p-5 rounded-3xl border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold text-slate-600">Cupones activos</span>
+            <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500">
+              Billetera
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-700 shadow-xs">
-            <Ticket className="w-6 h-6" />
+          <div className="my-3 flex items-baseline gap-1.5">
+            <span className="text-[28px] leading-none font-extrabold text-[#111827] tracking-tight">
+              {activeCouponsCount}
+            </span>
+            <span className="text-sm font-semibold text-slate-400">disponibles</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold">
+              Listos para uso
+            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+              <span className="w-6 h-6 rounded-lg bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center">
+                <Ticket className="w-3.5 h-3.5" />
+              </span>
+              <span>Vigentes</span>
+            </div>
           </div>
         </div>
 
         {/* KPI 3: Descuentos Utilizados */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-emerald-600 block">
-              Cupones Cobrados
-            </span>
-            <span className="text-2xl font-black text-slate-900 block mt-1">
-              {usedCouponsCount}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
-              Aplicados en ventas reales
+        <div className="finset-card bg-white p-5 rounded-3xl border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold text-slate-600">Cupones cobrados</span>
+            <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500">
+              Ventas
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 shadow-xs">
-            <CheckCircle2 className="w-6 h-6" />
+          <div className="my-3 flex items-baseline gap-1.5">
+            <span className="text-[28px] leading-none font-extrabold text-[#111827] tracking-tight">
+              {usedCouponsCount}
+            </span>
+            <span className="text-sm font-semibold text-slate-400">canjeados</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[11px] font-bold">
+              ✓ Aplicados
+            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+              <span className="w-6 h-6 rounded-lg bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              </span>
+              <span>Pedidos</span>
+            </div>
           </div>
         </div>
 
         {/* KPI 4: Monto Total Bonificado */}
-        <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 block">
-              Total Bonificado
-            </span>
-            <span className="text-2xl font-black text-teal-800 block mt-1">
-              ${totalDiscountMoneyRedeemed.toLocaleString('es-CL')}
-            </span>
-            <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
-              En descuentos en dinero efectivo
+        <div className="finset-card bg-white p-5 rounded-3xl border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] font-semibold text-slate-600">Total bonificado</span>
+            <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500">
+              CLP
             </span>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 shadow-xs">
-            <DollarSign className="w-6 h-6" />
+          <div className="my-3 flex items-baseline">
+            <span className="text-[28px] leading-none font-extrabold text-[#111827] tracking-tight">
+              ${totalDiscountMoneyRedeemed.toLocaleString('es-CL')}
+            </span>
+            <span className="finset-suffix text-base font-semibold text-slate-300 ml-0.5">.00</span>
+          </div>
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EBF5F3] text-[#0E8388] text-[11px] font-bold">
+              Ahorro clientes
+            </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
+              <span className="w-6 h-6 rounded-lg bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center">
+                <DollarSign className="w-3.5 h-3.5" />
+              </span>
+              <span>Efectivo</span>
+            </div>
           </div>
         </div>
       </div>
 
       {/* 2. CONFIGURADOR DE REGLAS & PREMIOS EDITABLE */}
-      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+      <div className="finset-card bg-white p-6 sm:p-7 rounded-3xl border border-[#EAECEF] space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shadow-md">
-              <Sparkles className="w-5 h-5 text-amber-300" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#EBF5F3] border border-[#CBE4DE] text-[#0E8388] flex items-center justify-center shrink-0">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-black text-slate-900">
-                  Reglas de Fidelización & Premios en Dinero
+                <h3 className="text-base sm:text-lg font-extrabold text-[#111827] tracking-tight">
+                  Reglas de fidelización y premios
                 </h3>
-                <span className="text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
-                  En Vivo
+                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  En vivo
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium">
-                Configura cuántos puntos ganan tus clientes y el monto en efectivo ($ CLP) que descuenta cada cupón.
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                Configura cuántos puntos ganan tus clientes y el monto en dinero ($ CLP) que descuenta cada cupón.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             {saveSuccessMsg && (
-              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 animate-in fade-in">
+              <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200 animate-in fade-in">
                 {saveSuccessMsg}
               </span>
             )}
@@ -482,27 +517,27 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               type="button"
               onClick={handleSaveSettings}
               disabled={isSavingSettings}
-              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white font-black text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 rounded-full bg-[#0E8388] hover:bg-[#0c7276] text-white font-bold text-xs shadow-sm shadow-[#0E8388]/20 transition-all active:scale-95 flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              <Save className="w-4 h-4 text-amber-300" />
-              <span>{isSavingSettings ? 'Guardando...' : 'Guardar Cambios'}</span>
+              <Save className="w-4 h-4" />
+              <span>{isSavingSettings ? 'Guardando...' : 'Guardar cambios'}</span>
             </button>
           </div>
         </div>
 
         {/* Regla de Acumulación Base */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/60 via-emerald-50/40 to-slate-50 border border-teal-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <span className="text-xs font-black text-amber-950 uppercase tracking-wider block">
-              Regla de Acumulación Base
+        <div className="p-4 sm:p-5 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <span className="text-xs font-bold text-[#111827] block">
+              Regla de acumulación base
             </span>
-            <p className="text-xs text-slate-600 font-medium">
+            <p className="text-xs text-slate-500 font-medium">
               Por cada $1.000 CLP gastados en un pedido completado, el cliente recibe esta cantidad de puntos:
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-              <span className="text-xs font-bold text-slate-600">1 Punto x cada $</span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-full border border-[#EAECEF]">
+              <span className="text-xs font-semibold text-slate-600">1 punto x cada $</span>
               <input
                 type="number"
                 min="100"
@@ -515,32 +550,34 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                     pointsPerThousand: val <= 500 ? 2 : 1,
                   }));
                 }}
-                className="w-20 px-2 py-1 text-xs font-mono font-black text-center text-amber-950 bg-slate-50 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+                className="w-20 px-2 py-1 text-xs font-mono font-extrabold text-center text-[#111827] bg-[#F8FAFC] rounded-full border border-[#EAECEF] focus:outline-none"
               />
-              <span className="text-xs font-bold text-slate-600">CLP</span>
+              <span className="text-xs font-semibold text-slate-500">CLP</span>
             </div>
-            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded-lg">
-              {settings.pointsPerThousand === 1 ? '1 Pts x $1.000' : '2 Pts x $1.000 (Puntos Dobles)'}
+            <span className="text-[11px] font-bold text-[#0E8388] bg-[#EBF5F3] px-3 py-1 rounded-full border border-[#CBE4DE]">
+              {settings.pointsPerThousand === 1 ? '1 pt x $1.000' : '2 pts x $1.000 (Puntos dobles)'}
             </span>
           </div>
         </div>
 
         {/* Grid de los 4 Niveles de Canje en Dinero */}
         <div className="space-y-3">
-          <span className="text-xs font-black text-slate-700 uppercase tracking-wider block">
-            Escalones de Canje (Premios en Dinero Fijo)
+          <span className="text-xs font-bold text-slate-600 block">
+            Escalones de canje (premios en dinero fijo)
           </span>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {settings.tiers?.map((tier, idx) => (
               <div
                 key={tier.id || idx}
-                className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs hover:border-[#F5BA13]/60 transition-all space-y-3"
+                className="p-4 rounded-2xl bg-[#F8FAFC]/60 hover:bg-white border border-[#EAECEF] hover:border-[#0E8388]/40 transition-all space-y-3"
               >
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center justify-between border-b border-[#EAECEF] pb-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-lg">{tier.icon || '💵'}</span>
-                    <span className="text-xs font-black text-slate-800 uppercase">
+                    <span className="w-7 h-7 rounded-lg bg-[#EBF5F3] flex items-center justify-center text-sm">
+                      {tier.icon || '💵'}
+                    </span>
+                    <span className="text-xs font-extrabold text-[#111827]">
                       Nivel {idx + 1}
                     </span>
                   </div>
@@ -549,9 +586,9 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       type="checkbox"
                       checked={tier.active !== false}
                       onChange={(e) => handleTierChange(idx, 'active', e.target.checked)}
-                      className="rounded text-amber-700 focus:ring-[#F5BA13]"
+                      className="rounded text-[#0E8388] focus:ring-[#0E8388]"
                     />
-                    <span className="text-[10px] font-bold text-slate-500">
+                    <span className="text-[10px] font-semibold text-slate-500">
                       {tier.active !== false ? 'Activo' : 'Pausado'}
                     </span>
                   </label>
@@ -559,8 +596,8 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
 
                 {/* Puntos Requeridos */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-500 block">
-                    Puntos Requeridos
+                  <label className="text-[11px] font-semibold text-slate-500 block">
+                    Puntos requeridos
                   </label>
                   <div className="relative">
                     <input
@@ -569,7 +606,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       step="10"
                       value={tier.points}
                       onChange={(e) => handleTierChange(idx, 'points', e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+                      className="w-full px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono font-extrabold text-[#111827] focus:outline-none"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
                       PTS
@@ -579,8 +616,8 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
 
                 {/* Descuento en Dinero ($ CLP) */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-500 block">
-                    Descuento en Dinero ($)
+                  <label className="text-[11px] font-semibold text-slate-500 block">
+                    Descuento en dinero ($)
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
@@ -592,7 +629,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                       step="500"
                       value={tier.discountAmount}
                       onChange={(e) => handleTierChange(idx, 'discountAmount', e.target.value)}
-                      className="w-full pl-7 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-emerald-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+                      className="w-full pl-7 pr-3 py-1.5 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono font-extrabold text-[#0E8388] focus:outline-none"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400">
                       CLP
@@ -601,10 +638,10 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                 </div>
 
                 {/* Retorno Porcentual Estimado */}
-                <div className="pt-1 text-[10px] text-slate-500 flex justify-between font-medium">
-                  <span>Valor x Punto:</span>
-                  <span className="font-bold text-emerald-700">
-                    ${Math.round(tier.discountAmount / (tier.points || 1))} CLP / pt
+                <div className="pt-1 text-[11px] text-slate-400 flex justify-between font-medium">
+                  <span>Valor por punto</span>
+                  <span className="font-bold text-[#0E8388]">
+                    ${Math.round(tier.discountAmount / (tier.points || 1))} CLP/pt
                   </span>
                 </div>
               </div>
@@ -614,70 +651,70 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       </div>
 
       {/* 3. SALDOS & RANKING DE PUNTOS POR CLIENTE */}
-      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+      <div className="finset-card bg-white p-6 sm:p-7 rounded-3xl border border-[#EAECEF] space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white flex items-center justify-center shadow-md">
-              <Trophy className="w-5 h-5 text-amber-300" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#EBF5F3] border border-[#CBE4DE] text-[#0E8388] flex items-center justify-center shrink-0">
+              <Trophy className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-black text-slate-900">
-                  Saldos & Ranking de Puntos por Cliente
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-base sm:text-lg font-extrabold text-[#111827] tracking-tight">
+                  Saldos y ranking de puntos por cliente
                 </h3>
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+                <span className="text-[11px] font-semibold text-slate-500 bg-[#F8FAFC] px-2.5 py-0.5 rounded-full border border-[#EAECEF]">
                   {processedCustomers.length} de {customers.length} clientes
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Monitorea el balance acumulado de cada tutor, su nivel en el Club Patitas y su beneficio disponible para canjear.
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                Monitorea el balance acumulado de cada tutor, su nivel en Club Patitas y su beneficio disponible.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="text-[11px] font-bold text-slate-400">Ordenar:</span>
+            <span className="text-[11px] font-semibold text-slate-400">Ordenar:</span>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13] cursor-pointer"
+              className="px-3.5 py-1.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-xs font-semibold text-slate-700 focus:bg-white cursor-pointer"
             >
-              <option value="points_desc">⭐ Mayor Saldo de Puntos</option>
-              <option value="points_asc">Menor Saldo de Puntos</option>
+              <option value="points_desc">Mayor saldo de puntos</option>
+              <option value="points_asc">Menor saldo de puntos</option>
               <option value="name_asc">Nombre (A - Z)</option>
-              <option value="orders_desc">Más Compras Realizadas</option>
+              <option value="orders_desc">Más compras realizadas</option>
             </select>
           </div>
         </div>
 
         {/* Buscador y Filtros Rápidos */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Buscar por tutor, teléfono, email o mascota..."
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+              className="w-full pl-10 pr-4 py-2 rounded-full border border-[#EAECEF] bg-[#F8FAFC] focus:bg-white text-xs text-[#111827] placeholder:text-slate-400"
             />
             {customerSearch && (
               <button
                 type="button"
                 onClick={() => setCustomerSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
               >
                 ✕ Limpiar
               </button>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl shrink-0">
+          <div className="flex flex-wrap items-center gap-1 bg-[#F8FAFC] border border-[#EAECEF] p-1 rounded-full shrink-0">
             <button
               type="button"
               onClick={() => setPointsFilter('todos')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                pointsFilter === 'todos' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                pointsFilter === 'todos' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
               Todos ({customers.length})
@@ -685,35 +722,35 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <button
               type="button"
               onClick={() => setPointsFilter('con_puntos')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                 pointsFilter === 'con_puntos'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#0E8388] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              🟢 Con Puntos ({withPointsCount})
+              Con puntos ({withPointsCount})
             </button>
             <button
               type="button"
               onClick={() => setPointsFilter('canje_listo')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                 pointsFilter === 'canje_listo'
-                  ? 'bg-amber-500 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#0E8388] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              🎁 Listos para Canje ({canRedeemCount})
+              Listos para canje ({canRedeemCount})
             </button>
             <button
               type="button"
               onClick={() => setPointsFilter('sin_puntos')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
                 pointsFilter === 'sin_puntos'
-                  ? 'bg-slate-700 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-[#0E8388] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              Sin Puntos ({zeroPointsCount})
+              Sin puntos ({zeroPointsCount})
             </button>
           </div>
         </div>
@@ -721,19 +758,20 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         {/* Listado Minimalista & Visual de Clientes con Barra de Progreso e Hitos */}
         <div className="space-y-3.5">
           {paginatedCustomers.length === 0 ? (
-            <div className="p-10 text-center bg-slate-50/50 rounded-3xl border border-dashed border-slate-200 text-slate-400">
+            <div className="p-10 text-center bg-[#F8FAFC] rounded-3xl border border-dashed border-[#EAECEF] text-slate-400">
               <User className="w-8 h-8 mx-auto mb-2 text-slate-300" />
               <span className="font-bold block text-sm text-slate-600">No se encontraron clientes</span>
               <span className="text-xs">Prueba ajustando los filtros o el texto de búsqueda.</span>
             </div>
           ) : (
             paginatedCustomers.map((c, index) => {
-              const initials = (c.effectiveName || 'C')
-                .split(' ')
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((n) => n[0]?.toUpperCase())
-                .join('') || 'C';
+              const initials =
+                (c.effectiveName || 'C')
+                  .split(' ')
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((n) => n[0]?.toUpperCase())
+                  .join('') || 'C';
 
               const cleanPhone = String(c.effectivePhone || '').replace(/\D/g, '');
               const waNumber = cleanPhone.startsWith('56')
@@ -747,20 +785,18 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               return (
                 <div
                   key={c.id || index}
-                  className="bg-white hover:bg-slate-50/60 p-4 sm:p-5 rounded-3xl border border-slate-200/90 shadow-2xs hover:shadow-md hover:border-[#F5BA13]/30 transition-all space-y-4"
+                  className="bg-white hover:bg-[#F8FAFC]/60 p-4 sm:p-5 rounded-3xl border border-[#EAECEF] hover:border-[#CBD5E1] transition-all space-y-4"
                 >
-                  {/* Fila Superior: Nombre del Cliente primero + Badges + Saldo + Botón Ajustar */}
+                  {/* Fila Superior: Nombre del Cliente + Badges + Saldo + Botón Ajustar */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    
-                    {/* Identidad del Cliente: Nombre primero y destacado */}
                     <div className="flex items-center gap-3.5 min-w-0">
                       <div
-                        className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-xs shrink-0 shadow-2xs ${
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center font-extrabold text-xs shrink-0 ${
                           c.points >= 350
-                            ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-bold'
+                            ? 'bg-[#0E8388] text-white'
                             : c.points >= 100
-                            ? 'bg-gradient-to-br from-[#F5BA13] via-[#FBBF24] to-[#D97706] text-white'
-                            : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            ? 'bg-[#EBF5F3] text-[#0E8388] border border-[#CBE4DE]'
+                            : 'bg-[#F8FAFC] text-slate-500 border border-[#EAECEF]'
                         }`}
                       >
                         {initials}
@@ -768,11 +804,11 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
 
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-black text-slate-900 text-sm sm:text-base tracking-tight truncate">
+                          <h4 className="font-extrabold text-[#111827] text-sm sm:text-base tracking-tight truncate">
                             {c.effectiveName}
                           </h4>
                           <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black border ${c.tierInfo.badgeColor}`}
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${c.tierInfo.badgeColor}`}
                           >
                             <span>{c.tierInfo.badgeIcon}</span>
                             <span>{c.tierInfo.badgeName}</span>
@@ -782,12 +818,12 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 font-medium mt-0.5">
                           {c.effectivePets && (
                             <span className="inline-flex items-center gap-1 text-slate-700 font-semibold">
-                              <span className="text-amber-500">🐾</span>
+                              <span className="text-[#0E8388]">🐾</span>
                               <span>{c.effectivePets}</span>
                             </span>
                           )}
                           {c.effectivePhone && (
-                            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600">
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500">
                               <Phone className="w-3 h-3 text-slate-400" />
                               <span>{c.effectivePhone}</span>
                               {cleanPhone && (
@@ -796,7 +832,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                                   target="_blank"
                                   rel="noreferrer"
                                   title="Abrir WhatsApp"
-                                  className="text-emerald-600 hover:text-emerald-700"
+                                  className="text-[#0E8388] hover:text-[#0c7276]"
                                 >
                                   <MessageCircle className="w-3.5 h-3.5" />
                                 </a>
@@ -812,43 +848,43 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                     </div>
 
                     {/* Saldo de Puntos & Acción Rápida CRM */}
-                    <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Saldo:</span>
-                        <span className="font-mono font-black text-sm text-amber-950">
+                    <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
+                      <div className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#F8FAFC] border border-[#EAECEF]">
+                        <span className="text-[10px] font-bold text-slate-400">Saldo</span>
+                        <span className="font-mono font-extrabold text-sm text-[#111827]">
                           {c.points.toLocaleString('es-CL')}
                         </span>
-                        <span className="text-[11px] font-bold text-slate-500">PTS</span>
+                        <span className="text-[10px] font-bold text-[#0E8388]">PTS</span>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => handleSelectCustomerForAdjustment(c.id)}
-                        className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-[#1D1D1F] hover:text-[#F5BA13] text-slate-700 hover:text-white font-bold text-xs transition-all inline-flex items-center gap-1 shadow-2xs hover:shadow-xs active:scale-95 cursor-pointer"
+                        className="px-4 py-1.5 rounded-full bg-white hover:bg-[#0E8388] text-slate-700 hover:text-white border border-[#EAECEF] hover:border-[#0E8388] font-semibold text-xs transition-all inline-flex items-center gap-1.5 active:scale-95 cursor-pointer"
                         title="Ajustar saldo en herramienta CRM"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        <span>Ajustar Puntos</span>
+                        <span>Ajustar puntos</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Fila Inferior: Barra de Progreso con Hitos Alcanzados y por Alcanzar */}
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50/70 border border-slate-200/60 space-y-2">
-                    
-                    {/* Cabecera del Progreso: Resumen de Estado */}
+                  {/* Fila Inferior: Barra de Progreso con Hitos */}
+                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-1.5">
                         {c.tierInfo.canRedeem ? (
-                          <span className="text-emerald-700 font-black text-xs flex items-center gap-1">
+                          <span className="text-emerald-700 font-bold text-xs flex items-center gap-1">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Cupón ${c.tierInfo.qualified.discountAmount.toLocaleString('es-CL')} CLP listo para canjear en tienda</span>
+                            <span>
+                              Cupón ${c.tierInfo.qualified.discountAmount.toLocaleString('es-CL')} CLP listo para canjear
+                            </span>
                           </span>
                         ) : c.tierInfo.nextTier ? (
                           <span className="text-slate-600 font-medium text-xs flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            <span className="w-2 h-2 rounded-full bg-[#0E8388]"></span>
                             <span>
-                              Faltan <strong className="text-slate-900 font-black">{c.tierInfo.nextTier.points - c.points} pts</strong> para desbloquear Cupón ${c.tierInfo.nextTier.discountAmount.toLocaleString('es-CL')} CLP
+                              Faltan <strong className="text-[#111827] font-extrabold">{c.tierInfo.nextTier.points - c.points} pts</strong> para desbloquear cupón ${c.tierInfo.nextTier.discountAmount.toLocaleString('es-CL')} CLP
                             </span>
                           </span>
                         ) : (
@@ -856,28 +892,24 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                         )}
                       </div>
 
-                      <div className="text-[11px] font-bold text-slate-400 font-mono">
-                        Progreso: <span className="text-slate-700 font-black">{progressPct}%</span> hacia meta máx. ({maxTierPoints} pts)
+                      <div className="text-[11px] font-semibold text-slate-400 font-mono">
+                        Progreso: <span className="text-[#111827] font-extrabold">{progressPct}%</span> ({maxTierPoints} pts máx.)
                       </div>
                     </div>
 
-                    {/* Pista Visual de Hitos con Línea Continua y Nodos Escalados */}
+                    {/* Pista Visual de Hitos */}
                     <div className="pt-6 pb-6 px-4 sm:px-6 relative">
-                      {/* Línea Base de Fondo */}
-                      <div className="h-2.5 bg-slate-200/80 rounded-full relative overflow-hidden">
-                        {/* Línea Llena con Gradiente */}
+                      <div className="h-2.5 bg-[#EAECEF] rounded-full relative overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-[#F5BA13] via-amber-400 to-[#D97706] rounded-full transition-all duration-500 ease-out"
+                          className="h-full bg-[#0E8388] rounded-full transition-all duration-500 ease-out"
                           style={{ width: `${progressPct}%` }}
                         />
                       </div>
 
-                      {/* Nodos de Hitos Posicionados a lo largo de la barra */}
                       <div className="absolute inset-x-4 sm:inset-x-6 top-1/2 -translate-y-1/2 pointer-events-none">
                         {activeTiers.map((tier, idx) => {
                           const isReached = c.points >= tier.points;
                           const isNext = !isReached && (idx === 0 || c.points >= activeTiers[idx - 1].points);
-                          // Posición porcentual sobre la barra
                           const posPct = Math.min(100, Math.max(0, (tier.points / maxTierPoints) * 100));
 
                           return (
@@ -886,32 +918,30 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                               className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto"
                               style={{ left: `${posPct}%` }}
                             >
-                              {/* Etiqueta Superior del Hito (Premio en Dinero) */}
                               <div className="absolute -top-7 whitespace-nowrap text-center">
                                 {isReached ? (
-                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300 shadow-2xs">
-                                    <Check className="w-2.5 h-2.5 text-emerald-600 stroke-[3]" />
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-[#EBF5F3] text-[#0E8388] text-[10px] font-bold border border-[#CBE4DE]">
+                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
                                     <span>${tier.discountAmount.toLocaleString('es-CL')}</span>
                                   </span>
                                 ) : isNext ? (
-                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300 shadow-2xs animate-pulse">
-                                    <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
+                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">
+                                    <Star className="w-2.5 h-2.5 fill-[#F5BA13] text-[#F5BA13]" />
                                     <span>${tier.discountAmount.toLocaleString('es-CL')}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] font-bold text-slate-400">
+                                  <span className="text-[10px] font-semibold text-slate-400">
                                     ${tier.discountAmount.toLocaleString('es-CL')}
                                   </span>
                                 )}
                               </div>
 
-                              {/* Nodo Circular (Pin) */}
                               <div
-                                className={`w-5 h-5 rounded-full flex items-center justify-center transition-all shadow-xs ${
+                                className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
                                   isReached
-                                    ? 'bg-emerald-500 text-white ring-4 ring-white shadow-emerald-500/30'
+                                    ? 'bg-[#0E8388] text-white ring-4 ring-white'
                                     : isNext
-                                    ? 'bg-amber-400 text-slate-950 ring-4 ring-amber-100 font-black text-[9px] shadow-amber-400/30'
+                                    ? 'bg-[#F5BA13] text-[#111827] ring-4 ring-amber-100 font-extrabold text-[9px]'
                                     : 'bg-white border-2 border-slate-300 ring-2 ring-slate-100 text-slate-400'
                                 }`}
                                 title={`${tier.title}: ${tier.points} puntos`}
@@ -923,14 +953,13 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                                 )}
                               </div>
 
-                              {/* Etiqueta Inferior del Hito (Puntos Requeridos) */}
                               <div className="absolute -bottom-5 whitespace-nowrap text-center">
                                 <span
-                                  className={`text-[10px] font-mono font-bold ${
+                                  className={`text-[10px] font-mono font-semibold ${
                                     isReached
-                                      ? 'text-emerald-700 font-black'
+                                      ? 'text-[#0E8388] font-extrabold'
                                       : isNext
-                                      ? 'text-amber-800 font-black'
+                                      ? 'text-amber-700 font-extrabold'
                                       : 'text-slate-400'
                                   }`}
                                 >
@@ -953,14 +982,15 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         {totalCustomerPages > 1 && (
           <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
             <span className="text-slate-500 font-medium">
-              Página <strong className="text-slate-800">{customersPage}</strong> de <strong className="text-slate-800">{totalCustomerPages}</strong> ({processedCustomers.length} clientes en total)
+              Página <strong className="text-[#111827]">{customersPage}</strong> de{' '}
+              <strong className="text-[#111827]">{totalCustomerPages}</strong> ({processedCustomers.length} clientes)
             </span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setCustomersPage((p) => Math.max(1, p - 1))}
                 disabled={customersPage === 1}
-                className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
+                className="px-3.5 py-1.5 rounded-full bg-white border border-[#EAECEF] hover:bg-[#F8FAFC] text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
                 <span>Anterior</span>
@@ -969,7 +999,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                 type="button"
                 onClick={() => setCustomersPage((p) => Math.min(totalCustomerPages, p + 1))}
                 disabled={customersPage === totalCustomerPages}
-                className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
+                className="px-3.5 py-1.5 rounded-full bg-white border border-[#EAECEF] hover:bg-[#F8FAFC] text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <span>Siguiente</span>
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -980,18 +1010,18 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       </div>
 
       {/* 4. AUDITORÍA DE CANJES EN TIEMPO REAL */}
-      <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+      <div className="finset-card bg-white p-6 sm:p-7 rounded-3xl border border-[#EAECEF] space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base sm:text-lg font-black text-slate-900">
-                Auditoría de Canjes & Cupones de Clientes
+              <h3 className="text-base sm:text-lg font-extrabold text-[#111827] tracking-tight">
+                Auditoría de canjes y cupones
               </h3>
-              <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-semibold text-slate-500 bg-[#F8FAFC] border border-[#EAECEF] px-2.5 py-0.5 rounded-full">
                 {filteredRedemptions.length} registros
               </span>
             </div>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
+            <p className="text-xs text-slate-400 font-medium mt-0.5">
               Monitorea cada cupón canjeado, el cliente que lo solicitó y el pedido donde se aplicó el descuento.
             </p>
           </div>
@@ -1000,9 +1030,9 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             type="button"
             onClick={loadRedemptions}
             disabled={isLoadingRedemptions}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+            className="px-4 py-2 rounded-full bg-white border border-[#EAECEF] hover:bg-[#F8FAFC] text-slate-700 font-semibold text-xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRedemptions ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-[#0E8388] ${isLoadingRedemptions ? 'animate-spin' : ''}`} />
             <span>Actualizar</span>
           </button>
         </div>
@@ -1010,22 +1040,22 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         {/* Buscador y Filtros */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Buscar por cliente, teléfono o código (ej. PTS-)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+              className="w-full pl-10 pr-4 py-2 rounded-full border border-[#EAECEF] bg-[#F8FAFC] focus:bg-white text-xs text-[#111827] placeholder:text-slate-400"
             />
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0">
+          <div className="flex items-center gap-1 bg-[#F8FAFC] border border-[#EAECEF] p-1 rounded-full shrink-0">
             <button
               type="button"
               onClick={() => setStatusFilter('todos')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                statusFilter === 'todos' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                statusFilter === 'todos' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
               Todos
@@ -1033,40 +1063,36 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
             <button
               type="button"
               onClick={() => setStatusFilter('activo')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                statusFilter === 'activo'
-                  ? 'bg-amber-500 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                statusFilter === 'activo' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              🟡 Activos ({activeCouponsCount})
+              Activos ({activeCouponsCount})
             </button>
             <button
               type="button"
               onClick={() => setStatusFilter('utilizado')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                statusFilter === 'utilizado'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                statusFilter === 'utilizado' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              🟢 Utilizados ({usedCouponsCount})
+              Utilizados ({usedCouponsCount})
             </button>
           </div>
         </div>
 
         {/* Tabla de Auditoría */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <div className="overflow-x-auto rounded-2xl border border-[#EAECEF]">
           <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 text-[10px] uppercase font-black tracking-wider text-slate-500 border-b border-slate-200">
+            <thead className="bg-[#F8FAFC] text-[11px] font-semibold text-slate-500 border-b border-[#EAECEF]">
               <tr>
-                <th className="px-4 py-3">Fecha y Hora</th>
-                <th className="px-4 py-3">Cliente (Tutor)</th>
-                <th className="px-4 py-3 text-center">Puntos Gastados</th>
-                <th className="px-4 py-3">Descuento Obtenido</th>
-                <th className="px-4 py-3">Código Cupón</th>
+                <th className="px-4 py-3">Fecha y hora</th>
+                <th className="px-4 py-3">Cliente (tutor)</th>
+                <th className="px-4 py-3 text-center">Puntos usados</th>
+                <th className="px-4 py-3">Descuento</th>
+                <th className="px-4 py-3">Código cupón</th>
                 <th className="px-4 py-3 text-center">Estado</th>
-                <th className="px-4 py-3">Pedido Aplicado</th>
+                <th className="px-4 py-3">Pedido aplicado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1081,8 +1107,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                   const isUsed = r.status === 'utilizado';
 
                   return (
-                    <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                      {/* Fecha */}
+                    <tr key={r.id} className="hover:bg-[#F8FAFC] transition-colors">
                       <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-medium">
                         {r.createdAt
                           ? new Date(r.createdAt).toLocaleString('es-CL', {
@@ -1095,65 +1120,59 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                           : 'Reciente'}
                       </td>
 
-                      {/* Cliente */}
                       <td className="px-4 py-3">
-                        <div className="font-extrabold text-slate-900">{r.customerName}</div>
-                        <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                        <div className="font-bold text-[#111827]">{r.customerName}</div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
                           <span>{r.customerPhone || 'Sin teléfono'}</span>
-                          <span>• Saldo: {r.currentCustomerPoints} Pts</span>
+                          <span>· Saldo: {r.currentCustomerPoints} pts</span>
                         </div>
                       </td>
 
-                      {/* Puntos Gastados */}
                       <td className="px-4 py-3 text-center">
-                        <span className="font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
-                          -{r.pointsSpent} Pts
+                        <span className="font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200/80">
+                          -{r.pointsSpent} pts
                         </span>
                       </td>
 
-                      {/* Descuento */}
-                      <td className="px-4 py-3 font-extrabold text-emerald-700">
+                      <td className="px-4 py-3 font-extrabold text-[#0E8388]">
                         ${(r.discountAmount || 0).toLocaleString('es-CL')} CLP
                       </td>
 
-                      {/* Código Cupón */}
                       <td className="px-4 py-3">
                         <button
                           type="button"
                           onClick={() => handleCopyCode(r.couponCode)}
-                          className="font-mono font-black text-slate-800 bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-200/80 flex items-center gap-1.5 cursor-pointer transition-colors"
+                          className="font-mono font-bold text-[#111827] bg-[#F8FAFC] hover:bg-[#EBF5F3] px-3 py-1 rounded-full border border-[#EAECEF] flex items-center gap-1.5 cursor-pointer transition-colors"
                           title="Copiar código"
                         >
                           <span>{r.couponCode}</span>
                           <Copy className="w-3 h-3 text-slate-400" />
                           {copiedCode === r.couponCode && (
-                            <span className="text-[9px] text-emerald-600 font-bold">¡Copiado!</span>
+                            <span className="text-[9px] text-[#0E8388] font-bold">¡Copiado!</span>
                           )}
                         </button>
                       </td>
 
-                      {/* Estado */}
                       <td className="px-4 py-3 text-center">
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                             isUsed
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-amber-100 text-amber-900 border border-amber-300'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-200'
                           }`}
                         >
-                          {isUsed ? '✓ Utilizado' : '🟡 Activo'}
+                          {isUsed ? '✓ Utilizado' : 'Activo'}
                         </span>
                       </td>
 
-                      {/* Pedido Asociado */}
                       <td className="px-4 py-3">
                         {r.usedInOrderId ? (
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-black text-amber-950 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                            <span className="font-mono font-bold text-[#0E8388] bg-[#EBF5F3] px-2.5 py-0.5 rounded-full border border-[#CBE4DE]">
                               {r.usedInOrderId}
                             </span>
                             {r.usedInOrderTotal && (
-                              <span className="text-[10px] text-slate-500 font-bold">
+                              <span className="text-[10px] text-slate-400 font-semibold">
                                 (${Number(r.usedInOrderTotal).toLocaleString('es-CL')})
                               </span>
                             )}
@@ -1172,17 +1191,20 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       </div>
 
       {/* 5. HERRAMIENTA CRM: AJUSTE MANUAL DE PUNTOS */}
-      <div id="crm-adjustment-tool" className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-sm space-y-4 scroll-mt-6 transition-all duration-300">
-        <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
+      <div
+        id="crm-adjustment-tool"
+        className="finset-card bg-white p-6 sm:p-7 rounded-3xl border border-[#EAECEF] space-y-4 scroll-mt-6 transition-all duration-300"
+      >
+        <div className="flex items-center gap-3.5 border-b border-slate-100 pb-4">
+          <div className="w-10 h-10 rounded-2xl bg-[#EBF5F3] border border-[#CBE4DE] text-[#0E8388] flex items-center justify-center shrink-0">
             <User className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="text-base font-black text-slate-900">
-              Herramienta CRM: Ajuste Manual de Puntos a Clientes
+            <h3 className="text-base font-extrabold text-[#111827] tracking-tight">
+              Ajuste manual de puntos a clientes
             </h3>
-            <p className="text-xs text-slate-500 font-medium">
-              Suma puntos de cortesía (por cumpleaños, eventos especiales o compensación) o corrige saldos.
+            <p className="text-xs text-slate-400 font-medium">
+              Suma puntos de cortesía (cumpleaños, eventos o compensación) o corrige saldos.
             </p>
           </div>
         </div>
@@ -1202,83 +1224,78 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         )}
 
         <form onSubmit={handleApplyAdjustment} className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-          {/* Selector de Cliente */}
-          <div className="sm:col-span-4 space-y-1">
-            <label className="text-[11px] font-black uppercase text-slate-500 block">
-              Seleccionar Cliente
+          <div className="sm:col-span-4 space-y-1.5">
+            <label className="text-xs font-semibold text-slate-600 block">
+              Seleccionar cliente
             </label>
             <select
               value={selectedCustomerId}
               onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-[#EAECEF] bg-[#F8FAFC] text-xs font-semibold text-[#111827] focus:bg-white"
             >
               <option value="">-- Elige un tutor / cliente --</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name || c.full_name} ({c.phone || c.email || 'Sin contacto'}) — Saldo: {c.points || 0} Pts
+                  {c.name || c.full_name} ({c.phone || c.email || 'Sin contacto'}) — Saldo: {c.points || 0} pts
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Cantidad de Puntos a Sumar / Restar */}
-          <div className="sm:col-span-3 space-y-1">
-            <label className="text-[11px] font-black uppercase text-slate-500 block">
-              Puntos (+ para sumar / - para restar)
+          <div className="sm:col-span-3 space-y-1.5">
+            <label className="text-xs font-semibold text-slate-600 block">
+              Puntos (+ sumar / - restar)
             </label>
             <input
               type="number"
               placeholder="Ej. +50 ó -30"
               value={pointsAdjustment}
               onChange={(e) => setPointsAdjustment(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-mono font-black text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-[#EAECEF] bg-[#F8FAFC] text-xs font-mono font-extrabold text-[#111827] focus:bg-white"
             />
           </div>
 
-          {/* Motivo del Ajuste */}
-          <div className="sm:col-span-3 space-y-1">
-            <label className="text-[11px] font-black uppercase text-slate-500 block">
-              Motivo o Justificación
+          <div className="sm:col-span-3 space-y-1.5">
+            <label className="text-xs font-semibold text-slate-600 block">
+              Motivo o justificación
             </label>
             <input
               type="text"
-              placeholder="Ej. Cortesía por demora / Fidelización"
+              placeholder="Ej. Cortesía por fidelización"
               value={adjustmentReason}
               onChange={(e) => setAdjustmentReason(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#F5BA13]"
+              className="w-full px-3.5 py-2.5 rounded-2xl border border-[#EAECEF] bg-[#F8FAFC] text-xs text-[#111827] focus:bg-white"
             />
           </div>
 
-          {/* Botón Aplicar */}
           <div className="sm:col-span-2">
             <button
               type="submit"
               disabled={isAdjusting}
-              className="w-full py-2.5 rounded-xl bg-[#0A3E40] hover:bg-[#F5BA13] text-[#1D1D1F] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="w-full py-2.5 px-4 rounded-full bg-[#0E8388] hover:bg-[#0c7276] text-white font-bold text-xs shadow-sm shadow-[#0E8388]/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>{isAdjusting ? 'Aplicando...' : 'Aplicar Puntos'}</span>
+              <span>{isAdjusting ? 'Aplicando...' : 'Aplicar puntos'}</span>
             </button>
           </div>
         </form>
 
         {selectedCustomerObj && (
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+          <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-xs text-slate-600 flex items-center justify-between">
             <div>
-              <span className="font-bold text-slate-800">
+              <span className="font-bold text-[#111827]">
                 {selectedCustomerObj.name || selectedCustomerObj.full_name}
               </span>
-              <span className="text-slate-500 ml-2">
+              <span className="text-slate-400 ml-2">
                 (Tel: {selectedCustomerObj.phone || 'N/A'})
               </span>
             </div>
-            <div className="font-mono font-black text-amber-950">
+            <div className="font-mono font-extrabold text-[#0E8388]">
               Saldo actual: {selectedCustomerObj.points || 0} PTS
             </div>
           </div>
         )}
       </div>
-
     </div>
   );
 }

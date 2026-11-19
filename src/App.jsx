@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, Link } from 'react-router-dom';
+import SEOHead from './components/SEOHead';
 
 // Core Views for instant first paint
 import HomeView from './views/HomeView';
@@ -22,7 +23,6 @@ import ProductModal from './components/ProductModal';
 import AuthModal from './components/AuthModal';
 import Preloader from './components/Preloader';
 import BottomNavBar from './components/BottomNavBar';
-import PWAInstallBanner from './components/PWAInstallBanner';
 import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
 
@@ -38,6 +38,53 @@ function ScrollToTop() {
   }, [pathname]);
 
   return null;
+}
+
+// Error Boundary para evitar pantallas en blanco ante fallos de red o carga diferida (lazy)
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('RouteErrorBoundary caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-[70vh] flex items-center justify-center p-6 bg-[#FAF9F6]">
+          <div className="max-w-md w-full bg-white border border-slate-200/80 rounded-3xl p-8 text-center shadow-sm space-y-4">
+            <div className="w-12 h-12 rounded-full bg-[#EBF5F3] text-[#0E8388] mx-auto flex items-center justify-center font-black text-lg">
+              !
+            </div>
+            <h2 className="text-lg font-extrabold text-slate-900">
+              Recargando vista actualizada
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Se detectó una actualización reciente en los módulos de la aplicación. Pulsa el botón para recargar la vista.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="w-full py-3 px-5 rounded-full bg-[#0E8388] hover:bg-[#0c7276] text-white text-xs font-bold transition-colors cursor-pointer"
+            >
+              Recargar ahora
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // Limpieza inicial para arrancar el sistema en 0 (sin datos residuales de demo)
@@ -116,18 +163,59 @@ export default function App() {
 
   // Synchronize real Supabase Auth session on mount and state changes
   useEffect(() => {
+    const clearStaleSupabaseTokens = () => {
+      try {
+        Object.keys(localStorage).forEach((key) => {
+          if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        });
+      } catch (e) {
+        console.warn('Error clearing stale Supabase token:', e);
+      }
+    };
+
+    const isStandalonePWA = () => {
+      if (typeof window === 'undefined') return false;
+      return (
+        Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        window.navigator?.standalone === true
+      );
+    };
+
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session?.user) {
+          clearStaleSupabaseTokens();
+          localStorage.removeItem('patitas_user');
+          localStorage.removeItem('patitas_pwa_session');
+          setUser(null);
+          if (sessionError) {
+            await supabase.auth.signOut({ scope: 'local' }).catch(() => { });
+          }
+          return;
+        }
         if (session?.user) {
           const profile = (await getCustomerProfile(session.user.id)) || (await getCustomerProfile(session.user.email));
           if (profile) {
+            const verifiedRole = profile.role === 'admin' ? 'admin' : 'cliente';
+
+            // Si está ejecutándose como PWA instalada, solo permitir usuarios con rol 'admin'
+            if (isStandalonePWA() && verifiedRole !== 'admin') {
+              await supabase.auth.signOut().catch(() => { });
+              localStorage.removeItem('patitas_user');
+              localStorage.removeItem('patitas_pwa_session');
+              setUser(null);
+              return;
+            }
+
             const userObj = {
               id: profile.id,
               auth_user_id: session.user.id,
               name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
               email: profile.email || session.user.email,
-              role: profile.role || 'cliente',
+              role: verifiedRole,
               petName: session.user.user_metadata?.pet_name || null,
               petType: session.user.user_metadata?.pet_type || null,
               city: profile.city || '',
@@ -142,9 +230,14 @@ export default function App() {
             setUser(userObj);
             localStorage.setItem('patitas_user', JSON.stringify(userObj));
             localStorage.setItem('patitas_pwa_session', JSON.stringify(userObj));
+          } else {
+            localStorage.removeItem('patitas_user');
+            localStorage.removeItem('patitas_pwa_session');
+            setUser(null);
           }
         }
       } catch (err) {
+        clearStaleSupabaseTokens();
         console.error('Error synchronizing auth session:', err);
       }
     };
@@ -155,12 +248,20 @@ export default function App() {
       if ((event === 'SIGNED_IN' || event === 'USER_UPDATED') && session?.user) {
         const profile = (await getCustomerProfile(session.user.id)) || (await getCustomerProfile(session.user.email));
         if (profile) {
+          const verifiedRole = profile.role === 'admin' ? 'admin' : 'cliente';
+          if (isStandalonePWA() && verifiedRole !== 'admin') {
+            await supabase.auth.signOut().catch(() => { });
+            localStorage.removeItem('patitas_user');
+            localStorage.removeItem('patitas_pwa_session');
+            setUser(null);
+            return;
+          }
           const userObj = {
             id: profile.id,
             auth_user_id: session.user.id,
             name: profile.full_name || session.user.user_metadata?.full_name || 'Tutor Patitas',
             email: profile.email || session.user.email,
-            role: profile.role || 'cliente',
+            role: verifiedRole,
             petName: session.user.user_metadata?.pet_name || null,
             petType: session.user.user_metadata?.pet_type || null,
             city: profile.city || '',
@@ -176,9 +277,10 @@ export default function App() {
           localStorage.setItem('patitas_pwa_session', JSON.stringify(userObj));
         }
       } else if (event === 'SIGNED_OUT') {
-        setUser(null);
+        clearStaleSupabaseTokens();
         localStorage.removeItem('patitas_pwa_session');
         localStorage.removeItem('patitas_user');
+        setUser(null);
       }
     });
 
@@ -225,10 +327,16 @@ export default function App() {
     localStorage.removeItem('patitas_user');
   };
 
-  const handleSwitchRole = (newRole) => {
+  const handleSwitchRole = (newRoleOrUser) => {
     setUser((prev) => {
+      if (newRoleOrUser && typeof newRoleOrUser === 'object') {
+        const updatedUser = { ...(prev || {}), ...newRoleOrUser };
+        localStorage.setItem('patitas_pwa_session', JSON.stringify(updatedUser));
+        localStorage.setItem('patitas_user', JSON.stringify(updatedUser));
+        return updatedUser;
+      }
       if (!prev) return null;
-      const updated = { ...prev, role: newRole };
+      const updated = { ...prev, role: newRoleOrUser };
       localStorage.setItem('patitas_pwa_session', JSON.stringify(updated));
       localStorage.setItem('patitas_user', JSON.stringify(updated));
       return updated;
@@ -257,10 +365,17 @@ export default function App() {
     }
 
     const qtyToAdd = typeof quantity === 'number' && quantity > 0 ? quantity : 1;
+    const resolvedVariantId = activeVariant?.id || product.productId || product.id;
+    const resolvedPrice = activeVariant?.price ?? product.price ?? 0;
+    const resolvedUnitCostNeto = activeVariant?.unitCostNeto ?? product.unitCostNeto ?? 0;
+    const resolvedShippingUnitCost = activeVariant?.shippingUnitCost ?? product.shippingUnitCost ?? 0;
+    const resolvedSku = activeVariant?.sku || product.sku || '';
 
     setCartItems((prevItems) => {
       const existingIndex = prevItems.findIndex(
-        (item) => item.id === product.id && (item.weight === selectedWeight || item.selectedWeight === selectedWeight)
+        (item) =>
+          (item.id === resolvedVariantId || item.productId === resolvedVariantId) &&
+          (item.weight === selectedWeight || item.selectedWeight === selectedWeight)
       );
 
       if (existingIndex > -1) {
@@ -269,6 +384,12 @@ export default function App() {
         const newQty = Math.min(availableStock, currentQty + qtyToAdd);
         updated[existingIndex] = {
           ...updated[existingIndex],
+          id: resolvedVariantId,
+          productId: resolvedVariantId,
+          price: resolvedPrice,
+          unitCostNeto: resolvedUnitCostNeto,
+          shippingUnitCost: resolvedShippingUnitCost,
+          sku: resolvedSku,
           quantity: newQty,
           stock: availableStock,
         };
@@ -278,6 +399,13 @@ export default function App() {
           ...prevItems,
           {
             ...product,
+            id: resolvedVariantId,
+            productId: resolvedVariantId,
+            sku: resolvedSku,
+            price: resolvedPrice,
+            unitCostNeto: resolvedUnitCostNeto,
+            shippingUnitCost: resolvedShippingUnitCost,
+            format: selectedWeight,
             weight: selectedWeight,
             selectedWeight: selectedWeight,
             quantity: Math.min(availableStock, qtyToAdd),
@@ -342,100 +470,141 @@ export default function App() {
 
       {/* Main Content & Routing */}
       <main className="flex-1 w-full">
-        <Suspense fallback={<RouteLoadingFallback />}>
-          <Routes>
-            <Route
-              path="/login"
-              element={
-                user ? (
-                  <Navigate to={user.role === 'admin' ? '/admin' : '/mi-cuenta'} replace />
-                ) : (
-                  <LoginView onLoginSuccess={handleLoginSuccess} />
-                )
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <HomeView
-                  onSelectProduct={handleSelectProduct}
-                  onAddToCart={handleAddToCart}
-                  cartCount={totalCartCount}
-                  onOpenCart={() => setIsCartOpen(true)}
-                  user={user}
-                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
-                />
-              }
-            />
-            <Route
-              path="/perros"
-              element={
-                <PerrosView
-                  onSelectProduct={handleSelectProduct}
-                  onAddToCart={handleAddToCart}
-                />
-              }
-            />
-            <Route
-              path="/gatos"
-              element={
-                <GatosView
-                  onSelectProduct={handleSelectProduct}
-                  onAddToCart={handleAddToCart}
-                />
-              }
-            />
-            <Route
-              path="/producto/:id"
-              element={
-                <ProductDetailView
-                  onAddToCart={handleAddToCart}
-                  onSelectProduct={handleSelectProduct}
-                />
-              }
-            />
-            <Route path="/nosotros" element={<NosotrosView />} />
-            <Route path="/contacto" element={<Navigate to="/" replace />} />
-            <Route path="/legal" element={<LegalView />} />
-            <Route path="/terminos-y-condiciones" element={<LegalView />} />
-            <Route path="/politicas-de-privacidad" element={<LegalView />} />
-            <Route path="/politicas-de-despacho" element={<LegalView />} />
-            <Route path="/cambios-y-devoluciones" element={<LegalView />} />
-            <Route
-              path="/mi-cuenta"
-              element={
-                !user ? (
-                  <Navigate to="/login" replace />
-                ) : (
-                  <CustomerDashboardView
+        <RouteErrorBoundary key={location.pathname}>
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Routes>
+              <Route
+                path="/login"
+                element={
+                  user ? (
+                    <Navigate to={user.role === 'admin' ? '/admin' : '/mi-cuenta'} replace />
+                  ) : (
+                    <LoginView onLoginSuccess={handleLoginSuccess} />
+                  )
+                }
+              />
+              <Route
+                path="/"
+                element={
+                  <HomeView
+                    onSelectProduct={handleSelectProduct}
+                    onAddToCart={handleAddToCart}
+                    cartCount={totalCartCount}
+                    onOpenCart={() => setIsCartOpen(true)}
                     user={user}
-                    onLogout={handleLogout}
+                    onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  />
+                }
+              />
+              <Route
+                path="/perros"
+                element={
+                  <PerrosView
+                    onSelectProduct={handleSelectProduct}
+                    onAddToCart={handleAddToCart}
+                  />
+                }
+              />
+              <Route
+                path="/gatos"
+                element={
+                  <GatosView
+                    onSelectProduct={handleSelectProduct}
+                    onAddToCart={handleAddToCart}
+                  />
+                }
+              />
+              <Route
+                path="/producto/:id"
+                element={
+                  <ProductDetailView
                     onAddToCart={handleAddToCart}
                     onSelectProduct={handleSelectProduct}
-                    onSwitchRole={handleSwitchRole}
+                    cartItems={cartItems}
                   />
-                )
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                !user ? (
-                  <Navigate to="/login" replace />
-                ) : user.role !== 'admin' ? (
-                  <Navigate to="/mi-cuenta" replace />
-                ) : (
-                  <AdminDashboardView
-                    user={user}
-                    onSwitchRole={handleSwitchRole}
-                    onLogout={handleLogout}
-                  />
-                )
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
+                }
+              />
+              <Route path="/nosotros" element={<NosotrosView />} />
+              <Route path="/contacto" element={<Navigate to="/" replace />} />
+              <Route path="/legal" element={<Navigate to="/terminos-y-condiciones" replace />} />
+              <Route path="/terminos-y-condiciones" element={<LegalView />} />
+              <Route path="/politicas-de-privacidad" element={<LegalView />} />
+              <Route path="/politicas-de-despacho" element={<LegalView />} />
+              <Route path="/cambios-y-devoluciones" element={<LegalView />} />
+              <Route
+                path="/mi-cuenta"
+                element={
+                  !user ? (
+                    <Navigate to="/login" replace />
+                  ) : (
+                    <CustomerDashboardView
+                      user={user}
+                      onLogout={handleLogout}
+                      onAddToCart={handleAddToCart}
+                      onSelectProduct={handleSelectProduct}
+                      onSwitchRole={handleSwitchRole}
+                    />
+                  )
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  user && user.role !== 'admin' ? (
+                    <Navigate to="/mi-cuenta" replace />
+                  ) : (
+                    <AdminDashboardView
+                      user={user}
+                      onSwitchRole={handleSwitchRole}
+                      onLogout={handleLogout}
+                    />
+                  )
+                }
+              />
+              <Route
+                path="*"
+                element={
+                  <div className="pt-36 pb-24 max-w-3xl mx-auto px-6 text-center space-y-5">
+                    <SEOHead
+                      title="Página no encontrada (404)"
+                      description="La página que buscas no existe o fue trasladada en Patitas del Sur."
+                      noindex={true}
+                    />
+                    <span className="inline-block px-4 py-1.5 rounded-full bg-amber-500/15 text-amber-900 text-xs font-black uppercase tracking-wider">
+                      Error 404 · Ruta no encontrada
+                    </span>
+                    <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                      No encontramos la página que buscabas 🐾
+                    </h1>
+                    <p className="text-slate-600 text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
+                      Es posible que el enlace haya cambiado o que la dirección tenga un error. Explora nuestro catálogo de alimentos naturales con despacho a domicilio:
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                      <Link
+                        to="/"
+                        className="px-6 py-3 rounded-full bg-[#1D1D1F] hover:bg-black text-white hover:text-[#F5BA13] text-xs sm:text-sm font-bold transition-all shadow-md"
+                      >
+                        Ir al Inicio
+                      </Link>
+                      <Link
+                        to="/perros"
+                        className="px-6 py-3 rounded-full bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] text-xs sm:text-sm font-black transition-all shadow-md"
+                      >
+                        Catálogo Perros
+                      </Link>
+                      <Link
+                        to="/gatos"
+                        className="px-6 py-3 rounded-full bg-white hover:bg-slate-100 text-slate-800 border border-slate-200 text-xs sm:text-sm font-bold transition-all shadow-xs"
+                      >
+                        Catálogo Gatos
+                      </Link>
+                    </div>
+                  </div>
+                }
+              />
+            </Routes>
+          </Suspense>
+        </RouteErrorBoundary>
       </main>
 
       {/* Global Footer - Hidden on Login, Admin dashboards, and Kibory Home */}
@@ -478,9 +647,6 @@ export default function App() {
           onOpenAuthModal={() => setIsAuthModalOpen(true)}
         />
       )}
-
-      {/* Progressive Web App Install Banner (iOS & Android) */}
-      {!isLoginPage && <PWAInstallBanner />}
 
       {/* Botón Flotante Oficial de WhatsApp */}
       <FloatingWhatsAppButton

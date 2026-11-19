@@ -3,10 +3,17 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, ArrowLeft, User, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { getCustomerProfile, upsertCustomerProfile } from '../services/customersService';
+import SEOHead from '../components/SEOHead';
 
 export default function LoginView({ onLoginSuccess }) {
   const navigate = useNavigate();
-  const [viewMode, setViewMode] = useState('login'); // 'login' | 'register' | 'recovery'
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const mode = new URLSearchParams(window.location.search).get('mode');
+      if (mode === 'register') return 'register';
+    }
+    return 'login';
+  }); // 'login' | 'register' | 'recovery'
 
   // Form states
   const [email, setEmail] = useState('');
@@ -122,6 +129,19 @@ export default function LoginView({ onLoginSuccess }) {
 
       setUnconfirmedEmail(null);
       const userSession = await buildUserSession(data.user);
+
+      const isStandalonePWA =
+        typeof window !== 'undefined' &&
+        (Boolean(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          window.navigator?.standalone === true);
+
+      if (isStandalonePWA && userSession.role !== 'admin') {
+        await supabase.auth.signOut().catch(() => {});
+        localStorage.removeItem('patitas_user');
+        localStorage.removeItem('patitas_pwa_session');
+        throw new Error('Acceso denegado: La aplicación instalada (PWA) es de uso exclusivo para usuarios con rol Administrador.');
+      }
+
       onLoginSuccess(userSession);
 
       if (userSession.role === 'admin') {
@@ -221,6 +241,12 @@ export default function LoginView({ onLoginSuccess }) {
 
   return (
     <div className="min-h-dvh w-full bg-gradient-to-b from-[#1D1D1F] via-[#2A1D0E] to-[#120D06] flex flex-col items-center justify-center p-6 select-none relative">
+      <SEOHead
+        title="Ingresar a tu Cuenta"
+        description="Acceso seguro para clientes y miembros del Club Patitas del Sur."
+        canonical="/login"
+        noindex={true}
+      />
       
       {/* Toast Notificación */}
       {notice && (

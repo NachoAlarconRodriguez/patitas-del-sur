@@ -73,11 +73,17 @@ body {
 }
 
 /* Zero-latency tap response for Apple-feel interactions */
-button, a, [role="button"] {
+button,
+a,
+[role="button"] {
   touch-action: manipulation;
 }
 
-h1, h2, h3, h4, .font-heading {
+h1,
+h2,
+h3,
+h4,
+.font-heading {
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
   letter-spacing: -0.02em;
 }
@@ -121,13 +127,16 @@ h1, h2, h3, h4, .font-heading {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #E2E8F0;
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #F5BA13;
 }
@@ -136,6 +145,7 @@ h1, h2, h3, h4, .font-heading {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -145,6 +155,7 @@ h1, h2, h3, h4, .font-heading {
 .pb-safe {
   padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
 }
+
 .pt-safe {
   padding-top: max(1rem, env(safe-area-inset-top, 1rem));
 }
@@ -192,6 +203,7 @@ h1, h2, h3, h4, .font-heading {
   0% {
     transform: translate(-50%, -50%) rotate(0deg);
   }
+
   100% {
     transform: translate(-50%, -50%) rotate(360deg);
   }
@@ -218,19 +230,17 @@ h1, h2, h3, h4, .font-heading {
   left: 50%;
   width: 400%;
   height: 800%;
-  background: conic-gradient(
-    from 0deg,
-    #1D1D1F 0deg,
-    #2D1F0E 35deg,
-    #78350F 75deg,
-    #D97706 120deg,
-    #F5BA13 170deg,
-    #FDE68A 195deg,
-    #F5BA13 220deg,
-    #D97706 270deg,
-    #2D1F0E 315deg,
-    #1D1D1F 360deg
-  );
+  background: conic-gradient(from 0deg,
+      #1D1D1F 0deg,
+      #2D1F0E 35deg,
+      #78350F 75deg,
+      #D97706 120deg,
+      #F5BA13 170deg,
+      #FDE68A 195deg,
+      #F5BA13 220deg,
+      #D97706 270deg,
+      #2D1F0E 315deg,
+      #1D1D1F 360deg);
   animation: rotate-conic-border 3.6s linear infinite;
   pointer-events: none;
   z-index: 0;
@@ -250,14 +260,17 @@ h1, h2, h3, h4, .font-heading {
     opacity: 0;
     transform: translateY(0);
   }
+
   20% {
     opacity: 1;
     transform: translateY(0);
   }
+
   65% {
     opacity: 1;
     transform: translateY(6px);
   }
+
   100% {
     opacity: 0;
     transform: translateY(9px);
@@ -269,10 +282,13 @@ h1, h2, h3, h4, .font-heading {
 }
 
 @keyframes scroll-chevron-pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0);
     opacity: 0.6;
   }
+
   50% {
     transform: translateY(3px);
     opacity: 1;
@@ -363,7 +379,8 @@ h1, h2, h3, h4, .font-heading {
   color: #334155 !important;
 }
 
-.pac-item:hover, .pac-item-selected {
+.pac-item:hover,
+.pac-item-selected {
   background-color: #f0fdf4 !important;
 }
 
@@ -386,60 +403,80 @@ h1, h2, h3, h4, .font-heading {
    Pet Loading Spinners (Dog & Cat) Keyframes & Animations
    ========================================================================== */
 @keyframes dogTailWag {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: rotate(-18deg);
   }
+
   50% {
     transform: rotate(22deg);
   }
 }
 
 @keyframes dogEarLeft {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: rotate(0deg) translateY(0);
   }
+
   50% {
     transform: rotate(-10deg) translateY(-3px);
   }
 }
 
 @keyframes dogEarRight {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: rotate(0deg) translateY(0);
   }
+
   50% {
     transform: rotate(10deg) translateY(-3px);
   }
 }
 
 @keyframes dogSniff {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scale(1) translateY(0);
   }
+
   20% {
     transform: scale(1.15) translateY(-1.5px);
   }
+
   40% {
     transform: scale(0.92) translateY(1px);
   }
+
   70% {
     transform: scale(1.1) translateY(-1px);
   }
 }
 
 @keyframes dogTonguePant {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: scaleY(1) translateY(0);
   }
+
   50% {
     transform: scaleY(1.3) translateY(3px);
   }
 }
 
 @keyframes boneFloat {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) rotate(-6deg);
   }
+
   50% {
     transform: translateY(-10px) rotate(8deg);
   }
@@ -450,6 +487,7 @@ h1, h2, h3, h4, .font-heading {
     transform: scale(0.75);
     opacity: 0.9;
   }
+
   100% {
     transform: scale(1.55);
     opacity: 0;
@@ -457,10 +495,13 @@ h1, h2, h3, h4, .font-heading {
 }
 
 @keyframes pawWalk {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 0.25;
     transform: scale(0.85) translateY(0);
   }
+
   50% {
     opacity: 1;
     transform: scale(1.2) translateY(-4px);
@@ -468,21 +509,29 @@ h1, h2, h3, h4, .font-heading {
 }
 
 @keyframes catTailSwish {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: rotate(-12deg);
   }
+
   50% {
     transform: rotate(16deg);
   }
 }
 
 @keyframes catEarTwitch {
-  0%, 85%, 100% {
+
+  0%,
+  85%,
+  100% {
     transform: rotate(0deg);
   }
+
   90% {
     transform: rotate(-6deg);
   }
+
   95% {
     transform: rotate(4deg);
   }
@@ -492,6 +541,7 @@ h1, h2, h3, h4, .font-heading {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
@@ -574,11 +624,14 @@ h1, h2, h3, h4, .font-heading {
 
 /* Modern Pet Loading Animations */
 @keyframes pawStepAlternatingDog {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) scale(0.96);
     opacity: 0.55;
     filter: drop-shadow(0 0 0 transparent);
   }
+
   50% {
     transform: translateY(-4px) scale(1.08);
     opacity: 1;
@@ -587,11 +640,14 @@ h1, h2, h3, h4, .font-heading {
 }
 
 @keyframes pawStepAlternatingCat {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) scale(0.96);
     opacity: 0.55;
     filter: drop-shadow(0 0 0 transparent);
   }
+
   50% {
     transform: translateY(-4px) scale(1.08);
     opacity: 1;
@@ -604,6 +660,7 @@ h1, h2, h3, h4, .font-heading {
     opacity: 0;
     transform: translateY(6px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -614,6 +671,7 @@ h1, h2, h3, h4, .font-heading {
   0% {
     transform: translateX(-100%);
   }
+
   100% {
     transform: translateX(100%);
   }
@@ -641,6 +699,7 @@ h1, h2, h3, h4, .font-heading {
    Prevents iOS WebKit forced auto-zoom on input focus (< 16px font-size)
    ========================================================================== */
 @media screen and (max-width: 640px) {
+
   input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea {
@@ -702,6 +761,7 @@ h1, h2, h3, h4, .font-heading {
   --font-hand: 'Caveat', cursive;
   --u: max(0.5px, min(calc(100vw / 1440), calc(100vh / 900)));
 }
+
 @supports (height: 100svh) {
   :root {
     --u: max(0.5px, min(calc(100vw / 1440), calc(100svh / 900)));
@@ -716,40 +776,49 @@ h1, h2, h3, h4, .font-heading {
   padding-bottom: var(--frame-pad);
   position: relative;
 }
+
 .kibo-page.kibo-bowl-section {
   background: transparent;
   padding-bottom: 0;
 }
+
 .kibo-page.kibo-bowl-section .sec--ing {
   margin: 0;
   border: 1px solid rgba(29, 29, 31, 0.08);
   box-shadow: 0 20px 50px -24px rgba(29, 29, 31, 0.08);
 }
+
 .kibo-page.kibo-bowl-section .ing__giant {
   font-size: min(12.2vw, 168px);
 }
+
 .kibo-page *,
 .kibo-page *::before,
 .kibo-page *::after {
   box-sizing: border-box;
 }
+
 .kibo-page [hidden] {
   display: none !important;
 }
+
 .kibo-page h1,
 .kibo-page h2,
 .kibo-page h3,
 .kibo-page p {
   margin: 0;
 }
-.kibo-page :where(a) {
+
+.kibo-page:where(:not(.kibo-catalog)) a {
   color: var(--green-text);
   text-decoration: none;
 }
-.kibo-page :where(a):hover {
+
+.kibo-page:where(:not(.kibo-catalog)) a:hover {
   color: var(--green-800);
 }
-.kibo-page button {
+
+.kibo-page:where(:not(.kibo-catalog)) button {
   font: inherit;
   color: inherit;
   background: none;
@@ -757,10 +826,12 @@ h1, h2, h3, h4, .font-heading {
   padding: 0;
   cursor: pointer;
 }
+
 .kibo-page .paw {
   display: block;
   flex: none;
 }
+
 .kibo-page .skip {
   position: fixed;
   top: 12px;
@@ -775,15 +846,18 @@ h1, h2, h3, h4, .font-heading {
   translate: 0 -200%;
   transition: translate 0.25s var(--ease-quint);
 }
+
 .kibo-page .skip:focus {
   translate: none;
 }
+
 .kibo-page :focus-visible {
   outline: 3px solid var(--green-text);
   outline-offset: 3px;
   box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.9);
   border-radius: 999px;
 }
+
 .kibo-page .rc:focus-visible,
 .kibo-page .ing__pt:focus-visible {
   border-radius: inherit;
@@ -799,15 +873,18 @@ h1, h2, h3, h4, .font-heading {
   background: var(--blush-200);
   border-radius: var(--r-md);
 }
-.kibo-page .is-missing > img {
+
+.kibo-page .is-missing>img {
   display: none;
 }
+
 .kibo-page .is-missing::before {
   content: "";
   width: 40px;
   height: 40px;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23D97706'%3E%3Cellipse cx='12' cy='16.2' rx='5.2' ry='4.4'/%3E%3Cellipse cx='5.4' cy='10.4' rx='2.1' ry='2.6' transform='rotate(-20 5.4 10.4)'/%3E%3Cellipse cx='9.5' cy='6.3' rx='2.2' ry='2.8' transform='rotate(-8 9.5 6.3)'/%3E%3Cellipse cx='14.5' cy='6.3' rx='2.2' ry='2.8' transform='rotate(8 14.5 6.3)'/%3E%3Cellipse cx='18.6' cy='10.4' rx='2.1' ry='2.6' transform='rotate(20 18.6 10.4)'/%3E%3C/svg%3E") center/contain no-repeat;
 }
+
 .kibo-page .is-missing::after {
   content: attr(data-ph);
   padding: 0 12px;
@@ -815,6 +892,7 @@ h1, h2, h3, h4, .font-heading {
   color: var(--green-text);
   text-align: center;
 }
+
 .kibo-page .av-ph {
   display: grid;
   place-items: center;
@@ -833,21 +911,26 @@ h1, h2, h3, h4, .font-heading {
   position: relative;
   overflow: hidden;
 }
+
 .kibo-page .card--blush {
   background: var(--blush);
 }
+
 .kibo-page .card--green {
   background: var(--grad-green);
   color: #fff;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
+
 .kibo-page .sec {
   padding-inline: max(var(--pad), calc((100% - 1320px) / 2 - var(--frame-pad)));
 }
+
 .kibo-page .h2 {
   font: 700 var(--fs-h2)/1 var(--font-display);
   letter-spacing: -0.035em;
 }
+
 .kibo-page .paw--inline {
   display: inline-block;
   width: 0.55em;
@@ -856,15 +939,18 @@ h1, h2, h3, h4, .font-heading {
   vertical-align: 0.05em;
   color: var(--green-500);
 }
+
 .kibo-page .ln {
   display: block;
   overflow: hidden;
   padding-bottom: 0.06em;
   margin-bottom: -0.06em;
 }
-.kibo-page .ln > span {
+
+.kibo-page .ln>span {
   display: inline-block;
 }
+
 .kibo-page .btn {
   display: inline-flex;
   align-items: center;
@@ -878,18 +964,22 @@ h1, h2, h3, h4, .font-heading {
   white-space: nowrap;
   transition: background-color 0.25s var(--ease-quint), color 0.25s, transform 0.35s var(--ease-quint);
 }
+
 .kibo-page .btn--ink {
   background: var(--ink);
   color: #fff;
 }
+
 .kibo-page .btn--ink:hover {
   background: #000;
   color: #fff;
   transform: translateY(-2px);
 }
+
 .kibo-page .btn--arrow {
   padding-right: 8px;
 }
+
 .kibo-page .btn__ico {
   width: 34px;
   height: 34px;
@@ -901,25 +991,31 @@ h1, h2, h3, h4, .font-heading {
   font-size: 16px;
   transition: rotate 0.35s var(--ease-spring);
 }
+
 .kibo-page .btn--arrow:hover .btn__ico {
   rotate: 45deg;
 }
+
 .kibo-page .btn--ghost-light {
   background: transparent;
   color: #fff;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
 }
+
 .kibo-page .btn--ghost-light:hover {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
+
 .kibo-page .btn--ghost {
   color: var(--green-text);
   box-shadow: inset 0 0 0 1.5px var(--green-500);
 }
+
 .kibo-page .btn--ghost:hover {
   background: var(--green-100);
 }
+
 .kibo-page .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -931,6 +1027,7 @@ h1, h2, h3, h4, .font-heading {
   font: 600 12.5px/1 var(--font-ui);
   letter-spacing: 0.01em;
 }
+
 .kibo-page .pill-label {
   display: inline-flex;
   align-items: center;
@@ -943,16 +1040,19 @@ h1, h2, h3, h4, .font-heading {
   font: 600 13px/1 var(--font-ui);
   color: var(--ink);
 }
+
 .kibo-page .pill-label .paw {
   width: 16px;
   height: 16px;
   color: var(--green-500);
 }
+
 .kibo-page .tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .kibo-page .tag {
   display: inline-flex;
   align-items: center;
@@ -963,24 +1063,29 @@ h1, h2, h3, h4, .font-heading {
   color: var(--green-text);
   font: 600 12.5px/1 var(--font-ui);
 }
+
 .kibo-page .rc--feat .tag {
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7);
   color: #fff;
 }
+
 .kibo-page .hand-note {
   display: inline-block;
   font: 600 26px/1 var(--font-hand);
   color: var(--ink);
   rotate: -5deg;
 }
+
 .kibo-page .hand-note--light {
   color: #fff;
 }
+
 .kibo-page .hand-note svg {
   width: 80px;
   height: 50px;
   overflow: visible;
 }
+
 .kibo-page .hand-note svg path {
   stroke: currentColor;
   stroke-width: 2.2;
@@ -991,17 +1096,21 @@ h1, h2, h3, h4, .font-heading {
   stroke-dashoffset: 0;
   transition: stroke-dashoffset 0.9s var(--ease-expo) 0.5s;
 }
-html.motion .kibo-page :not(.in) > .hand-note svg path,
+
+html.motion .kibo-page :not(.in)>.hand-note svg path,
 html.motion .kibo-page :not(.in) .hand-note svg path {
   stroke-dashoffset: 1;
 }
+
 html.motion .kibo-page .in .hand-note svg path {
   stroke-dashoffset: 0;
 }
+
 .kibo-page .kicker {
   font: 700 var(--fs-kicker)/1 var(--font-display);
   letter-spacing: -0.03em;
 }
+
 .kibo-page .kicker__dot {
   display: inline-block;
   width: 10px;
@@ -1023,12 +1132,15 @@ html.motion .kibo-page .in .hand-note svg path {
   opacity: 0;
   transition: opacity 0.2s;
 }
+
 .bone.is-on {
   opacity: 1;
 }
+
 .bone.is-out {
   opacity: 0;
 }
+
 .bone__svg {
   display: block;
   width: 60px;
@@ -1036,10 +1148,12 @@ html.motion .kibo-page .in .hand-note svg path {
   overflow: visible;
   filter: drop-shadow(0 4px 6px rgba(29, 29, 31, 0.28));
 }
+
 .bone.is-bitten .bone__body {
   mask: url(#bone-bite);
   -webkit-mask: url(#bone-bite);
 }
+
 .bone__label {
   position: absolute;
   left: 50%;
@@ -1056,16 +1170,19 @@ html.motion .kibo-page .in .hand-note svg path {
   scale: 0.8;
   transition: opacity 0.2s, scale 0.3s var(--ease-spring);
 }
+
 .bone.has-label .bone__label {
   opacity: 1;
   scale: 1;
 }
+
 .crumbs {
   position: fixed;
   inset: 0;
   z-index: 9998;
   pointer-events: none;
 }
+
 .crumbs i {
   position: fixed;
   left: 0;
@@ -1088,6 +1205,7 @@ html.motion .kibo-page .in .hand-note svg path {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
 }
+
 .kibo-page .nav__logo {
   justify-self: start;
   display: inline-flex;
@@ -1097,22 +1215,26 @@ html.motion .kibo-page .in .hand-note svg path {
   font: 800 max(20px, calc(26 * var(--u)))/1 var(--font-display);
   letter-spacing: -0.04em;
 }
+
 .kibo-page .nav__logo .paw {
   width: calc(26 * var(--u));
   height: calc(26 * var(--u));
   color: var(--green-500);
 }
+
 .kibo-page .nav__links {
   display: flex;
   align-items: center;
   gap: calc(30 * var(--u));
 }
+
 .kibo-page .nav__links a {
   position: relative;
   padding: calc(8 * var(--u)) 0;
   color: var(--ink-70);
   font: 600 max(13px, calc(14 * var(--u)))/1 var(--font-ui);
 }
+
 .kibo-page .nav__links a::after {
   content: "";
   position: absolute;
@@ -1125,25 +1247,30 @@ html.motion .kibo-page .in .hand-note svg path {
   transform-origin: 0 50%;
   transition: scale 0.35s var(--ease-quint);
 }
+
 .kibo-page .nav__links a:hover,
 .kibo-page .nav__links a:focus-visible {
   color: var(--ink);
 }
+
 .kibo-page .nav__links a:hover::after,
 .kibo-page .nav__links a:focus-visible::after {
   scale: 1 1;
 }
+
 .kibo-page .nav__actions {
   justify-self: end;
   display: flex;
   align-items: center;
   gap: calc(10 * var(--u));
 }
+
 .kibo-page .nav__cta.btn {
   height: max(40px, calc(44 * var(--u)));
   padding: 0 max(16px, calc(22 * var(--u)));
   font-size: max(13px, calc(14 * var(--u)));
 }
+
 .kibo-page .nav__burger {
   display: none;
 }
@@ -1167,47 +1294,63 @@ html.motion .kibo-page .in .hand-note svg path {
   animation: kibo-drop-in 0.45s var(--ease-quint) backwards;
   transition: translate 0.4s var(--ease-quint);
 }
+
 .kibo-page .kibo-nav.is-floating.is-hidden {
   translate: -50% -140%;
 }
+
 .kibo-page .kibo-nav.is-floating[data-open="true"] {
   translate: none;
   left: max(12px, calc(50% - 480px));
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
+
 .kibo-page .kibo-nav.is-snap {
   transition: none !important;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__logo {
   gap: 8px;
   font-size: 22px;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__logo .paw {
   width: 22px;
   height: 22px;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__links {
   gap: 24px;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__links a {
   font-size: 14px;
   padding: 8px 0;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__links a::after {
   bottom: 2px;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__actions {
   gap: 8px;
 }
+
 .kibo-page .kibo-nav.is-floating .nav__cta.btn {
   height: 44px;
   padding: 0 20px;
   font-size: 14px;
 }
+
 @keyframes kibo-drop-in {
-  from { translate: -50% -140%; }
-  to { translate: -50% 0; }
+  from {
+    translate: -50% -140%;
+  }
+
+  to {
+    translate: -50% 0;
+  }
 }
 
 /* Hero Scene & Cards */
@@ -1218,11 +1361,13 @@ html.motion .kibo-page .in .hand-note svg path {
   min-height: calc(600 * var(--u));
   touch-action: pan-y;
 }
+
 .kibo-page .hero__scene {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
+
 .kibo-page .card-a,
 .kibo-page .card-b {
   position: absolute;
@@ -1230,6 +1375,7 @@ html.motion .kibo-page .in .hand-note svg path {
   padding: 0;
   z-index: 1;
 }
+
 .kibo-page .card-a {
   top: calc(12 * var(--u));
   left: calc(12 * var(--u));
@@ -1238,6 +1384,7 @@ html.motion .kibo-page .in .hand-note svg path {
   border-radius: calc(44 * var(--u));
   background: #fff;
 }
+
 .kibo-page .card-a::after {
   content: "";
   position: absolute;
@@ -1246,6 +1393,7 @@ html.motion .kibo-page .in .hand-note svg path {
   pointer-events: none;
   background: radial-gradient(ellipse calc(520 * var(--u)) calc(380 * var(--u)) at 50% 100%, #FEF3C7 0%, rgba(254, 243, 199, 0) 72%);
 }
+
 .kibo-page .card-b {
   left: calc(12 * var(--u));
   right: calc(12 * var(--u));
@@ -1255,6 +1403,7 @@ html.motion .kibo-page .in .hand-note svg path {
   background: var(--grad-green);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
+
 .kibo-page .card-b::before {
   content: "";
   position: absolute;
@@ -1263,6 +1412,7 @@ html.motion .kibo-page .in .hand-note svg path {
   pointer-events: none;
   background: radial-gradient(ellipse 60% 90% at 50% 0%, rgba(245, 186, 19, 0.22), rgba(245, 186, 19, 0) 62%);
 }
+
 .kibo-page .stage {
   position: absolute;
   top: 0;
@@ -1273,6 +1423,7 @@ html.motion .kibo-page .in .hand-note svg path {
   z-index: 3;
   pointer-events: none;
 }
+
 .kibo-page .hero__note {
   position: absolute;
   top: calc(104 * var(--u));
@@ -1282,13 +1433,16 @@ html.motion .kibo-page .in .hand-note svg path {
   color: var(--ink-70);
   text-wrap: balance;
 }
+
 .kibo-page .hero__note--l {
   left: calc(40 * var(--u));
 }
+
 .kibo-page .hero__note--r {
   right: calc(40 * var(--u));
   text-align: right;
 }
+
 .kibo-page .live-dot {
   display: inline-block;
   width: calc(8 * var(--u));
@@ -1316,14 +1470,17 @@ html.motion .kibo-page .in .hand-note svg path {
   letter-spacing: -0.06em;
   color: var(--ink);
 }
+
 .kibo-page .wm__half--l {
   justify-self: end;
   display: flex;
 }
+
 .kibo-page .wm__half--r {
   justify-self: start;
   display: flex;
 }
+
 .kibo-page .wm__mask {
   display: inline-block;
   overflow: hidden;
@@ -1332,17 +1489,21 @@ html.motion .kibo-page .in .hand-note svg path {
   margin: 0 -0.06em;
   vertical-align: top;
 }
+
 .kibo-page .wm__mask--desc {
   padding-bottom: 0.24em;
   margin-bottom: -0.24em;
 }
+
 .kibo-page .wm__ch {
   display: inline-block;
 }
+
 .kibo-page .wm__i {
   position: relative;
   display: inline-block;
 }
+
 .kibo-page .tittle {
   position: absolute;
   left: 50%;
@@ -1355,6 +1516,7 @@ html.motion .kibo-page .in .hand-note svg path {
   color: var(--green-500);
   filter: drop-shadow(0 0.015em 0.025em rgba(29, 29, 31, 0.2));
 }
+
 .kibo-page .tittle__paw {
   width: 100%;
   height: 100%;
@@ -1371,6 +1533,7 @@ html.motion .kibo-page .in .hand-note svg path {
   overflow: hidden;
   z-index: 4;
 }
+
 .kibo-page .dog-wrap {
   position: absolute;
   bottom: calc(-30 * var(--u));
@@ -1379,6 +1542,7 @@ html.motion .kibo-page .in .hand-note svg path {
   height: calc(660 * var(--u));
   margin-left: calc(-264 * var(--u));
 }
+
 .kibo-page .dog {
   position: absolute;
   inset: 0;
@@ -1386,6 +1550,7 @@ html.motion .kibo-page .in .hand-note svg path {
   rotate: 0deg;
   scale: 1;
 }
+
 .kibo-page .dog__video,
 .kibo-page .dog__still {
   position: absolute;
@@ -1396,9 +1561,11 @@ html.motion .kibo-page .in .hand-note svg path {
   object-fit: contain;
   object-position: 50% 100%;
 }
+
 .kibo-page .dog__video {
   opacity: 0;
 }
+
 .kibo-page .dog__canvas {
   position: absolute;
   inset: 0;
@@ -1409,16 +1576,20 @@ html.motion .kibo-page .in .hand-note svg path {
   opacity: 0;
   pointer-events: none;
 }
+
 .kibo-page .dog.has-video .dog__canvas,
 .kibo-page .dog.is-capturing .dog__canvas {
   opacity: 1;
 }
+
 .kibo-page .dog__still {
   transition: opacity 0.12s linear;
 }
+
 .kibo-page .dog.has-video .dog__still {
   opacity: 0;
 }
+
 .kibo-page .dog__head {
   position: absolute;
   left: 50%;
@@ -1426,6 +1597,7 @@ html.motion .kibo-page .in .hand-note svg path {
   width: 1px;
   height: 1px;
 }
+
 .kibo-page .dog-ph {
   position: absolute;
   left: 15%;
@@ -1447,9 +1619,11 @@ html.motion .kibo-page .in .hand-note svg path {
   position: absolute;
   z-index: 5;
 }
+
 .kibo-page .pill__bob {
   display: block;
 }
+
 .kibo-page .pill__face {
   display: inline-flex;
   align-items: center;
@@ -1464,10 +1638,35 @@ html.motion .kibo-page .in .hand-note svg path {
   white-space: nowrap;
   rotate: var(--r);
 }
-.kibo-page .pill--1 { left: calc(420 * var(--u)); bottom: calc(556 * var(--u)); --bob: 3.4s; --bd: -0.4s; }
-.kibo-page .pill--2 { left: calc(846 * var(--u)); bottom: calc(642 * var(--u)); --bob: 4.1s; --bd: -1.6s; }
-.kibo-page .pill--3 { left: calc(438 * var(--u)); bottom: calc(236 * var(--u)); --bob: 3.8s; --bd: -0.9s; }
-.kibo-page .pill--4 { left: calc(862 * var(--u)); bottom: calc(292 * var(--u)); --bob: 4.4s; --bd: -2.2s; }
+
+.kibo-page .pill--1 {
+  left: calc(420 * var(--u));
+  bottom: calc(556 * var(--u));
+  --bob: 3.4s;
+  --bd: -0.4s;
+}
+
+.kibo-page .pill--2 {
+  left: calc(846 * var(--u));
+  bottom: calc(642 * var(--u));
+  --bob: 4.1s;
+  --bd: -1.6s;
+}
+
+.kibo-page .pill--3 {
+  left: calc(438 * var(--u));
+  bottom: calc(236 * var(--u));
+  --bob: 3.8s;
+  --bd: -0.9s;
+}
+
+.kibo-page .pill--4 {
+  left: calc(862 * var(--u));
+  bottom: calc(292 * var(--u));
+  --bob: 4.4s;
+  --bd: -2.2s;
+}
+
 .kibo-page .paw--b1,
 .kibo-page .paw--b2 {
   position: absolute;
@@ -1475,8 +1674,20 @@ html.motion .kibo-page .in .hand-note svg path {
   color: var(--biscuit);
   rotate: var(--r);
 }
-.kibo-page .paw--b1 { left: calc(400 * var(--u)); bottom: calc(100 * var(--u)); width: calc(44 * var(--u)); height: calc(44 * var(--u)); }
-.kibo-page .paw--b2 { left: calc(456 * var(--u)); bottom: calc(160 * var(--u)); width: calc(36 * var(--u)); height: calc(36 * var(--u)); }
+
+.kibo-page .paw--b1 {
+  left: calc(400 * var(--u));
+  bottom: calc(100 * var(--u));
+  width: calc(44 * var(--u));
+  height: calc(44 * var(--u));
+}
+
+.kibo-page .paw--b2 {
+  left: calc(456 * var(--u));
+  bottom: calc(160 * var(--u));
+  width: calc(36 * var(--u));
+  height: calc(36 * var(--u));
+}
 
 /* Hero Copy & Aside */
 .kibo-page .hero__copy {
@@ -1490,41 +1701,67 @@ html.motion .kibo-page .in .hand-note svg path {
   align-items: flex-start;
   color: #fff;
 }
+
 .kibo-page .hero__copy .eyebrow {
   height: max(26px, calc(30 * var(--u)));
   padding: 0 calc(14 * var(--u));
   margin-bottom: calc(14 * var(--u));
   font-size: max(11px, calc(12.5 * var(--u)));
 }
+
 .kibo-page .hero__title {
   margin: 0 0 calc(14 * var(--u));
   font: 700 max(28px, calc(40 * var(--u)))/1 var(--font-display);
   letter-spacing: -0.03em;
 }
+
 .kibo-page .hero__lead {
   margin: 0 0 calc(20 * var(--u));
   max-width: calc(340 * var(--u));
   font: 500 max(14px, calc(15 * var(--u)))/1.5 var(--font-ui);
   color: rgba(255, 255, 255, 0.9);
 }
+
 .kibo-page .hero__ctas {
   display: flex;
   gap: calc(10 * var(--u));
   flex-wrap: nowrap;
 }
+
 .kibo-page .hero__ctas .btn {
   height: max(44px, calc(50 * var(--u)));
   padding: 0 max(16px, calc(22 * var(--u)));
   gap: calc(10 * var(--u));
   font-size: max(13px, calc(14 * var(--u)));
+  background: rgba(29, 29, 31, 0.85);
+  color: #fff;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  transition: background-color 0.25s var(--ease-quint), color 0.25s var(--ease-quint), box-shadow 0.25s var(--ease-quint), transform 0.35s var(--ease-quint);
 }
+
+.kibo-page .hero__ctas .btn:hover {
+  background: var(--green-500);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--green-500), 0 10px 24px -6px rgba(245, 186, 19, 0.45);
+  transform: translateY(-2px);
+}
+
 .kibo-page .hero__ctas .btn--arrow {
   padding-right: calc(8 * var(--u));
 }
+
 .kibo-page .hero__ctas .btn__ico {
   width: max(30px, calc(34 * var(--u)));
   height: max(30px, calc(34 * var(--u)));
   font-size: max(14px, calc(16 * var(--u)));
+  transition: rotate 0.35s var(--ease-spring), background-color 0.25s var(--ease-quint), color 0.25s var(--ease-quint);
+}
+
+.kibo-page .hero__ctas .btn:hover .btn__ico {
+  background: var(--ink);
+  color: var(--green-500);
+  rotate: 45deg;
 }
 
 .kibo-page .hero__aside {
@@ -1537,6 +1774,7 @@ html.motion .kibo-page .in .hand-note svg path {
   align-items: flex-end;
   gap: calc(16 * var(--u));
 }
+
 .kibo-page .chip {
   display: flex;
   align-items: center;
@@ -1546,10 +1784,12 @@ html.motion .kibo-page .in .hand-note svg path {
   background: #fff;
   box-shadow: var(--shadow-card);
 }
+
 .kibo-page .avatars {
   display: flex;
 }
-.kibo-page .avatars > * {
+
+.kibo-page .avatars>* {
   --s: calc(38 * var(--u));
   width: var(--s);
   height: var(--s);
@@ -1558,20 +1798,24 @@ html.motion .kibo-page .in .hand-note svg path {
   box-shadow: 0 0 0 calc(2.5 * var(--u)) #fff;
   margin-left: calc(-10 * var(--u));
 }
-.kibo-page .avatars > *:first-child {
+
+.kibo-page .avatars>*:first-child {
   margin-left: 0;
 }
+
 .kibo-page .chip__txt b {
   display: block;
   font: 700 max(17px, calc(20 * var(--u)))/1.1 var(--font-display);
   letter-spacing: -0.03em;
   color: var(--ink);
 }
+
 .kibo-page .chip__txt small {
   display: block;
   font: 600 max(11px, calc(12 * var(--u)))/1.3 var(--font-ui);
   color: var(--ink-70);
 }
+
 .kibo-page .badge {
   position: relative;
   width: calc(128 * var(--u));
@@ -1584,6 +1828,7 @@ html.motion .kibo-page .in .hand-note svg path {
   pointer-events: auto;
   color: var(--ink);
 }
+
 .kibo-page .badge__ring {
   position: absolute;
   inset: 0;
@@ -1591,11 +1836,13 @@ html.motion .kibo-page .in .hand-note svg path {
   height: 100%;
   overflow: visible;
 }
+
 .kibo-page .badge__ring text {
   font: 700 10.5px var(--font-ui);
   letter-spacing: 0.18em;
   fill: var(--ink);
 }
+
 .kibo-page .badge__core {
   display: grid;
   place-items: center;
@@ -1606,121 +1853,286 @@ html.motion .kibo-page .in .hand-note svg path {
   color: var(--ink);
   transition: scale 0.35s var(--ease-spring);
 }
+
 .kibo-page .badge__core svg {
   width: calc(20 * var(--u));
   height: calc(20 * var(--u));
   transition: rotate 0.35s var(--ease-spring);
 }
+
 .kibo-page .badge:hover .badge__core {
   scale: 1.08;
 }
+
 .kibo-page .badge:hover .badge__core svg {
   rotate: -45deg;
 }
 
 /* PHASE 2 & 3 — KEYFRAMES & ENTRANCE */
 @keyframes kibo-bump {
-  0%, 100% { scale: 1; }
-  35% { scale: 1.04; }
+
+  0%,
+  100% {
+    scale: 1;
+  }
+
+  35% {
+    scale: 1.04;
+  }
 }
+
 .kibo-page .dog.is-bump {
   animation: kibo-bump 0.32s var(--ease-quint);
 }
+
 @keyframes kibo-hop {
-  0%, 100% { transform: none; }
-  40% { transform: translateY(-0.22em) scale(1.08); }
-  70% { transform: translateY(0) scale(1.05, 0.95); }
+
+  0%,
+  100% {
+    transform: none;
+  }
+
+  40% {
+    transform: translateY(-0.22em) scale(1.08);
+  }
+
+  70% {
+    transform: translateY(0) scale(1.05, 0.95);
+  }
 }
+
 .kibo-page .tittle.is-hop {
   animation: kibo-hop 0.52s var(--ease-spring);
 }
+
 @keyframes kibo-settle {
-  from { opacity: 0; transform: translateY(calc(24 * var(--u, 1px))) scale(0.985); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(calc(24 * var(--u, 1px))) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
+
 @keyframes kibo-rise {
-  from { opacity: 0; transform: translateY(calc(18 * var(--u, 1px))); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(calc(18 * var(--u, 1px)));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
+
 @keyframes kibo-rise-down {
-  from { opacity: 0; transform: translateY(calc(-10 * var(--u, 1px))); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(calc(-10 * var(--u, 1px)));
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
+
 @keyframes kibo-reveal {
-  from { transform: translateY(110%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(110%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
 }
+
 @keyframes kibo-peek {
-  from { translate: 0 62%; opacity: 0; }
-  12% { opacity: 1; }
-  to { translate: 0 0; opacity: 1; }
+  from {
+    translate: 0 62%;
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  to {
+    translate: 0 0;
+    opacity: 1;
+  }
 }
+
 @keyframes kibo-pop {
-  from { opacity: 0; scale: 0.55; rotate: calc(var(--r, 0deg) - 14deg); }
-  to { opacity: 1; scale: 1; rotate: var(--r, 0deg); }
+  from {
+    opacity: 0;
+    scale: 0.55;
+    rotate: calc(var(--r, 0deg) - 14deg);
+  }
+
+  to {
+    opacity: 1;
+    scale: 1;
+    rotate: var(--r, 0deg);
+  }
 }
+
 @keyframes kibo-drop {
-  0%   { opacity: 0; transform: translateY(-3.6em); animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35); }
-  8%   { opacity: 1; }
-  55%  { transform: translateY(0) scale(1.18, 0.82); animation-timing-function: cubic-bezier(0.2, 0.8, 0.4, 1); }
-  72%  { transform: translateY(-0.32em) scale(0.94, 1.06); animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35); }
-  86%  { transform: translateY(0) scale(1.06, 0.94); }
-  94%  { transform: translateY(-0.06em); }
-  100% { opacity: 1; transform: none; }
+  0% {
+    opacity: 0;
+    transform: translateY(-3.6em);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+  }
+
+  8% {
+    opacity: 1;
+  }
+
+  55% {
+    transform: translateY(0) scale(1.18, 0.82);
+    animation-timing-function: cubic-bezier(0.2, 0.8, 0.4, 1);
+  }
+
+  72% {
+    transform: translateY(-0.32em) scale(0.94, 1.06);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
+  }
+
+  86% {
+    transform: translateY(0) scale(1.06, 0.94);
+  }
+
+  94% {
+    transform: translateY(-0.06em);
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-html.intro .kibo-page [data-in] { opacity: 0; }
-html.intro .kibo-page [data-in="reveal"] { opacity: 1; transform: translateY(110%); }
-html.intro .kibo-page [data-in="peek"] { translate: 0 62%; }
-html.intro.play .kibo-page [data-in="settle"]    { animation: kibo-settle 700ms var(--ease-quint) var(--d) both; }
-html.intro.play .kibo-page [data-in="rise"]      { animation: kibo-rise 600ms var(--ease-quint) var(--d) both; }
-html.intro.play .kibo-page [data-in="rise-down"] { animation: kibo-rise-down 500ms var(--ease-quint) var(--d) both; }
-html.intro.play .kibo-page [data-in="reveal"]    { animation: kibo-reveal 1000ms var(--ease-expo) var(--d) both; }
-html.intro.play .kibo-page [data-in="peek"]      { animation: kibo-peek 1100ms var(--ease-spring) var(--d) both; }
-html.intro.play .kibo-page [data-in="drop"]      { animation: kibo-drop 900ms linear var(--d) both; }
-html.intro.play .kibo-page [data-in="pop"]       { animation: kibo-pop 650ms var(--ease-spring) var(--d) both; }
-html.intro.play .kibo-page .hero__title [data-in]{ animation-duration: 900ms; }
+html.intro .kibo-page [data-in] {
+  opacity: 0;
+}
 
-@keyframes kibo-bob {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 calc(-6 * var(--u, 1px)); }
-}
-@keyframes kibo-spin {
-  to { rotate: 360deg; }
-}
-@keyframes kibo-pulse {
-  from { box-shadow: 0 0 0 0 rgba(245, 186, 19, 0.65); }
-  to { box-shadow: 0 0 0 calc(8 * var(--u)) rgba(245, 186, 19, 0); }
-}
-html.live .kibo-page .live-dot { animation: kibo-pulse 2s ease-out infinite; }
-html.live .kibo-page .pill__bob { animation: kibo-bob var(--bob, 3.6s) ease-in-out var(--bd, 0s) infinite; }
-html.live .kibo-page .badge__ring { animation: kibo-spin 20s linear infinite; }
-
-/* PHASE 4 — REVEALS & MANIFESTO, RECIPES, INGREDIENTS */
-html.motion .kibo-page [data-reveal="mask"] .ln > span {
-  transition: transform 1000ms var(--ease-expo) calc(var(--li, 0) * 70ms);
-}
-html.motion .kibo-page [data-reveal="mask"]:not(.in) .ln > span {
+html.intro .kibo-page [data-in="reveal"] {
+  opacity: 1;
   transform: translateY(110%);
 }
+
+html.intro .kibo-page [data-in="peek"] {
+  translate: 0 62%;
+}
+
+html.intro.play .kibo-page [data-in="settle"] {
+  animation: kibo-settle 700ms var(--ease-quint) var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="rise"] {
+  animation: kibo-rise 600ms var(--ease-quint) var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="rise-down"] {
+  animation: kibo-rise-down 500ms var(--ease-quint) var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="reveal"] {
+  animation: kibo-reveal 1000ms var(--ease-expo) var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="peek"] {
+  animation: kibo-peek 1100ms var(--ease-spring) var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="drop"] {
+  animation: kibo-drop 900ms linear var(--d) both;
+}
+
+html.intro.play .kibo-page [data-in="pop"] {
+  animation: kibo-pop 650ms var(--ease-spring) var(--d) both;
+}
+
+html.intro.play .kibo-page .hero__title [data-in] {
+  animation-duration: 900ms;
+}
+
+@keyframes kibo-bob {
+
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 0 calc(-6 * var(--u, 1px));
+  }
+}
+
+@keyframes kibo-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes kibo-pulse {
+  from {
+    box-shadow: 0 0 0 0 rgba(245, 186, 19, 0.65);
+  }
+
+  to {
+    box-shadow: 0 0 0 calc(8 * var(--u)) rgba(245, 186, 19, 0);
+  }
+}
+
+html.live .kibo-page .live-dot {
+  animation: kibo-pulse 2s ease-out infinite;
+}
+
+html.live .kibo-page .pill__bob {
+  animation: kibo-bob var(--bob, 3.6s) ease-in-out var(--bd, 0s) infinite;
+}
+
+html.live .kibo-page .badge__ring {
+  animation: kibo-spin 20s linear infinite;
+}
+
+/* PHASE 4 — REVEALS & MANIFESTO, RECIPES, INGREDIENTS */
+html.motion .kibo-page [data-reveal="mask"] .ln>span {
+  transition: transform 1000ms var(--ease-expo) calc(var(--li, 0) * 70ms);
+}
+
+html.motion .kibo-page [data-reveal="mask"]:not(.in) .ln>span {
+  transform: translateY(110%);
+}
+
 html.motion .kibo-page [data-reveal="rise"] {
   transition: opacity 700ms var(--ease-quint), transform 700ms var(--ease-quint);
 }
+
 html.motion .kibo-page [data-reveal="rise"]:not(.in) {
   opacity: 0;
   transform: translateY(18px);
 }
-html.motion .kibo-page [data-reveal="stagger"] > * {
+
+html.motion .kibo-page [data-reveal="stagger"]>* {
   transition: opacity 800ms var(--ease-quint), transform 800ms var(--ease-quint);
   transition-delay: calc(var(--i, 0) * 90ms);
 }
-html.motion .kibo-page [data-reveal="stagger"]:not(.in) > * {
+
+html.motion .kibo-page [data-reveal="stagger"]:not(.in)>* {
   opacity: 0;
   transform: translateY(40px) rotate(1.5deg);
 }
+
 html.motion .kibo-page [data-reveal="draw"]::before {
   transition: transform 900ms var(--ease-expo) calc(var(--i, 0) * 90ms);
 }
+
 html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   transform: scaleX(0);
 }
@@ -1732,13 +2144,15 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   gap: clamp(24px, 4vw, 72px);
   min-height: clamp(560px, 56vw, 760px);
 }
+
 .kibo-page .experts {
   margin-top: 20px;
   display: flex;
   align-items: center;
   gap: 14px;
 }
-.kibo-page .avatars--lg > * {
+
+.kibo-page .avatars--lg>* {
   --s: 44px;
   width: 44px;
   height: 44px;
@@ -1747,20 +2161,24 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   box-shadow: 0 0 0 3px #fff;
   margin-left: -12px;
 }
-.kibo-page .avatars--lg > *:first-child {
+
+.kibo-page .avatars--lg>*:first-child {
   margin-left: 0;
 }
+
 .kibo-page .experts p {
   max-width: 24ch;
   font: 600 13px/1.4 var(--font-ui);
   color: var(--ink-70);
 }
+
 .kibo-page .experts b {
   display: block;
   font: 700 28px/1.05 var(--font-display);
   letter-spacing: -0.03em;
   color: var(--green-text);
 }
+
 .kibo-page .mf__pup {
   position: absolute;
   left: max(var(--pad), calc((100% - 1320px) / 2));
@@ -1770,21 +2188,25 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   margin: 0;
   will-change: transform;
 }
+
 .kibo-page .mf__pup img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   object-position: 50% 100%;
 }
+
 .kibo-page .statement {
   font: 600 var(--fs-statement)/1.14 var(--font-display);
   letter-spacing: -0.02em;
   color: var(--ink);
 }
+
 .kibo-page .statement .hl {
   font-style: normal;
   color: var(--green-text);
 }
+
 .kibo-page .stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1793,10 +2215,12 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   padding: 0;
   list-style: none;
 }
+
 .kibo-page .stats li {
   position: relative;
   padding-top: 18px;
 }
+
 .kibo-page .stats li::before {
   content: "";
   position: absolute;
@@ -1807,6 +2231,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   background: var(--line);
   transform-origin: 0 50%;
 }
+
 .kibo-page .stat__num {
   display: block;
   font: 700 var(--fs-stat)/0.95 var(--font-display);
@@ -1814,10 +2239,17 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
 @supports (container-type: inline-size) {
-  .kibo-page .stats li { container-type: inline-size; }
-  .kibo-page .stat__num { font-size: min(var(--fs-stat), 28cqi); }
+  .kibo-page .stats li {
+    container-type: inline-size;
+  }
+
+  .kibo-page .stat__num {
+    font-size: min(var(--fs-stat), 28cqi);
+  }
 }
+
 .kibo-page .stat__label {
   display: block;
   margin-top: 10px;
@@ -1834,6 +2266,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   gap: 24px;
   margin-bottom: clamp(28px, 3.5vw, 48px);
 }
+
 .kibo-page .sec__aside {
   max-width: 420px;
   display: flex;
@@ -1841,9 +2274,11 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   align-items: flex-start;
   gap: 16px;
 }
+
 .kibo-page .sec__aside p {
   color: var(--ink-70);
 }
+
 .kibo-page .rc__perch {
   --dw: clamp(200px, 17vw, 250px);
   position: relative;
@@ -1853,14 +2288,17 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   pointer-events: none;
   filter: drop-shadow(0 8px 16px rgba(29, 29, 31, 0.14));
 }
+
 .kibo-page .rc__perch img {
   display: block;
   width: 100%;
   height: auto;
 }
+
 .kibo-page .rc__trio {
   display: none;
 }
+
 .kibo-page .rc-grid {
   position: relative;
   z-index: 2;
@@ -1872,9 +2310,11 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   margin: 0;
   padding: 0;
 }
-.kibo-page .rc-grid > li:first-child {
+
+.kibo-page .rc-grid>li:first-child {
   grid-row: span 2;
 }
+
 .kibo-page .rc {
   position: relative;
   display: flex;
@@ -1890,6 +2330,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)) translateY(var(--ty, 0px));
   transition: transform 0.5s var(--ease-quint), box-shadow 0.5s var(--ease-quint);
 }
+
 .kibo-page .rc__top {
   position: relative;
   z-index: 2;
@@ -1898,11 +2339,13 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   align-items: flex-start;
   width: 100%;
 }
+
 .kibo-page .rc__num {
   font: 700 var(--fs-num)/0.9 var(--font-display);
   letter-spacing: -0.05em;
   color: var(--green-text);
 }
+
 .kibo-page .rc__arrow {
   flex: none;
   width: 40px;
@@ -1915,6 +2358,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   font: 700 16px/1 var(--font-ui);
   transition: rotate 0.4s var(--ease-spring), background-color 0.25s, color 0.25s;
 }
+
 .kibo-page .rc__name {
   position: relative;
   z-index: 2;
@@ -1924,11 +2368,13 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   max-width: 52%;
   text-wrap: balance;
 }
+
 .kibo-page .rc .tags {
   position: relative;
   z-index: 2;
   max-width: 52%;
 }
+
 .kibo-page .rc__img {
   position: absolute;
   right: 14px;
@@ -1940,6 +2386,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   transition: scale 0.6s var(--ease-spring), rotate 0.6s var(--ease-spring);
   pointer-events: none;
 }
+
 .kibo-page .rc__img img {
   width: 100%;
   height: 100%;
@@ -1948,6 +2395,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   border-radius: 14px;
   filter: drop-shadow(0 16px 24px rgba(29, 29, 31, 0.18));
 }
+
 .kibo-page .rc__price {
   position: relative;
   z-index: 2;
@@ -1963,24 +2411,30 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   font: 700 14px/1 var(--font-ui);
   box-shadow: var(--shadow-soft);
 }
+
 .kibo-page .rc--feat {
   background: linear-gradient(170deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 74%, #D97706 100%);
   color: #fff;
 }
+
 .kibo-page .rc--feat .rc__num {
   color: var(--biscuit);
 }
+
 .kibo-page .rc--feat .rc__arrow {
   background: #fff;
   color: var(--ink);
 }
+
 .kibo-page .rc--feat .rc__name {
   font-size: var(--fs-h3);
   max-width: 20ch;
 }
+
 .kibo-page .rc--feat .tags {
   max-width: 100%;
 }
+
 .kibo-page .rc--feat .rc__img {
   right: auto;
   left: 50%;
@@ -1989,13 +2443,16 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   width: 72%;
   height: 55%;
 }
+
 .kibo-page .rc--feat .rc__img img {
   object-position: 50% 100%;
 }
+
 .kibo-page .rc--feat .rc__price {
   background: var(--biscuit);
   color: var(--ink);
 }
+
 .kibo-page .rc--feat .hand-note {
   position: absolute;
   right: 22px;
@@ -2007,21 +2464,26 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   gap: 4px;
   color: #fff;
 }
+
 .kibo-page .rc--feat .hand-note svg {
   scale: -1 1;
   margin-right: 28px;
 }
+
 @media (hover: hover) and (pointer: fine) {
+
   .kibo-page .rc:hover,
   .kibo-page .rc:focus-visible {
     --ty: -6px;
     box-shadow: var(--shadow-card);
   }
+
   .kibo-page .rc:hover .rc__img,
   .kibo-page .rc:focus-visible .rc__img {
     scale: 1.06;
     rotate: -3deg;
   }
+
   .kibo-page .rc:hover .rc__arrow,
   .kibo-page .rc:focus-visible .rc__arrow {
     rotate: -45deg;
@@ -2036,11 +2498,13 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   text-align: center;
   padding-top: 8px;
 }
+
 .kibo-page .ing__giant {
   margin: 6px 0 0;
   font: 800 min(14.2vw, 208px)/0.9 var(--font-display);
   letter-spacing: -0.055em;
 }
+
 .kibo-page .ing__giant span {
   display: inline-block;
   padding: 0.08em 0.06em 0.2em;
@@ -2050,6 +2514,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   -webkit-background-clip: text;
   background-clip: text;
 }
+
 .kibo-page .sticker {
   position: absolute;
   left: var(--x);
@@ -2067,18 +2532,21 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   white-space: nowrap;
   z-index: 2;
 }
+
 .kibo-page .ing__sub {
   margin: clamp(8px, 1vw, 16px) auto 0;
   max-width: 36ch;
   font: 500 clamp(18px, 1.6vw, 24px)/1.25 var(--font-display);
   letter-spacing: -0.01em;
 }
+
 .kibo-page .bowl {
   --dish: clamp(300px, 34vw, 500px);
   position: relative;
   max-width: 1240px;
   margin: clamp(32px, 4vw, 64px) auto 0;
 }
+
 .kibo-page .bowl__list {
   position: relative;
   z-index: 3;
@@ -2093,12 +2561,40 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   padding: 0;
   list-style: none;
 }
-.kibo-page .bowl__list > li:nth-child(1) { grid-column: 1; grid-row: 1; margin-right: clamp(8px, 2.5vw, 44px); }
-.kibo-page .bowl__list > li:nth-child(2) { grid-column: 1; grid-row: 2; }
-.kibo-page .bowl__list > li:nth-child(3) { grid-column: 1; grid-row: 3; margin-right: clamp(8px, 2.5vw, 44px); }
-.kibo-page .bowl__list > li:nth-child(4) { grid-column: 3; grid-row: 1; margin-left: clamp(8px, 2.5vw, 44px); }
-.kibo-page .bowl__list > li:nth-child(5) { grid-column: 3; grid-row: 2; }
-.kibo-page .bowl__list > li:nth-child(6) { grid-column: 3; grid-row: 3; margin-left: clamp(8px, 2.5vw, 44px); }
+
+.kibo-page .bowl__list>li:nth-child(1) {
+  grid-column: 1;
+  grid-row: 1;
+  margin-right: clamp(8px, 2.5vw, 44px);
+}
+
+.kibo-page .bowl__list>li:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.kibo-page .bowl__list>li:nth-child(3) {
+  grid-column: 1;
+  grid-row: 3;
+  margin-right: clamp(8px, 2.5vw, 44px);
+}
+
+.kibo-page .bowl__list>li:nth-child(4) {
+  grid-column: 3;
+  grid-row: 1;
+  margin-left: clamp(8px, 2.5vw, 44px);
+}
+
+.kibo-page .bowl__list>li:nth-child(5) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.kibo-page .bowl__list>li:nth-child(6) {
+  grid-column: 3;
+  grid-row: 3;
+  margin-left: clamp(8px, 2.5vw, 44px);
+}
 
 .kibo-page .ing__pt {
   all: unset;
@@ -2114,18 +2610,21 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   cursor: pointer;
   transition: opacity 0.35s var(--ease-quint);
 }
-.kibo-page .bowl__list > li:nth-child(-n+3) .ing__pt {
+
+.kibo-page .bowl__list>li:nth-child(-n+3) .ing__pt {
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: "pill ." "name pin" "desc .";
   justify-items: end;
   text-align: right;
 }
-.kibo-page .bowl__list > li:nth-child(n+4) .ing__pt {
+
+.kibo-page .bowl__list>li:nth-child(n+4) .ing__pt {
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-areas: ". pill" "pin name" ". desc";
   justify-items: start;
   text-align: left;
 }
+
 .kibo-page .ing__pin {
   grid-area: pin;
   display: grid;
@@ -2137,12 +2636,14 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   box-shadow: inset 0 0 0 1.5px var(--line), var(--shadow-pill);
   font: 700 13px/1 var(--font-ui);
 }
+
 .kibo-page .ing__name {
   grid-area: name;
   font: 600 clamp(20px, 2vw, 30px)/1.08 var(--font-display);
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
+
 .kibo-page .ing__pill {
   grid-area: pill;
   height: 26px;
@@ -2155,6 +2656,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   font: 700 12px/1 var(--font-ui);
   white-space: nowrap;
 }
+
 .kibo-page .ing__desc {
   grid-area: desc;
   max-width: 32ch;
@@ -2162,14 +2664,17 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   color: var(--ink-60);
   text-wrap: pretty;
 }
+
 .kibo-page .ing__pt.is-active .ing__name {
   color: var(--green-text);
 }
+
 .kibo-page .ing__pt.is-active .ing__pin,
 .kibo-page .ing__pt.is-active .ing__pill {
   background: var(--green-600);
   color: #fff;
 }
+
 @media (hover: hover) {
   .kibo-page .bowl__list:has(.ing__pt:hover) .ing__pt:not(.is-active) {
     opacity: 0.55;
@@ -2183,6 +2688,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   width: var(--dish);
   aspect-ratio: 1;
 }
+
 .kibo-page .bowl__dish {
   position: absolute;
   inset: 0;
@@ -2190,12 +2696,14 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   margin: 0;
   border-radius: 50%;
 }
+
 .kibo-page .bowl__dish img {
   width: 100%;
   height: 100%;
   object-fit: fill;
   filter: drop-shadow(0 28px 36px rgba(29, 29, 31, 0.22));
 }
+
 .kibo-page .bowl__wedge {
   position: absolute;
   inset: 0;
@@ -2205,16 +2713,19 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   clip-path: polygon(50% 50%, var(--pm), var(--pm), var(--pm));
   transition: clip-path 0.75s var(--ease-expo), opacity 0.35s var(--ease-quint);
 }
+
 .kibo-page .bowl__wedge.is-active {
   opacity: 1;
   clip-path: polygon(50% 50%, var(--p0), var(--pm), var(--p1));
 }
+
 .kibo-page .bowl__wedge img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
+
 .kibo-page .bowl__cuts {
   position: absolute;
   inset: 0;
@@ -2224,6 +2735,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   overflow: visible;
   pointer-events: none;
 }
+
 .kibo-page .bowl__cut {
   stroke: #fff;
   stroke-width: 0.7;
@@ -2231,9 +2743,11 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   opacity: 0;
   transition: opacity 0.4s var(--ease-quint);
 }
+
 .kibo-page .bowl__cut.is-on {
   opacity: 1;
 }
+
 .kibo-page .bowl__spot {
   position: absolute;
   z-index: 4;
@@ -2252,6 +2766,7 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   transition: background-color 0.3s, color 0.3s;
   cursor: pointer;
 }
+
 .kibo-page .bowl__spot::after {
   content: "";
   position: absolute;
@@ -2261,20 +2776,32 @@ html.motion .kibo-page [data-reveal="draw"]:not(.in)::before {
   opacity: 0;
   pointer-events: none;
 }
+
 .kibo-page .bowl__spot.is-active {
   background: var(--green-600);
   color: #fff;
 }
+
 .kibo-page .bowl__spot.is-active::after {
   opacity: 0.9;
 }
+
 @keyframes kibo-spot-ring {
-  0% { opacity: 0.9; scale: 0.8; }
-  100% { opacity: 0; scale: 1.6; }
+  0% {
+    opacity: 0.9;
+    scale: 0.8;
+  }
+
+  100% {
+    opacity: 0;
+    scale: 1.6;
+  }
 }
+
 html.live .kibo-page .bowl__spot.is-active::after {
   animation: kibo-spot-ring 1.8s ease-out infinite;
 }
+
 .kibo-page .bowl__lines {
   position: absolute;
   inset: 0;
@@ -2285,6 +2812,7 @@ html.live .kibo-page .bowl__spot.is-active::after {
   pointer-events: none;
   fill: none;
 }
+
 .kibo-page .bowl__line {
   stroke: var(--ink);
   stroke-opacity: 0.3;
@@ -2292,6 +2820,7 @@ html.live .kibo-page .bowl__spot.is-active::after {
   stroke-linecap: round;
   stroke-dasharray: 0 7;
 }
+
 .kibo-page .bowl__line--on {
   stroke: var(--green-600);
   stroke-opacity: 1;
@@ -2300,26 +2829,33 @@ html.live .kibo-page .bowl__spot.is-active::after {
   stroke-dashoffset: 1;
   transition: stroke-dashoffset 0.8s var(--ease-expo);
 }
+
 .kibo-page .bowl__line--on.is-on {
   stroke-dashoffset: 0;
 }
+
 html.motion .kibo-page .bowl .bowl__dish {
   transition: opacity 0.7s var(--ease-quint), scale 1.2s var(--ease-expo), rotate 1.2s var(--ease-expo);
 }
+
 html.motion .kibo-page .bowl:not(.in) .bowl__dish {
   opacity: 0;
   scale: 0.82;
   rotate: -18deg;
 }
+
 html.motion .kibo-page .bowl .bowl__spot {
   transition: scale 0.6s var(--ease-expo) calc(0.55s + var(--i, 0) * 80ms), background-color 0.3s, color 0.3s;
 }
+
 html.motion .kibo-page .bowl:not(.in) .bowl__spot {
   scale: 0;
 }
+
 html.motion .kibo-page .bowl .bowl__lines {
   transition: opacity 0.8s var(--ease-quint) 0.9s;
 }
+
 html.motion .kibo-page .bowl:not(.in) .bowl__lines,
 html.motion .kibo-page .bowl:not(.in) .bowl__wedge,
 html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
@@ -2331,6 +2867,7 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   max-width: 1240px;
   margin: clamp(56px, 7vw, 104px) auto 0;
 }
+
 .kibo-page .gal__head {
   display: flex;
   flex-direction: column;
@@ -2338,11 +2875,13 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   gap: 6px;
   margin-bottom: clamp(28px, 3vw, 44px);
 }
+
 .kibo-page .gal__title {
   font: 700 clamp(28px, 3vw, 44px)/1 var(--font-display);
   letter-spacing: -0.035em;
   text-align: center;
 }
+
 .kibo-page .gal__note {
   display: inline-flex;
   align-items: flex-start;
@@ -2352,11 +2891,13 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   color: var(--green-text);
   rotate: -4deg;
 }
+
 .kibo-page .gal__note svg {
   width: 44px;
   height: 36px;
   margin-top: 10px;
 }
+
 .kibo-page .gal__list {
   display: flex;
   justify-content: center;
@@ -2364,17 +2905,20 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   padding: 24px 0 8px;
   list-style: none;
 }
-.kibo-page .gal__list > li {
+
+.kibo-page .gal__list>li {
   position: relative;
   flex: 0 1 252px;
   min-width: 0;
   margin-inline: -10px;
   transition: translate 1.1s var(--ease-expo) calc(var(--i) * 70ms), rotate 1.1s var(--ease-expo) calc(var(--i) * 70ms), opacity 0.6s var(--ease-quint) calc(var(--i) * 70ms);
 }
-.kibo-page .gal__list > li:hover,
-.kibo-page .gal__list > li:focus-within {
+
+.kibo-page .gal__list>li:hover,
+.kibo-page .gal__list>li:focus-within {
   z-index: 5;
 }
+
 .kibo-page .gal__card {
   position: relative;
   margin: 0;
@@ -2386,6 +2930,7 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   translate: 0 var(--y);
   transition: rotate 0.5s var(--ease-spring), translate 0.5s var(--ease-spring), scale 0.5s var(--ease-spring), box-shadow 0.4s;
 }
+
 .kibo-page .gal__card::before {
   content: "";
   position: absolute;
@@ -2399,6 +2944,7 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   opacity: 0.85;
   rotate: calc(var(--r) * -1.4);
 }
+
 .kibo-page .gal__num {
   position: absolute;
   z-index: 2;
@@ -2413,6 +2959,7 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   color: var(--biscuit);
   font: 700 12.5px/1 var(--font-ui);
 }
+
 .kibo-page .gal__img {
   display: block;
   aspect-ratio: 5 / 4;
@@ -2420,11 +2967,13 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   border-radius: 4px;
   background: var(--blush-200);
 }
+
 .kibo-page .gal__img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+
 .kibo-page .gal__card figcaption {
   display: flex;
   flex-direction: column;
@@ -2432,19 +2981,23 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   padding: 12px 4px 0;
   text-align: center;
 }
+
 .kibo-page .gal__card figcaption b {
   font: 600 27px/1 var(--font-hand);
 }
+
 .kibo-page .gal__card figcaption small {
   font: 500 12.5px/1.35 var(--font-ui);
   color: var(--ink-60);
   text-wrap: balance;
 }
-html.motion .kibo-page .gal__list:not(.in) > li {
+
+html.motion .kibo-page .gal__list:not(.in)>li {
   opacity: 0;
   translate: var(--dx) 40px;
   rotate: calc(var(--r, 0deg) - 8deg);
 }
+
 @media (hover: hover) and (pointer: fine) {
   .kibo-page .gal__card:hover {
     rotate: 0deg;
@@ -2463,17 +3016,20 @@ html.motion .kibo-page .gal__list:not(.in) > li {
   align-items: start;
   background: #1D1D1F;
 }
+
 .kibo-page .ph__bg {
   position: absolute;
   inset: 0;
   margin: 0;
 }
+
 .kibo-page .ph__bg img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: 40% 60%;
 }
+
 .kibo-page .sec--photo:not(.sec--photo-b) .ph__bg::after {
   content: "";
   position: absolute;
@@ -2482,6 +3038,7 @@ html.motion .kibo-page .gal__list:not(.in) > li {
   pointer-events: none;
   background: radial-gradient(55% 65% at 82% 24%, rgba(29, 29, 31, 0.55), rgba(29, 29, 31, 0) 75%);
 }
+
 .kibo-page .ph__copy {
   grid-column: 2;
   position: relative;
@@ -2489,20 +3046,24 @@ html.motion .kibo-page .gal__list:not(.in) > li {
   padding: clamp(36px, 6vw, 96px) var(--pad) clamp(36px, 4vw, 64px) 0;
   color: #fff;
 }
+
 .kibo-page .ph__title {
   font: 700 clamp(30px, 3.4vw, 54px)/1.02 var(--font-display);
   letter-spacing: -0.035em;
   text-wrap: balance;
 }
+
 .kibo-page .ph__text {
   margin: 16px 0 0;
   max-width: 40ch;
   font: 500 clamp(14px, 1.1vw, 16px)/1.55 var(--font-ui);
   text-wrap: pretty;
 }
+
 html.motion .kibo-page .ph__bg img {
   transition: scale 1.6s var(--ease-expo);
 }
+
 html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   scale: 1.08;
 }
@@ -2512,32 +3073,40 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   background: linear-gradient(100deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 72%, #D97706 100%);
   color: #fff;
 }
+
 .kibo-page .sec--reviews.card--green .pill-label {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 }
+
 .kibo-page .sec--reviews.card--green .rv__head .h2 {
   color: #fff;
 }
+
 .kibo-page .sec--reviews.card--green .rv__stadium {
   background: rgba(255, 255, 255, 0.09);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
 }
+
 .kibo-page .sec--reviews.card--green .rv {
   color: var(--ink);
 }
-.kibo-page .sec--reviews.card--green .rv__giant .ln > span {
+
+.kibo-page .sec--reviews.card--green .rv__giant .ln>span {
   background: linear-gradient(180deg, #FFFFFF 0%, #FDE68A 70%, rgba(253, 230, 138, 0.55) 100%);
   -webkit-background-clip: text;
   background-clip: text;
 }
+
 .kibo-page .rv__head {
   text-align: center;
 }
+
 .kibo-page .rv__head .h2 {
   margin-top: 12px;
 }
+
 .kibo-page .rv__perch {
   --dw: clamp(200px, 20vw, 300px);
   position: relative;
@@ -2548,17 +3117,21 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   pointer-events: none;
   filter: drop-shadow(0 8px 14px rgba(24, 18, 12, 0.08));
 }
+
 .kibo-page .rv__perch img {
   width: 100%;
   height: auto;
 }
+
 .kibo-page .rv__box {
   position: relative;
   margin-top: clamp(28px, 3.5vw, 48px);
 }
-.kibo-page .rv__perch + .rv__box {
+
+.kibo-page .rv__perch+.rv__box {
   margin-top: 0;
 }
+
 .kibo-page .rv__stadium {
   position: relative;
   background: var(--blush);
@@ -2566,6 +3139,7 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   padding: clamp(36px, 4vw, 56px) 0 clamp(170px, 17vw, 250px);
   overflow: hidden;
 }
+
 .kibo-page .rv__track {
   position: relative;
   display: flex;
@@ -2579,14 +3153,17 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   scrollbar-width: none;
   overscroll-behavior-x: contain;
 }
+
 .kibo-page .rv__track::-webkit-scrollbar {
   display: none;
 }
+
 .kibo-page .rv__track.is-dragging {
   scroll-snap-type: none;
   cursor: grabbing;
   user-select: none;
 }
+
 .kibo-page .rv {
   flex: 0 0 clamp(340px, 34vw, 480px);
   scroll-snap-align: start;
@@ -2602,11 +3179,13 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   align-items: flex-start;
   gap: 10px;
 }
-.kibo-page .rv > :not(.rv__dog) {
+
+.kibo-page .rv> :not(.rv__dog) {
   position: relative;
   z-index: 1;
   max-width: calc(54% - 22px);
 }
+
 .kibo-page .rv__tag {
   height: 28px;
   padding: 0 12px;
@@ -2622,41 +3201,49 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   text-overflow: ellipsis;
   margin-bottom: auto;
 }
+
 .kibo-page .rv__title {
   margin: 18px 0 0;
   font: 700 clamp(20px, 1.7vw, 24px)/1.1 var(--font-display);
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
+
 .kibo-page .rv__text {
   font: 500 14px/1.5 var(--font-ui);
   color: var(--ink-80);
   text-wrap: pretty;
 }
+
 .kibo-page .rv__foot {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 4px;
 }
+
 .kibo-page .rv__foot b {
   display: block;
   font: 700 14px/1.25 var(--font-ui);
 }
+
 .kibo-page .rv__foot small {
   display: block;
   font: 500 12px/1.3 var(--font-ui);
   color: var(--ink-60);
 }
+
 .kibo-page .rv__stars {
   display: flex;
   gap: 1px;
   color: var(--green-500);
 }
+
 .kibo-page .rv__stars svg {
   width: 13px;
   height: 13px;
 }
+
 .kibo-page .rv__dog {
   position: absolute;
   top: 14px;
@@ -2668,6 +3255,7 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   border-radius: calc(var(--r-md) - 8px);
   pointer-events: none;
 }
+
 .kibo-page .rv__dog img {
   width: 100%;
   height: 100%;
@@ -2675,11 +3263,13 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   object-position: 50% 55%;
   transition: scale 0.6s var(--ease-expo);
 }
+
 @media (hover: hover) and (pointer: fine) {
   .kibo-page .rv:hover .rv__dog img {
     scale: 1.06;
   }
 }
+
 .kibo-page .rv__ctrl {
   display: flex;
   justify-content: center;
@@ -2689,6 +3279,7 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   position: relative;
   z-index: 3;
 }
+
 .kibo-page .rv__btn {
   width: 44px;
   height: 44px;
@@ -2699,19 +3290,23 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   font: 700 16px/1 var(--font-ui);
   transition: background-color 0.25s, color 0.25s;
 }
+
 .kibo-page .rv__btn:hover {
   background: var(--ink);
   color: #fff;
 }
+
 .kibo-page .rv__dots {
   display: flex;
 }
+
 .kibo-page .rv__dots button {
   display: grid;
   place-items: center;
   width: 28px;
   height: 44px;
 }
+
 .kibo-page .rv__dots button::before {
   content: "";
   width: 8px;
@@ -2720,10 +3315,12 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   background: var(--blush-300);
   transition: width 0.4s var(--ease-quint), background-color 0.4s var(--ease-quint);
 }
+
 .kibo-page .rv__dots button[aria-current="true"]::before {
   width: 22px;
   background: var(--green-600);
 }
+
 .kibo-page .rv__giant {
   position: absolute;
   left: 58%;
@@ -2736,11 +3333,13 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   letter-spacing: -0.04em;
   white-space: nowrap;
 }
+
 .kibo-page .rv__giant .ln {
   padding-top: 0.14em;
   margin-top: -0.14em;
 }
-.kibo-page .rv__giant .ln > span {
+
+.kibo-page .rv__giant .ln>span {
   padding: 0.14em 0.06em 0.1em;
   margin: -0.14em -0.06em -0.1em;
   color: transparent;
@@ -2748,6 +3347,7 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   -webkit-background-clip: text;
   background-clip: text;
 }
+
 .kibo-page .rv__peek {
   position: absolute;
   left: 18%;
@@ -2759,6 +3359,7 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   clip-path: inset(-60% -30% -4.4% -30%);
   pointer-events: none;
 }
+
 .kibo-page .rv__peek img {
   width: 100%;
   height: 100%;
@@ -2774,12 +3375,14 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   align-items: center;
   background: var(--biscuit);
 }
+
 .kibo-page .sec--photo-b .ph__bg {
   position: absolute;
   inset: -34% -8% -34% 10%;
   margin: 0;
   background: none;
 }
+
 .kibo-page .ph__paw {
   position: absolute;
   top: 0;
@@ -2789,19 +3392,24 @@ html.motion .kibo-page .sec--photo:not(.in) .ph__bg img {
   aspect-ratio: 1 / 1;
   display: block;
 }
+
 .kibo-page .ph__flat {
   display: none;
 }
+
 .kibo-page .ph__zoom {
   transform-box: view-box;
   transform-origin: 56px 50px;
 }
+
 html.motion .kibo-page .ph__zoom {
   transition: transform 1.6s var(--ease-expo);
 }
+
 html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   transform: scale(1.08);
 }
+
 .kibo-page .sec--photo-b .ph__copy {
   grid-column: 1;
   position: relative;
@@ -2809,13 +3417,16 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   padding: clamp(36px, 5vw, 80px) 0 clamp(36px, 5vw, 80px) var(--pad);
   color: var(--ink);
 }
+
 .kibo-page .sec--photo-b .ph__title {
   font-size: clamp(30px, 3.4vw, 52px);
   line-height: 0.98;
 }
+
 .kibo-page .ph__hl {
   color: var(--green-800);
 }
+
 .kibo-page .sec--photo-b .ph__text {
   max-width: 28ch;
   margin-top: 20px;
@@ -2831,19 +3442,23 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   min-height: clamp(440px, 42vw, 600px);
   background: linear-gradient(100deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 72%, #D97706 100%);
 }
+
 .kibo-page .cta__text {
   position: relative;
   z-index: 4;
 }
+
 .kibo-page .sec--cta .h2 {
   margin: 14px 0 16px;
   color: #fff;
 }
+
 .kibo-page .cta__lead {
   margin: 0 0 22px;
   max-width: 46ch;
   color: rgba(255, 255, 255, 0.92);
 }
+
 .kibo-page .cta__btns {
   display: flex;
   flex-wrap: wrap;
@@ -2853,12 +3468,14 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   width: fit-content;
   max-width: 100%;
 }
+
 .kibo-page .cta__btns .hand-note {
   position: absolute;
   left: calc(100% - 40px);
   top: -38px;
   white-space: nowrap;
 }
+
 .kibo-page .cta__dog {
   position: absolute;
   z-index: 3;
@@ -2869,35 +3486,42 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   margin: 0;
   pointer-events: none;
 }
+
 .kibo-page .cta__dog img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   object-position: 50% 100%;
 }
+
 .kibo-page .cta__art {
   position: relative;
   z-index: 2;
   display: grid;
   place-items: center;
 }
+
 .kibo-page .cta__img {
   width: min(100%, 440px);
   aspect-ratio: 1626 / 1924;
   margin: 0;
 }
+
 .kibo-page .cta__img img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
+
 @media (min-width: 1200px) {
+
   .kibo-page .cta__img,
   .kibo-page .cta__shadow {
     position: relative;
     left: clamp(0px, 6vw - 40px, 90px);
   }
 }
+
 .kibo-page .cta__shadow {
   width: 56%;
   height: 22px;
@@ -2905,6 +3529,7 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   border-radius: 50%;
   background: radial-gradient(closest-side, rgba(29, 29, 31, 0.55), rgba(29, 29, 31, 0));
 }
+
 .kibo-page .badge.badge--biscuit {
   position: absolute;
   top: 4%;
@@ -2914,28 +3539,49 @@ html.motion .kibo-page .sec--photo-b:not(.in) .ph__zoom {
   background: var(--biscuit);
   pointer-events: none;
 }
+
 .kibo-page .badge.badge--biscuit .badge__ring text {
   font-size: 9.5px;
 }
+
 .kibo-page .badge.badge--biscuit .badge__core {
   width: 56px;
   height: 56px;
   background: var(--ink);
 }
+
 @keyframes kibo-float {
-  0%, 100% { translate: 0 0; }
-  50% { translate: 0 -10px; }
+
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 0 -10px;
+  }
 }
+
 @keyframes kibo-float-shadow {
-  0%, 100% { scale: 1; }
-  50% { scale: 0.86; }
+
+  0%,
+  100% {
+    scale: 1;
+  }
+
+  50% {
+    scale: 0.86;
+  }
 }
+
 html.live .kibo-page .cta__img {
   animation: kibo-float 5s ease-in-out infinite;
 }
+
 html.live .kibo-page .cta__shadow {
   animation: kibo-float-shadow 5s ease-in-out infinite;
 }
+
 html.live .kibo-page .badge.badge--biscuit .badge__ring {
   animation: kibo-spin 18s linear infinite;
 }
@@ -2945,12 +3591,14 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   color: var(--ink);
   padding: clamp(36px, 4.5vw, 64px) max(calc(var(--frame-pad) + var(--pad)), calc((100% - 1320px) / 2)) 0;
 }
+
 .kibo-page .foot__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 20px 40px;
 }
+
 .kibo-page .foot__claim {
   flex: 1 1 300px;
   max-width: 18ch;
@@ -2959,14 +3607,17 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   text-wrap: balance;
   color: var(--ink);
 }
+
 .kibo-page .foot__claim span {
   color: #fff;
 }
+
 .kibo-page .foot__links {
   display: flex;
   flex-wrap: wrap;
   gap: 0 22px;
 }
+
 .kibo-page .foot__links a {
   display: inline-flex;
   align-items: center;
@@ -2975,14 +3626,17 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   font: 700 14px/1 var(--font-ui);
   text-underline-offset: 4px;
 }
+
 .kibo-page .foot__links a:hover {
   text-decoration: underline;
 }
+
 .kibo-page .foot__social {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
+
 .kibo-page .foot__ico {
   display: grid;
   place-items: center;
@@ -2993,20 +3647,24 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   box-shadow: inset 0 0 0 1.5px rgba(29, 29, 31, 0.5);
   transition: background-color 0.25s, color 0.25s;
 }
+
 .kibo-page .foot__ico:hover {
   background: var(--ink);
   color: var(--biscuit);
 }
+
 .kibo-page .foot__ico svg {
   width: 20px;
   height: 20px;
 }
+
 .kibo-page .foot__stage {
   position: relative;
   container-type: inline-size;
   max-width: 1100px;
   margin: clamp(36px, 5vw, 72px) auto 0;
 }
+
 .kibo-page .foot__wm {
   position: relative;
   z-index: 1;
@@ -3016,6 +3674,7 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   font: 800 31cqi/0.8 var(--font-display);
   letter-spacing: -0.055em;
 }
+
 .kibo-page .foot__dogs {
   position: relative;
   z-index: 2;
@@ -3023,16 +3682,20 @@ html.live .kibo-page .badge.badge--biscuit .badge__ring {
   overflow: hidden;
   pointer-events: none;
 }
+
 .kibo-page .foot__dogs img {
   width: 100%;
   height: auto;
 }
+
 html.motion .kibo-page .foot__dogs img {
   transition: translate 1.2s var(--ease-expo);
 }
+
 html.motion .kibo-page .foot__dogs:not(.in) img {
   translate: 0 45%;
 }
+
 .kibo-page .foot__legal {
   position: relative;
   z-index: 3;
@@ -3047,9 +3710,11 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   font: 600 12.5px/1.4 var(--font-ui);
   color: var(--ink);
 }
+
 .kibo-page .foot__legal span {
   margin-right: auto;
 }
+
 .kibo-page .foot__legal a {
   display: inline-flex;
   align-items: center;
@@ -3057,13 +3722,15 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   color: var(--ink);
   text-underline-offset: 3px;
 }
+
 .kibo-page .foot__legal a:hover {
   text-decoration: underline;
 }
 
 /* PHASE 6 — RESPONSIVE CASCADE */
 /* 6.1 Bowl / Gallery break */
-@media (max-width: 1023px), (max-aspect-ratio: 11/10) {
+@media (max-width: 1023px),
+(max-aspect-ratio: 11/10) {
   .kibo-page .bowl {
     --dish: min(80vw, 400px);
     display: flex;
@@ -3071,15 +3738,18 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     align-items: center;
     gap: clamp(20px, 5vw, 36px);
   }
+
   .kibo-page .bowl__stage {
     position: relative;
     left: auto;
     top: auto;
     order: -1;
   }
+
   .kibo-page .bowl__lines {
     display: none;
   }
+
   .kibo-page .bowl__list {
     width: 100%;
     max-width: 640px;
@@ -3088,33 +3758,41 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     grid-template-rows: none;
     row-gap: 0;
   }
-  .kibo-page .bowl__list > li {
+
+  .kibo-page .bowl__list>li {
     grid-area: auto !important;
     margin: 0 !important;
     border-top: 1px solid var(--line);
   }
-  .kibo-page .bowl__list > li:last-child {
+
+  .kibo-page .bowl__list>li:last-child {
     border-bottom: 1px solid var(--line);
   }
-  .kibo-page .bowl__list > li .ing__pt {
+
+  .kibo-page .bowl__list>li .ing__pt {
     grid-template-columns: auto minmax(0, 1fr) auto !important;
     grid-template-areas: "pin name pill" ". desc desc" !important;
     justify-items: start !important;
     text-align: left !important;
     padding: 16px 4px;
   }
+
   .kibo-page .ing__pill {
     justify-self: end;
   }
+
   .kibo-page .ing__desc {
     display: none;
   }
+
   .kibo-page .ing__pt.is-active .ing__desc {
     display: block;
   }
+
   .kibo-page .gal__note {
     margin-left: 0;
   }
+
   .kibo-page .gal__list {
     justify-content: flex-start;
     gap: 18px;
@@ -3125,15 +3803,18 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     padding: 28px var(--pad);
     scroll-padding-inline: var(--pad);
   }
+
   .kibo-page .gal__list::-webkit-scrollbar {
     display: none;
   }
-  .kibo-page .gal__list > li {
+
+  .kibo-page .gal__list>li {
     flex: 0 0 min(64vw, 240px);
     margin: 0;
     scroll-snap-align: start;
     --dx: 0%;
   }
+
   .kibo-page .gal__card {
     translate: 0 calc(var(--y) * 0.5);
   }
@@ -3141,6 +3822,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
 
 /* 6.2 T2 — <= 1199px */
 @media (max-width: 1199px) {
+
   .kibo-page .hero__note--r,
   .kibo-page .pill--4,
   .kibo-page .paw--b1,
@@ -3148,24 +3830,30 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   .kibo-page .hero__copy .eyebrow {
     display: none;
   }
+
   .kibo-page .badge:not(.badge--biscuit) {
     width: calc(112 * var(--u));
     height: calc(112 * var(--u));
   }
+
   .kibo-page .rc-grid {
     grid-template-columns: 1fr 1fr;
   }
-  .kibo-page .rc-grid > li:first-child {
+
+  .kibo-page .rc-grid>li:first-child {
     grid-row: auto;
     grid-column: span 2;
     position: relative;
   }
+
   .kibo-page .rc__perch {
     display: none;
   }
+
   .kibo-page .rc--feat {
     background: linear-gradient(100deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 72%, #D97706 100%);
   }
+
   .kibo-page .rc--feat .rc__img {
     left: auto;
     right: 40px;
@@ -3175,14 +3863,17 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     width: clamp(130px, 18vw, 190px);
     height: 75%;
   }
+
   .kibo-page .rc--feat .hand-note {
     top: 24px;
     right: calc(30px + clamp(130px, 18vw, 190px));
   }
+
   .kibo-page .rc--feat .hand-note svg {
     scale: none;
     margin-right: 0;
   }
+
   .kibo-page .rc__trio {
     --w: clamp(140px, 17vw, 200px);
     position: absolute;
@@ -3194,30 +3885,37 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     align-items: flex-end;
     isolation: isolate;
   }
-  .kibo-page .rc__trio img + img {
+
+  .kibo-page .rc__trio img+img {
     margin-left: -18px;
   }
+
   .kibo-page .rc__trio img {
     display: block;
     width: var(--w);
     height: auto;
     margin-bottom: calc(var(--w) * 1.3333 * (var(--e, 0.72) - 1));
   }
+
   .kibo-page .cta__dog {
     left: 44%;
     right: auto;
     translate: none;
     height: min(78%, 460px);
   }
+
   .kibo-page .sec--cta .cta__art {
     place-items: center end;
   }
+
   .kibo-page .cta__img {
     width: min(74%, 380px);
   }
+
   .kibo-page .cta__btns {
     width: auto;
   }
+
   .kibo-page .cta__btns .hand-note {
     position: static;
     flex-basis: 100%;
@@ -3225,16 +3923,20 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
 }
 
 /* 6.3 T3 — short landscape & base for T4 */
-@media (max-height: 640px) and (min-aspect-ratio: 11/10), (max-width: 899px), (max-aspect-ratio: 11/10) {
+@media (max-height: 640px) and (min-aspect-ratio: 11/10),
+(max-width: 899px),
+(max-aspect-ratio: 11/10) {
   .kibo-page .hero {
     height: auto;
     min-height: 0;
   }
+
   .kibo-page .hero__scene {
     position: relative;
     height: 100vh;
     height: 100svh;
   }
+
   .kibo-page .hero__copy {
     position: static;
     width: auto;
@@ -3244,6 +3946,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     background: #fff;
     color: var(--ink);
   }
+
   .kibo-page .hero__copy .eyebrow {
     display: inline-flex;
     height: 30px;
@@ -3253,41 +3956,50 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     box-shadow: inset 0 0 0 1.5px var(--green-500);
     color: var(--green-text);
   }
+
   .kibo-page .hero__title {
     font-size: 34px;
     margin-bottom: 14px;
   }
+
   .kibo-page .hero__lead {
     font-size: 15px;
     color: var(--ink-70);
     max-width: 36em;
     margin-bottom: 22px;
   }
+
   .kibo-page .hero__ctas {
     flex-wrap: wrap;
     gap: 10px;
     width: 100%;
   }
+
   .kibo-page .hero__ctas .btn {
     height: 50px;
     padding: 0 22px;
     font-size: 14px;
   }
+
   .kibo-page .hero__ctas .btn--arrow {
     padding-right: 8px;
   }
+
   .kibo-page .hero__ctas .btn__ico {
     width: 34px;
     height: 34px;
     font-size: 16px;
   }
+
   .kibo-page .hero__ctas .btn--ghost-light {
     color: var(--green-text);
     box-shadow: inset 0 0 0 1.5px var(--green-500);
   }
+
   .kibo-page .hero__ctas .btn--ghost-light:hover {
     background: var(--green-100);
   }
+
   .kibo-page .chip,
   .kibo-page .pill--3,
   .kibo-page .pill--4 {
@@ -3296,21 +4008,26 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
 }
 
 /* 6.4 T4 — <= 899px or portrait */
-@media (max-width: 899px), (max-aspect-ratio: 11/10) {
+@media (max-width: 899px),
+(max-aspect-ratio: 11/10) {
   :root {
     --u: min(calc(min(100vw, 640px) / 390), calc(100vh / 700));
   }
+
   @supports (height: 100svh) {
     :root {
       --u: min(calc(min(100vw, 640px) / 390), calc(100svh / 700));
     }
   }
+
   .kibo-page .hero__scene {
     height: calc(760 * var(--u));
   }
+
   .kibo-page .stage {
     width: calc(390 * var(--u));
   }
+
   .kibo-page .card-a {
     top: calc(8 * var(--u));
     left: calc(8 * var(--u));
@@ -3318,6 +4035,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     bottom: calc(448 * var(--u));
     border-radius: calc(32 * var(--u));
   }
+
   .kibo-page .card-b {
     left: calc(8 * var(--u));
     right: calc(8 * var(--u));
@@ -3325,6 +4043,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     height: calc(432 * var(--u));
     border-radius: calc(32 * var(--u));
   }
+
   .kibo-page .kibo-nav {
     top: calc(8 * var(--u));
     left: calc(8 * var(--u));
@@ -3333,15 +4052,18 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     padding: 0 calc(16 * var(--u));
     grid-template-columns: 1fr auto;
   }
+
   .kibo-page .nav__links,
   .kibo-page .nav__cta {
     display: none;
   }
+
   .kibo-page .nav__logo,
   .kibo-page .nav__actions {
     position: relative;
     z-index: 61;
   }
+
   .kibo-page .nav__burger {
     display: block;
     position: relative;
@@ -3351,6 +4073,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     border-radius: 50%;
     background: var(--blush) content-box;
   }
+
   .kibo-page .nav__burger span {
     position: absolute;
     left: 50%;
@@ -3362,11 +4085,29 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     background: var(--ink);
     transition: translate 0.3s var(--ease-quint), rotate 0.3s var(--ease-quint), opacity 0.2s;
   }
-  .kibo-page .nav__burger span:nth-child(1) { translate: 0 -6px; }
-  .kibo-page .nav__burger span:nth-child(3) { translate: 0 6px; }
-  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(1) { translate: none; rotate: 45deg; }
-  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(2) { opacity: 0; }
-  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(3) { translate: none; rotate: -45deg; }
+
+  .kibo-page .nav__burger span:nth-child(1) {
+    translate: 0 -6px;
+  }
+
+  .kibo-page .nav__burger span:nth-child(3) {
+    translate: 0 6px;
+  }
+
+  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(1) {
+    translate: none;
+    rotate: 45deg;
+  }
+
+  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .kibo-page .kibo-nav[data-open="true"] .nav__burger span:nth-child(3) {
+    translate: none;
+    rotate: -45deg;
+  }
+
   .kibo-page .kibo-nav[data-open="true"] .nav__links {
     position: fixed;
     inset: 0;
@@ -3379,12 +4120,14 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     gap: 8px;
     padding: 96px 28px 40px;
   }
+
   .kibo-page .kibo-nav[data-open="true"] .nav__links a {
     padding: 4px 0;
     font: 700 40px/1.1 var(--font-display);
     letter-spacing: -0.03em;
     color: var(--ink);
   }
+
   .kibo-page .hero__note--l {
     top: calc(76 * var(--u));
     left: 0;
@@ -3394,46 +4137,65 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     text-align: center;
     font-size: max(12px, calc(13 * var(--u)));
   }
+
   .kibo-page .wm {
     font-size: calc(120 * var(--u));
     bottom: calc(540 * var(--u) - 0.17em);
   }
+
   .kibo-page .dog-clip {
     bottom: calc(8 * var(--u));
   }
+
   .kibo-page .dog-wrap {
     bottom: -10px;
     width: calc(512 * var(--u));
     height: calc(640 * var(--u));
     margin-left: calc(-256 * var(--u));
   }
-  .kibo-page .pill--1 { left: calc(16 * var(--u)); bottom: calc(460 * var(--u)); }
-  .kibo-page .pill--2 { left: calc(206 * var(--u)); bottom: calc(360 * var(--u)); }
+
+  .kibo-page .pill--1 {
+    left: calc(16 * var(--u));
+    bottom: calc(460 * var(--u));
+  }
+
+  .kibo-page .pill--2 {
+    left: calc(206 * var(--u));
+    bottom: calc(360 * var(--u));
+  }
+
   .kibo-page .pill__face {
     height: calc(32 * var(--u));
     font-size: max(11px, calc(12 * var(--u)));
   }
+
   .kibo-page .hero__aside {
     right: calc(16 * var(--u));
     bottom: calc(18 * var(--u));
   }
+
   .kibo-page .badge:not(.badge--biscuit) {
     width: calc(92 * var(--u));
     height: calc(92 * var(--u));
   }
+
   .kibo-page .hero__title {
     font-size: clamp(30px, 8.6vw, 40px);
   }
+
   .kibo-page .hero__ctas .btn {
     flex: 1 1 100%;
   }
+
   .kibo-page .sec--manifesto {
     grid-template-columns: minmax(0, 1fr);
   }
+
   .kibo-page .mf__left,
   .kibo-page .mf__right {
     display: contents;
   }
+
   .kibo-page .mf__pup {
     position: relative;
     left: auto;
@@ -3443,28 +4205,35 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     width: min(84vw, 420px);
     margin: 24px auto calc(-1 * var(--pad) - 35px);
   }
+
   .kibo-page .sec__head {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .kibo-page .rc-grid {
     grid-template-columns: 1fr;
     grid-auto-rows: auto;
   }
-  .kibo-page .rc-grid > li:first-child {
+
+  .kibo-page .rc-grid>li:first-child {
     grid-column: auto;
   }
+
   .kibo-page .rc {
     min-height: 300px;
   }
+
   .kibo-page .rc__trio,
   .kibo-page .cta__dog {
     display: none;
   }
+
   .kibo-page .rc--feat {
     min-height: 420px;
     background: linear-gradient(170deg, #1D1D1F 0%, #2D1F0E 40%, #92400E 74%, #D97706 100%);
   }
+
   .kibo-page .rc--feat .rc__img {
     left: 50%;
     right: auto;
@@ -3473,42 +4242,53 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     width: 70%;
     height: 56%;
   }
+
   .kibo-page .rc--feat .hand-note {
     top: 44%;
     right: 22px;
   }
+
   .kibo-page .rc--feat .hand-note svg {
     scale: -1 1;
     margin-right: 28px;
   }
+
   .kibo-page .sticker {
     scale: 0.85;
   }
+
   .kibo-page .sec--photo {
     grid-template-columns: minmax(0, 1fr);
     min-height: clamp(520px, 140vw, 760px);
   }
+
   .kibo-page .sec--photo:not(.sec--photo-b) .ph__bg::after {
     background: linear-gradient(180deg, rgba(29, 29, 31, 0.65) 0%, rgba(29, 29, 31, 0) 60%);
   }
+
   .kibo-page .ph__copy {
     grid-column: 1;
     padding: 32px var(--pad) 0;
   }
+
   .kibo-page .ph__bg img {
     object-position: 38% 100%;
   }
+
   .kibo-page .sec--photo-b {
     min-height: 0;
   }
+
   .kibo-page .sec--photo-b .ph__bg {
     position: relative;
     inset: auto;
     height: clamp(240px, 62vw, 400px);
   }
+
   .kibo-page .ph__paw {
     display: none;
   }
+
   .kibo-page .ph__flat {
     display: block;
     width: 100%;
@@ -3516,33 +4296,41 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     object-fit: cover;
     object-position: 62% 50%;
   }
+
   .kibo-page .sec--photo-b .ph__copy {
     padding: 28px var(--pad) 32px;
   }
+
   .kibo-page .rv__perch {
     --dw: clamp(170px, 46vw, 240px);
     margin-right: 6%;
   }
+
   .kibo-page .rv__stadium {
     border-radius: 40px;
   }
+
   .kibo-page .rv {
     flex-basis: min(80vw, 340px);
     min-height: 0;
     padding-top: 212px;
   }
-  .kibo-page .rv > :not(.rv__dog) {
+
+  .kibo-page .rv> :not(.rv__dog) {
     max-width: none;
   }
-  .kibo-page .rv > .rv__tag {
+
+  .kibo-page .rv>.rv__tag {
     position: absolute;
     top: 14px;
     left: 14px;
     max-width: calc(100% - 28px);
   }
+
   .kibo-page .rv__title {
     margin-top: 0;
   }
+
   .kibo-page .rv__dog {
     top: 10px;
     left: 10px;
@@ -3551,23 +4339,29 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     width: auto;
     height: 190px;
   }
+
   .kibo-page .rv__dog img {
     object-position: 50% 62%;
   }
+
   .kibo-page .rv__giant {
     left: 56%;
     font-size: clamp(32px, 11vw, 64px);
   }
+
   .kibo-page .sec--cta {
     grid-template-columns: minmax(0, 1fr);
     background: linear-gradient(180deg, #D97706 0%, #92400E 25%, #2D1F0E 55%, #1D1D1F 100%);
   }
+
   .kibo-page .cta__art {
     order: -1;
   }
+
   .kibo-page .cta__img {
     width: min(80vw, 360px);
   }
+
   .kibo-page .badge.badge--biscuit {
     width: 104px;
     height: 104px;
@@ -3580,22 +4374,27 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     --frame-pad: 8px;
     --gap: 8px;
   }
+
   .kibo-page .btn,
   .kibo-page .hero__ctas .btn {
     height: 48px;
   }
+
   .kibo-page .stats {
     grid-template-columns: minmax(0, 1fr);
     gap: 22px;
   }
+
   .kibo-page .foot__links {
     display: grid;
     grid-template-columns: repeat(2, max-content);
     gap: 0 22px;
   }
+
   .kibo-page .rv__ctrl {
     gap: 8px;
   }
+
   .kibo-page .foot__legal span {
     flex-basis: 100%;
     padding-top: 12px;
@@ -3607,13 +4406,16 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   .kibo-page .pill--2 {
     display: none;
   }
+
   .kibo-page .tags {
     flex-direction: column;
     align-items: flex-start;
   }
+
   .kibo-page .hand-note {
     font-size: 22px;
   }
+
   .kibo-page .rv__dots button {
     width: 24px;
   }
@@ -3621,6 +4423,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
 
 /* 6.7 Reduced Motion — LAST */
 @media (prefers-reduced-motion: reduce) {
+
   .kibo-page .btn,
   .kibo-page .btn__ico,
   .kibo-page .nav__links a::after,
@@ -3641,15 +4444,17 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   .kibo-page .bowl__wedge,
   .kibo-page .bowl__cut,
   .kibo-page .gal__card,
-  .kibo-page .gal__list > li,
+  .kibo-page .gal__list>li,
   .kibo-page .rv__dog img,
   .kibo-page .rv__btn,
   .kibo-page .rv__dots button::before {
     transition: none !important;
   }
+
   .kibo-page .btn--ink:hover {
     transform: none;
   }
+
   .kibo-page .tittle.is-hop,
   .kibo-page .dog.is-bump,
   .kibo-page .cta__img,
@@ -3658,11 +4463,515 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     animation: none !important;
     transition: none !important;
   }
+
   .kibo-page .rc:hover,
   .kibo-page .rc:focus-visible {
     --ty: 0px;
   }
 }
 
+/* ==========================================================================
+   7 · KIBO CATALOG ARCHITECTURE (/perros & /gatos) & GLOBAL NAV SHELL
+   ========================================================================== */
+.kibo-page.kibo-nav-shell {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  position: static;
+  overflow: visible;
+}
+
+.kibo-page .nav__links a.is-active {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.kibo-page .nav__links a.is-active::after {
+  scale: 1 1;
+}
+
+.kibo-page.kibo-catalog {
+  min-height: 100vh;
+  min-height: 100svh;
+  padding-top: calc(74px + var(--frame-pad));
+  padding-bottom: 0;
+  background: var(--frame, #F5BA13);
+}
+
+.kibo-page.kibo-catalog .card.cat-hero {
+  margin-top: 0;
+  padding: clamp(28px, 4vw, 52px) max(var(--pad), calc((100% - 1320px) / 2 - var(--frame-pad)));
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: center;
+  gap: clamp(20px, 3vw, 48px);
+  min-height: clamp(260px, 26vw, 340px);
+}
+
+.kibo-page.kibo-catalog .card.cat-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(ellipse 65% 95% at 75% 0%, rgba(245, 186, 19, 0.24), rgba(245, 186, 19, 0) 65%);
+}
+
+.kibo-page.kibo-catalog .cat-hero__content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.kibo-page.kibo-catalog .cat-hero__sub {
+  color: rgba(255, 255, 255, 0.78);
+  font: 500 clamp(14px, 1.05vw, 16px)/1.5 var(--font-ui);
+  max-width: 52ch;
+}
+
+.kibo-page.kibo-catalog .cat-hero__search {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  height: 50px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.35), inset 0 0 0 1.5px rgba(255, 255, 255, 0.9);
+  transition: box-shadow 0.25s var(--ease-quint), transform 0.25s var(--ease-quint);
+}
+
+.kibo-page.kibo-catalog .cat-hero__search:focus-within {
+  box-shadow: 0 16px 38px -10px rgba(0, 0, 0, 0.42), 0 0 0 3px var(--green-500);
+  transform: translateY(-1px);
+}
+
+.kibo-page.kibo-catalog .cat-hero__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 600 14px/1 var(--font-ui);
+  outline: none;
+}
+
+.kibo-page.kibo-catalog .cat-hero__search input::placeholder {
+  color: rgba(29, 29, 31, 0.48);
+  font-weight: 500;
+}
+
+.kibo-page.kibo-catalog .cat-hero__art {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  min-height: 240px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.kibo-page.kibo-catalog .cat-hero__art .hand-note {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  z-index: 3;
+  color: var(--green-300);
+  font-size: clamp(22px, 2vw, 28px);
+  rotate: -6deg;
+}
+
+.kibo-page.kibo-catalog .cat-hero__art .hand-note svg {
+  display: block;
+  width: 68px;
+  height: 42px;
+  margin-left: 24px;
+  margin-top: 2px;
+}
+
+.kibo-page.kibo-catalog .cat-hero__mascot {
+  position: absolute;
+  right: clamp(0px, 2vw, 24px);
+  bottom: calc(-1 * clamp(28px, 4vw, 52px));
+  width: clamp(210px, 22vw, 310px);
+  height: clamp(230px, 24vw, 330px);
+  margin: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.kibo-page.kibo-catalog .cat-hero__mascot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: 50% 100%;
+  filter: drop-shadow(0 18px 28px rgba(0, 0, 0, 0.35));
+}
+
+.kibo-page.kibo-catalog .cat-hero__mascot--cat {
+  width: clamp(220px, 24vw, 330px);
+  height: clamp(210px, 22vw, 290px);
+}
+
+@media (max-width: 899px) {
+  .kibo-page.kibo-catalog .card.cat-hero {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
+    padding-bottom: 0;
+  }
+
+  .kibo-page.kibo-catalog .cat-hero__art {
+    min-height: 190px;
+    justify-content: center;
+  }
+
+  .kibo-page.kibo-catalog .cat-hero__art .hand-note {
+    left: 12px;
+    top: 0;
+  }
+
+  .kibo-page.kibo-catalog .cat-hero__mascot {
+    position: relative;
+    right: auto;
+    bottom: 0;
+    width: 210px;
+    height: 200px;
+  }
+}
+
+.kibo-page.kibo-catalog .card.cat-body {
+  background: var(--blush, #FAF8F4);
+  padding: clamp(24px, 3.8vw, 52px) max(var(--pad), calc((100% - 1320px) / 2 - var(--frame-pad)));
+  overflow: visible;
+}
+
+.kibo-page.kibo-catalog .card.cat-extra {
+  background: #ffffff;
+  padding: clamp(20px, 3.2vw, 44px) max(var(--pad), calc((100% - 1320px) / 2 - var(--frame-pad)));
+}
+
+.kibo-page.kibo-catalog .card.cat-extra>section {
+  margin: 0 !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+/* ==========================================================================
+   FinSet Bento UI — Patitas del Sur Admin Design System (.finset-admin)
+   Palette:
+     - Primary Brand Accent: #D97706 (Hover: #B45309, Deep: #78350F / #1D1D1F)
+     - Soft Warm Surface: #FEF3C7 / #FDE68A
+     - Secondary Warm Accent: #F5BA13 (Club Patitas / Destacados)
+     - Canvas: #FAF8F4 | Cards: #FFFFFF | Hairline Border: #EAECEF
+   ========================================================================== */
+.finset-admin {
+  --finset-bg: #FAF8F4;
+  --finset-card: #FFFFFF;
+  --finset-border: #EAECEF;
+  --finset-border-hover: #CBD5E1;
+  --finset-primary: #D97706;
+  --finset-primary-hover: #B45309;
+  --finset-primary-deep: #78350F;
+  --finset-mint-soft: #FEF3C7;
+  --finset-mint-mid: #FDE68A;
+  --finset-amber: #F5BA13;
+  --finset-text-main: #111827;
+  --finset-text-muted: #64748B;
+  --finset-text-subtle: #94A3B8;
+  background-color: var(--finset-bg) !important;
+  color: var(--finset-text-main);
+  font-family: 'Plus Jakarta Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* FinSet Bento Card Base */
+.finset-admin .finset-card {
+  background: #FFFFFF !important;
+  border: 1px solid #EAECEF !important;
+  border-radius: 1.5rem !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.025) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.finset-admin .finset-card:hover {
+  border-color: #DDE3EA !important;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.045) !important;
+}
+
+/* Normalize legacy pastel-gradient KPI/info cards inside .finset-admin into pure white FinSet Bento cards */
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-emerald-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-teal-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-amber-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-sky-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-blue-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-indigo-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-purple-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-violet-50"],
+.finset-admin div[class*="bg-gradient-to-br"][class*="from-rose-50"],
+.finset-admin div[class*="bg-gradient-to-r"][class*="from-emerald-50"],
+.finset-admin div[class*="bg-gradient-to-r"][class*="from-amber-50"],
+.finset-admin div[class*="bg-gradient-to-r"][class*="from-purple-50"],
+.finset-admin div[class*="bg-gradient-to-r"][class*="from-indigo-50"],
+.finset-admin div[class*="bg-gradient-to-r"][class*="from-sky-50"] {
+  background-image: none !important;
+  background-color: #FFFFFF !important;
+  border-color: #EAECEF !important;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.025) !important;
+}
+
+/* FinSet Soft Warm Icon Squircle */
+.finset-admin .finset-icon-box {
+  background-color: #FEF3C7 !important;
+  color: #D97706 !important;
+  border: 1px solid rgba(217, 119, 6, 0.16) !important;
+  border-radius: 0.875rem !important;
+}
+
+/* FinSet Primary Pill Button */
+.finset-admin .finset-btn-primary {
+  background: #D97706 !important;
+  color: #FFFFFF !important;
+  border-radius: 9999px !important;
+  border: 1px solid #D97706 !important;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.22) !important;
+  transition: all 0.18s ease !important;
+}
+
+.finset-admin .finset-btn-primary:hover {
+  background: #B45309 !important;
+  border-color: #B45309 !important;
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.28) !important;
+}
+
+/* FinSet Secondary Pill Button */
+.finset-admin .finset-btn-secondary {
+  background: #FFFFFF !important;
+  color: #334155 !important;
+  border-radius: 9999px !important;
+  border: 1px solid #EAECEF !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02) !important;
+  transition: all 0.18s ease !important;
+}
+
+.finset-admin .finset-btn-secondary:hover {
+  background: #FAF8F4 !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+/* FinSet Muted Suffix (.00 / CLP) */
+.finset-admin .finset-suffix {
+  color: #94A3B8;
+  font-weight: 600;
+  font-size: 0.72em;
+  letter-spacing: -0.01em;
+  margin-left: 1px;
+}
+
+/* FinSet Table Refinements */
+.finset-admin table thead tr {
+  background-color: #FAF8F4 !important;
+  border-bottom: 1px solid #EAECEF !important;
+}
+
+.finset-admin table thead th {
+  color: #64748B !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.finset-admin table tbody tr {
+  border-color: #F1F5F9 !important;
+  transition: background-color 0.15s ease;
+}
+
+.finset-admin table tbody tr:hover {
+  background-color: #FAF8F4 !important;
+}
+
+/* FinSet Inputs & Selects inside Modals and Filters */
+.finset-admin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.finset-admin select,
+.finset-admin textarea {
+  border-color: #E2E8F0;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.finset-admin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+.finset-admin select:focus,
+.finset-admin textarea:focus {
+  border-color: #D97706 !important;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.14) !important;
+  outline: none !important;
+}
+
+/* FinSet Modal & Drawer Surface Polish */
+.finset-admin .fixed.inset-0 > div[class*="rounded-2xl"],
+.finset-admin .fixed.inset-0 > div[class*="rounded-3xl"],
+.finset-admin .fixed.inset-0 > div[class*="rounded-["] {
+  border-color: #EAECEF !important;
+  box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.16), 0 0 1px rgba(15, 23, 42, 0.08) !important;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+/* ==========================================================================
+   Apple iOS 18 Native PWA Design System (Mobile & Standalone PWA)
+   ========================================================================== */
+.finset-admin,
+.finset-admin * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* iOS Translucent Top Navigation Chrome */
+.ios-nav-bar {
+  background: rgba(250, 248, 244, 0.78);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+/* iOS Translucent Bottom Tab Bar Chrome */
+.ios-tab-bar {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border-top: 0.5px solid rgba(60, 60, 67, 0.16);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04);
+  padding-bottom: max(0.65rem, env(safe-area-inset-bottom));
+}
+
+/* iOS Inset Grouped Card & Widget Surface */
+.ios-grouped-card {
+  background: #FFFFFF !important;
+  border-radius: 20px !important;
+  border: 0.5px solid rgba(60, 60, 67, 0.08) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.035), 0 0 1px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Zero-latency iOS pointer-down response */
+.ios-pressable {
+  transition: transform 110ms cubic-bezier(0.32, 0.72, 0, 1), opacity 110ms ease-out, background-color 140ms ease;
+}
+
+.ios-pressable:active {
+  transform: scale(0.97);
+  opacity: 0.88;
+}
+
+@media (max-width: 767px) {
+  .finset-admin {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif !important;
+    background-color: #F5F4F0 !important;
+    overscroll-behavior-y: none;
+  }
+
+  .finset-admin h1,
+  .finset-admin h2,
+  .finset-admin h3,
+  .finset-admin h4 {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif !important;
+    letter-spacing: -0.024em;
+    font-optical-sizing: auto;
+  }
+
+  .finset-admin .finset-card {
+    border-radius: 20px !important;
+    border: 0.5px solid rgba(60, 60, 67, 0.08) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.035), 0 0 1px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  /* Native iOS Bottom Sheet Presentation for Modals on Mobile */
+  .finset-admin .fixed.inset-0 {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"],
+  .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"],
+  .finset-admin .fixed.inset-0 > div[class*="rounded-["] {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    border-radius: 28px 28px 0 0 !important;
+    border-bottom: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.18) !important;
+    position: relative;
+    animation: iosSheetPresent 320ms cubic-bezier(0.32, 0.72, 0, 1) both !important;
+  }
+
+  /* Native iOS Sheet Grabber Pill (36x5pt) */
+  .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"]::before,
+  .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"]::before,
+  .finset-admin .fixed.inset-0 > div[class*="rounded-["]::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 5px;
+    border-radius: 9999px;
+    background: rgba(60, 60, 67, 0.24);
+    margin: 8px auto 2px auto;
+    flex-shrink: 0;
+  }
+}
+
+@keyframes iosSheetPresent {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ios-pressable,
+  .ios-pressable:active {
+    transition: opacity 150ms ease !important;
+    transform: none !important;
+  }
+  @media (max-width: 767px) {
+    .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"],
+    .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"],
+    .finset-admin .fixed.inset-0 > div[class*="rounded-["] {
+      animation: none !important;
+    }
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .ios-nav-bar {
+    background: #FAF8F4 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  .ios-tab-bar {
+    background: #FFFFFF !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
 
 

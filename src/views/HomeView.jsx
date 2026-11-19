@@ -1047,10 +1047,10 @@ export default function HomeView({
   return (
     <div ref={pageRef} className="kibo-page">
       <SEOHead
-        title="Alimento y Snacks Naturales para Mascotas en la Patagonia | Patitas del Sur"
-        description="Nutrición holística, libre de granos y snacks deshidratados para perros y gatos. Despacho rápido en Puerto Varas, Llanquihue, Frutillar y Puerto Montt."
+        title="Alimento y Snacks Naturales para Mascotas en el Sur de Chile"
+        description="Nutrición holística, libre de granos y snacks deshidratados para perros y gatos. Despacho rápido en Frutillar, Llanquihue, Puerto Varas y Puerto Montt."
         canonical="/"
-        keywords="alimento para perros puerto varas, comida gatos llanquihue, snacks naturales mascotas chile, grain free patagonia"
+        keywords="alimento para perros frutillar, alimento para perros puerto varas, comida gatos llanquihue, snacks naturales mascotas chile, grain free sur de chile"
         jsonLd={[getWebSiteSchema(), getOrganizationSchema(), getLocalBusinessSchema()]}
       />
 
@@ -1354,12 +1354,15 @@ export default function HomeView({
               <button
                 type="button"
                 onClick={() => navigate('/gatos')}
-                className="btn btn--ghost-light"
+                className="btn btn--ink btn--arrow"
                 data-in="settle"
                 style={{ '--d': '1450ms' }}
                 data-cursor-label="Ir a Gatos"
               >
                 Explorar Gatos
+                <span className="btn__ico" aria-hidden="true">
+                  ↗
+                </span>
               </button>
             </div>
           </div>
@@ -1697,6 +1700,42 @@ export default function HomeView({
               de compra sumas 1 punto que después puedes canjear por descuentos en la comida de tu
               regalón.
             </p>
+            <div
+              data-reveal="rise"
+              style={{
+                marginTop: '24px',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+            >
+              {user ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(user.role === 'admin' ? '/admin' : '/mi-cuenta')}
+                  className="btn btn--ink btn--arrow"
+                  data-cursor-label="Mi cuenta"
+                >
+                  Ver mis puntos
+                  <span className="btn__ico" aria-hidden="true">
+                    ↗
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => navigate('/login?mode=register')}
+                  className="btn btn--ink btn--arrow"
+                  data-cursor-label="Crear cuenta"
+                >
+                  Inscribirme al Club
+                  <span className="btn__ico" aria-hidden="true">
+                    ↗
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
@@ -1856,7 +1895,7 @@ export default function HomeView({
           <div className="foot__social">
             <a
               className="foot__ico"
-              href={COMPANY_INFO.instagramUrl || 'https://instagram.com'}
+              href={COMPANY_INFO.instagramUrl || 'https://www.instagram.com/patitasdelsur.cl'}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Instagram"

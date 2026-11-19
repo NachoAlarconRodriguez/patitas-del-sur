@@ -66,6 +66,8 @@ import {
   getUpcomingDeliveryDates,
   formatDeliveryDaysSummary,
   WEEKDAYS,
+  getLiveDispatchStatusFromSupabase,
+  evaluateSmartDeliverySchedule,
 } from '../services/dispatchService';
 
 // Helper para resolver imágenes de productos en el carrito y recomendaciones
@@ -346,6 +348,7 @@ export default function CartDrawer({
       setCity(target.city || (target.address ? detectCommuneFromAddress(target.address) : '') || '');
       setDepto(target.depto || '');
       setDeliveryReference(target.deliveryReference || '');
+      setCustomerCoords(target.lat && target.lng ? { lat: target.lat, lng: target.lng } : null);
       setAddressMode('habitual');
     }
   };
@@ -356,6 +359,7 @@ export default function CartDrawer({
     setCity('');
     setDepto('');
     setDeliveryReference('');
+    setCustomerCoords(null);
     setSaveNewAddressToProfile(false);
     setNewAddressLabel('');
   };
@@ -368,6 +372,7 @@ export default function CartDrawer({
       setCity(target.city || (target.address ? detectCommuneFromAddress(target.address) : '') || '');
       setDepto(target.depto || '');
       setDeliveryReference(target.deliveryReference || '');
+      setCustomerCoords(target.lat && target.lng ? { lat: target.lat, lng: target.lng } : null);
     }
   };
 
@@ -523,8 +528,9 @@ export default function CartDrawer({
     }
   };
 
-  // Delivery Schedules cargados desde Supabase
+  // Delivery Schedules y estado en vivo de reparto ("En Reparto" vs "En Bodega") desde Supabase
   const [deliverySchedules, setDeliverySchedules] = useState(DEFAULT_DELIVERY_SCHEDULES);
+  const [isFleetOnRoute, setIsFleetOnRoute] = useState(false);
 
   useEffect(() => {
     getDeliverySchedulesFromSupabase().then((schedules) => {
@@ -533,16 +539,34 @@ export default function CartDrawer({
       }
     });
 
+    const refreshLiveRouteStatus = () => {
+      getLiveDispatchStatusFromSupabase().then((res) => {
+        if (res && typeof res.isFleetOnRoute === 'boolean') {
+          setIsFleetOnRoute(res.isFleetOnRoute);
+        }
+      });
+    };
+
+    refreshLiveRouteStatus();
+
     const handleSchedulesUpdated = (e) => {
       if (Array.isArray(e.detail)) {
         setDeliverySchedules(e.detail);
       }
     };
+    const handleLiveStatusUpdated = () => {
+      refreshLiveRouteStatus();
+    };
+
     window.addEventListener('patitas_delivery_schedules_updated', handleSchedulesUpdated);
+    window.addEventListener('patitas_dispatch_live_status_updated', handleLiveStatusUpdated);
+    window.addEventListener('patitas_orders_updated', handleLiveStatusUpdated);
     return () => {
       window.removeEventListener('patitas_delivery_schedules_updated', handleSchedulesUpdated);
+      window.removeEventListener('patitas_dispatch_live_status_updated', handleLiveStatusUpdated);
+      window.removeEventListener('patitas_orders_updated', handleLiveStatusUpdated);
     };
-  }, []);
+  }, [isOpen, step]);
 
   // Submission & Post-order state
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -844,11 +868,29 @@ export default function CartDrawer({
     [dispatchZones]
   );
 
-  // Resolución de zona de despacho según dirección, coordenadas y comuna detectada
-  const matchedDispatchZone = useMemo(() => {
-    if (activeDispatchZones.length === 0) return null;
+  // Evaluación estricta de zona de despacho según el círculo de cobertura configurado en Despachos
+  const deliveryCoverageEval = useMemo(() => {
+    const trimmedAddr = (address || '').trim();
+    const effectiveCity = city || (trimmedAddr ? detectCommuneFromAddress(trimmedAddr) : null);
 
-    // 1. Si tenemos coordenadas exactas del autocompletado de Google Maps
+    if (activeDispatchZones.length === 0) {
+      return {
+        zone: null,
+        isOutOfZone: false,
+        distanceKm: null,
+        maxRadiusKm: 0,
+      };
+    }
+
+    const sorted = [...activeDispatchZones].sort(
+      (a, b) => (parseFloat(a.radiusMaxKm) || 0) - (parseFloat(b.radiusMaxKm) || 0)
+    );
+    const maxRadiusKm = Math.max(
+      ...sorted.map((z) => parseFloat(z.radiusMaxKm) || 0),
+      0
+    );
+
+    // 1. Si tenemos coordenadas exactas del autocompletado de Google Maps o de la dirección guardada
     if (customerCoords && customerCoords.lat && customerCoords.lng) {
       const dist = calculateHaversineDistance(
         CENTRAL_HUB.lat,
@@ -856,24 +898,25 @@ export default function CartDrawer({
         customerCoords.lat,
         customerCoords.lng
       );
-      const sorted = [...activeDispatchZones].sort((a, b) => (a.radiusMaxKm || 0) - (b.radiusMaxKm || 0));
-      const matched = sorted.find((z) => dist <= (z.radiusMaxKm ?? 999));
-      if (matched) return { ...matched, distanceKm: dist };
+      const matched = sorted.find((z) => dist <= (parseFloat(z.radiusMaxKm) || 0));
+      if (matched) {
+        return {
+          zone: { ...matched, distanceKm: dist },
+          isOutOfZone: false,
+          distanceKm: dist,
+          maxRadiusKm,
+        };
+      }
+      return {
+        zone: null,
+        isOutOfZone: true,
+        distanceKm: dist,
+        maxRadiusKm,
+      };
     }
 
     // 2. Si tenemos comuna detectada (city)
-    const effectiveCity = city || (address ? detectCommuneFromAddress(address) : null);
     if (effectiveCity) {
-      const normCity = effectiveCity.toLowerCase().trim();
-      const matchedByName = activeDispatchZones.find(
-        (z) =>
-          z.name?.toLowerCase().trim() === normCity ||
-          z.name?.toLowerCase().includes(normCity) ||
-          normCity.includes(z.name?.toLowerCase().trim()) ||
-          z.coverage?.toLowerCase().includes(normCity)
-      );
-      if (matchedByName) return matchedByName;
-
       const refCoords = TOWN_COORDINATES[effectiveCity];
       if (refCoords) {
         const dist = calculateHaversineDistance(
@@ -882,47 +925,89 @@ export default function CartDrawer({
           refCoords.lat,
           refCoords.lng
         );
-        const sorted = [...activeDispatchZones].sort((a, b) => (a.radiusMaxKm || 0) - (b.radiusMaxKm || 0));
-        const matchedRadius = sorted.find((z) => dist <= (z.radiusMaxKm ?? 999));
-        if (matchedRadius) return { ...matchedRadius, distanceKm: dist };
-      }
-    }
-
-    return activeDispatchZones[0] || null;
-  }, [activeDispatchZones, customerCoords, city, address]);
-
-  // Opciones de horarios calculadas dinámicamente según la zona detectada o comuna
-  const availableSlots = useMemo(() => {
-    if (matchedDispatchZone && Array.isArray(matchedDispatchZone.slots) && matchedDispatchZone.slots.length > 0) {
-      return matchedDispatchZone.slots.map((slot) => {
-        let desc = '';
-        if (slot.fee !== null && slot.fee !== undefined && Number(slot.fee) > 0) {
-          desc += `Tarifa: $${new Intl.NumberFormat('es-CL').format(slot.fee)}`;
-        }
-        if (slot.noFreeShipping) {
-          desc += (desc ? ' • ' : '') + 'Sin despacho gratis';
+        const matchedRadius = sorted.find((z) => dist <= (parseFloat(z.radiusMaxKm) || 0));
+        if (matchedRadius) {
+          return {
+            zone: { ...matchedRadius, distanceKm: dist },
+            isOutOfZone: false,
+            distanceKm: dist,
+            maxRadiusKm,
+          };
         }
         return {
-          value: slot.label,
-          label: slot.label,
-          desc: desc || undefined,
-          fee: slot.fee,
-          noFreeShipping: Boolean(slot.noFreeShipping),
+          zone: null,
+          isOutOfZone: true,
+          distanceKm: dist,
+          maxRadiusKm,
         };
-      });
+      }
+
+      const normCity = effectiveCity.toLowerCase().trim();
+      const matchedByName = sorted.find(
+        (z) =>
+          z.name?.toLowerCase().trim() === normCity ||
+          z.name?.toLowerCase().includes(normCity) ||
+          normCity.includes(z.name?.toLowerCase().trim()) ||
+          z.coverage?.toLowerCase().includes(normCity)
+      );
+      if (matchedByName) {
+        return {
+          zone: matchedByName,
+          isOutOfZone: false,
+          distanceKm: null,
+          maxRadiusKm,
+        };
+      }
+
+      return {
+        zone: null,
+        isOutOfZone: true,
+        distanceKm: null,
+        maxRadiusKm,
+      };
     }
 
-    if (!city) return [];
-    return getSlotsForCity(city, deliverySchedules);
-  }, [matchedDispatchZone, city, deliverySchedules]);
+    // 3. Si el cliente escribió una dirección manual que no coincide con ninguna comuna cubierta
+    if (trimmedAddr.length >= 6) {
+      return {
+        zone: null,
+        isOutOfZone: true,
+        distanceKm: null,
+        maxRadiusKm,
+      };
+    }
 
-  // Próximas fechas de reparto disponibles según los días habilitados de la zona detectada
+    // Aún no ha ingresado dirección (valor referencial inicial)
+    return {
+      zone: sorted[0] || null,
+      isOutOfZone: false,
+      distanceKm: null,
+      maxRadiusKm,
+    };
+  }, [activeDispatchZones, customerCoords, city, address]);
+
+  const matchedDispatchZone = deliveryCoverageEval.zone;
+  const isOutOfDeliveryZone = deliveryCoverageEval.isOutOfZone;
+
+  const outOfZoneWhatsAppUrl = useMemo(() => {
+    const cleanAddr = [address?.trim(), depto?.trim() ? `(${depto.trim()})` : '', city?.trim()].filter(Boolean).join(', ');
+    const distInfo = deliveryCoverageEval.distanceKm
+      ? ` (~${deliveryCoverageEval.distanceKm.toFixed(1)} km desde bodega)`
+      : '';
+    const itemsSummary = cartItems
+      .map((item) => `• ${item.quantity}x ${item.name} (${item.weight || item.selectedWeight || 'Estándar'})`)
+      .join('\n');
+    const msg = `Hola Patitas del Sur 🐾, quería consultar si es posible coordinar un despacho a mi dirección (aparece fuera del radio automático de ${deliveryCoverageEval.maxRadiusKm || 8} km en la web):\n\n📍 Dirección: ${cleanAddr || 'Por confirmar'}${distInfo}\n👤 Nombre: ${recipientName?.trim() || user?.name || 'Cliente'}\n\n🛒 Mi carrito:\n${itemsSummary}`;
+    return `https://wa.me/56953332492?text=${encodeURIComponent(msg)}`;
+  }, [address, depto, city, deliveryCoverageEval, cartItems, recipientName, user?.name]);
+
+  // Próximas fechas de reparto disponibles según los días habilitados de la zona y estado del reparto en vivo
   const availableDeliveryDates = useMemo(() => {
     const allowedDays = Array.isArray(matchedDispatchZone?.deliveryDays) && matchedDispatchZone.deliveryDays.length > 0
       ? matchedDispatchZone.deliveryDays
       : [1, 2, 3, 4, 5, 6];
-    return getUpcomingDeliveryDates(allowedDays, 6);
-  }, [matchedDispatchZone]);
+    return getUpcomingDeliveryDates(allowedDays, 6, { isFleetOnRoute });
+  }, [matchedDispatchZone, isFleetOnRoute]);
 
   // Sincronizar fecha seleccionada con las fechas disponibles
   useEffect(() => {
@@ -933,6 +1018,30 @@ export default function CartDrawer({
       }
     }
   }, [availableDeliveryDates, deliveryDate]);
+
+  // Evaluación inteligente de las 2 ventanas (10:00-13:00 y 15:30-19:30) + Pedido Urgente
+  const smartScheduleEval = useMemo(() => {
+    const targetIso = deliveryDate || availableDeliveryDates[0]?.isoDate || '';
+    return evaluateSmartDeliverySchedule({
+      isFleetOnRoute,
+      selectedDateIso: targetIso,
+    });
+  }, [isFleetOnRoute, deliveryDate, availableDeliveryDates]);
+
+  // Opciones de horarios calculadas dinámicamente según la hora actual y si se anda en reparto
+  const availableSlots = useMemo(() => {
+    if (isOutOfDeliveryZone) return [];
+    return smartScheduleEval.slots || [];
+  }, [isOutOfDeliveryZone, smartScheduleEval]);
+
+  // Pre-seleccionar automáticamente la ventana recomendada más rápida cuando cambia la fecha o el estado de reparto
+  useEffect(() => {
+    if (availableSlots.length === 0) return;
+    const exists = availableSlots.some((s) => s.value === deliverySlot);
+    if (!exists && smartScheduleEval.recommendedSlotValue) {
+      setDeliverySlot(smartScheduleEval.recommendedSlotValue);
+    }
+  }, [availableSlots, deliverySlot, smartScheduleEval.recommendedSlotValue]);
 
   // Objeto de la fecha seleccionada
   const selectedDateObj = useMemo(() => {
@@ -1178,6 +1287,11 @@ export default function CartDrawer({
 
     if (hasOutOfStockItems) {
       setFormError('No es posible procesar el pedido con productos agotados en el carrito.');
+      return;
+    }
+
+    if (isOutOfDeliveryZone) {
+      setFormError('Tu dirección se encuentra fuera del radio de despacho automático. Por favor contáctanos por WhatsApp con el botón de abajo para consultar si podemos despachar a tu ubicación.');
       return;
     }
 
@@ -2395,6 +2509,45 @@ Asunto: Pedido ${completedOrder?.id}`;
                           )}
                         </div>
 
+                        {/* Banner Inteligente de Ventana de Despacho en Tiempo Real */}
+                        {!isOutOfDeliveryZone && smartScheduleEval?.statusBanner && (
+                          <div
+                            className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in duration-200 ${
+                              selectedSlotData?.isUrgent
+                                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                                : smartScheduleEval.statusBanner.type === 'available'
+                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                  : 'bg-amber-50/90 border-amber-200 text-amber-950'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                selectedSlotData?.isUrgent
+                                  ? 'bg-amber-500/20 text-amber-800'
+                                  : smartScheduleEval.statusBanner.type === 'available'
+                                    ? 'bg-emerald-500/15 text-emerald-700'
+                                    : 'bg-amber-500/15 text-amber-800'
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-black text-[11.5px] leading-snug">
+                                  {selectedSlotData?.isUrgent
+                                    ? '⚡ Pedido Urgente (Fuera de ventana horaria)'
+                                    : smartScheduleEval.statusBanner.title}
+                                </span>
+                              </div>
+                              <p className="text-[10.5px] opacity-90 font-medium leading-relaxed mt-0.5">
+                                {selectedSlotData?.isUrgent
+                                  ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00-13:00 y 15:30-19:30), se cobra el despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
+                                  : smartScheduleEval.statusBanner.message}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Día y Horario Preferido */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                           {/* Día de Entrega */}
@@ -2510,9 +2663,10 @@ Asunto: Pedido ${completedOrder?.id}`;
                             onChange={(val) => {
                               clearFieldError('address');
                               setAddress(val);
+                              setCustomerCoords(null);
                               const detected = detectCommuneFromAddress(val);
-                              if (detected && detected !== city) {
-                                setCity(detected);
+                              if (detected !== city) {
+                                setCity(detected || '');
                               }
                             }}
                             onSelect={(item) => {
@@ -2520,12 +2674,14 @@ Asunto: Pedido ${completedOrder?.id}`;
                               setAddress(item.street);
                               if (item.lat && item.lng) {
                                 setCustomerCoords({ lat: item.lat, lng: item.lng });
+                              } else {
+                                setCustomerCoords(null);
                               }
                               if (item.city) {
                                 setCity(item.city);
                               } else {
                                 const detected = detectCommuneFromAddress(item.formattedAddress || item.street);
-                                if (detected) setCity(detected);
+                                setCity(detected || '');
                               }
                             }}
                           />
@@ -2564,6 +2720,45 @@ Asunto: Pedido ${completedOrder?.id}`;
                             />
                           </div>
                         </div>
+
+                        {/* Banner Inteligente de Ventana de Despacho en Tiempo Real */}
+                        {!isOutOfDeliveryZone && smartScheduleEval?.statusBanner && (
+                          <div
+                            className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in duration-200 ${
+                              selectedSlotData?.isUrgent
+                                ? 'bg-amber-50 border-amber-300 text-amber-950'
+                                : smartScheduleEval.statusBanner.type === 'available'
+                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                                  : 'bg-amber-50/90 border-amber-200 text-amber-950'
+                            }`}
+                          >
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                                selectedSlotData?.isUrgent
+                                  ? 'bg-amber-500/20 text-amber-800'
+                                  : smartScheduleEval.statusBanner.type === 'available'
+                                    ? 'bg-emerald-500/15 text-emerald-700'
+                                    : 'bg-amber-500/15 text-amber-800'
+                              }`}
+                            >
+                              <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-black text-[11.5px] leading-snug">
+                                  {selectedSlotData?.isUrgent
+                                    ? '⚡ Pedido Urgente (Fuera de ventana horaria)'
+                                    : smartScheduleEval.statusBanner.title}
+                                </span>
+                              </div>
+                              <p className="text-[10.5px] opacity-90 font-medium leading-relaxed mt-0.5">
+                                {selectedSlotData?.isUrgent
+                                  ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00-13:00 y 15:30-19:30), se cobra el despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
+                                  : smartScheduleEval.statusBanner.message}
+                              </p>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Fila: Día y Horario Preferido */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2671,6 +2866,37 @@ Asunto: Pedido ${completedOrder?.id}`;
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Aviso cuando la dirección está fuera del círculo de cobertura configurado */}
+                    {isOutOfDeliveryZone && (
+                      <div className="mt-3 p-3.5 rounded-2xl bg-amber-50/90 border-2 border-amber-300/90 space-y-2.5 animate-in fade-in duration-200">
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+                            <MapPin className="w-4 h-4 stroke-[2.5]" />
+                          </div>
+                          <div className="space-y-1 min-w-0">
+                            <h4 className="text-xs font-black text-amber-950 leading-snug">
+                              Dirección fuera del radio de despacho web
+                            </h4>
+                            <p className="text-[11px] text-amber-900/90 font-medium leading-relaxed">
+                              {deliveryCoverageEval.distanceKm
+                                ? `Tu ubicación se encuentra a ~${deliveryCoverageEval.distanceKm.toFixed(1)} km de nuestra bodega central en Frutillar (radio automático actual: hasta ${deliveryCoverageEval.maxRadiusKm || 8} km).`
+                                : `Tu dirección se encuentra fuera del círculo actual de despacho automático (hasta ${deliveryCoverageEval.maxRadiusKm || 8} km desde nuestra bodega en Frutillar).`}{' '}
+                              Escríbenos por WhatsApp para consultar si podemos coordinar el envío a tu domicilio.
+                            </p>
+                          </div>
+                        </div>
+                        <a
+                          href={outOfZoneWhatsAppUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full py-2.5 px-3.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-black text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
+                        >
+                          <MessageSquare className="w-4 h-4 shrink-0" />
+                          <span>Consultar despacho por WhatsApp</span>
+                        </a>
                       </div>
                     )}
 
@@ -2936,7 +3162,11 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <Truck className="w-3.5 h-3.5 text-[#D97706]" />
                       <span>Despacho {city ? `(${city})` : ''}</span>
                     </span>
-                    {hasShippingAddress ? (
+                    {isOutOfDeliveryZone ? (
+                      <span className="text-[11px] font-bold text-rose-600">
+                        Fuera del radio ({deliveryCoverageEval.maxRadiusKm || 8} km)
+                      </span>
+                    ) : hasShippingAddress ? (
                       <span className={`font-bold ${calculatedShippingCost === 0 ? 'text-emerald-700 font-extrabold' : 'text-slate-900'}`}>
                         {calculatedShippingCost === 0 ? 'GRATIS' : formatCLP(calculatedShippingCost)}
                       </span>
@@ -2947,20 +3177,22 @@ Asunto: Pedido ${completedOrder?.id}`;
                     )}
                   </div>
 
-                  {hasShippingAddress && isFreeShippingExcluded && subtotal >= freeShippingThreshold && (
-                    <div className="py-1 px-2.5 rounded-lg bg-amber-50 border border-amber-200/90 text-[10.5px] text-amber-950 font-semibold flex items-center gap-1.5 animate-in fade-in">
+                  {hasShippingAddress && !isOutOfDeliveryZone && isFreeShippingExcluded && subtotal >= freeShippingThreshold && (
+                    <div className="py-1.5 px-2.5 rounded-lg bg-amber-50 border border-amber-200/90 text-[10.5px] text-amber-950 font-semibold flex items-center gap-1.5 animate-in fade-in">
                       <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                       <span>
-                        {isSpecialDeliveryDay && matchedDispatchZone?.specialDayNoFreeShipping
-                          ? `Tarifa especial para el día ${selectedDateObj?.label?.split(' - ').pop() || 'seleccionado'}: no aplica envío gratis.`
-                          : 'El horario seleccionado tiene condiciones especiales: no aplica envío gratis.'}
+                        {selectedSlotData?.isUrgent
+                          ? `Pedido Urgente (fuera de ventana): se cobra despacho obligatorio (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
+                          : isSpecialDeliveryDay && matchedDispatchZone?.specialDayNoFreeShipping
+                            ? `Tarifa especial para el día ${selectedDateObj?.label?.split(' - ').pop() || 'seleccionado'}: no aplica envío gratis.`
+                            : 'El horario seleccionado tiene condiciones especiales: no aplica envío gratis.'}
                       </span>
                     </div>
                   )}
 
                   <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-100">
                     <span>Total a Pagar</span>
-                    <span className="text-[#D97706]">{formatCLP(shippingStepTotal)}</span>
+                    <span className="text-[#D97706]">{formatCLP(isOutOfDeliveryZone ? cartStepTotal : shippingStepTotal)}</span>
                   </div>
                 </div>
 
@@ -2979,42 +3211,54 @@ Asunto: Pedido ${completedOrder?.id}`;
                   </div>
                 )}
 
-                {/* Botón Final de Envío */}
-                <button
-                  type="submit"
-                  disabled={isSubmitting || hasOutOfStockItems}
-                  className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-transform ${
-                    hasOutOfStockItems
-                      ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed shadow-none opacity-90'
-                      : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 font-black active:scale-95 cursor-pointer disabled:opacity-50'
-                  }`}
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>
-                        {paymentType === 'anticipado'
-                          ? 'REDIRIGIENDO A MERCADO PAGO...'
-                          : 'REGISTRANDO ORDEN EN BASE DE DATOS...'}
-                      </span>
-                    </>
-                  ) : hasOutOfStockItems ? (
-                    <>
-                      <AlertCircle className="w-4 h-4 text-rose-600" />
-                      <span>HAY PRODUCTOS AGOTADOS</span>
-                    </>
-                  ) : paymentType === 'anticipado' ? (
-                    <>
-                      <span>PAGAR CON MERCADO PAGO</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  ) : (
-                    <>
-                      <span>CONFIRMAR Y FINALIZAR PEDIDO</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
+                {/* Botón Final de Envío o Contacto por WhatsApp si está fuera del círculo */}
+                {isOutOfDeliveryZone ? (
+                  <a
+                    href={outOfZoneWhatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-4 px-4 rounded-2xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-[#25D366]/25 transition-all active:scale-95 cursor-pointer text-center"
+                  >
+                    <MessageSquare className="w-4 h-4 shrink-0" />
+                    <span>CONSULTAR DESPACHO POR WHATSAPP</span>
+                  </a>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || hasOutOfStockItems}
+                    className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-transform ${
+                      hasOutOfStockItems
+                        ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed shadow-none opacity-90'
+                        : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 font-black active:scale-95 cursor-pointer disabled:opacity-50'
+                    }`}
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>
+                          {paymentType === 'anticipado'
+                            ? 'REDIRIGIENDO A MERCADO PAGO...'
+                            : 'REGISTRANDO ORDEN EN BASE DE DATOS...'}
+                        </span>
+                      </>
+                    ) : hasOutOfStockItems ? (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-rose-600" />
+                        <span>HAY PRODUCTOS AGOTADOS</span>
+                      </>
+                    ) : paymentType === 'anticipado' ? (
+                      <>
+                        <span>PAGAR CON MERCADO PAGO</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    ) : (
+                      <>
+                        <span>CONFIRMAR Y FINALIZAR PEDIDO</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                )}
               </form>
             </div>
           )}
@@ -3170,7 +3414,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                     </div>
 
                     <a
-                      href={`https://wa.me/56987654321?text=Hola%20Patitas%20del%20Sur%2C%20adjunto%20comprobante%20de%20mi%20pedido%20${completedOrder.id}%20por%20${encodeURIComponent(formatCLP(completedOrder.total))}`}
+                      href={`https://wa.me/56953332492?text=Hola%20Patitas%20del%20Sur%2C%20adjunto%20comprobante%20de%20mi%20pedido%20${completedOrder.id}%20por%20${encodeURIComponent(formatCLP(completedOrder.total))}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
