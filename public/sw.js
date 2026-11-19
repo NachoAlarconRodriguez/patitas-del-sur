@@ -1,8 +1,6 @@
 // Service Worker for Patitas del Sur PWA
-const CACHE_NAME = 'patitas-pwa-v3';
+const CACHE_NAME = 'patitas-pwa-v4';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/pwa-icon-192.png',
@@ -61,6 +59,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Network-first with cache fallback for HTML navigations; Cache-first for static assets
+  const isNavigation =
+    event.request.mode === 'navigate' ||
+    event.request.headers.get('accept')?.includes('text/html') ||
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
+    url.pathname.startsWith('/admin');
+
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       const fetchPromise = fetch(event.request)
@@ -83,7 +88,7 @@ self.addEventListener('fetch', (event) => {
           if (cachedResponse) {
             return cachedResponse;
           }
-          if (event.request.headers.get('accept')?.includes('text/html')) {
+          if (isNavigation) {
             const htmlCache = await caches.match('/index.html');
             if (htmlCache) return htmlCache;
           }
@@ -94,6 +99,9 @@ self.addEventListener('fetch', (event) => {
           });
         });
 
+      if (isNavigation) {
+        return fetchPromise;
+      }
       return cachedResponse || fetchPromise;
     })
   );

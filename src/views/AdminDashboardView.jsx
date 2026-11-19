@@ -1564,9 +1564,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const dbCustomers = await fetchAllCustomersForAdmin();
         if (!isMounted) return;
         if (dbCustomers && dbCustomers.length > 0) {
-          const nonAdminCustomers = dbCustomers.filter(
-            (c) => String(c.role || 'cliente').toLowerCase() !== 'admin'
-          );
+          const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
+          const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
+          const nonAdminCustomers = dbCustomers.filter((c) => {
+            if (String(c.role || 'cliente').toLowerCase() === 'admin') return false;
+            const email = String(c.email || '').trim().toLowerCase();
+            if (email && adminEmails.includes(email)) return false;
+            const name = String(c.full_name || c.name || '').trim().toLowerCase();
+            if (name && adminNames.includes(name)) return false;
+            return true;
+          });
 
           const mapped = nonAdminCustomers.map((c) => {
             const rawPets = Array.isArray(c.pets) ? c.pets : [];
@@ -1597,7 +1604,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               id: c.id,
               name: c.full_name || 'Tutor Patitas',
               email: c.email || '',
-              phone: c.phone || '+56 9 8456 1234',
+              phone: c.phone || '',
               city: c.city || 'Frutillar',
               address: c.address || 'Dirección no registrada',
               pets: mappedPets,
@@ -1624,10 +1631,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     syncCustomers();
     window.addEventListener('patitas_customers_updated', syncCustomers);
+    window.addEventListener('patitas_customer_updated', syncCustomers);
     window.addEventListener('patitas_orders_updated', syncCustomers);
     return () => {
       isMounted = false;
       window.removeEventListener('patitas_customers_updated', syncCustomers);
+      window.removeEventListener('patitas_customer_updated', syncCustomers);
       window.removeEventListener('patitas_orders_updated', syncCustomers);
     };
   }, []);

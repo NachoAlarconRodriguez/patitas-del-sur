@@ -421,18 +421,66 @@ export async function deletePetFromSupabase(petId) {
 
 export async function fetchAllCustomersForAdmin() {
   try {
-    const { data, error } = await supabase
-      .from('customers')
-      .select(`
-        *,
-        pets (*)
-      `)
-      .order('created_at', { ascending: false });
+    const [customersRes, ordersRes] = await Promise.all([
+      supabase
+        .from('customers')
+        .select(`
+          *,
+          pets (*)
+        `)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('orders')
+        .select('id, customer_id, customer_name, customer_phone, customer_email, total, status'),
+    ]);
 
-    if (error) throw error;
-    return (data || []).filter(
-      (c) => String(c.role || 'cliente').toLowerCase() !== 'admin'
-    );
+    if (customersRes.error) throw customersRes.error;
+
+    const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
+    const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
+
+    const nonAdmins = (customersRes.data || []).filter((c) => {
+      if (String(c.role || 'cliente').toLowerCase() === 'admin') return false;
+      const email = String(c.email || '').trim().toLowerCase();
+      if (email && adminEmails.includes(email)) return false;
+      const name = String(c.full_name || c.name || '').trim().toLowerCase();
+      if (name && adminNames.includes(name)) return false;
+      return true;
+    });
+
+    const validOrders = (ordersRes.data || []).filter((o) => o && o.status !== 'cancelado');
+
+    return nonAdmins.map((c) => {
+      const normName = String(c.full_name || c.name || '').trim().toLowerCase();
+      const normEmail = String(c.email || '').trim().toLowerCase();
+      const cleanPhone = String(c.phone || '').replace(/\D/g, '');
+
+      const custOrders = validOrders.filter((o) => {
+        if (o.customer_id && c.id && String(o.customer_id) === String(c.id)) return true;
+        const oName = String(o.customer_name || '').trim().toLowerCase();
+        if (normName && oName && normName === oName) return true;
+        const oEmail = String(o.customer_email || '').trim().toLowerCase();
+        if (normEmail && oEmail && normEmail === oEmail) return true;
+        if (cleanPhone.length >= 8 && o.customer_phone) {
+          const oPhone = String(o.customer_phone).replace(/\D/g, '');
+          if (oPhone.length >= 8 && oPhone.includes(cleanPhone.slice(-8))) return true;
+        }
+        return false;
+      });
+
+      const ordersTotal = custOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+      const totalSpent = Math.max(Number(c.total_spent || 0), ordersTotal);
+      const ordersCount = Math.max(Number(c.orders_count || 0), custOrders.length);
+      const dbPoints = Number(c.points || 0);
+      const points = dbPoints > 0 ? dbPoints : Math.floor(totalSpent / 1000);
+
+      return {
+        ...c,
+        points,
+        total_spent: totalSpent,
+        orders_count: ordersCount,
+      };
+    });
   } catch (err) {
     console.error('Error fetching customers for admin:', err);
     return [];

@@ -166,6 +166,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         setPointsAdjustment('');
         setAdjustmentReason('');
         loadRedemptions();
+        window.dispatchEvent(new Event('patitas_customers_updated'));
         window.dispatchEvent(new Event('patitas_customer_updated'));
       } else {
         setAdjustErrorMsg('No se pudo actualizar los puntos.');
@@ -184,41 +185,6 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2500);
   };
-
-  // Estadísticas Calculadas
-  const totalCustomerPoints = useMemo(() => {
-    return customers.reduce((acc, c) => acc + (Number(c.points) || 0), 0);
-  }, [customers]);
-
-  const activeCouponsCount = useMemo(() => {
-    return redemptions.filter((r) => r.status === 'activo').length;
-  }, [redemptions]);
-
-  const usedCouponsCount = useMemo(() => {
-    return redemptions.filter((r) => r.status === 'utilizado').length;
-  }, [redemptions]);
-
-  const totalDiscountMoneyRedeemed = useMemo(() => {
-    return redemptions
-      .filter((r) => r.status === 'utilizado')
-      .reduce((acc, r) => acc + (Number(r.discountAmount) || 0), 0);
-  }, [redemptions]);
-
-  // Filtrado de la tabla de auditoría
-  const filteredRedemptions = useMemo(() => {
-    return redemptions.filter((r) => {
-      const matchStatus = statusFilter === 'todos' || r.status === statusFilter;
-      const q = searchQuery.toLowerCase().trim();
-      const matchSearch =
-        !q ||
-        r.customerName?.toLowerCase().includes(q) ||
-        r.customerPhone?.toLowerCase().includes(q) ||
-        r.couponCode?.toLowerCase().includes(q);
-      return matchStatus && matchSearch;
-    });
-  }, [redemptions, statusFilter, searchQuery]);
-
-  const selectedCustomerObj = customers.find((c) => c.id === selectedCustomerId);
 
   // Niveles activos de canje ordenados
   const activeTiers = useMemo(() => {
@@ -268,36 +234,151 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     };
   };
 
-  const processedCustomers = useMemo(() => {
-    let list = (customers || []).map((c) => {
-      const pts = Number(c.points) || Number(c.loyalty_points) || Number(c.loyaltyPoints) || 0;
-      const tierInfo = getCustomerTierInfo(pts);
+  // Filtrar administradores y cruzar con pedidos para que siempre estén todos los clientes reales y sus puntos
+  const enrichedCustomers = useMemo(() => {
+    const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
+    const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
+    const isAdmin = (c) => {
+      if (!c) return false;
+      if (String(c.role || '').toLowerCase() === 'admin') return true;
+      const email = String(c.email || '').trim().toLowerCase();
+      if (email && adminEmails.includes(email)) return true;
+      const name = String(c.name || c.full_name || '').trim().toLowerCase();
+      if (name && adminNames.includes(name)) return true;
+      return false;
+    };
 
-      const cleanPhoneDigits = String(c.phone || '').replace(/\D/g, '');
-      const custOrders = (orders || []).filter((o) => {
-        if (o.customerId && c.id && o.customerId === c.id) return true;
-        if (cleanPhoneDigits.length >= 8 && o.customerPhone) {
+    const baseList = (customers || []).filter((c) => !isAdmin(c));
+    const knownNames = new Set(
+      baseList.map((c) => String(c.name || c.full_name || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const knownIds = new Set(baseList.map((c) => String(c.id || '')).filter(Boolean));
+
+    const validOrders = (orders || []).filter((o) => o && o.status !== 'cancelado');
+    const extraCustomersMap = new Map();
+
+    for (const o of validOrders) {
+      const oName = String(o.customer || o.customer_name || '').trim();
+      const normName = oName.toLowerCase();
+      if (!oName || normName === 'cliente patitas' || adminNames.includes(normName)) continue;
+      if ((o.customerId && knownIds.has(String(o.customerId))) || knownNames.has(normName)) continue;
+
+      if (!extraCustomersMap.has(normName)) {
+        extraCustomersMap.set(normName, {
+          id: o.customerId || `order-cust-${normName}`,
+          name: oName,
+          full_name: oName,
+          email: o.customerEmail || o.customer_email || '',
+          phone: o.customerPhone && o.customerPhone !== '+56 9 9123 4567' ? o.customerPhone : '',
+          city: o.city || 'Frutillar',
+          address: o.address || '',
+          pets: o.petName ? [{ name: o.petName, type: o.petType || 'perro' }] : [],
+          petsSummary: o.petName ? `${o.petName} (${o.petType || 'perro'})` : '',
+          points: 0,
+          totalSpent: 0,
+          ordersCount: 0,
+          role: 'cliente',
+        });
+      }
+    }
+
+    const fullList = [...baseList, ...Array.from(extraCustomersMap.values())];
+    const ptsMultiplier = Number(settings.pointsPerThousand) || 1;
+
+    return fullList.map((c) => {
+      const rawPhone = String(c.phone || '').trim();
+      const effectivePhone =
+        rawPhone === '+56 9 8456 1234' || rawPhone === '+56 9 9123 4567' ? '' : rawPhone;
+      const cleanPhoneDigits = effectivePhone.replace(/\D/g, '');
+      const normCustName = String(c.name || c.full_name || '').trim().toLowerCase();
+      const normCustEmail = String(c.email || '').trim().toLowerCase();
+
+      const custOrders = validOrders.filter((o) => {
+        if (o.customerId && c.id && String(o.customerId) === String(c.id)) return true;
+        const normOrderName = String(o.customer || o.customer_name || '').trim().toLowerCase();
+        if (normCustName && normOrderName && normCustName === normOrderName) return true;
+        const normOrderEmail = String(o.customerEmail || o.customer_email || '').trim().toLowerCase();
+        if (normCustEmail && normOrderEmail && normCustEmail === normOrderEmail) return true;
+        if (cleanPhoneDigits.length >= 8 && o.customerPhone && o.customerPhone !== '+56 9 9123 4567') {
           const oPhoneDigits = String(o.customerPhone).replace(/\D/g, '');
-          return oPhoneDigits.includes(cleanPhoneDigits.slice(-8));
+          if (oPhoneDigits.length >= 8 && oPhoneDigits.includes(cleanPhoneDigits.slice(-8))) {
+            return true;
+          }
         }
         return false;
       });
 
-      const calculatedOrdersCount = custOrders.length || Number(c.ordersCount) || Number(c.orders_count) || 0;
-      const calculatedTotalSpent = custOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0) || Number(c.totalSpent) || Number(c.total_spent) || 0;
+      const ordersTotalSum = custOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+      const calculatedOrdersCount = Math.max(
+        custOrders.length,
+        Number(c.ordersCount) || Number(c.orders_count) || 0
+      );
+      const calculatedTotalSpent = Math.max(
+        ordersTotalSum,
+        Number(c.totalSpent) || Number(c.total_spent) || 0
+      );
+
+      const dbPts = Number(c.points) || Number(c.loyalty_points) || Number(c.loyaltyPoints) || 0;
+      const estimatedPtsFromOrders = Math.floor(calculatedTotalSpent / 1000) * ptsMultiplier;
+      const pts = dbPts > 0 ? dbPts : estimatedPtsFromOrders;
+      const tierInfo = getCustomerTierInfo(pts);
 
       return {
         ...c,
         effectiveName: c.name || c.full_name || 'Cliente sin nombre',
-        effectivePhone: c.phone || '',
+        effectivePhone,
         effectiveEmail: c.email || '',
-        effectivePets: c.petsSummary || (Array.isArray(c.pets) ? c.pets.map((p) => p.name || p).join(', ') : ''),
+        effectivePets:
+          c.petsSummary && c.petsSummary !== 'Sin mascotas'
+            ? c.petsSummary
+            : Array.isArray(c.pets) && c.pets.length > 0
+            ? c.pets.map((p) => (p.name ? `${p.name}${p.type ? ` (${p.type})` : ''}` : p)).join(', ')
+            : 'Sin mascotas',
         points: pts,
         tierInfo,
         calculatedOrdersCount,
         calculatedTotalSpent,
       };
     });
+  }, [customers, orders, settings.pointsPerThousand, activeTiers]);
+
+  // Estadísticas Calculadas
+  const totalCustomerPoints = useMemo(() => {
+    return enrichedCustomers.reduce((acc, c) => acc + (Number(c.points) || 0), 0);
+  }, [enrichedCustomers]);
+
+  const activeCouponsCount = useMemo(() => {
+    return redemptions.filter((r) => r.status === 'activo').length;
+  }, [redemptions]);
+
+  const usedCouponsCount = useMemo(() => {
+    return redemptions.filter((r) => r.status === 'utilizado').length;
+  }, [redemptions]);
+
+  const totalDiscountMoneyRedeemed = useMemo(() => {
+    return redemptions
+      .filter((r) => r.status === 'utilizado')
+      .reduce((acc, r) => acc + (Number(r.discountAmount) || 0), 0);
+  }, [redemptions]);
+
+  // Filtrado de la tabla de auditoría
+  const filteredRedemptions = useMemo(() => {
+    return redemptions.filter((r) => {
+      const matchStatus = statusFilter === 'todos' || r.status === statusFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        r.customerName?.toLowerCase().includes(q) ||
+        r.customerPhone?.toLowerCase().includes(q) ||
+        r.couponCode?.toLowerCase().includes(q);
+      return matchStatus && matchSearch;
+    });
+  }, [redemptions, statusFilter, searchQuery]);
+
+  const selectedCustomerObj = enrichedCustomers.find((c) => c.id === selectedCustomerId);
+
+  const processedCustomers = useMemo(() => {
+    let list = [...enrichedCustomers];
 
     // Búsqueda
     const q = customerSearch.toLowerCase().trim();
@@ -333,7 +414,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     }
 
     return list;
-  }, [customers, orders, customerSearch, pointsFilter, sortBy, activeTiers]);
+  }, [enrichedCustomers, customerSearch, pointsFilter, sortBy]);
 
   // Paginación
   const totalCustomerPages = Math.max(1, Math.ceil(processedCustomers.length / CUSTOMERS_PER_PAGE));
@@ -348,17 +429,17 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
   }, [customerSearch, pointsFilter, sortBy]);
 
   const withPointsCount = useMemo(() => {
-    return (customers || []).filter((c) => (Number(c.points) || Number(c.loyalty_points) || 0) > 0).length;
-  }, [customers]);
+    return enrichedCustomers.filter((c) => c.points > 0).length;
+  }, [enrichedCustomers]);
 
   const zeroPointsCount = useMemo(() => {
-    return (customers || []).filter((c) => (Number(c.points) || Number(c.loyalty_points) || 0) === 0).length;
-  }, [customers]);
+    return enrichedCustomers.filter((c) => c.points === 0).length;
+  }, [enrichedCustomers]);
 
   const canRedeemCount = useMemo(() => {
     if (!minRedeemTier) return 0;
-    return (customers || []).filter((c) => (Number(c.points) || Number(c.loyalty_points) || 0) >= minRedeemTier.points).length;
-  }, [customers, minRedeemTier]);
+    return enrichedCustomers.filter((c) => c.points >= minRedeemTier.points).length;
+  }, [enrichedCustomers, minRedeemTier]);
 
   const handleSelectCustomerForAdjustment = (customerId) => {
     setSelectedCustomerId(customerId);
@@ -392,7 +473,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
           </div>
           <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#EBF5F3] text-[#0E8388] text-[11px] font-bold">
-              {customers.length} tutores
+              {enrichedCustomers.length} tutores
             </span>
             <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500">
               <span className="w-6 h-6 rounded-lg bg-[#EBF5F3] text-[#0E8388] flex items-center justify-center">
@@ -663,7 +744,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                   Saldos y ranking de puntos por cliente
                 </h3>
                 <span className="text-[11px] font-semibold text-slate-500 bg-[#F8FAFC] px-2.5 py-0.5 rounded-full border border-[#EAECEF]">
-                  {processedCustomers.length} de {customers.length} clientes
+                  {processedCustomers.length} de {enrichedCustomers.length} clientes
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium mt-0.5">
@@ -717,7 +798,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
                 pointsFilter === 'todos' ? 'bg-[#0E8388] text-white shadow-xs' : 'text-slate-600 hover:text-[#111827]'
               }`}
             >
-              Todos ({customers.length})
+              Todos ({enrichedCustomers.length})
             </button>
             <button
               type="button"
@@ -1234,9 +1315,9 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
               className="w-full px-3.5 py-2.5 rounded-2xl border border-[#EAECEF] bg-[#F8FAFC] text-xs font-semibold text-[#111827] focus:bg-white"
             >
               <option value="">-- Elige un tutor / cliente --</option>
-              {customers.map((c) => (
+              {enrichedCustomers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name || c.full_name} ({c.phone || c.email || 'Sin contacto'}) — Saldo: {c.points || 0} pts
+                  {c.effectiveName} ({c.effectivePhone || c.effectiveEmail || 'Sin contacto'}) — Saldo: {c.points || 0} pts
                 </option>
               ))}
             </select>
