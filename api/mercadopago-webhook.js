@@ -170,12 +170,74 @@ export default async function handler(req, res) {
 
     const newPaymentStatus = isPaid ? 'pagado' : isCanceledOrFailed ? 'rechazado' : 'pendiente';
 
+    // Helper para ajustar stock de los ítems del pedido (+1 reintegra, -1 descuenta)
+    const adjustOrderStock = async (orderId, direction) => {
+      try {
+        const { data: orderItems } = await supabase
+          .from('order_items')
+          .select('product_id, product_name, weight, quantity')
+          .eq('order_id', orderId);
+
+        if (!Array.isArray(orderItems) || orderItems.length === 0) return;
+
+        const { data: allProducts } = await supabase
+          .from('products')
+          .select('id, name, weights, stock');
+
+        const normalizeText = (s) =>
+          String(s || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const deltas = new Map();
+        for (const it of orderItems) {
+          const qty = Math.max(1, Number(it.quantity) || 1);
+          let targetId = it.product_id || null;
+          if (!targetId && it.product_name && Array.isArray(allProducts)) {
+            const targetName = normalizeText(it.product_name);
+            const targetWeight = normalizeText(it.weight || '').replace(/,/g, '.');
+            const exact = allProducts.find((p) => {
+              const pName = normalizeText(p.name);
+              const pWeight = normalizeText(Array.isArray(p.weights) ? p.weights[0] : p.weights || '').replace(/,/g, '.');
+              return pName === targetName && (!targetWeight || pWeight === targetWeight);
+            }) || allProducts.find((p) => normalizeText(p.name) === targetName);
+            if (exact) targetId = exact.id;
+          }
+          if (targetId) {
+            deltas.set(targetId, (deltas.get(targetId) || 0) + qty * direction);
+          }
+        }
+
+        for (const [prodId, delta] of deltas.entries()) {
+          const { data: prodRow } = await supabase
+            .from('products')
+            .select('id, stock')
+            .eq('id', prodId)
+            .maybeSingle();
+          if (prodRow) {
+            const nextStock = Math.max(0, (Number(prodRow.stock) || 0) + delta);
+            await supabase
+              .from('products')
+              .update({ stock: nextStock, updated_at: new Date().toISOString() })
+              .eq('id', prodId);
+          }
+        }
+      } catch (stockErr) {
+        console.warn('Error ajustando stock desde webhook de Mercado Pago:', stockErr);
+      }
+    };
+
     // 2. Buscar el pedido correspondiente en Supabase (por id = external_reference o por mercadopago_preference_id = mpOrderId)
+    const orderSelectCols =
+      'id, status, total, customer_id, points_earned, payment_status, mercadopago_preference_id';
     let matchedOrder = null;
     if (externalReference) {
       const { data } = await supabase
         .from('orders')
-        .select('id, customer_id, points_earned, payment_status')
+        .select(orderSelectCols)
         .eq('id', externalReference)
         .maybeSingle();
       if (data) matchedOrder = data;
@@ -184,20 +246,54 @@ export default async function handler(req, res) {
     if (!matchedOrder && mpOrderId) {
       const { data } = await supabase
         .from('orders')
-        .select('id, customer_id, points_earned, payment_status')
+        .select(orderSelectCols)
         .eq('mercadopago_preference_id', mpOrderId)
         .maybeSingle();
       if (data) matchedOrder = data;
     }
 
     if (matchedOrder) {
-      const wasAlreadyPaid = matchedOrder.payment_status === 'pagado';
+      const wasAlreadyPaid = String(matchedOrder.payment_status || '').toLowerCase() === 'pagado';
+      const isSupersededAttempt =
+        Boolean(matchedOrder.mercadopago_preference_id) &&
+        Boolean(mpOrderId) &&
+        String(matchedOrder.mercadopago_preference_id) !== String(mpOrderId);
+
+      // Si llega un rechazo/expiración de un intento ANTERIOR cuando ya existe un reintento más nuevo, ignorarlo
+      if (isCanceledOrFailed && isSupersededAttempt) {
+        return res.status(200).json({
+          received: true,
+          ignored: 'superseded_attempt',
+          eventType,
+          action,
+          mpOrderId,
+          currentAttemptId: matchedOrder.mercadopago_preference_id,
+          externalReference,
+        });
+      }
+
       const updatePayload = {
         payment_status: wasAlreadyPaid ? 'pagado' : newPaymentStatus,
-        mercadopago_preference_id: mpOrderId,
       };
+      if (isPaid || !isSupersededAttempt) {
+        updatePayload.mercadopago_preference_id = mpOrderId;
+      }
       if (mpPaymentId) {
         updatePayload.mercadopago_payment_id = String(mpPaymentId);
+      }
+
+      // Caso A: Pago rechazado/cancelado/expirado del intento vigente -> cancelar y devolver stock a bodega
+      const shouldCancelAndRestore =
+        !wasAlreadyPaid && isCanceledOrFailed && matchedOrder.status !== 'cancelado';
+      if (shouldCancelAndRestore) {
+        updatePayload.status = 'cancelado';
+      }
+
+      // Caso B: Reintento aprobado sobre una orden previamente cancelada -> reactivar y descontar stock nuevamente
+      const shouldReactivateAndDeduct =
+        isPaid && matchedOrder.status === 'cancelado';
+      if (shouldReactivateAndDeduct) {
+        updatePayload.status = 'en_preparacion';
       }
 
       await supabase
@@ -205,19 +301,29 @@ export default async function handler(req, res) {
         .update(updatePayload)
         .eq('id', matchedOrder.id);
 
-      // Si acaba de pasar a 'pagado' y tiene cliente asociado, acreditar puntos Club Patitas
-      if (!wasAlreadyPaid && isPaid && matchedOrder.customer_id && Number(matchedOrder.points_earned) > 0) {
+      if (shouldCancelAndRestore) {
+        await adjustOrderStock(matchedOrder.id, 1);
+      } else if (shouldReactivateAndDeduct) {
+        await adjustOrderStock(matchedOrder.id, -1);
+      }
+
+      // Si acaba de pasar a 'pagado' y tiene cliente asociado, acreditar puntos Club Patitas y total_spent una sola vez
+      if (!wasAlreadyPaid && isPaid && matchedOrder.customer_id) {
         const { data: cust } = await supabase
           .from('customers')
-          .select('id, points')
+          .select('id, points, total_spent')
           .eq('id', matchedOrder.customer_id)
           .maybeSingle();
 
         if (cust) {
-          const updatedPoints = (Number(cust.points) || 0) + Number(matchedOrder.points_earned);
+          const ptsToAdd = Math.max(0, Number(matchedOrder.points_earned) || 0);
+          const totalToAdd = Math.max(0, Number(matchedOrder.total) || 0);
           await supabase
             .from('customers')
-            .update({ points: updatedPoints })
+            .update({
+              points: (Number(cust.points) || 0) + ptsToAdd,
+              total_spent: (Number(cust.total_spent) || 0) + totalToAdd,
+            })
             .eq('id', cust.id);
         }
       }

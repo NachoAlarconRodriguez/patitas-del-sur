@@ -6,7 +6,11 @@ import {
   formatCLPDate,
   getYearMonthFromDate,
   formatPeriodLabel,
-} from '../../utils/formatters';
+  shiftIsoDate,
+  getChileIsoDateFromRecord,
+  getChileHourFromRecord,
+  getChileDateRanges,
+} from '../../utils/formatters.js';
 
 export {
   formatCLP,
@@ -16,6 +20,10 @@ export {
   formatCLPDate,
   getYearMonthFromDate,
   formatPeriodLabel,
+  shiftIsoDate,
+  getChileIsoDateFromRecord,
+  getChileHourFromRecord,
+  getChileDateRanges,
 };
 
 export const getMockOrderDate = (daysAgo = 0) => {
@@ -97,16 +105,16 @@ export const resolveInvoiceItems = (inv, inventoryList = []) => {
   const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
   const is81006 = cleanInvNum === '81006';
   const is78954 = cleanInvNum === '78954';
-  const hasShipping = Boolean(
-    inv.hasShippingCost ||
-    inv.has_shipping_cost ||
-    (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0 ||
-    is81006 ||
-    is78954
-  );
+  const rawShipField = inv.shippingCostNeto ?? inv.shipping_cost_neto;
+  const rawHasShipField = inv.hasShippingCost ?? inv.has_shipping_cost;
   const shippingNeto =
-    parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) ||
-    (is81006 ? 23277 : is78954 ? 20084 : 0);
+    rawShipField !== undefined && rawShipField !== null && rawShipField !== ''
+      ? (parseFloat(rawShipField) || 0)
+      : (rawHasShipField === false ? 0 : is81006 ? 23277 : is78954 ? 20084 : 0);
+  const hasShipping =
+    rawHasShipField !== undefined && rawHasShipField !== null
+      ? Boolean(rawHasShipField)
+      : shippingNeto > 0;
   const shippingMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'value';
 
   // 1. Si la factura ya trae un array estructurado de ítems
@@ -251,7 +259,7 @@ export const resolveInvoiceItems = (inv, inventoryList = []) => {
         ? (shippingMethod === 'value' && totalNetoMercaderia > 0
           ? Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * shippingNeto) / qty)
           : Math.round(shippingNeto / totalUnits))
-        : Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * 23277) / qty);
+        : 0;
 
       const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
       const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
@@ -479,12 +487,252 @@ export const normalizePaymentMethod = (pm) => {
   return 'Web';
 };
 
+// Determina si una factura de compra a proveedor ya fue pagada efectivamente
+export const isPurchaseInvoicePaid = (inv) => {
+  if (!inv) return false;
+  const st = String(inv.status || '').trim().toLowerCase();
+  return st === 'pagada' || st === 'pagado';
+};
+
+// Desglose consistente de factura de compra incluyendo flete (neto, IVA 19% y bruto)
+export const getInvoiceTotalWithFreight = (inv) => {
+  if (!inv) {
+    return {
+      merchNeto: 0,
+      merchIva: 0,
+      merchBruto: 0,
+      shippingNeto: 0,
+      shippingIva: 0,
+      shippingBruto: 0,
+      totalNeto: 0,
+      totalIva: 0,
+      totalBruto: 0,
+    };
+  }
+  const merchNeto = Number(inv.totalNeto ?? inv.total_neto) || 0;
+  const merchIva = Number(inv.iva) || Math.round(merchNeto * 0.19);
+  const merchBruto = Number(inv.totalBruto ?? inv.total_bruto) || (merchNeto + merchIva);
+  const rawShip = Number(inv.shippingCostNeto ?? inv.shipping_cost_neto) || 0;
+  const explicitHasShipping = inv.hasShippingCost ?? inv.has_shipping_cost;
+  const hasShipping =
+    explicitHasShipping !== undefined && explicitHasShipping !== null
+      ? Boolean(explicitHasShipping)
+      : rawShip > 0;
+  const shippingNeto = hasShipping && rawShip > 0 ? Math.round(rawShip) : 0;
+  const shippingIva = shippingNeto > 0 ? Math.round(shippingNeto * 0.19) : 0;
+  const shippingBruto = shippingNeto + shippingIva;
+
+  return {
+    merchNeto,
+    merchIva,
+    merchBruto,
+    shippingNeto,
+    shippingIva,
+    shippingBruto,
+    totalNeto: merchNeto + shippingNeto,
+    totalIva: merchIva + shippingIva,
+    totalBruto: merchBruto + shippingBruto,
+  };
+};
+
+// Convierte cualquier registro financiero (pedido, factura, gasto o aporte) en clave cronológica ordenable (YYYY-MM-DD + timestamp)
+export const getSortableTimestamp = (record) => {
+  if (!record) return 0;
+  const rawTs = record.created_at || record.createdAt;
+  if (rawTs) {
+    const parsed = new Date(rawTs);
+    if (!Number.isNaN(parsed.getTime())) {
+      const isoFromRecord = getChileIsoDateFromRecord(record);
+      const isoFromTs = getChileDateString(parsed);
+      // Si la fecha contable explícita difiere de created_at (ej. ingreso retroactivo), priorizar la fecha contable
+      if (isoFromRecord && isoFromRecord !== isoFromTs) {
+        return new Date(`${isoFromRecord}T12:00:00Z`).getTime();
+      }
+      return parsed.getTime();
+    }
+  }
+  const iso = getChileIsoDateFromRecord(record);
+  if (iso) {
+    return new Date(`${iso}T12:00:00Z`).getTime();
+  }
+  return 0;
+};
+
+// Determina si un gasto operacional tiene factura con derecho a IVA Crédito Fiscal
+export const isExpenseWithIvaCredit = (exp) => {
+  if (!exp) return false;
+  return Boolean(
+    exp.hasIvaCredit ||
+    exp.has_iva_credit ||
+    exp.documentType === 'factura' ||
+    exp.document_type === 'factura' ||
+    (exp.documentNumber && String(exp.documentNumber).toUpperCase().startsWith('FAC')) ||
+    (exp.document_number && String(exp.document_number).toUpperCase().startsWith('FAC'))
+  );
+};
+
+// Cálculo tributario oficial F29 (SII Chile) con arrastre real de remanente de IVA Crédito desde meses anteriores
+// Por defecto aplica criterio devengado (todos los pedidos no cancelados del mes) informando el desglose de pagados vs pendientes.
+export const calculateF29WithCarryover = ({
+  orders = [],
+  invoices = [],
+  expenses = [],
+  targetPeriod = 'todos',
+  includeUnpaidOrders = true,
+}) => {
+  const validOrders = (orders || []).filter((o) => {
+    if (!o || o.status === 'cancelado') return false;
+    if (!includeUnpaidOrders) return getOrderPaymentStatus(o).isPaid;
+    return true;
+  });
+
+  const computeMonthData = (monthKey) => {
+    const mOrders =
+      monthKey === 'todos'
+        ? validOrders
+        : validOrders.filter((o) => getYearMonthFromDate(o.date, o.created_at) === monthKey);
+    const mInvoices =
+      monthKey === 'todos'
+        ? (invoices || [])
+        : (invoices || []).filter((i) => getYearMonthFromDate(i.date, i.created_at) === monthKey);
+    const mExpenses =
+      monthKey === 'todos'
+        ? (expenses || [])
+        : (expenses || []).filter((e) => getYearMonthFromDate(e.date, e.created_at) === monthKey);
+
+    const totalSales = mOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const salesNeto = Math.round(totalSales / 1.19);
+    const ivaDebito = totalSales - salesNeto;
+
+    const webOrders = mOrders.filter((o) => (o.channel || 'web') === 'web');
+    const manualOrders = mOrders.filter((o) => o.channel === 'manual');
+    const webSales = webOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const manualSales = manualOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const webIvaDebito = webSales - Math.round(webSales / 1.19);
+    const manualIvaDebito = manualSales - Math.round(manualSales / 1.19);
+
+    const unpaidOrders = mOrders.filter((o) => !getOrderPaymentStatus(o).isPaid);
+    const unpaidSales = unpaidOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const unpaidIvaDebito = unpaidSales - Math.round(unpaidSales / 1.19);
+
+    const invoicesNeto = mInvoices.reduce((s, inv) => s + getInvoiceTotalWithFreight(inv).totalNeto, 0);
+    const invoicesIvaCredito = mInvoices.reduce((s, inv) => s + getInvoiceTotalWithFreight(inv).totalIva, 0);
+
+    const expenseFacturas = mExpenses.filter(isExpenseWithIvaCredit);
+    const expensesIvaCredito = expenseFacturas.reduce((s, exp) => {
+      const explicitIva = Number(exp.iva) || 0;
+      if (explicitIva > 0) return s + explicitIva;
+      const amt = Number(exp.amount) || 0;
+      return s + (amt - Math.round(amt / 1.19));
+    }, 0);
+    const expensesNetoWithFactura = expenseFacturas.reduce((s, exp) => {
+      const explicitNeto = Number(exp.neto) || 0;
+      if (explicitNeto > 0 && (Number(exp.iva) || 0) > 0) return s + explicitNeto;
+      const amt = Number(exp.amount) || 0;
+      return s + Math.round(amt / 1.19);
+    }, 0);
+
+    const totalIvaCreditoMes = invoicesIvaCredito + expensesIvaCredito;
+
+    return {
+      ordersCount: mOrders.length,
+      unpaidOrdersCount: unpaidOrders.length,
+      unpaidSales,
+      unpaidIvaDebito,
+      totalSales,
+      salesNeto,
+      ivaDebito,
+      webIvaDebito,
+      manualIvaDebito,
+      invoicesNeto,
+      invoicesIvaCredito,
+      expensesNetoWithFactura,
+      expensesIvaCredito,
+      totalIvaCreditoMes,
+      purchaseInvoicesCount: mInvoices.length,
+      expenseInvoicesCount: expenseFacturas.length,
+      totalDocsCount: mInvoices.length + expenseFacturas.length,
+    };
+  };
+
+  if (targetPeriod === 'todos') {
+    const consolidated = computeMonthData('todos');
+    const totalIvaCredito = consolidated.totalIvaCreditoMes;
+    const ivaBalance = consolidated.ivaDebito - totalIvaCredito;
+    const ivaStatus = ivaBalance <= 0 ? 'remanente' : 'a_pagar';
+    const ivaCoveredPercent =
+      consolidated.ivaDebito > 0
+        ? Math.min(100, Math.round((totalIvaCredito / consolidated.ivaDebito) * 100))
+        : totalIvaCredito > 0
+          ? 100
+          : 0;
+    return {
+      ...consolidated,
+      remanenteAnterior: 0,
+      totalIvaCredito,
+      ivaBalance,
+      ivaStatus,
+      ivaCoveredPercent,
+      filteredInvoicesCount: consolidated.purchaseInvoicesCount,
+      filteredOrdersCount: consolidated.ordersCount,
+    };
+  }
+
+  // Recolectar todos los meses anteriores al período objetivo para arrastrar remanente cronológicamente
+  const priorMonthsSet = new Set();
+  validOrders.forEach((o) => {
+    const ym = getYearMonthFromDate(o.date, o.created_at);
+    if (ym && ym < targetPeriod) priorMonthsSet.add(ym);
+  });
+  (invoices || []).forEach((i) => {
+    const ym = getYearMonthFromDate(i.date, i.created_at);
+    if (ym && ym < targetPeriod) priorMonthsSet.add(ym);
+  });
+  (expenses || []).forEach((e) => {
+    const ym = getYearMonthFromDate(e.date, e.created_at);
+    if (ym && ym < targetPeriod) priorMonthsSet.add(ym);
+  });
+
+  const sortedPriorMonths = Array.from(priorMonthsSet).sort();
+  let carriedRemanente = 0;
+
+  sortedPriorMonths.forEach((ym) => {
+    const mData = computeMonthData(ym);
+    const availableCredit = mData.totalIvaCreditoMes + carriedRemanente;
+    const balance = mData.ivaDebito - availableCredit;
+    carriedRemanente = balance < 0 ? Math.abs(balance) : 0;
+  });
+
+  const currentData = computeMonthData(targetPeriod);
+  const totalIvaCredito = currentData.totalIvaCreditoMes + carriedRemanente;
+  const ivaBalance = currentData.ivaDebito - totalIvaCredito;
+  const ivaStatus = ivaBalance <= 0 ? 'remanente' : 'a_pagar';
+  const ivaCoveredPercent =
+    currentData.ivaDebito > 0
+      ? Math.min(100, Math.round((totalIvaCredito / currentData.ivaDebito) * 100))
+      : totalIvaCredito > 0
+        ? 100
+        : 0;
+
+  return {
+    ...currentData,
+    remanenteAnterior: carriedRemanente,
+    totalIvaCredito,
+    ivaBalance,
+    ivaStatus,
+    ivaCoveredPercent,
+    filteredInvoicesCount: currentData.purchaseInvoicesCount,
+    filteredOrdersCount: currentData.ordersCount,
+  };
+};
+
 // Estado detallado y consistente del pago de una orden
 export const getOrderPaymentStatus = (order) => {
   if (!order) {
     return {
       norm: 'Web',
       isPaid: false,
+      isRejected: false,
       shouldCollect: true,
       statusText: '⚠️ Cobrar en entrega',
       badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/90',
@@ -493,18 +741,20 @@ export const getOrderPaymentStatus = (order) => {
     };
   }
 
-  const norm = normalizePaymentMethod(order.paymentMethod);
-  const pmLower = String(order.paymentMethod || '').toLowerCase();
-  const psLower = String(order.paymentStatus || '').toLowerCase();
-  const isPaidStatus = psLower === 'pagado';
-  const isExplicitlyPending = psLower === 'pendiente';
-  const isExplicitlyPaidOnline = order.isPaidOnline === true && !isExplicitlyPending;
+  const norm = normalizePaymentMethod(order.paymentMethod || order.payment_method);
+  const pmLower = String(order.paymentMethod || order.payment_method || '').toLowerCase();
+  const psLower = String(order.paymentStatus ?? order.payment_status ?? '').trim().toLowerCase();
 
-  const isWebCard =
-    ((norm === 'Tarjeta' && !pmLower.includes('contra entrega') && !pmLower.includes('pos')) || norm === 'Web') &&
-    !isExplicitlyPending;
+  const isPaidStatus = psLower === 'pagado' || psLower === 'approved' || psLower === 'processed';
+  const isRejectedStatus = ['rechazado', 'rejected', 'failed', 'cancelado', 'canceled', 'expired'].includes(psLower);
+  const isExplicitlyUnpaid = psLower === 'pendiente' || isRejectedStatus;
+  const isPosOrContraEntrega =
+    pmLower.includes('contra entrega') || pmLower.includes('pos') || pmLower.includes('al recibir');
+  const isExplicitlyPaidOnline = order.isPaidOnline === true && !isExplicitlyUnpaid;
 
-  const isPaid = isPaidStatus || isExplicitlyPaidOnline || isWebCard;
+  // Solo considerar pagado con confirmación explícita (evita falsos positivos en pagos rechazados, expirados o POS)
+  const isPaid = !isRejectedStatus && (isPaidStatus || isExplicitlyPaidOnline);
+  const isWebCard = norm === 'Web' || (norm === 'Tarjeta' && !isPosOrContraEntrega);
   const shouldCollect = !isPaid;
 
   let statusText = '';
@@ -512,7 +762,12 @@ export const getOrderPaymentStatus = (order) => {
   let actionBadgeText = 'Cobrar';
   let actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
 
-  if (norm === 'Transferencia') {
+  if (isRejectedStatus) {
+    statusText = '✕ Pago rechazado';
+    badgeColor = 'bg-rose-50 text-rose-700 border-rose-200/90';
+    actionBadgeText = 'Rechazado';
+    actionBadgeColor = 'text-rose-700 bg-rose-50 border-rose-200';
+  } else if (norm === 'Transferencia') {
     if (isPaid) {
       statusText = '✓ Pagado Transferencia';
       badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
@@ -565,6 +820,7 @@ export const getOrderPaymentStatus = (order) => {
   return {
     norm,
     isPaid,
+    isRejected: isRejectedStatus,
     shouldCollect,
     statusText,
     badgeColor,

@@ -1,31 +1,46 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { CreditCard, X } from 'lucide-react';
 import { formatCLP } from '../adminUtils';
 
 /**
  * Modal de configuración de comisiones de Tarjeta & Botón de Pago (Mercado Pago)
+ * Usa estado borrador local para que "Cancelar" o "X" descarten cualquier cambio sin afectar la app ni Supabase.
  */
 export default function MercadoPagoConfigModal({
   isOpen,
   mercadoPagoConfig,
-  setMercadoPagoConfig,
+  onSave,
   onClose,
-  showToast,
 }) {
+  const [draftConfig, setDraftConfig] = useState(mercadoPagoConfig);
+
+  useEffect(() => {
+    if (isOpen) {
+      setDraftConfig(mercadoPagoConfig);
+    }
+  }, [isOpen, mercadoPagoConfig]);
+
   if (!isOpen) return null;
 
-  const cRate = Number(mercadoPagoConfig.cardRatePercent ?? 2.55);
-  const wRate = Number(mercadoPagoConfig.webRatePercent ?? 3.19);
-  const fixed = Number(mercadoPagoConfig.fixedFeeCLP || 0);
-  const mult = mercadoPagoConfig.addIvaToCommission
-    ? 1 + Number(mercadoPagoConfig.ivaPercent || 19) / 100
+  const activeCfg = draftConfig || mercadoPagoConfig || {};
+  const cRate = Number(activeCfg.cardRatePercent ?? 2.55);
+  const wRate = Number(activeCfg.webRatePercent ?? activeCfg.commissionRatePercent ?? 3.19);
+  const fixed = Number(activeCfg.fixedFeeCLP || 0);
+  const mult = activeCfg.addIvaToCommission
+    ? 1 + Number(activeCfg.ivaPercent || 19) / 100
     : 1;
   const sampleCardFee = Math.round((10000 * (cRate / 100) + fixed) * mult);
   const sampleWebFee = Math.round((10000 * (wRate / 100) + fixed) * mult);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+      >
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/80">
           <div className="flex items-center gap-3">
@@ -54,10 +69,8 @@ export default function MercadoPagoConfigModal({
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            onSave?.(activeCfg);
             onClose();
-            showToast(
-              `Tasas actualizadas: Tarjeta ${mercadoPagoConfig.cardRatePercent ?? 2.55}% • Botón de Pago ${mercadoPagoConfig.webRatePercent ?? 3.19}%.`
-            );
           }}
           className="p-6 space-y-4 text-xs"
         >
@@ -72,10 +85,10 @@ export default function MercadoPagoConfigModal({
                   step="0.01"
                   min="0"
                   max="15"
-                  value={mercadoPagoConfig.cardRatePercent ?? 2.55}
+                  value={activeCfg.cardRatePercent ?? 2.55}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value) || 0;
-                    setMercadoPagoConfig((prev) => ({
+                    setDraftConfig((prev) => ({
                       ...prev,
                       cardRatePercent: val,
                     }));
@@ -99,10 +112,10 @@ export default function MercadoPagoConfigModal({
                   step="0.01"
                   min="0"
                   max="15"
-                  value={mercadoPagoConfig.webRatePercent ?? mercadoPagoConfig.commissionRatePercent ?? 3.19}
+                  value={activeCfg.webRatePercent ?? activeCfg.commissionRatePercent ?? 3.19}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value) || 0;
-                    setMercadoPagoConfig((prev) => ({
+                    setDraftConfig((prev) => ({
                       ...prev,
                       webRatePercent: val,
                       commissionRatePercent: val,
@@ -124,9 +137,9 @@ export default function MercadoPagoConfigModal({
                 Modo de Cálculo (IVA)
               </label>
               <select
-                value={mercadoPagoConfig.addIvaToCommission ? 'add_iva' : 'direct'}
+                value={activeCfg.addIvaToCommission ? 'add_iva' : 'direct'}
                 onChange={(e) =>
-                  setMercadoPagoConfig((prev) => ({
+                  setDraftConfig((prev) => ({
                     ...prev,
                     addIvaToCommission: e.target.value === 'add_iva',
                   }))
@@ -148,9 +161,9 @@ export default function MercadoPagoConfigModal({
                   type="number"
                   step="10"
                   min="0"
-                  value={mercadoPagoConfig.fixedFeeCLP ?? 0}
+                  value={activeCfg.fixedFeeCLP ?? 0}
                   onChange={(e) =>
-                    setMercadoPagoConfig((prev) => ({
+                    setDraftConfig((prev) => ({
                       ...prev,
                       fixedFeeCLP: parseInt(e.target.value, 10) || 0,
                     }))

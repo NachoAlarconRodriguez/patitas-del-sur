@@ -8,6 +8,15 @@ import {
   Flame,
 } from 'lucide-react';
 
+export const COMPANY_INFO = {
+  legalName: 'Comercial Kira SpA',
+  tradeName: 'Patitas del Sur',
+  displayName: 'Comercial Kira SpA (Patitas del Sur)',
+  rut: '78.493.053-K',
+  giro: 'Venta al por menor de alimentos y accesorios para mascotas',
+  address: 'Puerto Varas, Región de Los Lagos, Chile',
+};
+
 export const ALLY_TYPE_OPTIONS = [
   { value: 'peluqueria', label: '✂️ Peluquería & Spa' },
   { value: 'veterinaria', label: '🏥 Clínica Veterinaria' },

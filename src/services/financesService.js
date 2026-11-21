@@ -26,15 +26,19 @@ export async function fetchPurchaseInvoicesFromSupabase() {
       }
       const is81006 = cleanNum === '81006';
       const is78954 = cleanNum === '78954';
-      const defaultHasShipping = is81006 || is78954 ? true : Boolean(inv.has_shipping_cost);
-      const defaultShippingNeto = is81006 && !inv.shipping_cost_neto
-        ? 23277
-        : is78954 && !inv.shipping_cost_neto
-        ? 20084
-        : (parseFloat(inv.shipping_cost_neto) || 0);
-      const defaultShippingMethod = (is81006 || is78954) && !inv.shipping_distribution_method
-        ? 'value'
-        : (inv.shipping_distribution_method || 'value');
+      const hasSavedShippingValue = inv.shipping_cost_neto !== null && inv.shipping_cost_neto !== undefined;
+      const hasSavedShippingFlag = inv.has_shipping_cost !== null && inv.has_shipping_cost !== undefined;
+      const defaultShippingNeto = hasSavedShippingValue
+        ? (parseFloat(inv.shipping_cost_neto) || 0)
+        : is81006
+          ? 23277
+          : is78954
+            ? 20084
+            : 0;
+      const defaultHasShipping = hasSavedShippingFlag
+        ? Boolean(inv.has_shipping_cost)
+        : defaultShippingNeto > 0;
+      const defaultShippingMethod = inv.shipping_distribution_method || 'value';
 
       return {
         ...inv,
@@ -217,6 +221,24 @@ export async function updatePurchaseInvoiceStatus(identifier, status) {
   }
 }
 
+export async function deletePurchaseInvoiceFromSupabase(identifier) {
+  try {
+    if (!identifier) return { success: false, error: new Error('Missing invoice identifier') };
+    let query = supabase.from('purchase_invoices').delete();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}/i.test(String(identifier));
+    if (isUuid) {
+      query = query.eq('id', identifier);
+    } else {
+      query = query.eq('invoice_number', identifier);
+    }
+    const { error } = await query;
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    console.error('Error deleting purchase invoice from Supabase:', err);
+    return { success: false, error: err };
+  }
+}
 
 // 2. Gastos Operacionales (Combustible, Fijo, Packaging, etc.)
 export async function fetchExpensesFromSupabase() {
@@ -271,6 +293,40 @@ export async function createExpenseInSupabase(expenseData) {
     return { success: true, data };
   } catch (err) {
     console.error('Error creating expense in Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+
+export async function updateExpenseInSupabase(expenseId, expenseData) {
+  try {
+    const payload = {
+      category: expenseData.category || 'combustible',
+      category_label: expenseData.categoryLabel || expenseData.category_label || '',
+      icon: expenseData.icon || '💸',
+      description: expenseData.description,
+      provider: expenseData.provider || '',
+      document_type: expenseData.documentType || expenseData.document_type || 'boleta',
+      document_number: expenseData.documentNumber || expenseData.document_number || '',
+      date: expenseData.date || new Date().toISOString().split('T')[0],
+      amount: parseFloat(expenseData.amount) || 0,
+      neto: parseFloat(expenseData.neto) || 0,
+      iva: parseFloat(expenseData.iva) || 0,
+      has_iva_credit: expenseData.hasIvaCredit ?? expenseData.has_iva_credit ?? false,
+      payment_method: expenseData.paymentMethod || expenseData.payment_method || 'Efectivo',
+      is_recurring: expenseData.isRecurring ?? expenseData.is_recurring ?? false,
+    };
+
+    const { data, error } = await supabase
+      .from('expenses')
+      .update(payload)
+      .eq('id', expenseId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.error('Error updating expense in Supabase:', err);
     return { success: false, error: err };
   }
 }
@@ -396,28 +452,63 @@ export async function savePartnerInvestmentsToSupabase(investments) {
     if (error) throw error;
 
     // Intentar también en tabla partner_investments si está disponible
-    try {
-      const rows = investments.map((inv) => ({
-        id: inv.id,
-        partner_name: inv.partnerName || inv.partner_name,
-        partner_rut: inv.partnerRut || inv.partner_rut || '',
-        amount: parseFloat(inv.amount) || 0,
-        date: inv.date,
-        investment_type: inv.investmentType || inv.investment_type || 'capital_inicial',
-        investment_type_label: inv.investmentTypeLabel || inv.investment_type_label || '',
-        payment_method: inv.paymentMethod || inv.payment_method || 'Transferencia Bancaria',
-        destination_account: inv.destinationAccount || inv.destination_account || '',
-        reference_number: inv.referenceNumber || inv.reference_number || '',
-        notes: inv.notes || '',
-      }));
-      await supabase.from('partner_investments').upsert(rows);
-    } catch {
-      // Ignorar si la tabla física aún no ha corrido la migración
+    if (Array.isArray(investments) && investments.length > 0) {
+      try {
+        const rows = investments.map((inv) => ({
+          id: inv.id,
+          partner_name: inv.partnerName || inv.partner_name,
+          partner_rut: inv.partnerRut || inv.partner_rut || '',
+          amount: parseFloat(inv.amount) || 0,
+          date: inv.date,
+          investment_type: inv.investmentType || inv.investment_type || 'capital_inicial',
+          investment_type_label: inv.investmentTypeLabel || inv.investment_type_label || '',
+          payment_method: inv.paymentMethod || inv.payment_method || 'Transferencia Bancaria',
+          destination_account: inv.destinationAccount || inv.destination_account || '',
+          reference_number: inv.referenceNumber || inv.reference_number || '',
+          notes: inv.notes || '',
+        }));
+        await supabase.from('partner_investments').upsert(rows);
+      } catch {
+        // Ignorar si la tabla física aún no ha corrido la migración
+      }
     }
 
     return { success: true, data };
   } catch (err) {
     console.error('Error saving partner investments to Supabase:', err);
+    return { success: false, error: err };
+  }
+}
+
+export async function deletePartnerInvestmentFromSupabase(investmentId, remainingInvestments = []) {
+  try {
+    // 1. Eliminar fila en tabla física partner_investments (evita que resucite al recargar)
+    try {
+      const { error: delError } = await supabase
+        .from('partner_investments')
+        .delete()
+        .eq('id', investmentId);
+      if (delError) {
+        console.warn('No se pudo eliminar fila en partner_investments:', delError.message);
+      }
+    } catch {
+      // Ignorar si la tabla física aún no existe
+    }
+
+    // 2. Actualizar arreglo consolidado en store_settings
+    const { data, error } = await supabase
+      .from('store_settings')
+      .upsert({
+        key: 'partner_investments',
+        value: remainingInvestments,
+        updated_at: new Date().toISOString(),
+      })
+      .select();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (err) {
+    console.error('Error deleting partner investment from Supabase:', err);
     return { success: false, error: err };
   }
 }

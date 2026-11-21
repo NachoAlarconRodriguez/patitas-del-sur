@@ -1,6 +1,7 @@
 import React from 'react';
-import { Receipt, Edit2, Printer, X, Building2, Truck } from 'lucide-react';
-import { formatCLP, formatCLPDate, resolveInvoiceItems } from '../adminUtils';
+import { Receipt, Edit2, Printer, Trash2, X, Building2, Truck } from 'lucide-react';
+import { formatCLP, formatCLPDate, resolveInvoiceItems, getInvoiceTotalWithFreight, isPurchaseInvoicePaid } from '../adminUtils';
+import { COMPANY_INFO } from '../adminConstants';
 
 /**
  * Modal de Detalle de Factura Electrónica (DTE) con desglose de productos, flete e IVA
@@ -10,26 +11,22 @@ export default function InvoiceDetailModal({
   inventory,
   onOpenEditInvoice,
   onToggleInvoiceStatus,
+  onDeleteInvoice,
   onClose,
 }) {
   if (!invoice) return null;
 
   const invItems = resolveInvoiceItems(invoice, inventory);
   const invNumber = invoice.invoiceNumber || invoice.id;
-  const isPaid =
-    (invoice.status || '').toLowerCase() === 'pagada' ||
-    (invoice.status || '').toLowerCase() === 'pagado';
+  const isPaid = isPurchaseInvoicePaid(invoice);
   const isOverdue = (invoice.status || '').toLowerCase() === 'vencida';
   const totalUnits = invItems.reduce((acc, it) => acc + (it.qty || 1), 0);
 
-  const cleanModalNum = String(invNumber).trim();
-  const is81006 = cleanModalNum === '81006';
-  const is78954 = cleanModalNum === '78954';
-  const sNeto =
-    parseFloat(invoice.shippingCostNeto || invoice.shipping_cost_neto) ||
-    (is81006 ? 23277 : is78954 ? 20084 : 0);
-  const hasShipping = Boolean(invoice.hasShippingCost || invoice.has_shipping_cost || sNeto > 0);
-  const sConIva = Math.round(sNeto * 1.19);
+  const totals = getInvoiceTotalWithFreight(invoice);
+  const sNeto = totals.shippingNeto;
+  const sIva = totals.shippingIva;
+  const sConIva = totals.shippingBruto;
+  const hasShipping = sNeto > 0;
   const sMethod = invoice.shippingDistributionMethod || invoice.shipping_distribution_method || 'value';
   const sInvNum = invoice.shippingInvoiceNumber || invoice.shipping_invoice_number;
   const sProv = invoice.shippingProvider || invoice.shipping_provider;
@@ -72,6 +69,17 @@ export default function InvoiceDetailModal({
               <Edit2 className="w-3.5 h-3.5 text-amber-600" />
               <span>Editar</span>
             </button>
+            {onDeleteInvoice && (
+              <button
+                type="button"
+                onClick={() => onDeleteInvoice(invoice)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200/90 text-rose-700 hover:bg-rose-100 text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                title="Eliminar factura y revertir stock"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span className="hidden sm:inline">Eliminar</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.print()}
@@ -108,7 +116,7 @@ export default function InvoiceDetailModal({
                 <p>
                   <span className="text-slate-400 font-normal">R.U.T.:</span>{' '}
                   <strong className="font-mono font-bold text-slate-900">
-                    {invoice.rut || '78.920.800-K'}
+                    {invoice.rut || 'RUT no registrado'}
                   </strong>
                 </p>
                 <p>
@@ -122,7 +130,7 @@ export default function InvoiceDetailModal({
 
             <div className="border-2 border-red-600 rounded-2xl p-4 text-center bg-red-50/20 text-red-700 min-w-[210px] shrink-0 shadow-2xs self-center sm:self-start">
               <div className="font-mono font-bold text-xs text-red-800 tracking-wide">
-                R.U.T.: {invoice.rut || '78.920.800-K'}
+                R.U.T.: {invoice.rut || 'Sin RUT'}
               </div>
               <div className="font-black text-xs uppercase tracking-wider text-red-600 my-1 py-1 border-y border-red-600/30">
                 FACTURA ELECTRÓNICA
@@ -140,16 +148,16 @@ export default function InvoiceDetailModal({
               <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
                 Receptor / Adquiriente:
               </span>
-              <p className="font-black text-slate-900 text-sm">Patitas del Sur SpA</p>
+              <p className="font-black text-slate-900 text-sm">{COMPANY_INFO.displayName}</p>
               <p className="text-slate-600 text-[11px]">
                 <span className="text-slate-400 font-normal">R.U.T.:</span>{' '}
-                <span className="font-mono font-bold text-slate-800">77.654.321-8</span>
+                <span className="font-mono font-bold text-slate-800">{COMPANY_INFO.rut}</span>
               </p>
               <p className="text-slate-600 text-[11px]">
-                <span className="text-slate-400 font-normal">Giro:</span> Venta al por menor de alimentos y accesorios para mascotas
+                <span className="text-slate-400 font-normal">Giro:</span> {COMPANY_INFO.giro}
               </p>
               <p className="text-slate-600 text-[11px]">
-                <span className="text-slate-400 font-normal">Dirección:</span> Puerto Varas, Chile
+                <span className="text-slate-400 font-normal">Dirección:</span> {COMPANY_INFO.address}
               </p>
             </div>
 
@@ -180,7 +188,7 @@ export default function InvoiceDetailModal({
                   <span className="text-slate-400 text-[10px] block">Estado Factura:</span>
                   <button
                     type="button"
-                    onClick={() => onToggleInvoiceStatus(invNumber)}
+                    onClick={() => onToggleInvoiceStatus(invoice.id || invNumber)}
                     className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border mt-0.5 inline-flex items-center gap-1 cursor-pointer transition-all hover:scale-105 ${
                       isPaid
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -191,7 +199,7 @@ export default function InvoiceDetailModal({
                     title="Clic para cambiar estado Pagada / Pendiente"
                   >
                     <span>●</span>
-                    <span>{invoice.status || 'pendiente'}</span>
+                    <span>{isPaid ? 'pagada' : (invoice.status || 'pendiente')}</span>
                   </button>
                 </div>
               </div>
@@ -199,7 +207,7 @@ export default function InvoiceDetailModal({
           </div>
 
           {/* Bloque Flete */}
-          {hasShipping && sNeto > 0 && (
+          {hasShipping && (
             <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-white border border-amber-200 text-[#D97706] flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
@@ -218,7 +226,8 @@ export default function InvoiceDetailModal({
                   </div>
                   <p className="text-[11px] text-slate-600 mt-0.5">
                     Transportista: <strong className="text-slate-800">{sProv || 'Despacho Proveedor'}</strong> • Flete neto:{' '}
-                    <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> • Flete c/IVA (19%):{' '}
+                    <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> • IVA Flete (19%):{' '}
+                    <strong className="text-emerald-700 font-mono">+{formatCLP(sIva)}</strong> • Flete c/IVA:{' '}
                     <strong className="text-[#D97706] font-mono">+{formatCLP(sConIva)}</strong>
                   </p>
                 </div>
@@ -327,20 +336,20 @@ export default function InvoiceDetailModal({
               <div className="flex items-center justify-between text-xs text-slate-600">
                 <span>Monto Neto Mercadería:</span>
                 <span className="font-mono font-bold text-slate-900">
-                  {formatCLP(invoice.totalNeto || invoice.neto)}
+                  {formatCLP(totals.merchNeto)}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
-                <span>IVA Crédito Fiscal (19%):</span>
-                <span className="font-mono font-bold">+{formatCLP(invoice.iva)}</span>
+                <span>IVA Crédito Mercadería (19%):</span>
+                <span className="font-mono font-bold">+{formatCLP(totals.merchIva)}</span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
                 <span className="font-black text-slate-900 text-sm">TOTAL FACTURA PROVEEDOR:</span>
                 <span className="font-black font-mono text-base sm:text-lg text-slate-900">
-                  {formatCLP(invoice.totalBruto || invoice.total)}
+                  {formatCLP(totals.merchBruto)}
                 </span>
               </div>
-              {hasShipping && sNeto > 0 && (
+              {hasShipping && (
                 <>
                   <div className="pt-1.5 border-t border-dashed border-amber-200/80 flex items-center justify-between text-xs text-[#D97706] font-medium">
                     <span className="flex items-center gap-1">
@@ -351,10 +360,14 @@ export default function InvoiceDetailModal({
                       +{formatCLP(sNeto)} / +{formatCLP(sConIva)}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-[11px] text-amber-900">
+                  <div className="flex items-center justify-between text-[11px] text-emerald-700 font-semibold">
+                    <span>IVA Crédito Total (Merc. + Flete):</span>
+                    <span className="font-mono font-bold">+{formatCLP(totals.totalIva)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-amber-900 pt-1 border-t border-amber-200/60">
                     <span className="font-bold">Total Desembolso (c/ Flete + IVA):</span>
                     <span className="font-mono font-black text-slate-900 text-xs">
-                      {formatCLP((invoice.totalBruto || invoice.total) + sConIva)}
+                      {formatCLP(totals.totalBruto)}
                     </span>
                   </div>
                 </>

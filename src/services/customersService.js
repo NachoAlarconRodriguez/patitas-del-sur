@@ -282,6 +282,34 @@ export async function updateCustomerPoints(customerId, pointsDelta) {
   }
 }
 
+export async function updateCustomerPointsAndSpent(customerId, pointsDelta = 0, spentDelta = 0) {
+  if (!customerId) return { success: false, error: 'Missing customerId' };
+  try {
+    const { data: customer, error: fetchErr } = await supabase
+      .from('customers')
+      .select('points, total_spent')
+      .eq('id', customerId)
+      .single();
+
+    if (fetchErr) throw fetchErr;
+
+    const newPoints = Math.max(0, (Number(customer?.points) || 0) + (Number(pointsDelta) || 0));
+    const newTotalSpent = Math.max(0, (Number(customer?.total_spent) || 0) + (Number(spentDelta) || 0));
+    const { data, error } = await supabase
+      .from('customers')
+      .update({ points: newPoints, total_spent: newTotalSpent })
+      .eq('id', customerId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return { success: true, points: newPoints, total_spent: newTotalSpent, data };
+  } catch (err) {
+    console.error('Error updating customer points and total_spent:', err);
+    return { success: false, error: err };
+  }
+}
+
 // Mascotas del cliente
 export async function getCustomerPets(customerId) {
   if (!customerId) return [];
@@ -432,7 +460,7 @@ export async function fetchAllCustomersForAdmin() {
         .order('created_at', { ascending: false }),
       supabase
         .from('orders')
-        .select('id, customer_id, customer_name, customer_phone, customer_email, total, status'),
+        .select('id, customer_id, customer_name, customer_phone, customer_email, total, status, payment_status'),
     ]);
 
     if (customersRes.error) throw customersRes.error;
@@ -459,11 +487,13 @@ export async function fetchAllCustomersForAdmin() {
         return false;
       });
 
-      const ordersTotal = custOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
-      const totalSpent = Math.max(Number(c.total_spent || 0), ordersTotal);
-      const ordersCount = Math.max(Number(c.orders_count || 0), custOrders.length);
-      const dbPoints = Number(c.points || 0);
-      const points = dbPoints > 0 ? dbPoints : Math.floor(totalSpent / 1000);
+      const paidCustOrders = custOrders.filter(
+        (o) => String(o.payment_status || '').trim().toLowerCase() === 'pagado'
+      );
+      const paidOrdersTotal = paidCustOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+      const totalSpent = custOrders.length > 0 ? paidOrdersTotal : Number(c.total_spent || 0);
+      const ordersCount = custOrders.length > 0 ? custOrders.length : Number(c.orders_count || 0);
+      const points = c.points !== null && c.points !== undefined ? Number(c.points) || 0 : Math.floor(totalSpent / 1000);
 
       return {
         ...c,

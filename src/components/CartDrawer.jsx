@@ -33,9 +33,10 @@ import {
   createMercadoPagoOrder,
   getMercadoPagoOrderById,
   updateOrderMercadoPagoData,
+  adjustStockForItemsInSupabase,
 } from '../services/ordersService';
 import {
-  updateCustomerPoints,
+  updateCustomerPointsAndSpent,
   getCustomerByPhone,
   upsertCustomerProfile,
   saveCustomerReplenishmentData,
@@ -670,21 +671,45 @@ export default function CartDrawer({
             window.dispatchEvent(new Event('patitas_open_cart'));
 
             if (savedPendingOrder.id) {
+              const { data: currentOrderRow } = await supabase
+                .from('orders')
+                .select('id, status, payment_status, customer_id, points_earned, total')
+                .eq('id', savedPendingOrder.id)
+                .maybeSingle();
+
+              const alreadyPaidInDb = String(currentOrderRow?.payment_status || '').toLowerCase() === 'pagado';
+              const wasCancelledInDb = currentOrderRow?.status === 'cancelado';
+
               await updateOrderMercadoPagoData(savedPendingOrder.id, {
                 mpOrderId: savedPendingOrder.mpOrderId,
                 mpPaymentId: livePaymentId || undefined,
                 paymentStatus: 'pagado',
               });
-            }
-            if (savedPendingOrder.customerId && (savedPendingOrder.pointsEarned || 0) > 0 && !savedPendingOrder.pointsAlreadyAwarded) {
-              try {
-                await updateCustomerPoints(savedPendingOrder.customerId, savedPendingOrder.pointsEarned);
-              } catch (ptsErr) {
-                console.warn('Error acreditando puntos tras verificación de Mercado Pago:', ptsErr);
+
+              if (wasCancelledInDb) {
+                await supabase
+                  .from('orders')
+                  .update({ status: 'en_preparacion' })
+                  .eq('id', savedPendingOrder.id);
+                if (Array.isArray(savedPendingOrder.items) && savedPendingOrder.items.length > 0) {
+                  await adjustStockForItemsInSupabase(savedPendingOrder.items, -1);
+                }
+              }
+
+              const targetCustId = currentOrderRow?.customer_id || savedPendingOrder.customerId;
+              const ptsToCredit = Number(currentOrderRow?.points_earned ?? savedPendingOrder.pointsEarned ?? 0) || 0;
+              const totalToCredit = Number(currentOrderRow?.total ?? savedPendingOrder.total ?? 0) || 0;
+              if (!alreadyPaidInDb && targetCustId && (ptsToCredit > 0 || totalToCredit > 0)) {
+                try {
+                  await updateCustomerPointsAndSpent(targetCustId, ptsToCredit, totalToCredit);
+                } catch (ptsErr) {
+                  console.warn('Error acreditando puntos tras verificación de Mercado Pago:', ptsErr);
+                }
               }
             }
             window.dispatchEvent(new Event('patitas_orders_updated'));
             window.dispatchEvent(new Event('patitas_products_updated'));
+            window.dispatchEvent(new Event('patitas_customers_updated'));
           }
         });
       }
@@ -782,23 +807,46 @@ export default function CartDrawer({
 
     const syncOrderInBackground = async () => {
       if (targetOrderId) {
+        const { data: currentOrderRow } = await supabase
+          .from('orders')
+          .select('id, status, payment_status, customer_id, points_earned, total')
+          .eq('id', targetOrderId)
+          .maybeSingle();
+
+        const alreadyPaidInDb = String(currentOrderRow?.payment_status || '').toLowerCase() === 'pagado';
+        const wasCancelledInDb = currentOrderRow?.status === 'cancelado';
+
         await updateOrderMercadoPagoData(targetOrderId, {
           mpOrderId: cleanMpOrderId || undefined,
           mpPaymentId: cleanPaymentId || undefined,
-          paymentStatus: finalPaymentStatus,
+          paymentStatus: alreadyPaidInDb ? 'pagado' : finalPaymentStatus,
         });
-      }
 
-      if (isApproved && savedPendingOrder?.customerId && (savedPendingOrder?.pointsEarned || 0) > 0 && !savedPendingOrder?.pointsAlreadyAwarded) {
-        try {
-          await updateCustomerPoints(savedPendingOrder.customerId, savedPendingOrder.pointsEarned);
-        } catch (ptsErr) {
-          console.warn('Error acreditando puntos tras retorno de Mercado Pago:', ptsErr);
+        if (isApproved && wasCancelledInDb) {
+          await supabase
+            .from('orders')
+            .update({ status: 'en_preparacion' })
+            .eq('id', targetOrderId);
+          if (Array.isArray(savedPendingOrder?.items) && savedPendingOrder.items.length > 0) {
+            await adjustStockForItemsInSupabase(savedPendingOrder.items, -1);
+          }
+        }
+
+        const targetCustId = currentOrderRow?.customer_id || savedPendingOrder?.customerId;
+        const ptsToCredit = Number(currentOrderRow?.points_earned ?? savedPendingOrder?.pointsEarned ?? 0) || 0;
+        const totalToCredit = Number(currentOrderRow?.total ?? savedPendingOrder?.total ?? 0) || 0;
+        if (isApproved && !alreadyPaidInDb && targetCustId && (ptsToCredit > 0 || totalToCredit > 0)) {
+          try {
+            await updateCustomerPointsAndSpent(targetCustId, ptsToCredit, totalToCredit);
+          } catch (ptsErr) {
+            console.warn('Error acreditando puntos tras retorno de Mercado Pago:', ptsErr);
+          }
         }
       }
 
       window.dispatchEvent(new Event('patitas_orders_updated'));
       window.dispatchEvent(new Event('patitas_products_updated'));
+      window.dispatchEvent(new Event('patitas_customers_updated'));
     };
 
     syncOrderInBackground();
@@ -1625,32 +1673,52 @@ export default function CartDrawer({
 
       // 1. Guardar o actualizar orden en Supabase
       if (existingPendingOrder?.id) {
-        const { error: updErr } = await supabase
+        const { data: existingOrderRow } = await supabase
           .from('orders')
-          .update({
-            customer_name: orderPayload.customerName,
-            customer_email: orderPayload.customerEmail,
-            customer_phone: orderPayload.customerPhone,
-            payment_method: orderPayload.paymentMethod,
-            payment_status: 'pendiente',
-            mercadopago_preference_id: orderPayload.mercadopagoPreferenceId || null,
-            subtotal: orderPayload.subtotal,
-            shipping_cost: orderPayload.shippingCost,
-            discount: orderPayload.discount,
-            total: orderPayload.total,
-            points_earned: orderPayload.pointsEarned,
-            delivery_day_text: orderPayload.deliveryDayText,
-            delivery_date: orderPayload.deliveryDate,
-            delivery_slot: orderPayload.deliverySlot,
-            address: orderPayload.address,
-            city: orderPayload.city,
-            delivery_zone: orderPayload.deliveryZone,
-            notes: orderPayload.notes,
-          })
-          .eq('id', orderId);
+          .select('id, status')
+          .eq('id', orderId)
+          .maybeSingle();
 
-        if (updErr) {
-          throw new Error(updErr.message || 'Error actualizando el pedido en base de datos');
+        if (!existingOrderRow) {
+          const result = await createOrderInSupabase(orderPayload, cartItems);
+          if (!result.success) {
+            throw new Error(result.error?.message || 'Error registrando el pedido en base de datos');
+          }
+        } else {
+          const wasCancelled = existingOrderRow.status === 'cancelado';
+          const { error: updErr } = await supabase
+            .from('orders')
+            .update({
+              customer_name: orderPayload.customerName,
+              customer_email: orderPayload.customerEmail,
+              customer_phone: orderPayload.customerPhone,
+              payment_method: orderPayload.paymentMethod,
+              payment_status: 'pendiente',
+              ...(wasCancelled ? { status: 'en_preparacion' } : {}),
+              mercadopago_preference_id: orderPayload.mercadopagoPreferenceId || null,
+              subtotal: orderPayload.subtotal,
+              shipping_cost: orderPayload.shippingCost,
+              discount: orderPayload.discount,
+              total: orderPayload.total,
+              points_earned: orderPayload.pointsEarned,
+              delivery_day_text: orderPayload.deliveryDayText,
+              delivery_date: orderPayload.deliveryDate,
+              delivery_slot: orderPayload.deliverySlot,
+              address: orderPayload.address,
+              city: orderPayload.city,
+              delivery_zone: orderPayload.deliveryZone,
+              notes: orderPayload.notes,
+            })
+            .eq('id', orderId);
+
+          if (updErr) {
+            throw new Error(updErr.message || 'Error actualizando el pedido en base de datos');
+          }
+
+          // Si el intento anterior fue cancelado (y ya había devuelto stock), reservar stock de nuevo para este reintento
+          if (wasCancelled && Array.isArray(cartItems) && cartItems.length > 0) {
+            await adjustStockForItemsInSupabase(cartItems, -1);
+          }
         }
       } else {
         const result = await createOrderInSupabase(orderPayload, cartItems);

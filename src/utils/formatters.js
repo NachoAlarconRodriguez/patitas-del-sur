@@ -192,3 +192,170 @@ export function formatPeriodLabel(ym) {
   return `${name} ${year}`;
 }
 
+const SPANISH_MONTH_INDEX = {
+  ene: 1, jan: 1,
+  feb: 2,
+  mar: 3,
+  abr: 4, apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  ago: 8, aug: 8,
+  sep: 9, set: 9,
+  oct: 10,
+  nov: 11,
+  dic: 12, dec: 12,
+};
+
+/**
+ * Resta N días calendario a una fecha ISO YYYY-MM-DD de forma determinista (sin desfase TZ).
+ */
+export function shiftIsoDate(isoDate, deltaDays) {
+  const [y, m, d] = String(isoDate).split('-').map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(Date.UTC(y, m - 1, d + deltaDays));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getUTCDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+/**
+ * Extrae la fecha YYYY-MM-DD en zona horaria de Chile (America/Santiago) desde un registro
+ * (pedido, factura, gasto, cliente o inversión), priorizando created_at/createdAt sobre strings formateados.
+ */
+export function getChileIsoDateFromRecord(record, now = new Date()) {
+  if (!record) return null;
+
+  const tsRaw = record.created_at || record.createdAt;
+  if (tsRaw) {
+    const tsStr = String(tsRaw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(tsStr)) {
+      return tsStr;
+    }
+    const parsed = new Date(tsStr);
+    if (!isNaN(parsed.getTime())) {
+      return getChileDateString(parsed);
+    }
+  }
+
+  const dateRaw = String(record.date || '').trim();
+  if (!dateRaw) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(dateRaw)) {
+    if (dateRaw.includes('T')) {
+      const parsed = new Date(dateRaw);
+      if (!isNaN(parsed.getTime())) return getChileDateString(parsed);
+    }
+    return dateRaw.slice(0, 10);
+  }
+
+  const lower = dateRaw.toLowerCase().replace(/\./g, '');
+  if (lower === 'hoy') return getChileDateString(now);
+  if (lower === 'ayer') return shiftIsoDate(getChileDateString(now), -1);
+
+  // Formato DD/MM/YYYY o DD-MM-YYYY
+  const dmyMatch = lower.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+  }
+
+  // Formato español "21 nov 2026" o "21 de noviembre de 2026"
+  const esMatch = lower.match(/(\d{1,2})\s+(?:de\s+)?([a-záéíóú]+)(?:\s+(?:de\s+)?(\d{4}))?/);
+  if (esMatch) {
+    const day = parseInt(esMatch[1], 10);
+    const monPrefix = esMatch[2].slice(0, 3);
+    const month = SPANISH_MONTH_INDEX[monPrefix];
+    const year = esMatch[3] ? parseInt(esMatch[3], 10) : Number(getChileDateString(now).slice(0, 4));
+    if (day >= 1 && day <= 31 && month) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  const parsedFallback = new Date(dateRaw);
+  if (!isNaN(parsedFallback.getTime())) {
+    return getChileDateString(parsedFallback);
+  }
+  return null;
+}
+
+/**
+ * Extrae la hora (0..23) en zona horaria de Chile (America/Santiago) de un registro.
+ */
+export function getChileHourFromRecord(record) {
+  if (!record) return null;
+  const tsRaw = record.created_at || record.createdAt;
+  if (tsRaw && String(tsRaw).includes('T')) {
+    const parsed = new Date(tsRaw);
+    if (!isNaN(parsed.getTime())) {
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'America/Santiago',
+          hour: '2-digit',
+          hour12: false,
+        }).formatToParts(parsed);
+        const hourPart = parts.find((p) => p.type === 'hour');
+        if (hourPart) {
+          const h = parseInt(hourPart.value, 10);
+          if (!isNaN(h)) return h === 24 ? 0 : h;
+        }
+      } catch {
+        // fallback below
+      }
+    }
+  }
+
+  const timeRaw = String(record.time || '').trim().toLowerCase();
+  if (!timeRaw) return null;
+  const m = timeRaw.match(/(\d{1,2})\s*:\s*(\d{2})/);
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  if (isNaN(h)) return null;
+  const isPM = /p\.?\s*m\.?/.test(timeRaw);
+  const isAM = /a\.?\s*m\.?/.test(timeRaw);
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  return h >= 0 && h <= 23 ? h : null;
+}
+
+/**
+ * Calcula todos los rangos de fecha vigentes en hora de Chile para el Dashboard:
+ * hoy, ayer, últimos 7 días, 7 días previos, mes actual y mes anterior.
+ */
+export function getChileDateRanges(now = new Date()) {
+  const todayIso = getChileDateString(now);
+  const yesterdayIso = shiftIsoDate(todayIso, -1);
+  const weekStartIso = shiftIsoDate(todayIso, -6); // últimos 7 días incluyendo hoy
+  const prevWeekStartIso = shiftIsoDate(todayIso, -13);
+  const prevWeekEndIso = shiftIsoDate(todayIso, -7);
+
+  const currentYM = todayIso.slice(0, 7);
+  const [cy, cm] = currentYM.split('-').map(Number);
+  const prevYear = cm === 1 ? cy - 1 : cy;
+  const prevMonth = cm === 1 ? 12 : cm - 1;
+  const prevYM = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+
+  const shortDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const last7Days = Array.from({ length: 7 }, (_, idx) => {
+    const iso = shiftIsoDate(todayIso, idx - 6);
+    const [y, m, d] = iso.split('-').map(Number);
+    const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    return {
+      iso,
+      label: idx === 6 ? 'Hoy' : `${shortDays[weekday]} ${d}`,
+    };
+  });
+
+  return {
+    todayIso,
+    yesterdayIso,
+    weekStartIso,
+    prevWeekStartIso,
+    prevWeekEndIso,
+    currentYM,
+    prevYM,
+    last7Days,
+  };
+}
+
+

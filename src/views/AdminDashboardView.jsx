@@ -121,12 +121,13 @@ import {
   fetchOrdersFromSupabase,
   createOrderInSupabase,
   deleteOrderFromSupabase,
+  adjustStockForItemsInSupabase,
 } from '../services/ordersService.js';
 import {
   fetchAllCustomersForAdmin,
   updateCustomerInSupabase,
   deleteCustomerFromSupabase,
-  updateCustomerPoints,
+  updateCustomerPointsAndSpent,
   getCustomerProfile,
 } from '../services/customersService.js';
 import {
@@ -142,13 +143,16 @@ import {
   createPurchaseInvoiceInSupabase,
   updatePurchaseInvoiceInSupabase,
   updatePurchaseInvoiceStatus,
+  deletePurchaseInvoiceFromSupabase,
   fetchExpensesFromSupabase,
   createExpenseInSupabase,
+  updateExpenseInSupabase,
   deleteExpenseFromSupabase,
   getMercadoPagoSettingsFromSupabase,
   updateMercadoPagoSettingsInSupabase,
   fetchPartnerInvestmentsFromSupabase,
   savePartnerInvestmentsToSupabase,
+  deletePartnerInvestmentFromSupabase,
 } from '../services/financesService.js';
 import { supabase } from '../lib/supabase.js';
 import { cleanBaseProductName, extractProductFormat, resolveInventoryVariant } from '../utils/productVariants.js';
@@ -162,6 +166,7 @@ import {
 } from '../services/googleMapsService.js';
 import { isAdminCustomer } from '../utils/adminAuth.js';
 import {
+  COMPANY_INFO,
   ALLY_TYPE_OPTIONS,
   INITIAL_COUPON_OPTIONS,
   INVOICE_PRODUCT_CATEGORIES,
@@ -176,12 +181,20 @@ import {
   formatCLPDate,
   getYearMonthFromDate,
   formatPeriodLabel,
+  getChileIsoDateFromRecord,
+  getChileHourFromRecord,
+  getChileDateRanges,
   getMockOrderDate,
   getPetBirthdayDetails,
   generateRandomCouponCode,
   getProductUnitCostNetoTotal,
   getProductUnitCostWithIva,
   resolveInvoiceItems,
+  isPurchaseInvoicePaid,
+  getInvoiceTotalWithFreight,
+  getSortableTimestamp,
+  isExpenseWithIvaCredit,
+  calculateF29WithCarryover,
   normalizePaymentMethod,
   getOrderPaymentStatus,
   getDynamicGreeting,
@@ -348,7 +361,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [investmentsSearchQuery, setInvestmentsSearchQuery] = useState('');
   const [dispatchZones, setDispatchZones] = useState(INITIAL_DISPATCH_ZONES);
 
-  // Fecha actual formateada del sistema y pedidos estrictamente de hoy
+  // Rangos de fecha exactos en zona horaria de Chile (America/Santiago)
+  const chileDateRanges = useMemo(() => getChileDateRanges(), []);
+
+  // Fecha actual formateada del sistema y pedidos estrictamente de hoy (hora Chile)
   const todayFormattedDate = useMemo(() => {
     return getMockOrderDate(0);
   }, []);
@@ -356,14 +372,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const todayOrders = useMemo(() => {
     return orders.filter((o) => {
       if (o.status === 'cancelado') return false;
-      if (!o.date && !o.created_at) return false;
-      if (o.date === todayFormattedDate || o.date === 'Hoy') return true;
-      if (o.created_at) {
-        return new Date(o.created_at).toDateString() === new Date().toDateString();
-      }
-      return false;
+      const iso = getChileIsoDateFromRecord(o);
+      return iso === chileDateRanges.todayIso;
     });
-  }, [orders, todayFormattedDate]);
+  }, [orders, chileDateRanges.todayIso]);
 
   // Mercado Pago & Máquina de Pago Configuration State (Opción A: descuento directo sobre el total c/IVA)
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState({
@@ -386,21 +398,29 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         if (!isMounted) return;
         if (dbProds && dbProds.length > 0) {
           const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
-          const mapped = dbProds.map((p) => ({
-            ...p,
-            id: p.id,
-            name: p.name,
-            brand: p.brand || 'Patitas del Sur',
-            category: p.category || 'Alimento Seco',
-            petType: p.petType || 'perros',
-            format: p.weights?.[0] || '12 kg',
-            sku: p.sku || '',
-            stock: typeof p.stock === 'number' ? p.stock : 10,
-            minStock: p.minStock || 5,
-            salePrice: p.price || 68990,
-            unitCostNeto: p.unitCostNeto || Math.round((p.price || 68990) * 0.6),
-            shippingUnitCost: Number(p.shippingUnitCost ?? p.shipping_unit_cost) || 0,
-            status: typeof p.stock === 'number' && p.stock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+          const mapped = dbProds.map((p) => {
+            const realStock = Number.isFinite(Number(p.stock)) ? Number(p.stock) : 0;
+            const realPrice = Number.isFinite(Number(p.price)) ? Number(p.price) : 0;
+            const realCostNeto = Number.isFinite(Number(p.unitCostNeto ?? p.unit_cost_neto))
+              ? Number(p.unitCostNeto ?? p.unit_cost_neto)
+              : 0;
+            const minStockVal = Number(p.minStock ?? p.min_stock) || 5;
+
+            return {
+              ...p,
+              id: p.id,
+              name: p.name,
+              brand: p.brand || 'Patitas del Sur',
+              category: p.category || 'Alimento Seco',
+              petType: p.petType || 'perros',
+              format: p.weights?.[0] || '12 kg',
+              sku: p.sku || '',
+              stock: realStock,
+              minStock: minStockVal,
+              salePrice: realPrice,
+              unitCostNeto: realCostNeto,
+              shippingUnitCost: Number(p.shippingUnitCost ?? p.shipping_unit_cost) || 0,
+              status: realStock <= minStockVal ? 'stock_bajo' : 'disponible',
             isPaused: Boolean(p.is_paused || p.isPaused),
             isActive: p.is_active !== false,
             inCarousel:
@@ -422,9 +442,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             lifeStage: p.life_stage || p.lifeStage || 'adulto',
             ingredients: Array.isArray(p.ingredients) ? p.ingredients.map(cleanIngredientName).filter(Boolean) : [],
             guaranteedAnalysis: p.guaranteedAnalysis || p.guaranteed_analysis || {},
-            animalPercent: p.animalPercent ?? p.animal_percent ?? null,
-            weights: Array.isArray(p.weights) ? p.weights : [p.weights || '12 kg'],
-          }));
+              animalPercent: p.animalPercent ?? p.animal_percent ?? null,
+              weights: Array.isArray(p.weights) ? p.weights : [p.weights || '12 kg'],
+            };
+          });
 
           setInventory(mapped);
         }
@@ -541,12 +562,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               total: Number(o.total || 0),
               status: o.status || 'en_preparacion',
               paymentMethod: o.payment_method || 'Tarjeta',
-              paymentStatus:
-                o.payment_status ||
-                (String(o.payment_method || '').toLowerCase().includes('tarjeta') ||
-                  String(o.payment_method || '').toLowerCase().includes('web')
-                  ? 'pagado'
-                  : 'pendiente'),
+              paymentStatus: o.payment_status ? String(o.payment_status).trim().toLowerCase() : 'pendiente',
               address: orderAddress,
               city: orderCity,
               googleMapsUrl: googleMapsUrl,
@@ -555,6 +571,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               deliveryDayText: o.delivery_day_text || '',
               deliverySlot: o.delivery_slot || OFFICIAL_AFTERNOON_SLOT_LABEL,
               deliveryZone: o.delivery_zone || '',
+              deliveryType: o.delivery_type || null,
+              agreementUsed: o.agreement_used || null,
+              couponCodeUsed: o.coupon_code_used || null,
               items: items.length > 0 ? items : undefined,
               invoiceNumber: o.invoice_number || `BOL-2026-${o.id}`,
               channel: o.channel || 'web',
@@ -641,6 +660,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               totalSpent: Number(c.total_spent || 0),
               ordersCount: c.orders_count || 0,
               role: c.role || 'cliente',
+              created_at: c.created_at || null,
               memberSince: c.created_at
                 ? new Date(c.created_at).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
                 : 'Reciente',
@@ -772,18 +792,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
   }, [investments]);
 
-  // Auto-guardado de configuración de Mercado Pago en Supabase con debounce
-  const initialMountMpRef = useRef(false);
-  useEffect(() => {
-    if (!initialMountMpRef.current) {
-      initialMountMpRef.current = true;
-      return;
-    }
-    const timer = setTimeout(() => {
-      updateMercadoPagoSettingsInSupabase(mercadoPagoConfig).catch(console.error);
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [mercadoPagoConfig]);
+  // Guardado explícito de configuración de Mercado Pago en Supabase (solo al confirmar en el modal)
+  const handleSaveMercadoPagoConfig = (nextConfig) => {
+    setMercadoPagoConfig(nextConfig);
+    updateMercadoPagoSettingsInSupabase(nextConfig).catch((err) =>
+      console.error('Error saving Mercado Pago settings:', err)
+    );
+    showToast(
+      `Tasas actualizadas: Tarjeta ${nextConfig.cardRatePercent ?? 2.55}% • Botón de Pago ${nextConfig.webRatePercent ?? 3.19}%.`
+    );
+  };
 
   // Search & Filter States
   const [orderSearch, setOrderSearch] = useState('');
@@ -819,12 +837,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Opciones de lista desplegable para filtros de pedidos (Estándar iOS)
   const orderDayFilterOptions = useMemo(() => {
-    const todayCount = orders.filter((o) => o.date === getMockOrderDate(0)).length;
+    const todayCount = orders.filter((o) => getChileIsoDateFromRecord(o) === chileDateRanges.todayIso).length;
     return [
       { value: 'todos', label: `Todos los días (${orders.length})` },
       { value: 'hoy', label: `⚡ Solo Hoy (${todayCount})` },
     ];
-  }, [orders]);
+  }, [orders, chileDateRanges.todayIso]);
 
   const orderStatusFilterOptions = useMemo(() => {
     const prepCount = orders.filter((o) => o.status === 'en_preparacion').length;
@@ -867,10 +885,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             : orderPaymentFilter === 'entregado_pendiente'
               ? o.status === 'entregado' && !isOrderPaid
               : true;
-      const matchD = orderDayFilter === 'todos' || o.date === getMockOrderDate(0);
+      const matchD = orderDayFilter === 'todos' || getChileIsoDateFromRecord(o) === chileDateRanges.todayIso;
       return matchQ && matchS && matchP && matchD;
     });
-  }, [orders, orderSearch, orderStatusFilter, orderPaymentFilter, orderDayFilter]);
+  }, [orders, orderSearch, orderStatusFilter, orderPaymentFilter, orderDayFilter, chileDateRanges.todayIso]);
 
   const handleUpdateOrderPaymentMethod = (orderId, newPaymentMethod) => {
     setOrders((prev) =>
@@ -906,7 +924,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       setSelectedOrderModal((prev) => ({ ...prev, paymentStatus: newPaymentStatus }));
     }
 
-    // Persistir en Supabase y actualizar puntos
+    // Persistir en Supabase y actualizar puntos + total_spent
     try {
       const { error: updateErr } = await supabase
         .from('orders')
@@ -915,30 +933,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
       if (updateErr) throw updateErr;
 
-      // Gestionar acumulación o reversión de puntos Club Patitas
-      if (targetOrder) {
+      // Gestionar acumulación o reversión de puntos Club Patitas y total_spent (solo para órdenes no canceladas)
+      if (targetOrder && targetOrder.status !== 'cancelado') {
         const custId = targetOrder.customerId || targetOrder.customer_id;
-        const pts = targetOrder.pointsEarned ?? Math.floor((targetOrder.total || 0) / 1000);
+        const orderTotal = Number(targetOrder.total) || 0;
+        const pts = targetOrder.pointsEarned ?? Math.floor(orderTotal / 1000);
 
-        // Caso 1: Aprobado (de pendiente a pagado) -> Acreditar puntos
-        if (!wasPaid && isNowPaid && pts > 0) {
+        // Caso 1: Aprobado (de pendiente a pagado) -> Acreditar puntos y gasto
+        if (!wasPaid && isNowPaid && (pts > 0 || orderTotal > 0)) {
           if (custId) {
-            await updateCustomerPoints(custId, pts);
+            await updateCustomerPointsAndSpent(custId, pts, orderTotal);
           } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
             const cust = await getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail);
             if (cust?.id) {
-              await updateCustomerPoints(cust.id, pts);
+              await updateCustomerPointsAndSpent(cust.id, pts, orderTotal);
             }
           }
         }
-        // Caso 2: Revertido (de pagado a pendiente) -> Descontar puntos para evitar duplicidad
-        else if (wasPaid && !isNowPaid && pts > 0) {
+        // Caso 2: Revertido (de pagado a pendiente) -> Descontar puntos y gasto para evitar duplicidad
+        else if (wasPaid && !isNowPaid && (pts > 0 || orderTotal > 0)) {
           if (custId) {
-            await updateCustomerPoints(custId, -pts);
+            await updateCustomerPointsAndSpent(custId, -pts, -orderTotal);
           } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
             const cust = await getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail);
             if (cust?.id) {
-              await updateCustomerPoints(cust.id, -pts);
+              await updateCustomerPointsAndSpent(cust.id, -pts, -orderTotal);
             }
           }
         }
@@ -955,17 +974,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('todos'); // 'todos' | 'combustible' | 'packaging' | 'fijo' | 'mantenimiento' | 'servicios' | 'notaria'
   const [financesSubTab, setFinancesSubTab] = useState('resumen'); // 'resumen' | 'gastos' | 'ingresos' | 'f29'
   const [gastosTabFilter, setGastosTabFilter] = useState('todos'); // 'todos' | 'facturas' | 'operacionales'
+  const [cashMovementsLimit, setCashMovementsLimit] = useState(10);
 
-  // Período Contable: Mes actual por defecto (YYYY-MM)
-  const currentYM = useMemo(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  }, []);
+  // Período Contable: Mes actual en hora de Chile por defecto (YYYY-MM)
+  const currentYM = useMemo(() => getChileDateString().slice(0, 7), []);
 
-  const [financesPeriodFilter, setFinancesPeriodFilter] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [financesPeriodFilter, setFinancesPeriodFilter] = useState(() => getChileDateString().slice(0, 7));
 
   // Navegación de meses: solo meses pasados y mes actual (bloqueo estricto a meses futuros)
   const handlePrevPeriodMonth = () => {
@@ -1260,6 +1274,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     freeShippingOverride: false,
     status: 'en_preparacion',
     paymentMethod: 'Transferencia',
+    paymentStatus: 'pendiente',
     date: getChileDateString(),
   });
 
@@ -1591,7 +1606,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     date: getChileDateString(),
     investmentType: 'capital_inicial',
     paymentMethod: 'Transferencia Bancaria',
-    destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
+    destinationAccount: `Cta. Cte. Banco Santander (${COMPANY_INFO.legalName})`,
     referenceNumber: '',
     notes: '',
   });
@@ -1826,6 +1841,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     date: getChileDateString(),
     dueDate: getChileDateString(),
     status: 'pendiente', // 'pendiente' | 'pagada'
+    paymentMethod: 'Crédito Proveedor',
     hasShippingCost: false,
     shippingCostNeto: '',
     shippingInvoiceNumber: '',
@@ -1987,6 +2003,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
   };
 
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [newExpenseForm, setNewExpenseForm] = useState({
     category: 'combustible',
     description: '',
@@ -1999,7 +2016,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     isRecurring: false,
   });
 
-  const handleSaveNewExpense = (e) => {
+  const resetExpenseForm = () => {
+    setEditingExpenseId(null);
+    setNewExpenseForm({
+      category: 'combustible',
+      description: '',
+      provider: '',
+      documentType: 'boleta',
+      documentNumber: '',
+      date: getChileDateString(),
+      amount: 35000,
+      paymentMethod: 'Tarjeta Débito Banco Santander',
+      isRecurring: false,
+    });
+  };
+
+  const handleOpenEditExpense = (exp) => {
+    if (!exp) return;
+    setEditingExpenseId(exp.id);
+    setNewExpenseForm({
+      category: exp.category || 'otros',
+      description: exp.description || '',
+      provider: exp.provider || '',
+      documentType: isExpenseWithIvaCredit(exp) ? 'factura' : 'boleta',
+      documentNumber: exp.documentNumber || exp.document_number || '',
+      date: exp.date || getChileDateString(),
+      amount: Number(exp.amount) || 0,
+      paymentMethod: exp.paymentMethod || exp.payment_method || 'Tarjeta Débito Banco Santander',
+      isRecurring: Boolean(exp.isRecurring || exp.is_recurring),
+    });
+    setIsAddExpenseModalOpen(true);
+  };
+
+  const handleSaveNewExpense = async (e) => {
     e.preventDefault();
     if (!newExpenseForm.description || !newExpenseForm.amount) {
       showToast('Por favor completa la descripción y el monto del gasto.');
@@ -2026,8 +2075,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const neto = isFactura ? Math.round(amount / 1.19) : amount;
     const iva = isFactura ? amount - neto : 0;
 
+    if (editingExpenseId) {
+      const updatedExp = {
+        id: editingExpenseId,
+        category: newExpenseForm.category,
+        categoryLabel: catInfo.label,
+        icon: catInfo.icon,
+        description: newExpenseForm.description,
+        provider: newExpenseForm.provider || 'Comercio Local',
+        documentType: newExpenseForm.documentType || 'boleta',
+        hasIvaCredit: isFactura,
+        documentNumber:
+          newExpenseForm.documentNumber ||
+          `${isFactura ? 'FAC' : 'BOL'}-${Date.now().toString().slice(-4)}`,
+        date: newExpenseForm.date,
+        amount,
+        neto,
+        iva,
+        paymentMethod: newExpenseForm.paymentMethod || 'Tarjeta Débito',
+        isRecurring: !!newExpenseForm.isRecurring,
+      };
+      setExpenses((prev) => prev.map((exp) => (exp.id === editingExpenseId ? { ...exp, ...updatedExp } : exp)));
+      updateExpenseInSupabase(editingExpenseId, updatedExp).catch((err) =>
+        console.error('Error updating expense in Supabase:', err)
+      );
+      setIsAddExpenseModalOpen(false);
+      resetExpenseForm();
+      showToast(`✅ Gasto "${updatedExp.description}" actualizado correctamente.`);
+      return;
+    }
+
+    const tempId = `temp-exp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newExp = {
-      id: `EXP-${String(expenses.length + 1).padStart(2, '0')}`,
+      id: tempId,
       category: newExpenseForm.category,
       categoryLabel: catInfo.label,
       icon: catInfo.icon,
@@ -2044,32 +2124,55 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       iva: iva,
       paymentMethod: newExpenseForm.paymentMethod || 'Tarjeta Débito',
       isRecurring: !!newExpenseForm.isRecurring,
+      created_at: new Date().toISOString(),
     };
 
-    setExpenses([newExp, ...expenses]);
-    createExpenseInSupabase(newExp).catch((err) => console.error('Error saving expense to Supabase:', err));
+    setExpenses((prev) => [newExp, ...prev]);
     setIsAddExpenseModalOpen(false);
-    setNewExpenseForm({
-      category: 'combustible',
-      description: '',
-      provider: '',
-      documentType: 'boleta',
-      documentNumber: '',
-      date: getChileDateString(),
-      amount: 35000,
-      paymentMethod: 'Tarjeta Débito Banco Santander',
-      isRecurring: false,
-    });
+    resetExpenseForm();
     showToast(
       isFactura
         ? `✅ Factura "${newExp.description}" registrada: +${formatCLP(iva)} IVA Crédito Fiscal ahorrado.`
         : `Gasto "${newExp.description}" de ${formatCLP(newExp.amount)} registrado.`
     );
+
+    try {
+      const res = await createExpenseInSupabase(newExp);
+      if (res?.success && res?.data?.id) {
+        setExpenses((prev) =>
+          prev.map((exp) =>
+            exp.id === tempId
+              ? { ...exp, id: res.data.id, created_at: res.data.created_at || exp.created_at }
+              : exp
+          )
+        );
+      }
+    } catch (err) {
+      console.error('Error saving expense to Supabase:', err);
+    }
   };
 
-  const handleDeleteExpense = (id) => {
+  const handleDeleteExpense = async (id) => {
+    const target = expenses.find((exp) => exp.id === id);
+    if (!target) return;
+    if (String(id).startsWith('temp-exp-')) {
+      showToast('⏳ Espera un segundo mientras se sincroniza el gasto con la base de datos.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `¿Seguro que deseas eliminar el gasto "${target.description}" por ${formatCLP(target.amount)}?`
+      )
+    ) {
+      return;
+    }
     setExpenses((prev) => prev.filter((exp) => exp.id !== id));
-    deleteExpenseFromSupabase(id).catch((err) => console.error('Error deleting expense from Supabase:', err));
+    const res = await deleteExpenseFromSupabase(id);
+    if (!res?.success) {
+      setExpenses((prev) => [target, ...prev]);
+      showToast('❌ No se pudo eliminar el gasto en la base de datos. Intenta nuevamente.');
+      return;
+    }
     showToast('Gasto eliminado del registro contable.');
   };
 
@@ -2094,15 +2197,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const newInv = {
       id: newId,
       partnerName: currentPartner,
-      partnerRut: '',
+      partnerRut: (newInvestmentForm.partnerRut || '').trim(),
       amount: cleanAmount,
       date: newInvestmentForm.date || getChileDateString(),
       investmentType: isAumento ? 'aumento_capital' : 'capital_inicial',
       investmentTypeLabel: typeLabel,
-      paymentMethod: 'Transferencia Bancaria',
-      destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
-      referenceNumber: '',
-      notes: '',
+      paymentMethod: (newInvestmentForm.paymentMethod || 'Transferencia Bancaria').trim(),
+      destinationAccount: (newInvestmentForm.destinationAccount || `Cta. Cte. Banco Santander (${COMPANY_INFO.legalName})`).trim(),
+      referenceNumber: (newInvestmentForm.referenceNumber || '').trim(),
+      notes: (newInvestmentForm.notes || '').trim(),
       createdAt: new Date().toISOString(),
     };
 
@@ -2120,14 +2223,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       date: getChileDateString(),
       investmentType: 'capital_inicial',
       paymentMethod: 'Transferencia Bancaria',
-      destinationAccount: 'Cta. Cte. Banco Santander (Patitas del Sur SpA)',
+      destinationAccount: `Cta. Cte. Banco Santander (${COMPANY_INFO.legalName})`,
       referenceNumber: '',
       notes: '',
     });
     showToast(`✅ Inversión de ${formatCLP(cleanAmount)} de ${currentPartner} registrada.`);
   };
 
-  const handleDeleteInvestment = (idToDelete) => {
+  const handleDeleteInvestment = async (idToDelete) => {
     const toDelete = investments.find((i) => i.id === idToDelete);
     if (!toDelete) return;
     if (
@@ -2137,9 +2240,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     ) {
       const updated = investments.filter((i) => i.id !== idToDelete);
       setInvestments(updated);
-      savePartnerInvestmentsToSupabase(updated).catch((err) =>
-        console.error('Error deleting partner investment from Supabase:', err)
-      );
+      const res = await deletePartnerInvestmentFromSupabase(idToDelete, updated);
+      if (!res?.success) {
+        setInvestments((prev) => [toDelete, ...prev]);
+        showToast('❌ No se pudo eliminar la inversión en Supabase. Intenta nuevamente.');
+        return;
+      }
       showToast(`Inversión de ${toDelete.partnerName} eliminada.`);
     }
   };
@@ -2270,84 +2376,53 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     }
 
-    // 1. Manejo de Stock en Bodega:
+    // 1. Manejo de Stock en Bodega (agrupado por variante exacta):
     // Caso A: Se cancela el pedido (y antes no estaba cancelado) -> REINTEGRAR stock a bodega
     if (isCancelling && !wasCancelled && targetOrder) {
       const orderItems = targetOrder.items && targetOrder.items.length > 0
         ? targetOrder.items
-        : (targetOrder.product ? [{ name: targetOrder.product, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
+        : (targetOrder.product ? [{ name: targetOrder.product, format: targetOrder.format, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
 
-      // Reintegrar stock en inventario local de React
-      setInventory((prevInv) =>
-        prevInv.map((p) => {
-          const matchItem = orderItems.find(
-            (it) =>
-              (it.productId && String(it.productId) === String(p.id)) ||
-              (it.id && String(it.id) === String(p.id)) ||
-              (it.name && p.name && String(it.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
-          );
-          if (matchItem) {
-            const qty = Number(matchItem.quantity || matchItem.qty || 1);
-            const restoredStock = (Number(p.stock) || 0) + qty;
-            return {
-              ...p,
-              stock: restoredStock,
-              status: restoredStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
-            };
+      // Reintegrar stock en inventario local de React agrupando por variante exacta
+      setInventory((prevInv) => {
+        const restoreByProdId = new Map();
+        orderItems.forEach((it) => {
+          const matched = resolveInventoryVariant(prevInv, it);
+          if (matched) {
+            const qty = Math.max(1, Number(it.quantity || it.qty || 1));
+            restoreByProdId.set(matched.id, (restoreByProdId.get(matched.id) || 0) + qty);
           }
-          return p;
-        })
-      );
+        });
+        if (restoreByProdId.size === 0) return prevInv;
+        return prevInv.map((p) => {
+          const added = restoreByProdId.get(p.id);
+          if (!added) return p;
+          const restoredStock = (Number(p.stock) || 0) + added;
+          return {
+            ...p,
+            stock: restoredStock,
+            status: restoredStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+          };
+        });
+      });
 
-      // Reintegrar stock en Supabase
-      (async () => {
-        try {
-          for (const it of orderItems) {
-            const qty = Number(it.quantity || it.qty || 1);
-            let prodId = it.productId || it.product_id || it.id || null;
+      // Reintegrar stock en Supabase usando helper determinista
+      adjustStockForItemsInSupabase(orderItems, 1).catch((stockRestoreErr) => {
+        console.warn('Error restaurando stock en Supabase:', stockRestoreErr);
+      });
 
-            if (!prodId && it.name) {
-              const { data: matched } = await supabase
-                .from('products')
-                .select('id, stock')
-                .ilike('name', `%${String(it.name).trim()}%`)
-                .limit(1)
-                .maybeSingle();
-              if (matched) prodId = matched.id;
-            }
-
-            if (prodId) {
-              const { data: freshProd } = await supabase
-                .from('products')
-                .select('stock')
-                .eq('id', prodId)
-                .maybeSingle();
-
-              if (freshProd) {
-                const newStock = (Number(freshProd.stock) || 0) + qty;
-                await supabase
-                  .from('products')
-                  .update({ stock: newStock })
-                  .eq('id', prodId);
-              }
-            }
-          }
-          window.dispatchEvent(new Event('patitas_products_updated'));
-        } catch (stockRestoreErr) {
-          console.warn('Error restaurando stock en Supabase:', stockRestoreErr);
-        }
-      })();
-
-      // Revertir puntos Club Patitas acumulados si aplica
+      // Revertir puntos Club Patitas y total_spent SOLO si el pedido estaba pagado
       try {
+        const wasOrderPaid = getOrderPaymentStatus(targetOrder).isPaid;
         const custId = targetOrder.customerId || targetOrder.customer_id;
-        const pts = targetOrder.pointsEarned ?? Math.floor((targetOrder.total || 0) / 1000);
-        if (pts > 0) {
+        const orderTotal = Number(targetOrder.total) || 0;
+        const pts = targetOrder.pointsEarned ?? Math.floor(orderTotal / 1000);
+        if (wasOrderPaid && (pts > 0 || orderTotal > 0)) {
           if (custId) {
-            updateCustomerPoints(custId, -pts).catch(() => { });
+            updateCustomerPointsAndSpent(custId, -pts, -orderTotal).catch(() => { });
           } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
             getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail).then((cust) => {
-              if (cust?.id) updateCustomerPoints(cust.id, -pts).catch(() => { });
+              if (cust?.id) updateCustomerPointsAndSpent(cust.id, -pts, -orderTotal).catch(() => { });
             });
           }
           window.dispatchEvent(new Event('patitas_customers_updated'));
@@ -2360,66 +2435,53 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     else if (wasCancelled && !isCancelling && targetOrder) {
       const orderItems = targetOrder.items && targetOrder.items.length > 0
         ? targetOrder.items
-        : (targetOrder.product ? [{ name: targetOrder.product, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
+        : (targetOrder.product ? [{ name: targetOrder.product, format: targetOrder.format, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
 
-      setInventory((prevInv) =>
-        prevInv.map((p) => {
-          const matchItem = orderItems.find(
-            (it) =>
-              (it.productId && String(it.productId) === String(p.id)) ||
-              (it.id && String(it.id) === String(p.id)) ||
-              (it.name && p.name && String(it.name).trim().toLowerCase() === String(p.name).trim().toLowerCase())
-          );
-          if (matchItem) {
-            const qty = Number(matchItem.quantity || matchItem.qty || 1);
-            const deductedStock = Math.max(0, (Number(p.stock) || 0) - qty);
-            return {
-              ...p,
-              stock: deductedStock,
-              status: deductedStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
-            };
+      setInventory((prevInv) => {
+        const deductByProdId = new Map();
+        orderItems.forEach((it) => {
+          const matched = resolveInventoryVariant(prevInv, it);
+          if (matched) {
+            const qty = Math.max(1, Number(it.quantity || it.qty || 1));
+            deductByProdId.set(matched.id, (deductByProdId.get(matched.id) || 0) + qty);
           }
-          return p;
-        })
-      );
+        });
+        if (deductByProdId.size === 0) return prevInv;
+        return prevInv.map((p) => {
+          const sub = deductByProdId.get(p.id);
+          if (!sub) return p;
+          const deductedStock = Math.max(0, (Number(p.stock) || 0) - sub);
+          return {
+            ...p,
+            stock: deductedStock,
+            status: deductedStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+          };
+        });
+      });
 
-      (async () => {
-        try {
-          for (const it of orderItems) {
-            const qty = Number(it.quantity || it.qty || 1);
-            let prodId = it.productId || it.product_id || it.id || null;
+      adjustStockForItemsInSupabase(orderItems, -1).catch((stockDeductErr) => {
+        console.warn('Error descontando stock al reactivar pedido:', stockDeductErr);
+      });
 
-            if (!prodId && it.name) {
-              const { data: matched } = await supabase
-                .from('products')
-                .select('id, stock')
-                .ilike('name', `%${String(it.name).trim()}%`)
-                .limit(1)
-                .maybeSingle();
-              if (matched) prodId = matched.id;
-            }
-
-            if (prodId) {
-              const { data: freshProd } = await supabase
-                .from('products')
-                .select('stock')
-                .eq('id', prodId)
-                .maybeSingle();
-
-              if (freshProd) {
-                const newStock = Math.max(0, (Number(freshProd.stock) || 0) - qty);
-                await supabase
-                  .from('products')
-                  .update({ stock: newStock })
-                  .eq('id', prodId);
-              }
-            }
+      // Si el pedido reactivado figura como pagado, volver a acreditar puntos y total_spent
+      try {
+        const isOrderPaid = getOrderPaymentStatus(targetOrder).isPaid;
+        const custId = targetOrder.customerId || targetOrder.customer_id;
+        const orderTotal = Number(targetOrder.total) || 0;
+        const pts = targetOrder.pointsEarned ?? Math.floor(orderTotal / 1000);
+        if (isOrderPaid && (pts > 0 || orderTotal > 0)) {
+          if (custId) {
+            updateCustomerPointsAndSpent(custId, pts, orderTotal).catch(() => { });
+          } else if (targetOrder.customerPhone || targetOrder.customerEmail) {
+            getCustomerProfile(targetOrder.customerPhone || targetOrder.customerEmail).then((cust) => {
+              if (cust?.id) updateCustomerPointsAndSpent(cust.id, pts, orderTotal).catch(() => { });
+            });
           }
-          window.dispatchEvent(new Event('patitas_products_updated'));
-        } catch (stockDeductErr) {
-          console.warn('Error descontando stock al reactivar pedido:', stockDeductErr);
+          window.dispatchEvent(new Event('patitas_customers_updated'));
         }
-      })();
+      } catch (ptsErr) {
+        console.warn('Error acreditando puntos al reactivar pedido:', ptsErr);
+      }
     }
 
     setOrders((prev) =>
@@ -2501,6 +2563,37 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const handleDeleteOrder = async (orderId) => {
     if (!orderId) return;
+    const targetOrder = orders.find((o) => o.id === orderId) || selectedOrderModal;
+    const shouldRestoreLocalStock = targetOrder && targetOrder.status !== 'cancelado';
+
+    if (shouldRestoreLocalStock) {
+      const orderItems = targetOrder.items && targetOrder.items.length > 0
+        ? targetOrder.items
+        : (targetOrder.product ? [{ name: targetOrder.product, format: targetOrder.format, quantity: targetOrder.qty || 1, productId: targetOrder.productId }] : []);
+
+      setInventory((prevInv) => {
+        const restoreByProdId = new Map();
+        orderItems.forEach((it) => {
+          const matched = resolveInventoryVariant(prevInv, it);
+          if (matched) {
+            const qty = Math.max(1, Number(it.quantity || it.qty || 1));
+            restoreByProdId.set(matched.id, (restoreByProdId.get(matched.id) || 0) + qty);
+          }
+        });
+        if (restoreByProdId.size === 0) return prevInv;
+        return prevInv.map((p) => {
+          const added = restoreByProdId.get(p.id);
+          if (!added) return p;
+          const restoredStock = (Number(p.stock) || 0) + added;
+          return {
+            ...p,
+            stock: restoredStock,
+            status: restoredStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+          };
+        });
+      });
+    }
+
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
     if (selectedOrderModal?.id === orderId) {
       setSelectedOrderModal(null);
@@ -2508,7 +2601,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const res = await deleteOrderFromSupabase(orderId);
     if (res.success) {
       window.dispatchEvent(new Event('patitas_orders_updated'));
-      showToast(`🗑️ Pedido ${orderId} eliminado permanentemente.`);
+      window.dispatchEvent(new Event('patitas_products_updated'));
+      window.dispatchEvent(new Event('patitas_customers_updated'));
+      showToast(
+        res.stockRestored || shouldRestoreLocalStock
+          ? `🗑️ Pedido ${orderId} eliminado y stock reintegrado a bodega.`
+          : `🗑️ Pedido ${orderId} eliminado permanentemente.`
+      );
     } else {
       showToast(`Error al eliminar el pedido ${orderId}.`, 'error');
     }
@@ -2564,6 +2663,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     if (!paymentDeliveryConfirmModal?.order) return;
     const { order, paymentMethod, paymentMode = 'pagado' } = paymentDeliveryConfirmModal;
     const isLeavingPending = paymentMode === 'pendiente';
+    const wasAlreadyPaid = getOrderPaymentStatus(order).isPaid;
     const finalPaymentStatus = isLeavingPending ? 'pendiente' : 'pagado';
     const finalPaymentMethod = isLeavingPending ? (paymentMethod || 'Transferencia') : paymentMethod;
     const orderId = order.id;
@@ -2617,16 +2717,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
       if (updateErr) throw updateErr;
 
-      // 2. Acreditar puntos Club Patitas al cliente en Supabase sólo si ya quedó pagado
-      if (!isLeavingPending) {
+      // 2. Acreditar puntos Club Patitas y total_spent al cliente en Supabase sólo si pasó de no pagado a pagado
+      if (!isLeavingPending && !wasAlreadyPaid) {
         const custId = order.customerId || order.customer_id;
-        const pts = order.pointsEarned ?? Math.floor((order.total || 0) / 1000);
-        if (custId && pts > 0) {
-          await updateCustomerPoints(custId, pts);
+        const orderTotal = Number(order.total) || 0;
+        const pts = order.pointsEarned ?? Math.floor(orderTotal / 1000);
+        if (custId && (pts > 0 || orderTotal > 0)) {
+          await updateCustomerPointsAndSpent(custId, pts, orderTotal);
         } else if (order.customerPhone || order.customerEmail) {
           const cust = await getCustomerProfile(order.customerPhone || order.customerEmail);
-          if (cust?.id && pts > 0) {
-            await updateCustomerPoints(cust.id, pts);
+          if (cust?.id && (pts > 0 || orderTotal > 0)) {
+            await updateCustomerPointsAndSpent(cust.id, pts, orderTotal);
           }
         }
       }
@@ -2917,11 +3018,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     const formattedPhone = `+56 ${cleanPhoneDigits.slice(0, 1)} ${cleanPhoneDigits.slice(1, 5)} ${cleanPhoneDigits.slice(5, 9)}`;
 
+    const resolvedManualPaymentStatus =
+      manualOrderCustomer.paymentStatus === 'pagado' ? 'pagado' : 'pendiente';
+
     const newOrder = {
       id: newId,
       channel: 'manual',
       paymentMethod: manualOrderCustomer.paymentMethod || 'Transferencia Bancaria / Efectivo',
-      paymentStatus: 'pagado',
+      paymentStatus: resolvedManualPaymentStatus,
       customer: manualOrderCustomer.name,
       email: manualOrderCustomer.email || `${manualOrderCustomer.name.toLowerCase().replace(/\s+/g, '.')}@gmail.com`,
       phone: formattedPhone,
@@ -2935,7 +3039,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         weight: it.weight || '',
         format: it.weight || it.format || '',
         quantity: it.quantity,
+        qty: it.quantity,
         price: it.price,
+        unitPrice: it.price,
+        subtotal: it.price * it.quantity,
         unitCostNeto: Number(it.unitCostNeto) || 0,
         shippingUnitCost: Number(it.shippingUnitCost) || 0,
         code: `SKU-${String(it.productId || '').toUpperCase().slice(0, 8) || 'PROD'}`,
@@ -2981,7 +3088,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     );
     setIsAddOrderModalOpen(false);
     setManualOrderStep(1);
-    showToast(`✅ ¡Pedido ${newId} (${formatPeriodLabel(getYearMonthFromDate(orderDateStr))}) registrado exitosamente!`);
+    showToast(`✅ ¡Pedido ${newId} (${formatPeriodLabel(getYearMonthFromDate(orderDateStr))}) registrado (${resolvedManualPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente de pago'})!`);
 
     // Sincronizar pedido manual a Supabase con la fecha contable exacta
     createOrderInSupabase({
@@ -2991,7 +3098,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       customerPhone: newOrder.phone,
       channel: 'manual',
       paymentMethod: newOrder.paymentMethod,
-      paymentStatus: 'pagado',
+      paymentStatus: resolvedManualPaymentStatus,
       status: newOrder.status,
       subtotal: newOrder.subtotal,
       shippingCost: newOrder.shippingCost,
@@ -3025,6 +3132,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       freeShippingOverride: false,
       status: 'en_preparacion',
       paymentMethod: 'Transferencia',
+      paymentStatus: 'pendiente',
       date: getChileDateString(),
     });
     setManualOrderItems([]);
@@ -3237,6 +3345,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return;
     }
 
+    const cleanNewInvNum = String(newInvoiceForm.invoiceNumber).trim().toUpperCase();
+    const cleanNewRut = (newInvoiceForm.providerRut || '').replace(/[^0-9kK]/g, '').toUpperCase();
+    const duplicateInvoice = invoices.find((inv) => {
+      const sameNum = String(inv.invoiceNumber || inv.invoice_number || '').trim().toUpperCase() === cleanNewInvNum;
+      if (!sameNum) return false;
+      const existingRut = (inv.rut || '').replace(/[^0-9kK]/g, '').toUpperCase();
+      if (cleanNewRut && existingRut) return cleanNewRut === existingRut;
+      return true;
+    });
+    if (duplicateInvoice) {
+      showToast(`⚠️ Ya existe la factura #${cleanNewInvNum} registrada (${duplicateInvoice.provider || 'proveedor'}).`);
+      return;
+    }
+
     const hasShipping = Boolean(newInvoiceForm.hasShippingCost);
     const shippingFeeNeto = hasShipping ? Math.max(0, parseInt(newInvoiceForm.shippingCostNeto, 10) || 0) : 0;
     const shippingMethod = newInvoiceForm.shippingDistributionMethod || 'value';
@@ -3318,11 +3440,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     const overallIva = Math.round(totalNeto * 0.19);
     const overallBruto = totalNeto + overallIva;
+    const tempInvId = `temp-inv-${Date.now()}`;
 
     const newInvoiceObj = {
-      invoiceNumber: newInvoiceForm.invoiceNumber,
+      id: tempInvId,
+      invoiceNumber: cleanNewInvNum,
       provider: newInvoiceForm.provider || 'Proveedor Autorizado',
-      rut: newInvoiceForm.providerRut || '76.123.456-7',
+      rut: newInvoiceForm.providerRut || '',
       date: newInvoiceForm.date,
       dueDate: newInvoiceForm.dueDate || newInvoiceForm.date,
       productName: processedItems.map((p) => p.fullProdTitle).join(', '),
@@ -3340,14 +3464,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       status: newInvoiceForm.status || 'pendiente',
       itemsCount: totalQuantity,
       items: processedItems,
-      paymentMethod: 'Crédito Proveedor',
+      paymentMethod:
+        newInvoiceForm.paymentMethod ||
+        (newInvoiceForm.status === 'pagada' ? 'Transferencia' : 'Crédito Proveedor'),
       hasShippingCost: hasShipping,
       shippingCostNeto: shippingFeeNeto,
       shippingInvoiceNumber: (newInvoiceForm.shippingInvoiceNumber || '').trim(),
       shippingProvider: (newInvoiceForm.shippingProvider || '').trim(),
       shippingDistributionMethod: shippingMethod,
+      created_at: new Date().toISOString(),
     };
-    setInvoices([newInvoiceObj, ...invoices]);
+    setInvoices((prev) => [newInvoiceObj, ...prev]);
 
     // Persist supplier into localStorage for future smart auto-fill
     if (newInvoiceForm.providerRut && newInvoiceForm.provider) {
@@ -3371,8 +3498,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       // ignore
     }
 
-    // Sincronizar factura de compra en Supabase
-    createPurchaseInvoiceInSupabase(newInvoiceObj);
+    // Sincronizar factura de compra en Supabase y actualizar con el UUID real
+    createPurchaseInvoiceInSupabase(newInvoiceObj).then((res) => {
+      if (res?.success && res?.data?.id) {
+        setInvoices((prev) =>
+          prev.map((inv) =>
+            inv.id === tempInvId ? { ...inv, id: res.data.id, created_at: res.data.created_at || inv.created_at } : inv
+          )
+        );
+      }
+    });
 
     // Actualizar o crear productos en inventario para cada item de la factura
     setInventory((prevInv) => {
@@ -3539,6 +3674,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       date: getChileDateString(),
       dueDate: getChileDateString(),
       status: 'pendiente',
+      paymentMethod: 'Crédito Proveedor',
       hasShippingCost: false,
       shippingCostNeto: '',
       shippingInvoiceNumber: '',
@@ -3546,52 +3682,129 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       shippingDistributionMethod: 'value',
       items: [createInitialInvoiceItem()],
     });
+    const freightIva = hasShipping && shippingFeeNeto > 0 ? Math.round(shippingFeeNeto * 0.19) : 0;
+    const totalIvaCreditToast = overallIva + freightIva;
     showToast(
-      `✅ Factura ${newInvoiceForm.invoiceNumber} registrada (${processedItems.length} prod., +${totalQuantity} un. stock${hasShipping && shippingFeeNeto > 0 ? `, flete +${formatCLP(shippingFeeNeto)} neto incorporado al PMP` : ''}, +${formatCLP(overallIva)} IVA Crédito).`
+      `✅ Factura ${cleanNewInvNum} registrada (${processedItems.length} prod., +${totalQuantity} un. stock${hasShipping && shippingFeeNeto > 0 ? `, flete +${formatCLP(shippingFeeNeto)} neto` : ''}, +${formatCLP(totalIvaCreditToast)} IVA Crédito).`
     );
   };
 
-  const handleToggleInvoiceStatus = (invoiceNumber) => {
-    let nextStatus = 'pagada';
+  const handleToggleInvoiceStatus = (identifier) => {
+    const targetInv = invoices.find(
+      (inv) => inv.id === identifier || inv.invoiceNumber === identifier || inv.invoice_number === identifier
+    );
+    if (!targetInv) return;
+
+    const nextStatus = isPurchaseInvoicePaid(targetInv) ? 'pendiente' : 'pagada';
+    const invLabel = targetInv.invoiceNumber || targetInv.invoice_number || identifier;
+    const dbIdentifier =
+      targetInv.id && !String(targetInv.id).startsWith('temp-inv-')
+        ? targetInv.id
+        : invLabel;
+
     setInvoices((prev) =>
       prev.map((inv) => {
-        if (inv.invoiceNumber === invoiceNumber) {
-          nextStatus = inv.status === 'pagada' ? 'pendiente' : 'pagada';
-          showToast(`Factura ${invoiceNumber} marcada como ${nextStatus}.`);
-          return { ...inv, status: nextStatus };
-        }
-        return inv;
+        const isMatch = targetInv.id
+          ? inv.id === targetInv.id
+          : inv.invoiceNumber === invLabel;
+        return isMatch ? { ...inv, status: nextStatus } : inv;
       })
     );
 
     setSelectedInvoiceModal((prev) => {
-      if (prev && (prev.invoiceNumber === invoiceNumber || prev.id === invoiceNumber)) {
-        return { ...prev, status: nextStatus };
-      }
-      return prev;
+      if (!prev) return prev;
+      const isMatch = targetInv.id
+        ? prev.id === targetInv.id
+        : prev.invoiceNumber === invLabel;
+      return isMatch ? { ...prev, status: nextStatus } : prev;
     });
 
-    // Sincronizar en Supabase
-    updatePurchaseInvoiceStatus(invoiceNumber, nextStatus);
+    showToast(`Factura #${invLabel} marcada como ${nextStatus}.`);
+    // Sincronizar en Supabase priorizando UUID
+    updatePurchaseInvoiceStatus(dbIdentifier, nextStatus);
+  };
+
+  const handleDeleteInvoice = async (invoice) => {
+    if (!invoice) return;
+    const invNum = invoice.invoiceNumber || invoice.invoice_number || invoice.id;
+    const invTotals = getInvoiceTotalWithFreight(invoice);
+    if (
+      !window.confirm(
+        `¿Seguro que deseas eliminar la factura #${invNum} (${invoice.provider || 'Proveedor'}) por ${formatCLP(invTotals.totalBruto)}?\n\nEsto también descontará del inventario las unidades ingresadas en esta factura.`
+      )
+    ) {
+      return;
+    }
+
+    const invItems = resolveInvoiceItems(invoice, inventory);
+    const dbIdentifier =
+      invoice.id && !String(invoice.id).startsWith('temp-inv-')
+        ? invoice.id
+        : invNum;
+
+    // 1. Revertir unidades en inventario local y Supabase
+    if (invItems.length > 0) {
+      setInventory((prevInv) => {
+        const updatedInv = [...prevInv];
+        const qtyToRemoveByProdId = new Map();
+        invItems.forEach((it) => {
+          const matched = resolveInventoryVariant(updatedInv, {
+            name: it.name,
+            format: it.format,
+          });
+          if (matched) {
+            qtyToRemoveByProdId.set(
+              matched.id,
+              (qtyToRemoveByProdId.get(matched.id) || 0) + (Number(it.qty) || 0)
+            );
+          }
+        });
+
+        qtyToRemoveByProdId.forEach((qtyToRemove, prodId) => {
+          const idx = updatedInv.findIndex((p) => p.id === prodId);
+          if (idx === -1) return;
+          const prevItem = updatedInv[idx];
+          const nextStock = Math.max(0, (Number(prevItem.stock) || 0) - qtyToRemove);
+          updatedInv[idx] = {
+            ...prevItem,
+            stock: nextStock,
+            status: nextStock <= (prevItem.minStock || 5) ? 'stock_bajo' : 'disponible',
+          };
+          updateProductInSupabase(prevItem.id, { stock: nextStock });
+        });
+
+        return updatedInv;
+      });
+    }
+
+    // 2. Remover de estado y cerrar modales
+    setInvoices((prev) =>
+      prev.filter((inv) => (invoice.id ? inv.id !== invoice.id : inv.invoiceNumber !== invNum))
+    );
+    setSelectedInvoiceModal(null);
+    setEditingInvoiceModal(null);
+    try {
+      localStorage.removeItem(`patitas_invoice_items_${invNum}`);
+    } catch {
+      // ignore
+    }
+
+    // 3. Eliminar en Supabase
+    const res = await deletePurchaseInvoiceFromSupabase(dbIdentifier);
+    if (!res?.success) {
+      showToast('⚠️ Factura removida localmente, pero hubo un problema al eliminarla en Supabase.');
+      return;
+    }
+    showToast(`🗑️ Factura #${invNum} eliminada y stock revertido correctamente.`);
   };
 
   // Apertura y gestión de edición de ítems y costo de transporte de la factura
   const handleOpenEditInvoice = (inv) => {
     if (!inv) return;
     const invItems = resolveInvoiceItems(inv, inventory);
-    const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
-    const is81006 = cleanInvNum === '81006';
-    const is78954 = cleanInvNum === '78954';
-    const hasShipping = Boolean(
-      inv.hasShippingCost ||
-      inv.has_shipping_cost ||
-      (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0 ||
-      is81006 ||
-      is78954
-    );
-    const sNeto =
-      parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) ||
-      (is81006 ? 23277 : is78954 ? 20084 : 0);
+    const invTotals = getInvoiceTotalWithFreight(inv);
+    const sNeto = invTotals.shippingNeto;
+    const hasShipping = sNeto > 0;
     const sMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'value';
     const sInvNum = inv.shippingInvoiceNumber || inv.shipping_invoice_number || '';
     const sProv = inv.shippingProvider || inv.shipping_provider || '';
@@ -3791,40 +4004,91 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         console.warn('Error saving invoice items cache:', err);
       }
 
-      // 4. Actualizar costo neto puro y despacho unitario en bodega/inventario coincidiendo por nombre Y formato
+      // 4. Calcular diferencia de cantidades respecto a los ítems previos de la factura y actualizar stock + costos en bodega
+      const prevInvoiceRecord =
+        invoices.find(
+          (inv) =>
+            inv.invoiceNumber === invNumber ||
+            inv.invoice_number === invNumber ||
+            (inv.id && inv.id === editingInvoiceModal.id)
+        ) || selectedInvoiceModal;
+      const prevResolvedItems = prevInvoiceRecord ? resolveInvoiceItems(prevInvoiceRecord, inventory) : [];
+
       setInventory((prevInv) => {
         let updatedInv = [...prevInv];
-        processedItems.forEach((it) => {
-          const itemTitleClean = cleanBaseProductName(it.name || '').toLowerCase().trim();
-          const itemFormatClean = (it.format || '').toLowerCase().trim();
-          const matchIdx = updatedInv.findIndex((p) => {
-            const pTitle = cleanBaseProductName(p.name || '', p.brand).toLowerCase().trim();
-            const pFormat = (p.format || extractProductFormat(p)).toLowerCase().trim();
-            const nameMatches = pTitle === itemTitleClean || pTitle.includes(itemTitleClean) || itemTitleClean.includes(pTitle);
-            if (!nameMatches) return false;
-            return itemFormatClean ? pFormat === itemFormatClean : true;
+        const prevQtyByProdId = new Map();
+        prevResolvedItems.forEach((pIt) => {
+          const matched = resolveInventoryVariant(updatedInv, {
+            name: pIt.name,
+            format: pIt.format,
           });
-          if (matchIdx > -1) {
-            const prevItem = updatedInv[matchIdx];
-            const pureNeto = it.supplierUnitNeto || it.unitNeto || 0;
-            const shipUnit = it.unitShippingCost || 0;
-            updatedInv[matchIdx] = {
-              ...prevItem,
-              unitCostNeto: pureNeto,
-              shippingUnitCost: shipUnit,
-              cost: pureNeto,
-            };
-            updateProductInSupabase(prevItem.id, {
-              unitCostNeto: pureNeto,
-              shippingUnitCost: shipUnit,
+          if (matched) {
+            prevQtyByProdId.set(matched.id, (prevQtyByProdId.get(matched.id) || 0) + (Number(pIt.qty) || 0));
+          }
+        });
+
+        const newQtyByProdId = new Map();
+        const costUpdatesByProdId = new Map();
+
+        processedItems.forEach((it) => {
+          const matched = resolveInventoryVariant(updatedInv, {
+            name: it.name,
+            format: it.format,
+          });
+          if (matched) {
+            newQtyByProdId.set(matched.id, (newQtyByProdId.get(matched.id) || 0) + (Number(it.qty) || 0));
+            costUpdatesByProdId.set(matched.id, {
+              pureNeto: it.supplierUnitNeto || it.unitNeto || 0,
+              shipUnit: it.unitShippingCost || 0,
             });
           }
         });
+
+        const affectedIds = new Set([...prevQtyByProdId.keys(), ...newQtyByProdId.keys()]);
+        affectedIds.forEach((prodId) => {
+          const matchIdx = updatedInv.findIndex((p) => p.id === prodId);
+          if (matchIdx === -1) return;
+          const prevItem = updatedInv[matchIdx];
+          const oldQty = prevQtyByProdId.get(prodId) || 0;
+          const newQty = newQtyByProdId.get(prodId) || 0;
+          const deltaQty = newQty - oldQty;
+          const nextStock = Math.max(0, (Number(prevItem.stock) || 0) + deltaQty);
+          const costInfo = costUpdatesByProdId.get(prodId);
+
+          const supUpdates = {};
+          if (deltaQty !== 0) supUpdates.stock = nextStock;
+          if (costInfo) {
+            supUpdates.unitCostNeto = costInfo.pureNeto;
+            supUpdates.shippingUnitCost = costInfo.shipUnit;
+          }
+
+          updatedInv[matchIdx] = {
+            ...prevItem,
+            stock: nextStock,
+            status: nextStock <= (prevItem.minStock || 5) ? 'stock_bajo' : 'disponible',
+            ...(costInfo
+              ? {
+                unitCostNeto: costInfo.pureNeto,
+                shippingUnitCost: costInfo.shipUnit,
+                cost: costInfo.pureNeto,
+              }
+              : {}),
+          };
+
+          if (Object.keys(supUpdates).length > 0) {
+            updateProductInSupabase(prevItem.id, supUpdates);
+          }
+        });
+
         return updatedInv;
       });
 
-      // 5. Actualizar en Supabase
-      await updatePurchaseInvoiceInSupabase(invNumber, updatedInvoiceObj);
+      // 5. Actualizar en Supabase priorizando UUID
+      const dbIdentifier =
+        editingInvoiceModal.id && !String(editingInvoiceModal.id).startsWith('temp-inv-')
+          ? editingInvoiceModal.id
+          : invNumber;
+      await updatePurchaseInvoiceInSupabase(dbIdentifier, updatedInvoiceObj);
 
       // 6. Cerrar modal de edición
       setEditingInvoiceModal(null);
@@ -4973,28 +5237,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     });
 
-    // 2. Identificar Repartidor antes de calcular el costo de despacho real según su vehículo asignado
-    const driverNameRaw = String(
+    // 2. Identificar Repartidor solo para pedidos efectivamente entregados (evita asignar despachos en preparación)
+    const isDelivered = order.status === 'entregado';
+    const rawAssignedDriver = String(
       order.deliveredByName ||
       order.delivered_by_name ||
-      (order.id === 'PED-0008' ? 'Alamiro Huerta' : 'Ignacio Alarcón')
+      (order.id === 'PED-0008' ? 'Alamiro Huerta' : '')
     ).trim();
-    const isAlamiro = driverNameRaw.toLowerCase().includes('alamiro');
-    const isIgnacio = !isAlamiro;
-    const resolvedDriverName = isAlamiro ? 'Alamiro Huerta' : 'Ignacio Alarcón';
+    const driverNameRaw = isDelivered ? (rawAssignedDriver || 'Ignacio Alarcón') : '';
+    const isAlamiro = isDelivered && driverNameRaw.toLowerCase().includes('alamiro');
+    const isIgnacio = isDelivered && !isAlamiro;
+    const resolvedDriverName = !isDelivered
+      ? 'Pendiente de entrega'
+      : isAlamiro
+        ? 'Alamiro Huerta'
+        : 'Ignacio Alarcón';
 
-    // 3. Costo del despacho según zona y según el auto configurado del repartidor
+    // 3. Costo del despacho según zona y según el auto configurado del repartidor (solo si ya fue entregado)
     const routeInfo = calculateRouteDeliveryInfo(
       order.address,
       order.city,
       order.deliveryZone,
       order.id,
       order.notes,
-      resolvedDriverName
+      isDelivered ? resolvedDriverName : ''
     );
-    const deliveryCalculatedCost = routeInfo.deliveryCost;
+    const deliveryCalculatedCost = isDelivered ? routeInfo.deliveryCost : 0;
     const zoneName = routeInfo.zoneName;
-    const zoneDesc = routeInfo.zoneDesc;
+    const zoneDesc = isDelivered ? routeInfo.zoneDesc : `${routeInfo.zoneName} · Pendiente de despacho`;
 
     // 4. Comisión por uso de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
     const paymentFeeInfo = calculateOrderPaymentFee(order);
@@ -5016,6 +5286,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       deliveryCost: deliveryCalculatedCost,
       routeBaseCost: routeInfo.routeBaseCost,
       isFreeDeliveryOverride: routeInfo.isFreeDeliveryOverride,
+      isDelivered,
       zoneName,
       zoneDesc,
       paymentFee,
@@ -5092,14 +5363,37 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         : String(mercadoPagoConfig.cardRatePercent ?? 2.55);
     const mpNetRevenueReceived = mpSales - mpTotalCostWithIva;
 
-    // 2. Facturas de Proveedores (Mercadería / Stock) & IVA Crédito Fiscal
-    const invoicesNeto = periodFilteredInvoices.reduce((sum, inv) => sum + (inv.totalNeto || 0), 0);
+    // 2. Facturas de Proveedores (Mercadería + Flete declarado en factura) & IVA Crédito Fiscal
+    const invoicesMerchNeto = periodFilteredInvoices.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).merchNeto,
+      0
+    );
+    const invoicesFreightNeto = periodFilteredInvoices.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).shippingNeto,
+      0
+    );
+    const invoicesFreightBruto = periodFilteredInvoices.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).shippingBruto,
+      0
+    );
+    const invoicesNeto = periodFilteredInvoices.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalNeto,
+      0
+    );
     const invoicesIvaCredito = periodFilteredInvoices.reduce(
-      (sum, inv) => sum + (inv.iva || Math.round((inv.totalNeto || 0) * 0.19)),
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalIva,
       0
     );
     const invoicesTotalBruto = periodFilteredInvoices.reduce(
-      (sum, inv) => sum + (inv.totalBruto || (inv.totalNeto || 0) + (inv.iva || 0)),
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalBruto,
+      0
+    );
+    const paidInvoicesTotalBruto = periodFilteredInvoices
+      .filter((inv) => isPurchaseInvoicePaid(inv))
+      .reduce((sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalBruto, 0);
+    const pendingInvoicesList = periodFilteredInvoices.filter((inv) => !isPurchaseInvoicePaid(inv));
+    const pendingInvoicesTotalBruto = pendingInvoicesList.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalBruto,
       0
     );
     const invoicesCount = periodFilteredInvoices.length;
@@ -5111,27 +5405,27 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     // 3. Desglose de Gastos Operacionales Registrados
     const notariaExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'notaria' || e.category === 'legal')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const combustibleExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'combustible')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const packagingExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'packaging')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const fixedExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'fijo')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const maintenanceExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'mantenimiento')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const servicesExpenses = periodFilteredExpenses
       .filter((e) => e.category === 'servicios')
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     const otherExpenses = periodFilteredExpenses
       .filter(
@@ -5140,9 +5434,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             e.category
           )
       )
-      .reduce((acc, e) => acc + e.amount, 0);
+      .reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
-    const totalRegisteredExpenses = periodFilteredExpenses.reduce((acc, e) => acc + e.amount, 0);
+    const totalRegisteredExpenses = periodFilteredExpenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
 
     // Gastos que tienen factura y generan IVA Crédito Fiscal
     const expensesIvaCredito = periodFilteredExpenses.reduce((sum, e) => {
@@ -5151,8 +5445,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         e.documentType === 'factura' ||
         (e.documentNumber && e.documentNumber.startsWith('FAC'))
       ) {
-        const neto = Math.round(e.amount / 1.19);
-        return sum + (e.amount - neto);
+        const amt = Number(e.amount) || 0;
+        const neto = Math.round(amt / 1.19);
+        return sum + (amt - neto);
       }
       return sum;
     }, 0);
@@ -5163,40 +5458,52 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         e.documentType === 'factura' ||
         (e.documentNumber && e.documentNumber.startsWith('FAC'))
       ) {
-        return sum + Math.round(e.amount / 1.19);
+        return sum + Math.round((Number(e.amount) || 0) / 1.19);
       }
       return sum;
     }, 0);
 
     const expensesSinCredito = totalRegisteredExpenses - (expensesNetoWithFactura + expensesIvaCredito);
 
-    // Comisiones convenios veterinarios y adiestradores
-    const partnerCommissions = totalSales > 0 ? Math.round(totalSales * 0.038) : 0;
+    // Comisiones convenios deshabilitadas hasta nueva definición comercial ($0)
+    const partnerCommissions = 0;
 
     // Gastos Operacionales Totales & Utilidad Neta Real
     const totalOperatingExpenses = totalRegisteredExpenses + mpTotalCostWithIva + partnerCommissions;
     const netProfit = grossMargin - totalOperatingExpenses;
     const netProfitPercent = totalSales > 0 ? ((netProfit / totalSales) * 100).toFixed(1) : '0.0';
 
-    // 4. BALANZA FISCAL: SEMÁFORO DEL IVA (F29 SII)
+    // 4. BALANZA FISCAL: SEMÁFORO DEL IVA (F29 SII — incluye IVA crédito del flete de facturas)
     const totalIvaCredito = invoicesIvaCredito + expensesIvaCredito;
     const ivaBalance = ivaDebito - totalIvaCredito;
     const ivaStatus = ivaBalance > 0 ? 'a_pagar' : 'remanente';
     const ivaCoveredPercent =
       ivaDebito > 0 ? Math.min(100, Math.round((totalIvaCredito / ivaDebito) * 100)) : 100;
 
-    // Valorización de Inventario
-    const totalInventoryCost = inventory.reduce(
-      (acc, p) => acc + (p.unitCostNeto || 0) * (p.stock || 0),
+    // Valorización de Inventario: Costo Neto puesto en bodega y Costo Total c/IVA (producto + flete c/IVA)
+    const totalInventoryCostNeto = inventory.reduce(
+      (acc, p) => acc + getProductUnitCostNetoTotal(p) * (Number(p.stock) || 0),
       0
     );
+    const totalInventoryCostWithIva = inventory.reduce(
+      (acc, p) => acc + getProductUnitCostWithIva(p) * (Number(p.stock) || 0),
+      0
+    );
+    const totalInventoryCost = totalInventoryCostWithIva;
     const totalInventoryPVP = inventory.reduce(
-      (acc, p) => acc + (p.salePrice || 0) * (p.stock || 0),
+      (acc, p) => acc + (Number(p.salePrice) || 0) * (Number(p.stock) || 0),
       0
     );
 
+    // Flujo de caja efectivo del período (solo ingresos líquidos y egresos efectivamente pagados)
+    const totalNetSalesInBank = totalSales - mpTotalCostWithIva;
+    const totalCashInflows = totalNetSalesInBank + investmentsSummary.totalAmount;
+    const totalRegisteredOutflows = paidInvoicesTotalBruto + totalRegisteredExpenses;
+    const netCashBalance = totalCashInflows - totalRegisteredOutflows;
+
     return {
       totalSales,
+      totalNetSalesInBank,
       salesNeto,
       ivaDebito,
       webOrdersCount: webOrders.length,
@@ -5219,9 +5526,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       mpTotalCostWithIva,
       mpEffectiveRate,
       mpNetRevenueReceived,
+      invoicesMerchNeto,
+      invoicesFreightNeto,
+      invoicesFreightBruto,
       invoicesNeto,
       invoicesIvaCredito,
       invoicesTotalBruto,
+      paidInvoicesTotalBruto,
+      pendingInvoicesTotalBruto,
+      pendingInvoicesCount: pendingInvoicesList.length,
       invoicesCount,
       invoicesTotalUnits,
       notariaExpenses,
@@ -5244,27 +5557,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       netProfit,
       netProfitPercent,
       totalInventoryCost,
+      totalInventoryCostNeto,
+      totalInventoryCostWithIva,
       totalInventoryPVP,
       totalInvested: investmentsSummary.totalAmount,
-      totalRegisteredOutflows: invoicesTotalBruto + totalRegisteredExpenses,
-      totalCashInflows: totalSales + investmentsSummary.totalAmount,
-      netCashBalance: (totalSales + investmentsSummary.totalAmount) - (invoicesTotalBruto + totalRegisteredExpenses),
+      totalRegisteredOutflows,
+      totalCashInflows,
+      netCashBalance,
       investmentsSummary,
       partnerDistribution: (() => {
-        let ignacioTotalEarnings = 0;
         let ignacioProductProfit = 0;
         let ignacioDeliveryFees = 0;
         let ignacioDeliveryCount = 0;
 
-        let alamiroTotalEarnings = 0;
         let alamiroProductProfit = 0;
         let alamiroDeliveryFees = 0;
         let alamiroDeliveryCount = 0;
         let totalPaymentFees = 0;
+        let undeliveredCount = 0;
 
         periodFilteredOrders.forEach((ord) => {
           const dist = calculateOrderFinancialDistribution(ord);
-          if (dist.isIgnacio) {
+          if (!dist.isDelivered) {
+            undeliveredCount += 1;
+          } else if (dist.isIgnacio) {
             ignacioDeliveryFees += dist.deliveryCost;
             ignacioDeliveryCount += 1;
           } else if (dist.isAlamiro) {
@@ -5274,22 +5590,35 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           ignacioProductProfit += dist.halfProfit;
           alamiroProductProfit += dist.halfProfit;
           totalPaymentFees += dist.paymentFee || 0;
-
-          ignacioTotalEarnings += dist.ignacioTotal;
-          alamiroTotalEarnings += dist.alamiroTotal;
         });
+
+        const ordersMarginBeforeOpex = Math.round(ignacioProductProfit + alamiroProductProfit);
+        const halfOpexDeduction = Math.round(totalRegisteredExpenses / 2);
+        const netDistributableProfit = ordersMarginBeforeOpex - totalRegisteredExpenses;
+        const ignacioNetProfitShare = Math.round(ignacioProductProfit) - halfOpexDeduction;
+        const alamiroNetProfitShare = Math.round(alamiroProductProfit) - (totalRegisteredExpenses - halfOpexDeduction);
 
         return {
           totalPaymentFees,
+          undeliveredCount,
+          ordersMarginBeforeOpex,
+          registeredOpex: totalRegisteredExpenses,
+          netDistributableProfit,
           ignacio: {
-            total: ignacioTotalEarnings,
-            productProfit: ignacioProductProfit,
+            total: ignacioNetProfitShare + ignacioDeliveryFees,
+            grossOrderTotal: Math.round(ignacioProductProfit) + ignacioDeliveryFees,
+            productProfit: Math.round(ignacioProductProfit),
+            opexShare: halfOpexDeduction,
+            netProfitShare: ignacioNetProfitShare,
             deliveryFees: ignacioDeliveryFees,
             deliveryCount: ignacioDeliveryCount,
           },
           alamiro: {
-            total: alamiroTotalEarnings,
-            productProfit: alamiroProductProfit,
+            total: alamiroNetProfitShare + alamiroDeliveryFees,
+            grossOrderTotal: Math.round(alamiroProductProfit) + alamiroDeliveryFees,
+            productProfit: Math.round(alamiroProductProfit),
+            opexShare: totalRegisteredExpenses - halfOpexDeduction,
+            netProfitShare: alamiroNetProfitShare,
             deliveryFees: alamiroDeliveryFees,
             deliveryCount: alamiroDeliveryCount,
           },
@@ -5298,157 +5627,323 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     };
   }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution, calculateOrderPaymentFee]);
 
-  // Mes actual dinámico en español
+  // Conciliación Tributaria F29 (SII Chile): criterio devengado (todos los pedidos no cancelados del mes) + arrastre de remanente de meses anteriores
+  const f29Summary = useMemo(
+    () =>
+      calculateF29WithCarryover({
+        orders,
+        invoices,
+        expenses,
+        targetPeriod: financesPeriodFilter,
+        includeUnpaidOrders: true,
+      }),
+    [orders, invoices, expenses, financesPeriodFilter]
+  );
+
+  // Posición real acumulada de Caja y Banco (todo el histórico efectivo: solo ventas pagadas netas de comisión, aportes, gastos y facturas PAGADAS)
+  const realCashPosition = useMemo(() => {
+    const allPaidOrders = orders.filter((o) => o.status !== 'cancelado' && getOrderPaymentStatus(o).isPaid);
+    const totalPaidSalesGross = allPaidOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const totalPaymentFeesRetained = allPaidOrders.reduce(
+      (sum, o) => sum + calculateOrderPaymentFee(o).feeAmount,
+      0
+    );
+    const totalPaidSalesNetInBank = totalPaidSalesGross - totalPaymentFeesRetained;
+    const totalCapitalInvested = investments.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+
+    const paidInvoicesOutflow = invoices
+      .filter((inv) => isPurchaseInvoicePaid(inv))
+      .reduce((sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalBruto, 0);
+
+    const pendingInvoices = invoices.filter((inv) => !isPurchaseInvoicePaid(inv));
+    const pendingInvoicesPayable = pendingInvoices.reduce(
+      (sum, inv) => sum + getInvoiceTotalWithFreight(inv).totalBruto,
+      0
+    );
+
+    const totalExpensesOutflow = expenses
+      .filter((e) => String(e.status || 'pagado').trim().toLowerCase() !== 'pendiente')
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
+    const totalCashIn = totalCapitalInvested + totalPaidSalesNetInBank;
+    const totalCashOut = paidInvoicesOutflow + totalExpensesOutflow;
+    const realCashBalance = totalCashIn - totalCashOut;
+
+    return {
+      totalCapitalInvested,
+      totalPaidSalesGross,
+      totalPaymentFeesRetained,
+      totalPaidSalesNetInBank,
+      paidInvoicesOutflow,
+      pendingInvoicesPayable,
+      pendingInvoicesCount: pendingInvoices.length,
+      totalExpensesOutflow,
+      totalCashIn,
+      totalCashOut,
+      realCashBalance,
+    };
+  }, [orders, invoices, expenses, investments, calculateOrderPaymentFee]);
+
+  // Mes actual dinámico en español (zona horaria Chile)
   const currentMonthName = useMemo(() => {
-    const m = new Intl.DateTimeFormat('es-CL', { month: 'long' }).format(new Date());
+    const m = new Intl.DateTimeFormat('es-CL', { month: 'long', timeZone: 'America/Santiago' }).format(new Date());
     return m.charAt(0).toUpperCase() + m.slice(1);
   }, []);
 
-  // Pedidos de los últimos 7 días (excluye cancelados)
-  const weekOrders = useMemo(() => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  // Colecciones de pedidos no cancelados por período real en hora de Chile
+  const yesterdayOrders = useMemo(() => {
     return orders.filter((o) => {
       if (o.status === 'cancelado') return false;
-      if (o.created_at) {
-        return new Date(o.created_at) >= sevenDaysAgo;
-      }
-      if (o.date === todayFormattedDate || o.date === 'Hoy') return true;
-      return false;
+      return getChileIsoDateFromRecord(o) === chileDateRanges.yesterdayIso;
     });
-  }, [orders, todayFormattedDate]);
+  }, [orders, chileDateRanges.yesterdayIso]);
 
-  // Dynamic values depending on selected period: 'dia' | 'semana' | 'mes' (solo pedidos pagados suman en ventas)
+  const weekOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
+      const iso = getChileIsoDateFromRecord(o);
+      return Boolean(iso && iso >= chileDateRanges.weekStartIso && iso <= chileDateRanges.todayIso);
+    });
+  }, [orders, chileDateRanges.weekStartIso, chileDateRanges.todayIso]);
+
+  const prevWeekOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
+      const iso = getChileIsoDateFromRecord(o);
+      return Boolean(iso && iso >= chileDateRanges.prevWeekStartIso && iso <= chileDateRanges.prevWeekEndIso);
+    });
+  }, [orders, chileDateRanges.prevWeekStartIso, chileDateRanges.prevWeekEndIso]);
+
+  const currentMonthOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
+      const iso = getChileIsoDateFromRecord(o);
+      return Boolean(iso && iso.slice(0, 7) === chileDateRanges.currentYM);
+    });
+  }, [orders, chileDateRanges.currentYM]);
+
+  const prevMonthOrders = useMemo(() => {
+    return orders.filter((o) => {
+      if (o.status === 'cancelado') return false;
+      const iso = getChileIsoDateFromRecord(o);
+      return Boolean(iso && iso.slice(0, 7) === chileDateRanges.prevYM);
+    });
+  }, [orders, chileDateRanges.prevYM]);
+
+  // Dynamic values depending on selected period: 'dia' | 'semana' | 'mes' (solo pedidos pagados del período real)
   const salesPeriodData = useMemo(() => {
-    const validMonthOrders = orders.filter((o) => o.status !== 'cancelado' && getOrderPaymentStatus(o).isPaid);
+    const formatGrowthLabel = (currentAmt, prevAmt, suffix) => {
+      if (prevAmt <= 0) {
+        return currentAmt > 0 ? `Nuevo ${suffix}` : `0% ${suffix}`;
+      }
+      const pct = Math.round(((currentAmt - prevAmt) / prevAmt) * 100);
+      return `${pct >= 0 ? '+' : ''}${pct}% ${suffix}`;
+    };
+
     const paidTodayOrders = todayOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+    const paidYesterdayOrders = yesterdayOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
     const paidWeekOrders = weekOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
-    const todayOrdersTotal = paidTodayOrders.reduce((acc, o) => acc + (o.total || 0), 0);
-    const weekOrdersTotal = paidWeekOrders.reduce((acc, o) => acc + (o.total || 0), 0);
-    const monthOrdersTotal = validMonthOrders.reduce((acc, o) => acc + (o.total || 0), 0);
+    const paidPrevWeekOrders = prevWeekOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+    const paidMonthOrders = currentMonthOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+    const paidPrevMonthOrders = prevMonthOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+
+    const todayOrdersTotal = paidTodayOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+    const yesterdayOrdersTotal = paidYesterdayOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+    const weekOrdersTotal = paidWeekOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+    const prevWeekOrdersTotal = paidPrevWeekOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+    const monthOrdersTotal = paidMonthOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+    const prevMonthOrdersTotal = paidPrevMonthOrders.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
 
     return {
       dia: {
         title: 'Ventas de Hoy',
         amount: todayOrdersTotal,
-        growth: todayOrdersTotal > 0 ? '+0% vs ayer' : '0% vs ayer',
-        detail: `${paidTodayOrders.length} ${paidTodayOrders.length === 1 ? 'pedido pagado hoy' : 'pedidos pagados hoy'}`,
+        isPositiveGrowth: todayOrdersTotal >= yesterdayOrdersTotal,
+        growth: formatGrowthLabel(todayOrdersTotal, yesterdayOrdersTotal, 'vs ayer'),
+        detail: `${paidTodayOrders.length} ${paidTodayOrders.length === 1 ? 'pagado hoy' : 'pagados hoy'}`,
+        paidCount: paidTodayOrders.length,
         periodLabel: 'Día',
       },
       semana: {
         title: 'Ventas de la Semana',
         amount: weekOrdersTotal,
-        growth: weekOrdersTotal > 0 ? '+0% vs sem. ant.' : '0% vs sem. ant.',
-        detail: `${paidWeekOrders.length} ${paidWeekOrders.length === 1 ? 'pedido pagado (7 días)' : 'pedidos pagados (7 días)'}`,
+        isPositiveGrowth: weekOrdersTotal >= prevWeekOrdersTotal,
+        growth: formatGrowthLabel(weekOrdersTotal, prevWeekOrdersTotal, 'vs sem. ant.'),
+        detail: `${paidWeekOrders.length} ${paidWeekOrders.length === 1 ? 'pagado (7d)' : 'pagados (7d)'}`,
+        paidCount: paidWeekOrders.length,
         periodLabel: 'Semana',
       },
       mes: {
-        title: 'Ventas del Mes Actual',
+        title: `Ventas de ${currentMonthName}`,
         amount: monthOrdersTotal,
-        growth: monthOrdersTotal > 0 ? '+0% vs mes ant.' : '0% vs mes ant.',
-        detail: `${validMonthOrders.length} ${validMonthOrders.length === 1 ? 'pedido pagado este mes' : 'pedidos pagados este mes'}`,
+        isPositiveGrowth: monthOrdersTotal >= prevMonthOrdersTotal,
+        growth: formatGrowthLabel(monthOrdersTotal, prevMonthOrdersTotal, 'vs mes ant.'),
+        detail: `${paidMonthOrders.length} ${paidMonthOrders.length === 1 ? 'pagado este mes' : 'pagados este mes'}`,
+        paidCount: paidMonthOrders.length,
         periodLabel: 'Mes Actual',
       },
     };
-  }, [todayOrders, weekOrders, orders]);
+  }, [todayOrders, yesterdayOrders, weekOrders, prevWeekOrders, currentMonthOrders, prevMonthOrders, currentMonthName]);
 
-  // Dynamic values depending on selected period for orders: 'dia' | 'semana' | 'mes'
+  // Dynamic values depending on selected period for orders: 'dia' | 'semana' | 'mes' (período real, sin cancelados)
   const ordersPeriodData = useMemo(() => {
-    const validMonthOrders = orders.filter((o) => o.status !== 'cancelado');
     const enCaminoCount = todayOrders.filter((o) => o.status === 'en_camino').length;
     const enPrepCount = todayOrders.filter((o) => o.status === 'en_preparacion').length;
-    const todayStatusText = `${enPrepCount} en prep. • ${enCaminoCount} en camino`;
+    const todayDelivered = todayOrders.filter((o) => o.status === 'entregado').length;
+    const todayStatusText =
+      todayOrders.length > 0
+        ? `${todayDelivered} entreg. • ${enPrepCount + enCaminoCount} activos`
+        : '0 en prep. • 0 en camino';
 
     const weekDelivered = weekOrders.filter((o) => o.status === 'entregado').length;
     const weekPending = weekOrders.length - weekDelivered;
-    const weekStatusText = `${weekDelivered} entregados • ${weekPending} en ruta`;
+    const weekStatusText = `${weekDelivered} entregados • ${weekPending} en proc.`;
 
-    const monthDelivered = validMonthOrders.filter((o) => o.status === 'entregado').length;
-    const monthPending = validMonthOrders.length - monthDelivered;
+    const monthDelivered = currentMonthOrders.filter((o) => o.status === 'entregado').length;
+    const monthPending = currentMonthOrders.length - monthDelivered;
     const monthStatusText = `${monthDelivered} completados • ${monthPending} en proc.`;
 
     return {
       dia: {
         title: 'Pedidos de Hoy',
-        count: `${todayOrders.length} ${todayOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        count: String(todayOrders.length),
+        unitLabel: todayOrders.length === 1 ? 'pedido' : 'pedidos',
         statusText: todayStatusText,
         detail: 'Despachos del día',
         periodLabel: 'Día',
       },
       semana: {
         title: 'Pedidos de la Semana',
-        count: `${weekOrders.length} ${weekOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        count: String(weekOrders.length),
+        unitLabel: weekOrders.length === 1 ? 'pedido' : 'pedidos',
         statusText: weekStatusText,
         detail: 'Últimos 7 días',
         periodLabel: 'Semana',
       },
       mes: {
-        title: 'Pedidos del Mes Actual',
-        count: `${validMonthOrders.length} ${validMonthOrders.length === 1 ? 'Pedido' : 'Pedidos'}`,
+        title: `Pedidos de ${currentMonthName}`,
+        count: String(currentMonthOrders.length),
+        unitLabel: currentMonthOrders.length === 1 ? 'pedido' : 'pedidos',
         statusText: monthStatusText,
         detail: 'Mes en curso',
         periodLabel: 'Mes Actual',
       },
     };
-  }, [todayOrders, weekOrders, orders]);
+  }, [todayOrders, weekOrders, currentMonthOrders, currentMonthName]);
 
-  // Dynamic values depending on selected period for customers: 'dia' | 'semana' | 'mes'
+  // Dynamic values depending on selected period for customers: nuevos del período + base total activa
   const customersPeriodData = useMemo(() => {
     const totalPets = customers.reduce(
       (acc, c) => acc + (Array.isArray(c.pets) ? c.pets.length : c.pet ? 1 : 0),
       0
     );
 
+    const newToday = customers.filter((c) => getChileIsoDateFromRecord(c) === chileDateRanges.todayIso).length;
+    const newWeek = customers.filter((c) => {
+      const iso = getChileIsoDateFromRecord(c);
+      return Boolean(iso && iso >= chileDateRanges.weekStartIso && iso <= chileDateRanges.todayIso);
+    }).length;
+    const newMonth = customers.filter((c) => {
+      const iso = getChileIsoDateFromRecord(c);
+      return Boolean(iso && iso.slice(0, 7) === chileDateRanges.currentYM);
+    }).length;
+
     return {
       dia: {
-        title: 'Clientes de Hoy',
-        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
-        statusText: `${totalPets} ${totalPets === 1 ? 'Mascota inscrita' : 'Mascotas inscritas'} 🐾`,
-        detail: customers.length > 0 ? 'Base activa' : 'Sin tutores registrados',
+        title: 'Nuevos clientes hoy',
+        count: String(newToday),
+        unitLabel: newToday === 1 ? 'nuevo' : 'nuevos',
+        statusText: `${customers.length} totales • ${totalPets} mascotas`,
+        detail: 'Base CRM',
         periodLabel: 'Día',
       },
       semana: {
-        title: 'Clientes de la Semana',
-        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
-        statusText: `${totalPets} ${totalPets === 1 ? 'Mascota activa' : 'Mascotas activas'} 🐾`,
-        detail: 'Últimos 7 días',
+        title: 'Nuevos (7 días)',
+        count: String(newWeek),
+        unitLabel: newWeek === 1 ? 'nuevo' : 'nuevos',
+        statusText: `${customers.length} totales • ${totalPets} mascotas`,
+        detail: 'Base CRM',
         periodLabel: 'Semana',
       },
       mes: {
-        title: 'Clientes del Mes Actual',
-        count: `${customers.length} ${customers.length === 1 ? 'Tutor' : 'Tutores'}`,
-        statusText: `${totalPets} con ficha activa 🐾`,
-        detail: 'Mes en curso',
+        title: `Nuevos en ${currentMonthName}`,
+        count: String(newMonth),
+        unitLabel: newMonth === 1 ? 'nuevo' : 'nuevos',
+        statusText: `${customers.length} totales • ${totalPets} mascotas`,
+        detail: 'Base CRM',
         periodLabel: 'Mes Actual',
       },
     };
-  }, [customers]);
+  }, [customers, chileDateRanges, currentMonthName]);
 
-  // Chart, KPIs and Pet breakdown synced with global filter: 'dia' | 'semana' | 'mes' (solo pedidos pagados suman en ventas)
+  // Pedidos activos (no cancelados) del período seleccionado en el Dashboard
+  const periodNonCancelledOrders = useMemo(() => {
+    if (globalTimeFilter === 'dia') return todayOrders;
+    if (globalTimeFilter === 'semana') return weekOrders;
+    return currentMonthOrders;
+  }, [globalTimeFilter, todayOrders, weekOrders, currentMonthOrders]);
+
+  // Chart, KPIs and Pet breakdown synced with global filter: 'dia' | 'semana' | 'mes' (100% datos reales)
   const dashboardAnalyticsData = useMemo(() => {
-    const validOrders = orders.filter((o) => o.status !== 'cancelado' && getOrderPaymentStatus(o).isPaid);
-    const activeOrders = (
-      globalTimeFilter === 'dia'
-        ? todayOrders
-        : globalTimeFilter === 'semana'
-          ? weekOrders
-          : validOrders
-    ).filter((o) => getOrderPaymentStatus(o).isPaid);
-
-    const periodSales = activeOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const activeOrders = periodNonCancelledOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+    const periodSales = activeOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
     const periodOrdersCount = activeOrders.length;
     const avgTicket = periodOrdersCount > 0 ? Math.round(periodSales / periodOrdersCount) : 0;
 
+    // Distribución real por especie: ítem por ítem cruzando con petType real del inventario
     let dogSales = 0;
     let catSales = 0;
     activeOrders.forEach((o) => {
-      const isCat =
-        (o.petType && o.petType.toLowerCase().includes('gato')) ||
-        (o.product && (o.product.toLowerCase().includes('felin') || o.product.toLowerCase().includes('gato')));
-      if (isCat) {
-        catSales += o.total || 0;
+      const orderTotal = Number(o.total) || 0;
+      if (orderTotal <= 0) return;
+
+      const itemsList =
+        Array.isArray(o.items) && o.items.length > 0
+          ? o.items
+          : [{ name: o.product || '', format: o.format || '', quantity: o.qty || 1, subtotal: orderTotal, productId: o.productId }];
+
+      let orderDogSub = 0;
+      let orderCatSub = 0;
+
+      itemsList.forEach((it) => {
+        const qty = Number(it.quantity || it.qty || 1) || 1;
+        const lineSub = Number(it.subtotal) || (Number(it.unitPrice || it.price || 0) * qty) || 1;
+        const matchedProd = resolveInventoryVariant(inventory, it);
+        const prodPetType = String(matchedProd?.petType || matchedProd?.pet_type || '').toLowerCase();
+        const prodCategory = String(matchedProd?.category || '').toLowerCase();
+        const itemNameLower = String(it.name || '').toLowerCase();
+
+        let isCatItem = false;
+        if (prodPetType.includes('gato') || prodPetType.includes('cat') || prodPetType.includes('felin')) {
+          isCatItem = true;
+        } else if (prodPetType.includes('perro') || prodPetType.includes('dog') || prodPetType.includes('canin')) {
+          isCatItem = false;
+        } else if (
+          prodCategory.includes('arena') ||
+          itemNameLower.includes('gato') ||
+          itemNameLower.includes('felin') ||
+          itemNameLower.includes('arena') ||
+          itemNameLower.includes('sanitaria')
+        ) {
+          isCatItem = true;
+        } else {
+          isCatItem = String(o.petType || '').toLowerCase().includes('gato');
+        }
+
+        if (isCatItem) {
+          orderCatSub += lineSub;
+        } else {
+          orderDogSub += lineSub;
+        }
+      });
+
+      const subTotal = orderDogSub + orderCatSub;
+      if (subTotal > 0) {
+        const allocatedCat = Math.round((orderCatSub / subTotal) * orderTotal);
+        catSales += allocatedCat;
+        dogSales += orderTotal - allocatedCat;
       } else {
-        dogSales += o.total || 0;
+        dogSales += orderTotal;
       }
     });
 
@@ -5456,28 +5951,101 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const perrosPercent = totalDogCat > 0 ? Math.round((dogSales / totalDogCat) * 100) : 0;
     const gatosPercent = totalDogCat > 0 ? 100 - perrosPercent : 0;
 
+    // Tasa real de pedidos entregados en el período
+    const totalNonCancelled = periodNonCancelledOrders.length;
+    const deliveredCount = periodNonCancelledOrders.filter((o) => o.status === 'entregado').length;
+    const enCaminoCount = periodNonCancelledOrders.filter((o) => o.status === 'en_camino').length;
+    const enPrepCount = periodNonCancelledOrders.filter((o) => o.status === 'en_preparacion').length;
+    const deliveredPct = totalNonCancelled > 0 ? Math.round((deliveredCount / totalNonCancelled) * 100) : 0;
+    const enCaminoPct = totalNonCancelled > 0 ? Math.round((enCaminoCount / totalNonCancelled) * 100) : 0;
+    const enPrepPct = totalNonCancelled > 0 ? Math.round((enPrepCount / totalNonCancelled) * 100) : 0;
+
+    // Distribución horaria real (Mañana / Tarde / Noche) sobre pedidos del período
+    let morningCount = 0;
+    let afternoonCount = 0;
+    let nightCount = 0;
+    periodNonCancelledOrders.forEach((o) => {
+      const h = getChileHourFromRecord(o);
+      if (h === null) return;
+      if (h >= 6 && h < 13) morningCount += 1;
+      else if (h >= 13 && h < 18) afternoonCount += 1;
+      else nightCount += 1;
+    });
+    const timedTotal = morningCount + afternoonCount + nightCount;
+    const morningPct = timedTotal > 0 ? Math.round((morningCount / timedTotal) * 100) : 0;
+    const afternoonPct = timedTotal > 0 ? Math.round((afternoonCount / timedTotal) * 100) : 0;
+    const nightPct = timedTotal > 0 ? Math.max(0, 100 - morningPct - afternoonPct) : 0;
+
     const totalRedemptions = convenios.reduce((acc, c) => acc + (c.redemptionsCount || 0), 0);
+    const volumeSummary = {
+      total: totalNonCancelled,
+      deliveredCount,
+      deliveredPct,
+      enCaminoCount,
+      enCaminoPct,
+      enPrepCount,
+      enPrepPct,
+    };
+    const peakHoursStats = {
+      hasData: timedTotal > 0,
+      morningCount,
+      morningPct,
+      afternoonCount,
+      afternoonPct,
+      nightCount,
+      nightPct,
+    };
+    const footerOnTime =
+      totalNonCancelled > 0 ? `${deliveredCount}/${totalNonCancelled} (${deliveredPct}%)` : 'Sin despachos';
 
     if (globalTimeFilter === 'dia') {
-      const hours = ['09:00', '11:00', '13:00', '15:00', '17:00', '19:00', '21:00'];
-      const maxVal = periodSales > 0 ? Math.max(...activeOrders.map((o) => o.total || 0), 1) : 1;
-      const bars = hours.map((hour) => {
-        const matchingOrders = activeOrders.filter((o) => (o.time || '').startsWith(hour.slice(0, 2)));
-        const amount = matchingOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-        return {
-          day: hour,
-          val: periodSales > 0 ? Math.round((amount / maxVal) * 100) : 0,
-          amount: formatCLP(amount),
-        };
-      });
+      const hourBuckets = [
+        { label: '00-08', min: 0, max: 8 },
+        { label: '09-11', min: 9, max: 11 },
+        { label: '12-14', min: 12, max: 14 },
+        { label: '15-17', min: 15, max: 17 },
+        { label: '18-20', min: 18, max: 20 },
+        { label: '21-23', min: 21, max: 23 },
+      ];
+      const bucketSales = hourBuckets.map((b) =>
+        activeOrders
+          .filter((o) => {
+            const h = getChileHourFromRecord(o);
+            return h !== null && h >= b.min && h <= b.max;
+          })
+          .reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+      );
+      const maxSales = Math.max(...bucketSales, 1);
+      const bars = hourBuckets.map((b, idx) => ({
+        day: b.label,
+        rawAmount: bucketSales[idx],
+        val: bucketSales[idx] > 0 ? Math.round((bucketSales[idx] / maxSales) * 100) : 0,
+        amount: formatCLP(bucketSales[idx]),
+      }));
+
+      const bucketCounts = hourBuckets.map((b) =>
+        periodNonCancelledOrders.filter((o) => {
+          const h = getChileHourFromRecord(o);
+          return h !== null && h >= b.min && h <= b.max;
+        }).length
+      );
+      const maxCount = Math.max(...bucketCounts, 1);
+      const volumeBars = hourBuckets.map((b, idx) => ({
+        label: b.label,
+        count: bucketCounts[idx],
+        height: bucketCounts[idx] > 0 ? Math.round((bucketCounts[idx] / maxCount) * 100) : 0,
+      }));
 
       return {
         chartTitle: 'Ventas de Hoy',
-        chartSubtitle: 'Ingresos y pedidos registrados en la jornada',
-        chartBadge: periodSales > 0 ? `Total Hoy: ${formatCLP(periodSales)} (${periodOrdersCount} pedidos)` : 'Total Hoy: $0 (0 pedidos)',
+        chartSubtitle: 'Ingresos pagados agrupados por bloque horario (hora Chile)',
+        chartBadge: periodSales > 0 ? `Total Hoy: ${formatCLP(periodSales)} (${periodOrdersCount} pagados)` : 'Total Hoy: $0 (0 pagados)',
         bars,
+        volumeBars,
+        volumeSummary,
+        peakHoursStats,
         footerTicket: formatCLP(avgTicket),
-        footerOnTime: periodOrdersCount > 0 ? '100% puntual' : 'Sin despachos',
+        footerOnTime,
         footerRedemptions: `${totalRedemptions} canjes`,
         perrosPercent,
         perrosAmount: formatCLP(dogSales),
@@ -5487,26 +6055,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
 
     if (globalTimeFilter === 'semana') {
-      const days = ['Día 1', 'Día 2', 'Día 3', 'Día 4', 'Día 5', 'Día 6', 'Hoy'];
-      const maxVal = periodSales > 0 ? Math.max(...activeOrders.map((o) => o.total || 0), 1) : 1;
-      const bars = days.map((d, idx) => {
-        const isToday = idx === 6;
-        const matchingOrders = isToday ? todayOrders : [];
-        const amount = matchingOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-        return {
-          day: d,
-          val: periodSales > 0 && maxVal > 0 ? Math.round((amount / maxVal) * 100) : 0,
-          amount: formatCLP(amount),
-        };
-      });
+      const daySales = chileDateRanges.last7Days.map((d) =>
+        activeOrders
+          .filter((o) => getChileIsoDateFromRecord(o) === d.iso)
+          .reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+      );
+      const maxSales = Math.max(...daySales, 1);
+      const bars = chileDateRanges.last7Days.map((d, idx) => ({
+        day: d.label,
+        rawAmount: daySales[idx],
+        val: daySales[idx] > 0 ? Math.round((daySales[idx] / maxSales) * 100) : 0,
+        amount: formatCLP(daySales[idx]),
+      }));
+
+      const dayCounts = chileDateRanges.last7Days.map((d) =>
+        periodNonCancelledOrders.filter((o) => getChileIsoDateFromRecord(o) === d.iso).length
+      );
+      const maxCount = Math.max(...dayCounts, 1);
+      const volumeBars = chileDateRanges.last7Days.map((d, idx) => ({
+        label: d.label,
+        count: dayCounts[idx],
+        height: dayCounts[idx] > 0 ? Math.round((dayCounts[idx] / maxCount) * 100) : 0,
+      }));
 
       return {
         chartTitle: 'Ventas Semanales',
-        chartSubtitle: 'Ingresos diarios acumulados de los últimos 7 días',
+        chartSubtitle: 'Ingresos pagados diarios de los últimos 7 días',
         chartBadge: periodSales > 0 ? `Promedio: ${formatCLP(Math.round(periodSales / 7))} / día` : 'Promedio: $0 / día',
         bars,
+        volumeBars,
+        volumeSummary,
+        peakHoursStats,
         footerTicket: formatCLP(avgTicket),
-        footerOnTime: periodOrdersCount > 0 ? '100% a tiempo' : 'Sin despachos',
+        footerOnTime,
         footerRedemptions: `${totalRedemptions} canjes`,
         perrosPercent,
         perrosAmount: formatCLP(dogSales),
@@ -5515,38 +6096,76 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       };
     }
 
-    // Default: 'mes'
-    const weeks = ['Sem 1 (1-7)', 'Sem 2 (8-14)', 'Sem 3 (15-21)', 'Sem 4 (22+)'];
-    const bars = weeks.map((w) => ({
-      day: w,
-      val: 0,
-      amount: formatCLP(0),
+    // Default: 'mes' — Agrupación real por semanas del mes actual (días 1-7, 8-14, 15-21, 22-31)
+    const weekBuckets = [
+      { label: 'Sem 1 (1-7)', min: 1, max: 7 },
+      { label: 'Sem 2 (8-14)', min: 8, max: 14 },
+      { label: 'Sem 3 (15-21)', min: 15, max: 21 },
+      { label: 'Sem 4 (22+)', min: 22, max: 31 },
+    ];
+    const getOrderDayOfMonth = (o) => {
+      const iso = getChileIsoDateFromRecord(o);
+      if (!iso) return null;
+      const dayNum = parseInt(iso.slice(8, 10), 10);
+      return isNaN(dayNum) ? null : dayNum;
+    };
+
+    const weekSales = weekBuckets.map((wb) =>
+      activeOrders
+        .filter((o) => {
+          const d = getOrderDayOfMonth(o);
+          return d !== null && d >= wb.min && d <= wb.max;
+        })
+        .reduce((sum, o) => sum + (Number(o.total) || 0), 0)
+    );
+    const maxSales = Math.max(...weekSales, 1);
+    const bars = weekBuckets.map((wb, idx) => ({
+      day: wb.label,
+      rawAmount: weekSales[idx],
+      val: weekSales[idx] > 0 ? Math.round((weekSales[idx] / maxSales) * 100) : 0,
+      amount: formatCLP(weekSales[idx]),
+    }));
+
+    const weekCounts = weekBuckets.map((wb) =>
+      periodNonCancelledOrders.filter((o) => {
+        const d = getOrderDayOfMonth(o);
+        return d !== null && d >= wb.min && d <= wb.max;
+      }).length
+    );
+    const maxCount = Math.max(...weekCounts, 1);
+    const volumeBars = weekBuckets.map((wb, idx) => ({
+      label: wb.label.split(' ')[0] + ' ' + wb.label.split(' ')[1],
+      count: weekCounts[idx],
+      height: weekCounts[idx] > 0 ? Math.round((weekCounts[idx] / maxCount) * 100) : 0,
     }));
 
     return {
-      chartTitle: 'Ventas Mensuales',
-      chartSubtitle: 'Ingresos consolidados por semana del mes en curso',
+      chartTitle: `Ventas de ${currentMonthName}`,
+      chartSubtitle: 'Ingresos pagados consolidados por semana del mes en curso',
       chartBadge: periodSales > 0 ? `Total Mes: ${formatCLP(periodSales)}` : 'Total Mes: $0',
       bars,
+      volumeBars,
+      volumeSummary,
+      peakHoursStats,
       footerTicket: formatCLP(avgTicket),
-      footerOnTime: periodOrdersCount > 0 ? '100% cumplimiento' : 'Sin despachos',
+      footerOnTime,
       footerRedemptions: `${totalRedemptions} canjes`,
       perrosPercent,
       perrosAmount: formatCLP(dogSales),
       gatosPercent,
       gatosAmount: formatCLP(catSales),
     };
-  }, [globalTimeFilter, todayOrders, weekOrders, orders, convenios]);
+  }, [globalTimeFilter, periodNonCancelledOrders, inventory, convenios, chileDateRanges.last7Days, currentMonthName]);
 
-  // Geografía calculada de pedidos
+  // Geografía calculada de pedidos del período (excluye cancelados)
   const cityDistribution = useMemo(() => {
-    if (orders.length === 0) return [];
+    if (periodNonCancelledOrders.length === 0) return [];
     const map = {};
-    orders.forEach((o) => {
-      const city = o.city || 'Puerto Varas';
+    periodNonCancelledOrders.forEach((o) => {
+      const city = o.city || 'Frutillar';
       if (!map[city]) map[city] = { city, count: 0, total: 0 };
       map[city].count += 1;
-      map[city].total += o.total || 0;
+      map[city].total += Number(o.total) || 0;
     });
     const colors = [
       'from-[#D97706] to-[#F5BA13]',
@@ -5559,16 +6178,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       .sort((a, b) => b.count - a.count)
       .map((item, idx) => ({
         ...item,
-        percent: Math.round((item.count / orders.length) * 100),
+        percent: Math.round((item.count / periodNonCancelledOrders.length) * 100),
         countText: `${item.count} ${item.count === 1 ? 'pedido' : 'pedidos'}`,
         totalText: formatCLP(item.total),
         color: colors[idx % colors.length],
       }));
-  }, [orders]);
+  }, [periodNonCancelledOrders]);
 
-  // Modalidades de entrega calculadas de pedidos
+  // Modalidades de entrega calculadas de pedidos del período (clasificación mutuamente excluyente, sin cancelados)
   const deliveryMethodStats = useMemo(() => {
-    if (orders.length === 0) {
+    const total = periodNonCancelledOrders.length;
+    if (total === 0) {
       return {
         hasOrders: false,
         domicilioPct: 0,
@@ -5579,11 +6199,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         courierCount: 0,
       };
     }
-    const domicilio = orders.filter((o) => !o.deliveryType || o.deliveryType === 'domicilio' || (!o.deliverySlot?.includes('Retiro') && !o.channel?.includes('courier'))).length;
-    const retiro = orders.filter((o) => o.deliveryType === 'retiro' || o.deliverySlot?.includes('Retiro')).length;
-    const courier = orders.length - domicilio - retiro;
-    const domPct = Math.round((domicilio / orders.length) * 100);
-    const retPct = Math.round((retiro / orders.length) * 100);
+    let domicilio = 0;
+    let retiro = 0;
+    let courier = 0;
+    periodNonCancelledOrders.forEach((o) => {
+      const dt = String(o.deliveryType || '').toLowerCase();
+      const slot = String(o.deliverySlot || '').toLowerCase();
+      const zone = String(o.deliveryZone || '').toLowerCase();
+      const chan = String(o.channel || '').toLowerCase();
+      if (dt === 'retiro' || slot.includes('retiro') || zone.includes('retiro')) {
+        retiro += 1;
+      } else if (dt === 'courier' || chan.includes('courier') || zone.includes('courier')) {
+        courier += 1;
+      } else {
+        domicilio += 1;
+      }
+    });
+    const domPct = Math.round((domicilio / total) * 100);
+    const retPct = Math.round((retiro / total) * 100);
     return {
       hasOrders: true,
       domicilioPct: domPct,
@@ -5591,28 +6224,36 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       retiroPct: retPct,
       retiroCount: retiro,
       courierPct: Math.max(0, 100 - domPct - retPct),
-      courierCount: Math.max(0, courier),
+      courierCount: courier,
     };
-  }, [orders]);
+  }, [periodNonCancelledOrders]);
 
-  // Ranking Top 5 productos vendidos calculado de pedidos
+  // Ranking Top 5 productos vendidos calculado sobre pedidos pagados del período (sin cancelados)
   const topSellingProducts = useMemo(() => {
-    if (orders.length === 0) return [];
+    const paidPeriodOrders = periodNonCancelledOrders.filter((o) => getOrderPaymentStatus(o).isPaid);
+    if (paidPeriodOrders.length === 0) return [];
     const map = {};
-    orders.forEach((o) => {
-      const items = o.items || [{ name: o.product, format: o.format, qty: o.qty || 1, subtotal: o.total }];
+    paidPeriodOrders.forEach((o) => {
+      const items =
+        Array.isArray(o.items) && o.items.length > 0
+          ? o.items
+          : [{ name: o.product, format: o.format, qty: o.qty || 1, subtotal: o.total }];
       items.forEach((it) => {
-        const key = `${it.name} - ${it.format || ''}`;
+        const qty = Number(it.quantity || it.qty || 1) || 1;
+        const unitP = Number(it.unitPrice || it.price || 0) || 0;
+        const sub = Number(it.subtotal) || unitP * qty;
+        const fmt = it.format || it.weight || '1 un.';
+        const key = `${it.name} - ${fmt}`;
         if (!map[key]) {
           map[key] = {
             name: it.name,
-            format: it.format || '1 un.',
+            format: fmt,
             units: 0,
             total: 0,
           };
         }
-        map[key].units += it.qty || 1;
-        map[key].total += it.subtotal || (it.unitPrice ? it.unitPrice * (it.qty || 1) : 0);
+        map[key].units += qty;
+        map[key].total += sub;
       });
     });
     const list = Object.values(map).sort((a, b) => b.units - a.units).slice(0, 5);
@@ -5624,7 +6265,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       percent: Math.round((item.units / maxUnits) * 100),
       total: formatCLP(item.total),
     }));
-  }, [orders]);
+  }, [periodNonCancelledOrders]);
 
   // Tutores con reposición crítica real
   const criticalReplenishmentCustomers = useMemo(() => {
@@ -6506,7 +7147,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       {formatCLP(salesPeriodData.dia.amount)}
                     </div>
                     <span className="text-[12px] text-[#8E8E93] font-medium">
-                      {todayOrders.length} {todayOrders.length === 1 ? 'pedido hoy' : 'pedidos hoy'}
+                      {salesPeriodData.dia.detail}
                     </span>
                   </div>
 
@@ -6798,42 +7439,108 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
                 </div>
 
+                {/* Alerta visible de Cuentas por Cobrar (pedidos impagos) y Por Pagar (facturas pendientes) */}
+                {(unpaidOrdersSummary.unpaidCount > 0 || realCashPosition.pendingInvoicesCount > 0) && (
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    {unpaidOrdersSummary.unpaidCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOrderDayFilter('todos');
+                          setOrderStatusFilter('por_cobrar');
+                          setOrderPaymentFilter('todos');
+                          setActiveTab('pedidos');
+                        }}
+                        className="flex-1 min-w-[260px] px-4 py-2.5 rounded-2xl bg-amber-50/90 hover:bg-amber-100/80 border border-amber-200/90 text-left flex items-center justify-between gap-3 transition-all cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0">
+                            <Clock className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-extrabold text-amber-950 truncate">
+                              Por cobrar: {formatCLP(unpaidOrdersSummary.totalUnpaidAmount)} ({unpaidOrdersSummary.unpaidCount} {unpaidOrdersSummary.unpaidCount === 1 ? 'pedido' : 'pedidos'})
+                            </div>
+                            <div className="text-[11px] font-medium text-amber-800/80 truncate">
+                              {unpaidOrdersSummary.deliveredUnpaidCount > 0
+                                ? `${unpaidOrdersSummary.deliveredUnpaidCount} ya ${unpaidOrdersSummary.deliveredUnpaidCount === 1 ? 'entregado' : 'entregados'} sin pago (${formatCLP(unpaidOrdersSummary.deliveredUnpaidAmount)}) · No suman a Caja ni Ventas aún`
+                                : 'Pedidos activos con pago pendiente · No suman a Caja ni Ventas aún'}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-bold text-amber-800 shrink-0 inline-flex items-center gap-0.5">
+                          <span>Revisar</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                      </button>
+                    )}
+
+                    {realCashPosition.pendingInvoicesCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('finanzas');
+                          setFinancesSubTab('gastos');
+                          setFinancesInvoiceStatusFilter('pendiente');
+                        }}
+                        className="px-4 py-2.5 rounded-2xl bg-white hover:bg-[#FAF8F4] border border-[#EAECEF] text-left flex items-center justify-between gap-3 transition-all cursor-pointer"
+                        title="Facturas de proveedores aún no pagadas (no descontadas de Caja y banco)"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                            <Receipt className="w-4 h-4" />
+                          </span>
+                          <div>
+                            <div className="text-xs font-extrabold text-[#111827]">
+                              Por pagar: {formatCLP(realCashPosition.pendingInvoicesPayable)}
+                            </div>
+                            <div className="text-[11px] font-medium text-slate-500">
+                              {realCashPosition.pendingInvoicesCount} {realCashPosition.pendingInvoicesCount === 1 ? 'factura pendiente' : 'facturas pendientes'}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* FinSet Pure White Bento KPI Row (5 Cards) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                  {/* Card 1: Caja y banco */}
+                  {/* Card 1: Caja y banco (Saldo acumulado histórico real) */}
                   <div
                     onClick={() => {
                       setActiveTab('finanzas');
                       setFinancesSubTab('resumen');
                     }}
                     className="finset-card bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-3 group cursor-pointer"
-                    title="Ver detalles de caja y balance financiero"
+                    title={`Saldo real acumulado en caja y banco:\n+ Aportes capital: ${formatCLP(realCashPosition.totalCapitalInvested)}\n+ Ventas pagadas netas: ${formatCLP(realCashPosition.totalPaidSalesNetInBank)} (comisiones: -${formatCLP(realCashPosition.totalPaymentFeesRetained)})\n- Facturas pagadas (c/flete): ${formatCLP(realCashPosition.paidInvoicesOutflow)}\n- Gastos operacionales: ${formatCLP(realCashPosition.totalExpensesOutflow)}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[13px] font-semibold text-slate-600 truncate">
                         Caja y banco
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500 shrink-0">
-                        CLP
+                        Real · CLP
                       </span>
                     </div>
 
                     <div className="flex items-baseline">
-                      <span className="text-2xl xl:text-[25px] font-extrabold text-[#111827] tracking-tight leading-none">
-                        {formatCLP(financialMetrics.netCashBalance)}
+                      <span className={`text-2xl xl:text-[25px] font-extrabold tracking-tight leading-none ${realCashPosition.realCashBalance < 0 ? 'text-rose-600' : 'text-[#111827]'}`}>
+                        {formatCLP(realCashPosition.realCashBalance)}
                       </span>
                       <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold truncate">
-                        +{formatCLP(financialMetrics.totalInvested)} cap.
+                        +{formatCLP(realCashPosition.totalCapitalInvested)} cap.
                       </span>
                       <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 shrink-0">
                         <span className="w-6 h-6 rounded-lg bg-[#FEF3C7] text-[#D97706] flex items-center justify-center">
                           <Landmark className="w-3.5 h-3.5" />
                         </span>
-                        <span>Liquidez</span>
+                        <span>Acumulado</span>
                       </div>
                     </div>
                   </div>
@@ -6857,14 +7564,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-bold">
-                        ↑ {salesPeriodData[globalTimeFilter].growth}
+                      <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${salesPeriodData[globalTimeFilter].isPositiveGrowth ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                        {salesPeriodData[globalTimeFilter].isPositiveGrowth ? '↑' : '↓'} {salesPeriodData[globalTimeFilter].growth}
                       </span>
                       <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 shrink-0">
                         <span className="w-6 h-6 rounded-lg bg-[#FEF3C7] text-[#D97706] flex items-center justify-center">
                           <DollarSign className="w-3.5 h-3.5" />
                         </span>
-                        <span className="truncate max-w-[76px]">{salesPeriodData[globalTimeFilter].detail}</span>
+                        <span className="truncate max-w-[82px]">{salesPeriodData[globalTimeFilter].detail}</span>
                       </div>
                     </div>
                   </div>
@@ -6883,11 +7590,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </span>
                     </div>
 
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl xl:text-[25px] font-extrabold text-[#111827] tracking-tight leading-none">
                         {ordersPeriodData[globalTimeFilter].count}
                       </span>
-                      <span className="text-xs font-semibold text-slate-400">pedidos</span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        {ordersPeriodData[globalTimeFilter].unitLabel}
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
@@ -6917,15 +7626,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </span>
                     </div>
 
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl xl:text-[25px] font-extrabold text-[#111827] tracking-tight leading-none">
                         {customersPeriodData[globalTimeFilter].count}
                       </span>
-                      <span className="text-xs font-semibold text-slate-400">tutores</span>
+                      <span className="text-xs font-semibold text-slate-400">
+                        {customersPeriodData[globalTimeFilter].unitLabel}
+                      </span>
                     </div>
 
                     <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] text-[10px] font-bold truncate max-w-[115px]">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] text-[10px] font-bold truncate max-w-[125px]">
                         {customersPeriodData[globalTimeFilter].statusText}
                       </span>
                       <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 shrink-0">
@@ -6937,23 +7648,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Card 5: Valor inventario */}
+                  {/* Card 5: Valor inventario (Costo total con IVA incluido) */}
                   <div
                     onClick={() => setActiveTab('inventario')}
                     className="finset-card bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-3 group cursor-pointer"
+                    title={`Costo total invertido en bodega (c/IVA + flete): ${formatCLP(financialMetrics.totalInventoryCostWithIva)}\nCosto neto (s/IVA): ${formatCLP(financialMetrics.totalInventoryCostNeto)}\nValor proyectado PVP: ${formatCLP(financialMetrics.totalInventoryPVP)}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[13px] font-semibold text-slate-600 truncate">
                         Valor inventario
                       </span>
                       <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500 shrink-0">
-                        CLP
+                        c/IVA
                       </span>
                     </div>
 
                     <div className="flex items-baseline">
                       <span className="text-2xl xl:text-[25px] font-extrabold text-[#111827] tracking-tight leading-none">
-                        {formatCLP(financialMetrics.totalInventoryCost)}
+                        {formatCLP(financialMetrics.totalInventoryCostWithIva)}
                       </span>
                       <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                     </div>
@@ -7066,17 +7778,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <div className="space-y-4 animate-in fade-in duration-300">
                         <div className="pt-4 grid grid-flow-col auto-cols-fr gap-3 items-end h-48 border-b border-slate-100 pb-3">
                           {dashboardAnalyticsData.bars.map((bar, idx) => {
-                            const isPeak = idx === dashboardAnalyticsData.bars.length - 1 || bar.val === 100;
+                            const hasValue = (bar.rawAmount || 0) > 0;
+                            const isPeak = hasValue && bar.val === 100;
                             return (
                               <div key={idx} className="flex flex-col items-center gap-2 group/bar">
-                                <span className="text-[10px] font-bold text-[#111827] bg-white border border-[#EAECEF] px-2 py-0.5 rounded-full shadow-2xs opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap">
+                                <span className={`text-[10px] font-bold text-[#111827] bg-white border border-[#EAECEF] px-2 py-0.5 rounded-full shadow-2xs transition-opacity whitespace-nowrap ${hasValue ? 'opacity-100' : 'opacity-0 group-hover/bar:opacity-100'}`}>
                                   {bar.amount}
                                 </span>
                                 <div className="w-10 sm:w-14 mx-auto bg-[#FEF3C7]/70 rounded-2xl h-36 flex items-end overflow-hidden p-1">
                                   <div
-                                    className={`w-full rounded-xl transition-all duration-700 ${isPeak ? 'bg-[#D97706]' : 'bg-[#FDE68A] group-hover/bar:bg-[#D97706]/75'
+                                    className={`w-full rounded-xl transition-all duration-700 ${isPeak
+                                      ? 'bg-[#D97706]'
+                                      : hasValue
+                                        ? 'bg-[#F59E0B]/80 group-hover/bar:bg-[#D97706]'
+                                        : 'bg-[#FDE68A]/70'
                                       }`}
-                                    style={{ height: `${Math.max(bar.val, 6)}%` }}
+                                    style={{ height: `${hasValue ? Math.max(bar.val, 10) : 6}%` }}
                                   />
                                 </div>
                                 <span className="text-[11px] font-medium text-slate-400 text-center truncate max-w-full">
@@ -7093,7 +7810,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <span className="text-sm font-extrabold text-[#111827] mt-0.5 block">{dashboardAnalyticsData.footerTicket}</span>
                           </div>
                           <div className="px-2">
-                            <span className="text-slate-400 block text-[11px] font-medium">Entrega a tiempo</span>
+                            <span className="text-slate-400 block text-[11px] font-medium">Entregas completadas</span>
                             <span className="text-sm font-extrabold text-[#D97706] mt-0.5 block">{dashboardAnalyticsData.footerOnTime}</span>
                           </div>
                           <div className="px-2">
@@ -7108,43 +7825,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {currentChartSlide === 1 && (
                       <div className="space-y-4 animate-in fade-in duration-300">
                         <div className="pt-4 grid grid-flow-col auto-cols-fr gap-3 items-end h-48 border-b border-slate-100 pb-3">
-                          {(globalTimeFilter === 'dia'
-                            ? [
-                              { label: '09:00', count: 0, height: 0 },
-                              { label: '11:00', count: 0, height: 0 },
-                              { label: '13:00', count: 0, height: 0 },
-                              { label: '15:00', count: 0, height: 0 },
-                              { label: '17:00', count: 0, height: 0 },
-                              { label: '19:00', count: 0, height: 0 },
-                            ]
-                            : globalTimeFilter === 'semana'
-                              ? [
-                                { label: 'Día 1', count: 0, height: 0 },
-                                { label: 'Día 2', count: 0, height: 0 },
-                                { label: 'Día 3', count: 0, height: 0 },
-                                { label: 'Día 4', count: 0, height: 0 },
-                                { label: 'Día 5', count: 0, height: 0 },
-                                { label: 'Día 6', count: 0, height: 0 },
-                                { label: 'Hoy', count: todayOrders.length, height: todayOrders.length > 0 ? 100 : 0 },
-                              ]
-                              : [
-                                { label: 'Sem 1', count: 0, height: 0 },
-                                { label: 'Sem 2', count: 0, height: 0 },
-                                { label: 'Sem 3', count: 0, height: 0 },
-                                { label: 'Sem 4', count: orders.length, height: orders.length > 0 ? 100 : 0 },
-                              ]
-                          ).map((col, idx) => (
+                          {(dashboardAnalyticsData.volumeBars || []).map((col, idx) => (
                             <div key={idx} className="flex flex-col items-center gap-2 group/col">
-                              <span className="text-[10px] font-bold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded-full opacity-0 group-hover/col:opacity-100 transition-opacity">
+                              <span className={`text-[10px] font-bold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded-full transition-opacity whitespace-nowrap ${col.count > 0 ? 'opacity-100' : 'opacity-0 group-hover/col:opacity-100'}`}>
                                 {col.count} {col.count === 1 ? 'pedido' : 'pedidos'}
                               </span>
                               <div className="w-10 sm:w-14 mx-auto bg-[#FEF3C7]/70 rounded-2xl h-36 flex items-end p-1">
                                 <div
-                                  className="w-full bg-[#D97706] rounded-xl transition-all duration-700"
-                                  style={{ height: `${Math.max(col.height, 6)}%` }}
+                                  className={`w-full rounded-xl transition-all duration-700 ${col.count > 0 ? 'bg-[#D97706]' : 'bg-[#FDE68A]/70'}`}
+                                  style={{ height: `${col.count > 0 ? Math.max(col.height, 10) : 6}%` }}
                                 />
                               </div>
-                              <span className="text-[11px] font-medium text-slate-400">{col.label}</span>
+                              <span className="text-[11px] font-medium text-slate-400 text-center truncate max-w-full">{col.label}</span>
                             </div>
                           ))}
                         </div>
@@ -7153,19 +7845,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <div>
                             <span className="text-slate-400 block font-medium text-[11px]">Entregados</span>
                             <span className="text-sm font-extrabold text-emerald-600 mt-0.5 block">
-                              {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'entregado').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'entregado').length})` : '0% (0)'}
+                              {`${dashboardAnalyticsData.volumeSummary.deliveredPct}% (${dashboardAnalyticsData.volumeSummary.deliveredCount})`}
                             </span>
                           </div>
                           <div>
                             <span className="text-slate-400 block font-medium text-[11px]">En ruta</span>
                             <span className="text-sm font-extrabold text-[#D97706] mt-0.5 block">
-                              {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'en_camino').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'en_camino').length})` : '0% (0)'}
+                              {`${dashboardAnalyticsData.volumeSummary.enCaminoPct}% (${dashboardAnalyticsData.volumeSummary.enCaminoCount})`}
                             </span>
                           </div>
                           <div>
                             <span className="text-slate-400 block font-medium text-[11px]">En preparación</span>
                             <span className="text-sm font-extrabold text-amber-600 mt-0.5 block">
-                              {orders.length > 0 ? `${Math.round((orders.filter((o) => o.status === 'en_preparacion').length / orders.length) * 100)}% (${orders.filter((o) => o.status === 'en_preparacion').length})` : '0% (0)'}
+                              {`${dashboardAnalyticsData.volumeSummary.enPrepPct}% (${dashboardAnalyticsData.volumeSummary.enPrepCount})`}
                             </span>
                           </div>
                         </div>
@@ -7178,7 +7870,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         <div className="p-8 text-center text-slate-400 bg-[#F8FAFC] rounded-2xl border border-[#EAECEF] space-y-1.5">
                           <MapPin className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
                           <p className="text-xs font-semibold text-slate-600">Sin despachos por comuna registrados</p>
-                          <p className="text-[11px] text-slate-400">Se generará la distribución geográfica a medida que ingreses pedidos.</p>
+                          <p className="text-[11px] text-slate-400">Se generará la distribución geográfica a medida que ingreses pedidos en el período.</p>
                         </div>
                       ) : (
                         <div className="space-y-3.5 pt-1 animate-in fade-in duration-300">
@@ -7212,8 +7904,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <span className="text-sm font-extrabold text-[#D97706] mt-0.5 block">{dispatchZones.length} {dispatchZones.length === 1 ? 'zona' : 'zonas'}</span>
                             </div>
                             <div>
-                              <span className="text-slate-400 block font-medium text-[11px]">Despacho promedio</span>
-                              <span className="text-sm font-extrabold text-[#78350F] mt-0.5 block">24 horas</span>
+                              <span className="text-slate-400 block font-medium text-[11px]">Comunas atendidas</span>
+                              <span className="text-sm font-extrabold text-[#78350F] mt-0.5 block">{cityDistribution.length} {cityDistribution.length === 1 ? 'comuna' : 'comunas'}</span>
                             </div>
                           </div>
                         </div>
@@ -7281,8 +7973,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       topSellingProducts.length === 0 ? (
                         <div className="p-8 text-center text-slate-400 bg-[#F8FAFC] rounded-2xl border border-[#EAECEF] space-y-1.5">
                           <Award className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
-                          <p className="text-xs font-semibold text-slate-600">Sin ventas de productos registradas</p>
-                          <p className="text-[11px] text-slate-400">El ranking de los más vendidos se generará a medida que se ingresen pedidos.</p>
+                          <p className="text-xs font-semibold text-slate-600">Sin ventas pagadas en el período</p>
+                          <p className="text-[11px] text-slate-400">El ranking de los más vendidos se calcula con pedidos pagados del período seleccionado.</p>
                         </div>
                       ) : (
                         <div className="space-y-2.5 pt-1 animate-in fade-in duration-300">
@@ -7309,69 +8001,89 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       )
                     )}
 
-                    {/* SLIDE 5: RENDIMIENTO POR CONVENIOS LOCALES */}
+                    {/* SLIDE 5: RENDIMIENTO POR CONVENIOS LOCALES (Ventas reales por convenio, sin estimados) */}
                     {currentChartSlide === 5 && (
                       convenios.length === 0 ? (
                         <div className="p-8 text-center text-slate-400 bg-[#F8FAFC] rounded-2xl border border-[#EAECEF]">
                           <Handshake className="w-8 h-8 mx-auto mb-2 opacity-40 text-slate-400" />
                           <p className="text-xs font-semibold text-slate-500">No hay convenios registrados</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">Crea convenios en la sección correspondiente para ver métricas aquí.</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">Crea convenios en la sección correspondiente para ver métricas reales aquí.</p>
                         </div>
                       ) : (
                         <div className="space-y-3 pt-1 animate-in fade-in duration-300">
-                          {convenios.map((conv, idx) => (
-                            <div key={conv.id || idx} className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1 text-xs">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 font-bold text-[#111827]">
-                                  <span>
-                                    {conv.type === 'veterinaria' ? '🏥' : conv.type === 'entrenamiento' ? '🐕' : conv.type === 'peluqueria' ? '✂️' : '🏡'}
-                                  </span>
-                                  <span>{conv.name}</span>
-                                  <span className="text-[10px] font-mono font-bold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded-full">
-                                    {conv.code}
-                                  </span>
+                          {convenios.map((conv, idx) => {
+                            const convNameLower = String(conv.name || '').toLowerCase();
+                            const convCodeLower = String(conv.code || conv.codePrefix || '').toLowerCase();
+                            const matchingOrders = periodNonCancelledOrders.filter((o) => {
+                              if (!getOrderPaymentStatus(o).isPaid) return false;
+                              const ag = String(o.agreementUsed || '').toLowerCase();
+                              const cp = String(o.couponCodeUsed || '').toLowerCase();
+                              return (
+                                (convNameLower && ag.includes(convNameLower)) ||
+                                (convCodeLower && (cp.startsWith(convCodeLower) || ag.includes(convCodeLower)))
+                              );
+                            });
+                            const realConvSales = matchingOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+                            return (
+                              <div key={conv.id || idx} className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1 text-xs">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 font-bold text-[#111827]">
+                                    <span>
+                                      {conv.type === 'veterinaria' ? '🏥' : conv.type === 'entrenamiento' ? '🐕' : conv.type === 'peluqueria' ? '✂️' : '🏡'}
+                                    </span>
+                                    <span>{conv.name}</span>
+                                    <span className="text-[10px] font-mono font-bold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded-full">
+                                      {conv.code}
+                                    </span>
+                                  </div>
+                                  <div className="font-extrabold text-[#111827]">
+                                    {formatCLP(realConvSales)}
+                                  </div>
                                 </div>
-                                <div className="font-extrabold text-[#111827]">
-                                  ${((conv.redemptionsCount || 0) * 65000).toLocaleString('es-CL')}
+                                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
+                                  <span>{matchingOrders.length} {matchingOrders.length === 1 ? 'pedido pagado en el período' : 'pedidos pagados en el período'}</span>
+                                  <span className="text-[#D97706] font-semibold">Comisión: Sin definir ($0)</span>
                                 </div>
                               </div>
-                              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5">
-                                <span>{conv.redemptionsCount || 0} canjes acumulados</span>
-                                <span className="text-[#D97706] font-semibold">Comisión: {conv.commissionEntity}</span>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )
                     )}
 
-                    {/* SLIDE 6: HORARIOS Y DÍAS PICO DE COMPRA */}
+                    {/* SLIDE 6: HORARIOS Y DÍAS PICO DE COMPRA (Distribución real en hora Chile) */}
                     {currentChartSlide === 6 && (
-                      orders.length === 0 ? (
+                      !dashboardAnalyticsData.peakHoursStats?.hasData ? (
                         <div className="p-8 text-center text-slate-400 bg-[#F8FAFC] rounded-2xl border border-[#EAECEF] space-y-1.5">
                           <Flame className="w-8 h-8 mx-auto mb-1 opacity-40 text-slate-400" />
-                          <p className="text-xs font-semibold text-slate-600">Sin datos de demanda ni horarios pico</p>
-                          <p className="text-[11px] text-slate-400">Los patrones de compra y horas pico se analizarán al registrar nuevos pedidos.</p>
+                          <p className="text-xs font-semibold text-slate-600">Sin datos de demanda en el período</p>
+                          <p className="text-[11px] text-slate-400">Los patrones de compra y franjas pico se calculan automáticamente con la hora de tus pedidos.</p>
                         </div>
                       ) : (
                         <div className="space-y-4 pt-1 animate-in fade-in duration-300">
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1">
-                              <span className="text-[11px] font-semibold text-[#D97706]">Tarde (13:00 - 17:00)</span>
-                              <div className="text-2xl font-extrabold text-[#111827]">45%</div>
-                              <p className="text-[11px] text-slate-400 font-medium">Mayor concentración del día</p>
+                              <span className="text-[11px] font-semibold text-amber-600">Mañana (06:00 - 12:59)</span>
+                              <div className="text-2xl font-extrabold text-[#111827]">{dashboardAnalyticsData.peakHoursStats.morningPct}%</div>
+                              <p className="text-[11px] text-slate-400 font-medium">
+                                {dashboardAnalyticsData.peakHoursStats.morningCount} {dashboardAnalyticsData.peakHoursStats.morningCount === 1 ? 'pedido' : 'pedidos'}
+                              </p>
                             </div>
 
                             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1">
-                              <span className="text-[11px] font-semibold text-[#78350F]">Noche (18:00 - 22:00)</span>
-                              <div className="text-2xl font-extrabold text-[#111827]">35%</div>
-                              <p className="text-[11px] text-slate-400 font-medium">Compras post-jornada laboral</p>
+                              <span className="text-[11px] font-semibold text-[#D97706]">Tarde (13:00 - 17:59)</span>
+                              <div className="text-2xl font-extrabold text-[#111827]">{dashboardAnalyticsData.peakHoursStats.afternoonPct}%</div>
+                              <p className="text-[11px] text-slate-400 font-medium">
+                                {dashboardAnalyticsData.peakHoursStats.afternoonCount} {dashboardAnalyticsData.peakHoursStats.afternoonCount === 1 ? 'pedido' : 'pedidos'}
+                              </p>
                             </div>
 
                             <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1">
-                              <span className="text-[11px] font-semibold text-amber-600">Mañana (08:00 - 12:00)</span>
-                              <div className="text-2xl font-extrabold text-[#111827]">20%</div>
-                              <p className="text-[11px] text-slate-400 font-medium">Pedidos matutinos exprés</p>
+                              <span className="text-[11px] font-semibold text-[#78350F]">Noche (18:00 - 05:59)</span>
+                              <div className="text-2xl font-extrabold text-[#111827]">{dashboardAnalyticsData.peakHoursStats.nightPct}%</div>
+                              <p className="text-[11px] text-slate-400 font-medium">
+                                {dashboardAnalyticsData.peakHoursStats.nightCount} {dashboardAnalyticsData.peakHoursStats.nightCount === 1 ? 'pedido' : 'pedidos'}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -7644,7 +8356,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             <div className="space-y-6 animate-in fade-in duration-300">
               {/* FinSet Pure White Bento KPI Row (3 Cards - Solo Escritorio) */}
               {(() => {
-                const listedOrdersTotal = filteredOrdersList.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
+                const listedOrdersTotal = filteredOrdersList
+                  .filter((o) => o.status !== 'cancelado')
+                  .reduce((acc, o) => acc + (Number(o.total) || 0), 0);
                 const settledOrdersCount = filteredOrdersList.filter(
                   (o) => o.status === 'entregado' && getOrderPaymentStatus(o).isPaid
                 ).length;
@@ -9279,7 +9993,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 const featuredCarouselCount = inventory.filter((p) => p.inCarousel).length;
                 const estimatedGrossProfit = Math.max(
                   0,
-                  (Number(financialMetrics.totalInventoryPVP) || 0) - (Number(financialMetrics.totalInventoryCost) || 0)
+                  (Number(financialMetrics.totalInventoryPVP) || 0) - (Number(financialMetrics.totalInventoryCostWithIva) || 0)
                 );
 
                 return (
@@ -9345,25 +10059,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
                     </div>
 
-                    {/* Card 3: Costo inventario neto */}
+                    {/* Card 3: Costo inventario c/IVA */}
                     <div className="finset-card bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[13px] font-semibold text-slate-600 truncate">
-                          Costo inventario neto
+                          Costo inventario c/IVA
                         </span>
                         <span className="px-2.5 py-0.5 rounded-full border border-[#EAECEF] bg-[#F8FAFC] text-[10px] font-semibold text-slate-500 shrink-0">
-                          CLP
+                          c/IVA
                         </span>
                       </div>
                       <div className="flex items-baseline">
                         <span className="text-2xl xl:text-[25px] font-extrabold text-[#111827] tracking-tight leading-none">
-                          {formatCLP(financialMetrics.totalInventoryCost)}
+                          {formatCLP(financialMetrics.totalInventoryCostWithIva)}
                         </span>
                         <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                       </div>
                       <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#F8FAFC] text-slate-600 border border-[#EAECEF] text-[10px] font-semibold">
-                          Costo sin IVA
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-[#F8FAFC] text-slate-600 border border-[#EAECEF] text-[10px] font-semibold truncate">
+                          Neto: {formatCLP(financialMetrics.totalInventoryCostNeto)}
                         </span>
                         <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 shrink-0">
                           <span className="w-6 h-6 rounded-lg bg-[#FEF3C7] text-[#D97706] flex items-center justify-center">
@@ -10044,15 +10758,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
             const filteredInvoices = periodFilteredInvoices.filter((inv) => {
               if (financesInvoiceStatusFilter === 'todas') return true;
-              return inv.status === financesInvoiceStatusFilter;
+              if (financesInvoiceStatusFilter === 'pagada') return isPurchaseInvoicePaid(inv);
+              return !isPurchaseInvoicePaid(inv);
             });
 
             const filteredExpenses = periodFilteredExpenses.filter((exp) => {
               const matchesCat = expenseFilterCategory === 'todos' ? true : exp.category === expenseFilterCategory;
-              const isFac =
-                exp.hasIvaCredit ||
-                exp.documentType === 'factura' ||
-                (exp.documentNumber && exp.documentNumber.startsWith('FAC'));
+              const isFac = isExpenseWithIvaCredit(exp);
               const matchesDoc =
                 financesExpenseDocFilter === 'todos'
                   ? true
@@ -10062,43 +10774,49 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               return matchesCat && matchesDoc;
             });
 
-            // Cálculo dinámico para la pestaña F29 según período/mes seleccionado
+            // Cálculo tributario oficial F29 (SII Chile) con arrastre de remanente y criterio devengado
             const f29FilteredData = {
-              ...financialMetrics,
+              ...f29Summary,
               periodLabel: financesPeriodFilter === 'todos' ? 'Todo el Histórico (Consolidado)' : formatPeriodLabel(financesPeriodFilter),
-              filteredOrdersCount: periodFilteredOrders.length,
-              filteredInvoicesCount: periodFilteredInvoices.length,
               filteredExpensesCount: periodFilteredExpenses.length,
             };
 
-            // Lista combinada de todos los egresos (Facturas Stock + Gastos Operacionales)
+            // Lista combinada de todos los egresos (Facturas Stock con flete c/IVA + Gastos Operacionales)
             const combinedGastosList = [
-              ...periodFilteredInvoices.map((inv) => ({
-                ...inv,
-                type: 'factura',
-                id: inv.invoiceNumber,
-                invoiceNumber: inv.invoiceNumber,
-                provider: inv.provider,
-                rut: inv.rut,
-                date: inv.date,
-                dueDate: inv.dueDate || inv.due_date || inv.date,
-                description: inv.productName || 'Mercadería & Stock para Bodega',
-                productName: inv.productName || inv.product_name,
-                quantity: inv.quantityReceived || inv.itemsCount || 1,
-                quantityReceived: inv.quantityReceived || inv.itemsCount || 1,
-                neto: inv.totalNeto,
-                totalNeto: inv.totalNeto,
-                iva: inv.iva,
-                total: inv.totalBruto,
-                totalBruto: inv.totalBruto,
-                hasIvaCredit: true,
-                paymentMethod: inv.paymentMethod || 'Crédito Proveedor',
-                status: inv.status || 'pendiente',
-                items: inv.items || null,
-              })),
+              ...periodFilteredInvoices.map((inv) => {
+                const invTotals = getInvoiceTotalWithFreight(inv);
+                return {
+                  ...inv,
+                  type: 'factura',
+                  id: inv.invoiceNumber,
+                  invoiceDbId: inv.id || inv.invoiceNumber,
+                  invoiceNumber: inv.invoiceNumber,
+                  provider: inv.provider,
+                  rut: inv.rut,
+                  date: inv.date,
+                  dueDate: inv.dueDate || inv.due_date || inv.date,
+                  description: inv.productName || 'Mercadería & Stock para Bodega',
+                  productName: inv.productName || inv.product_name,
+                  quantity: inv.quantityReceived || inv.itemsCount || 1,
+                  quantityReceived: inv.quantityReceived || inv.itemsCount || 1,
+                  neto: invTotals.totalNeto,
+                  totalNeto: invTotals.totalNeto,
+                  iva: invTotals.totalIva,
+                  total: invTotals.totalBruto,
+                  totalBruto: invTotals.totalBruto,
+                  shippingBruto: invTotals.shippingBruto,
+                  hasIvaCredit: true,
+                  paymentMethod: inv.paymentMethod || 'Crédito Proveedor',
+                  status: inv.status || 'pendiente',
+                  isPaidOutflow: isPurchaseInvoicePaid(inv),
+                  sortTs: getSortableTimestamp(inv),
+                  items: inv.items || null,
+                };
+              }),
               ...periodFilteredExpenses.map((exp) => ({
                 type: 'gasto',
                 id: exp.documentNumber || exp.id,
+                expenseId: exp.id,
                 provider: exp.provider,
                 rut: exp.rut || 'N/A',
                 date: exp.date,
@@ -10108,14 +10826,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 neto: exp.neto,
                 iva: exp.iva,
                 total: exp.amount,
-                hasIvaCredit: exp.hasIvaCredit,
+                shippingBruto: 0,
+                hasIvaCredit: isExpenseWithIvaCredit(exp),
                 paymentMethod: exp.paymentMethod,
                 status: exp.status || 'pagado',
+                isPaidOutflow: true,
+                sortTs: getSortableTimestamp(exp),
                 category: exp.categoryLabel || exp.category,
               })),
-            ];
+            ].sort((a, b) => (b.sortTs || 0) - (a.sortTs || 0));
 
-            // Lista combinada de todos los ingresos (Aportes de Socios + Ventas)
+            // Lista combinada de todos los ingresos (Aportes de Socios + Ventas pagadas)
             const combinedIngresosList = [
               ...periodFilteredInvestments.map((inv) => ({
                 id: inv.id,
@@ -10124,6 +10845,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 title: inv.partnerName || 'Socio',
                 subtitle: inv.investmentTypeLabel || (inv.investmentType === 'capital_inicial' ? 'Capital Inicial' : 'Aumento de Capital'),
                 amount: inv.amount || 0,
+                grossAmount: inv.amount || 0,
+                paymentFee: 0,
                 neto: inv.amount || 0,
                 iva: 0,
                 hasIva: false,
@@ -10133,47 +10856,59 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 badge: inv.investmentType === 'capital_inicial' ? 'Capital Inicial' : 'Aumento Capital',
                 badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200',
                 icon: Landmark,
+                sortTs: getSortableTimestamp(inv),
                 raw: inv,
               })),
-              ...periodFilteredOrders.map((ord) => ({
-                id: ord.id,
-                date: ord.date,
-                type: 'venta',
-                title: ord.customer?.name || ord.customer || 'Cliente Tienda',
-                subtitle: ord.channel === 'manual' ? 'Venta Manual (Mesón)' : 'Venta Tienda Web',
-                amount: ord.total || 0,
-                neto: Math.round((ord.total || 0) / 1.19),
-                iva: (ord.total || 0) - Math.round((ord.total || 0) / 1.19),
-                hasIva: true,
-                paymentMethod: ord.paymentMethod || 'Web / Tarjeta',
-                status: ord.status || 'Completado',
-                category: 'Venta Comercial',
-                badge: ord.channel === 'manual' ? 'Manual' : 'Web',
-                badgeColor: ord.channel === 'manual' ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
-                icon: ShoppingBag,
-                raw: ord,
-              })),
-            ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+              ...periodFilteredOrders.map((ord) => {
+                const feeInfo = calculateOrderPaymentFee(ord);
+                const grossAmt = Number(ord.total) || 0;
+                return {
+                  id: ord.id,
+                  date: ord.date,
+                  type: 'venta',
+                  title: ord.customer?.name || ord.customer || 'Cliente Tienda',
+                  subtitle:
+                    feeInfo.feeAmount > 0
+                      ? `${ord.channel === 'manual' ? 'Venta Manual' : 'Venta Web'} · Bruto ${formatCLP(grossAmt)} · Com. -${formatCLP(feeInfo.feeAmount)}`
+                      : (ord.channel === 'manual' ? 'Venta Manual (Mesón)' : 'Venta Tienda Web'),
+                  amount: feeInfo.netReceived,
+                  grossAmount: grossAmt,
+                  paymentFee: feeInfo.feeAmount,
+                  neto: Math.round(grossAmt / 1.19),
+                  iva: grossAmt - Math.round(grossAmt / 1.19),
+                  hasIva: true,
+                  paymentMethod: ord.paymentMethod || 'Web / Tarjeta',
+                  status: ord.status || 'Completado',
+                  category: 'Venta Comercial',
+                  badge: ord.channel === 'manual' ? 'Manual' : 'Web',
+                  badgeColor: ord.channel === 'manual' ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
+                  icon: ShoppingBag,
+                  sortTs: getSortableTimestamp(ord),
+                  raw: ord,
+                };
+              }),
+            ].sort((a, b) => (b.sortTs || 0) - (a.sortTs || 0));
 
-            // Flujo de Caja Maestro: Registro Unificado de Movimientos de Dinero (Entradas y Salidas)
+            // Flujo de Caja Maestro: solo salidas efectivamente pagadas (facturas pagadas + gastos) y entradas netas en banco
+            const paidOutflowsList = combinedGastosList.filter((gst) => gst.isPaidOutflow);
             const allCashMovements = [
               ...combinedIngresosList.map((ing) => ({
                 ...ing,
                 flowType: 'entrada',
                 isPositive: true,
               })),
-              ...combinedGastosList.map((gst) => ({
+              ...paidOutflowsList.map((gst) => ({
                 ...gst,
                 flowType: 'salida',
                 isPositive: false,
                 amount: gst.total,
                 title: gst.provider,
-                subtitle: gst.description,
-                badge: gst.type === 'factura' ? 'Factura stock' : (gst.category || 'Gasto'),
+                subtitle: gst.shippingBruto > 0 ? `${gst.description} (incl. flete c/IVA)` : gst.description,
+                badge: gst.type === 'factura' ? 'Factura pagada' : (gst.category || 'Gasto'),
                 badgeColor: gst.type === 'factura' ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]' : 'bg-amber-50 text-amber-800 border-amber-200',
                 icon: gst.type === 'factura' ? Package : Receipt,
               })),
-            ].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            ].sort((a, b) => (b.sortTs || 0) - (a.sortTs || 0));
 
             return (
               <div className="space-y-6 animate-in fade-in duration-300">
@@ -10234,7 +10969,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           : 'bg-white text-slate-600 border border-[#EAECEF]'
                           }`}
                       >
-                        {periodFilteredOrders.length}
+                        {periodFilteredOrders.length + periodFilteredInvestments.length}
                       </span>
                     </button>
 
@@ -10252,12 +10987,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${financesSubTab === 'f29'
                           ? 'bg-white/20 text-white'
-                          : financialMetrics.ivaStatus === 'remanente'
+                          : f29FilteredData.ivaStatus === 'remanente'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70'
                             : 'bg-rose-50 text-rose-700 border border-rose-200/70'
                           }`}
                       >
-                        {financialMetrics.ivaStatus === 'remanente' ? 'A favor' : 'A pagar'}
+                        {f29FilteredData.ivaStatus === 'remanente' ? 'A favor' : 'A pagar'}
                       </span>
                     </button>
                   </div>
@@ -10289,43 +11024,61 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
                     </div>
 
-                    {/* Stepper de meses FinSet */}
-                    <div className="inline-flex items-center p-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF]">
-                      <button
-                        type="button"
-                        onClick={handlePrevPeriodMonth}
-                        className="w-8 h-8 rounded-full text-slate-600 hover:text-[#111827] hover:bg-white transition-all cursor-pointer active:scale-95 flex items-center justify-center"
-                        title="Ir al mes anterior"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </button>
+                    {/* Stepper de meses FinSet + Botón Histórico */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="inline-flex items-center p-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF]">
+                        <button
+                          type="button"
+                          onClick={handlePrevPeriodMonth}
+                          className="w-8 h-8 rounded-full text-slate-600 hover:text-[#111827] hover:bg-white transition-all cursor-pointer active:scale-95 flex items-center justify-center"
+                          title="Ir al mes anterior"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
 
-                      <div className="px-3.5 py-1 flex items-center gap-2 select-none min-w-[140px] justify-center">
-                        <span className="text-xs font-bold text-[#111827] tracking-tight capitalize">
-                          {formatPeriodLabel(financesPeriodFilter)}
-                        </span>
-                        {financesPeriodFilter === currentYM && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70">
-                            Actual
+                        <div className="px-3.5 py-1 flex items-center gap-2 select-none min-w-[140px] justify-center">
+                          <span className="text-xs font-bold text-[#111827] tracking-tight capitalize">
+                            {financesPeriodFilter === 'todos' ? 'Todo el histórico' : formatPeriodLabel(financesPeriodFilter)}
                           </span>
-                        )}
+                          {financesPeriodFilter === currentYM && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70">
+                              Actual
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleNextPeriodMonth}
+                          disabled={financesPeriodFilter === 'todos' || financesPeriodFilter >= currentYM}
+                          className={`w-8 h-8 rounded-full transition-all flex items-center justify-center ${financesPeriodFilter === 'todos' || financesPeriodFilter >= currentYM
+                            ? 'opacity-30 cursor-not-allowed text-slate-400'
+                            : 'text-slate-600 hover:text-[#111827] hover:bg-white cursor-pointer active:scale-95'
+                            }`}
+                          title={
+                            financesPeriodFilter === 'todos'
+                              ? 'Selecciona un mes específico'
+                              : financesPeriodFilter >= currentYM
+                                ? 'No es posible avanzar a meses futuros'
+                                : 'Ir al mes siguiente'
+                          }
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
                       </div>
 
                       <button
                         type="button"
-                        onClick={handleNextPeriodMonth}
-                        disabled={financesPeriodFilter >= currentYM}
-                        className={`w-8 h-8 rounded-full transition-all flex items-center justify-center ${financesPeriodFilter >= currentYM
-                          ? 'opacity-30 cursor-not-allowed text-slate-400'
-                          : 'text-slate-600 hover:text-[#111827] hover:bg-white cursor-pointer active:scale-95'
-                          }`}
-                        title={
-                          financesPeriodFilter >= currentYM
-                            ? 'No es posible avanzar a meses futuros'
-                            : 'Ir al mes siguiente'
+                        onClick={() =>
+                          setFinancesPeriodFilter((prev) => (prev === 'todos' ? currentYM : 'todos'))
                         }
+                        className={`px-3.5 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer border whitespace-nowrap ${financesPeriodFilter === 'todos'
+                          ? 'bg-[#111827] text-white border-[#111827] shadow-xs'
+                          : 'bg-[#F8FAFC] hover:bg-[#FEF3C7]/60 text-slate-600 hover:text-[#111827] border-[#EAECEF]'
+                          }`}
+                        title={financesPeriodFilter === 'todos' ? 'Volver al mes actual' : 'Ver todo el histórico consolidado'}
                       >
-                        <ChevronRight className="w-4 h-4" />
+                        {financesPeriodFilter === 'todos' ? 'Mes actual' : 'Histórico'}
                       </button>
                     </div>
                   </div>
@@ -10338,27 +11091,22 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   <div className="space-y-6">
                     {/* Top 4 KPI Cards (FinSet Bento UI — Pure White Cards) */}
                     {(() => {
-                      const totalFreightFromInvoices = periodFilteredInvoices.reduce((sum, inv) => {
-                        const hasShipping = inv.hasShippingCost || inv.has_shipping_cost;
-                        const cost = Number(inv.shippingCostNeto || inv.shipping_cost_neto || 0);
-                        return sum + (hasShipping ? cost : 0);
-                      }, 0);
                       const expensesFreight = periodFilteredExpenses
                         .filter((e) => e.category === 'transporte' || e.category === 'flete')
-                        .reduce((s, e) => s + e.amount, 0);
-                      const allFreight = totalFreightFromInvoices + expensesFreight;
+                        .reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                      const allFreight = (financialMetrics.invoicesFreightBruto || 0) + expensesFreight;
 
-                      const isIvaPayable = financialMetrics.ivaBalance > 0;
-                      const ivaAmount = Math.abs(financialMetrics.ivaBalance);
+                      const isIvaPayable = f29FilteredData.ivaBalance > 0;
+                      const ivaAmount = Math.abs(f29FilteredData.ivaBalance);
 
                       return (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                          {/* Card 1: Ingresos totales */}
+                          {/* Card 1: Ingresos totales (líquidos en banco del período) */}
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-4">
                             <div>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-semibold text-slate-600">
-                                  Ingresos totales
+                                  Ingresos líquidos
                                 </span>
                                 <span className="w-9 h-9 rounded-2xl bg-[#FEF3C7] border border-[#FDE68A]/60 flex items-center justify-center text-[#D97706]">
                                   <TrendingUp className="w-4 h-4" />
@@ -10374,21 +11122,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <div className="text-[11px] text-slate-500 font-medium space-y-1.5 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between gap-2">
                                 <span>Capital: <strong className="text-[#D97706] font-bold tabular-nums">+{formatCLP(financialMetrics.totalInvested)}</strong></span>
-                                <span>Ventas: <strong className="text-[#111827] font-bold tabular-nums">+{formatCLP(financialMetrics.totalSales)}</strong></span>
+                                <span>Ventas netas: <strong className="text-[#111827] font-bold tabular-nums">+{formatCLP(financialMetrics.totalNetSalesInBank)}</strong></span>
                               </div>
                               <div className="text-[11px] text-slate-400 flex justify-between gap-2">
-                                <span className="truncate">Web: {formatCLP(financialMetrics.webSales)} · Man: {formatCLP(financialMetrics.manualSales)}</span>
-                                <span className="text-emerald-700 font-semibold shrink-0">Caja: {formatCLP(financialMetrics.netCashBalance)}</span>
+                                <span className="truncate">Flujo mes: {formatCLP(financialMetrics.netCashBalance)}</span>
+                                <span className={`font-semibold shrink-0 ${realCashPosition.realCashBalance < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                  Caja real: {formatCLP(realCashPosition.realCashBalance)}
+                                </span>
                               </div>
                             </div>
                           </div>
 
-                          {/* Card 2: Gastos y egresos */}
+                          {/* Card 2: Egresos pagados */}
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-4">
                             <div>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-semibold text-slate-600">
-                                  Gastos y egresos
+                                  Egresos pagados
                                 </span>
                                 <span className="w-9 h-9 rounded-2xl bg-amber-50 border border-amber-200/70 flex items-center justify-center text-amber-600">
                                   <Receipt className="w-4 h-4" />
@@ -10403,12 +11153,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium space-y-1.5 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between gap-2">
-                                <span>Facturas: <strong className="text-[#111827] font-bold tabular-nums">{formatCLP(financialMetrics.invoicesTotalBruto)}</strong></span>
+                                <span>Fact. pag.: <strong className="text-[#111827] font-bold tabular-nums">{formatCLP(financialMetrics.paidInvoicesTotalBruto)}</strong></span>
                                 <span>Operac.: <strong className="text-[#111827] font-bold tabular-nums">{formatCLP(financialMetrics.totalRegisteredExpenses)}</strong></span>
                               </div>
                               <div className="text-[11px] text-slate-400 flex justify-between gap-2">
-                                <span>Transporte: {formatCLP(allFreight)}</span>
-                                <span className="text-[#D97706] font-semibold">IVA ahorrado: +{formatCLP(financialMetrics.totalIvaCredito)}</span>
+                                <span className="truncate">
+                                  {financialMetrics.pendingInvoicesTotalBruto > 0
+                                    ? `Por pagar: ${formatCLP(financialMetrics.pendingInvoicesTotalBruto)}`
+                                    : `Flete c/IVA: ${formatCLP(allFreight)}`}
+                                </span>
+                                <span className="text-[#D97706] font-semibold shrink-0">IVA créd.: +{formatCLP(financialMetrics.totalIvaCredito)}</span>
                               </div>
                             </div>
                           </div>
@@ -10479,7 +11233,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </div>
                               <div className="text-[11px] flex items-center justify-between gap-2">
                                 <span className="text-slate-400 truncate">
-                                  Déb: {formatCLP(financialMetrics.ivaDebito)} · Créd: {formatCLP(financialMetrics.totalIvaCredito)}
+                                  Déb: {formatCLP(f29FilteredData.ivaDebito)} · Créd: {formatCLP(f29FilteredData.totalIvaCredito)}
                                 </span>
                                 <button
                                   type="button"
@@ -10495,73 +11249,116 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       );
                     })()}
 
-                    {/* Flow Bar: Proporción Visual de Ingresos vs Egresos */}
-                    <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-6 space-y-5">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAECEF] pb-4">
-                        <div>
-                          <h3 className="text-base font-bold text-[#111827]">
-                            Distribución del flujo de caja
-                          </h3>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            Relación porcentual de costos de mercadería, gastos de operación y utilidad neta sobre las ventas
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-600">
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-[#D97706]" /> Stock (58%)
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-[#F5BA13]" /> Operación ({((financialMetrics.totalRegisteredExpenses / (financialMetrics.totalSales || 1)) * 100).toFixed(0)}%)
-                          </span>
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-[#78350F]" /> Utilidad real ({financialMetrics.netProfitPercent}%)
-                          </span>
-                        </div>
-                      </div>
+                    {/* Flow Bar: Proporción Visual Real de Ingresos vs Egresos */}
+                    {(() => {
+                      const salesBase = financialMetrics.totalSales || 0;
+                      const cogsValue = salesBase > 0 ? financialMetrics.estimatedCOGS : 0;
+                      const opexValue = financialMetrics.totalOperatingExpenses || 0;
+                      const profitValue = financialMetrics.netProfit || 0;
 
-                      {/* Barra Proporcional */}
-                      <div className="w-full h-3 rounded-full bg-[#F8FAFC] border border-[#EAECEF] overflow-hidden flex gap-0.5 p-0.5">
-                        <div className="h-full rounded-l-full bg-[#D97706] transition-all duration-500" style={{ width: '58%' }} title="Costo mercadería: 58%" />
-                        <div
-                          className="h-full bg-[#F5BA13] transition-all duration-500"
-                          style={{ width: `${Math.min(30, Math.max(5, ((financialMetrics.totalRegisteredExpenses / (financialMetrics.totalSales || 1)) * 100)))}%` }}
-                          title="Gastos operacionales"
-                        />
-                        <div
-                          className="h-full rounded-r-full bg-[#78350F] transition-all duration-500"
-                          style={{ width: `${Math.max(10, Math.min(35, parseFloat(financialMetrics.netProfitPercent) || 15))}%` }}
-                          title="Utilidad neta"
-                        />
-                      </div>
+                      const cogsPct = salesBase > 0 ? (cogsValue / salesBase) * 100 : 0;
+                      const opexPct = salesBase > 0 ? (opexValue / salesBase) * 100 : 0;
+                      const profitPct = salesBase > 0 ? (profitValue / salesBase) * 100 : 0;
 
-                      {/* Resumen en 3 cajas limpias FinSet */}
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
-                        <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#D97706]" />
-                            <span className="font-semibold text-slate-600 text-xs">Costo mercadería vendida (COGS)</span>
+                      const barCogs = Math.max(0, cogsValue);
+                      const barOpex = Math.max(0, opexValue);
+                      const barProfit = Math.max(0, profitValue);
+                      const barTotal = barCogs + barOpex + barProfit;
+                      const barCogsW = barTotal > 0 ? (barCogs / barTotal) * 100 : 0;
+                      const barOpexW = barTotal > 0 ? (barOpex / barTotal) * 100 : 0;
+                      const barProfitW = barTotal > 0 ? (barProfit / barTotal) * 100 : 0;
+
+                      return (
+                        <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-6 space-y-5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#EAECEF] pb-4">
+                            <div>
+                              <h3 className="text-base font-bold text-[#111827]">
+                                Distribución del flujo de caja
+                              </h3>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                Relación porcentual real de costos de mercadería, gastos de operación (incl. comisiones MP/POS) y utilidad neta sobre las ventas
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-600">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#D97706]" /> Stock ({cogsPct.toFixed(1)}%)
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className="w-2.5 h-2.5 rounded-full bg-[#F5BA13]" /> Operación ({opexPct.toFixed(1)}%)
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${profitValue >= 0 ? 'bg-[#78350F]' : 'bg-rose-600'}`} /> Utilidad real ({profitPct.toFixed(1)}%)
+                              </span>
+                            </div>
                           </div>
-                          <div className="font-extrabold text-[#111827] text-lg tabular-nums">{formatCLP(financialMetrics.estimatedCOGS || Math.round(financialMetrics.totalSales * 0.58))}</div>
-                          <span className="text-[11px] text-slate-400 block">Reposición de inventario y compras</span>
-                        </div>
-                        <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#F5BA13]" />
-                            <span className="font-semibold text-slate-600 text-xs">Gastos fijos y trámites</span>
+
+                          {/* Barra Proporcional Real */}
+                          {barTotal > 0 ? (
+                            <div className="w-full h-3 rounded-full bg-[#F8FAFC] border border-[#EAECEF] overflow-hidden flex gap-0.5 p-0.5">
+                              {barCogsW > 0 && (
+                                <div
+                                  className="h-full first:rounded-l-full last:rounded-r-full bg-[#D97706] transition-all duration-500"
+                                  style={{ width: `${barCogsW.toFixed(2)}%` }}
+                                  title={`Costo mercadería (COGS): ${formatCLP(cogsValue)} (${cogsPct.toFixed(1)}%)`}
+                                />
+                              )}
+                              {barOpexW > 0 && (
+                                <div
+                                  className="h-full first:rounded-l-full last:rounded-r-full bg-[#F5BA13] transition-all duration-500"
+                                  style={{ width: `${barOpexW.toFixed(2)}%` }}
+                                  title={`Gastos operacionales + comisiones MP/POS: ${formatCLP(opexValue)} (${opexPct.toFixed(1)}%)`}
+                                />
+                              )}
+                              {barProfitW > 0 && (
+                                <div
+                                  className="h-full first:rounded-l-full last:rounded-r-full bg-[#78350F] transition-all duration-500"
+                                  style={{ width: `${barProfitW.toFixed(2)}%` }}
+                                  title={`Utilidad neta: ${formatCLP(profitValue)} (${profitPct.toFixed(1)}%)`}
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <div className="w-full py-2 px-3 rounded-full bg-[#F8FAFC] border border-dashed border-[#EAECEF] text-center text-[11px] text-slate-400 font-medium">
+                              Sin ventas ni gastos operacionales registrados en este período
+                            </div>
+                          )}
+
+                          {/* Resumen en 3 cajas limpias FinSet */}
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+                            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-[#D97706]" />
+                                <span className="font-semibold text-slate-600 text-xs">Costo mercadería vendida (COGS)</span>
+                              </div>
+                              <div className="font-extrabold text-[#111827] text-lg tabular-nums">{formatCLP(cogsValue)}</div>
+                              <span className="text-[11px] text-slate-400 block">Reposición real c/IVA de unidades vendidas</span>
+                            </div>
+                            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-[#F5BA13]" />
+                                <span className="font-semibold text-slate-600 text-xs">Gastos operacionales y comisiones</span>
+                              </div>
+                              <div className="font-extrabold text-[#111827] text-lg tabular-nums">{formatCLP(opexValue)}</div>
+                              <span className="text-[11px] text-slate-400 block">
+                                Gastos: {formatCLP(financialMetrics.totalRegisteredExpenses)} · Com. MP/POS: {formatCLP(financialMetrics.mpTotalCostWithIva)}
+                              </span>
+                            </div>
+                            <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${profitValue >= 0 ? 'bg-[#78350F]' : 'bg-rose-600'}`} />
+                                <span className="font-semibold text-slate-600 text-xs">Margen neto final disponible</span>
+                              </div>
+                              <div className={`font-extrabold text-lg tabular-nums ${profitValue >= 0 ? 'text-[#111827]' : 'text-rose-600'}`}>
+                                {formatCLP(profitValue)}
+                              </div>
+                              <span className="text-[11px] text-slate-400 block">
+                                {profitValue >= 0 ? 'Ganancia neta retenida por la empresa' : 'Déficit operacional del período'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="font-extrabold text-[#111827] text-lg tabular-nums">{formatCLP(financialMetrics.totalOperatingExpenses || financialMetrics.totalRegisteredExpenses)}</div>
-                          <span className="text-[11px] text-slate-400 block">Notaría, bencina, packaging y arriendos</span>
                         </div>
-                        <div className="p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#78350F]" />
-                            <span className="font-semibold text-slate-600 text-xs">Margen neto final disponible</span>
-                          </div>
-                          <div className="font-extrabold text-[#111827] text-lg tabular-nums">{formatCLP(financialMetrics.netProfit)}</div>
-                          <span className="text-[11px] text-slate-400 block">Ganancia neta retenida por la empresa</span>
-                        </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* 2 Cards complementarias: Mercado Pago & Inventario */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -10626,14 +11423,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                           <div className="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] space-y-1">
-                            <span className="text-slate-500 text-[11px] font-medium">Costo invertido neto</span>
-                            <div className="font-extrabold text-[#111827] tabular-nums text-base">{formatCLP(financialMetrics.totalInventoryCost)}</div>
-                            <span className="text-[11px] text-slate-400 block">Valor de reposición</span>
+                            <span className="text-slate-500 text-[11px] font-medium">Costo invertido c/IVA</span>
+                            <div className="font-extrabold text-[#111827] tabular-nums text-base">{formatCLP(financialMetrics.totalInventoryCostWithIva)}</div>
+                            <span className="text-[11px] text-slate-400 block">Neto s/IVA: {formatCLP(financialMetrics.totalInventoryCostNeto)}</span>
                           </div>
                           <div className="p-3.5 rounded-2xl bg-[#FEF3C7]/50 border border-[#FDE68A]/70 space-y-1">
                             <span className="text-[#78350F] text-[11px] font-semibold">Venta estimada (PVP)</span>
                             <div className="font-extrabold text-[#D97706] tabular-nums text-base">{formatCLP(financialMetrics.totalInventoryPVP)}</div>
-                            <span className="text-[11px] text-[#D97706] font-medium block">Ganancia potencial en stock</span>
+                            <span className="text-[11px] text-[#D97706] font-medium block">
+                              Margen est.: +{formatCLP(Math.max(0, financialMetrics.totalInventoryPVP - financialMetrics.totalInventoryCostWithIva))}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -10671,7 +11470,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <p className="text-xs text-slate-500 font-medium">No hay aportes registrados en este período</p>
                               <button
                                 type="button"
-                                onClick={() => setIsCreatePartnerInvestmentModalOpen(true)}
+                                onClick={() => setIsAddInvestmentModalOpen(true)}
                                 className="px-4 py-2 rounded-full bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-semibold transition-colors cursor-pointer"
                               >
                                 + Registrar inversión
@@ -10853,7 +11652,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            Trazabilidad completa de entradas y salidas de efectivo en tiempo real
+                            Entradas netas acreditadas en banco y salidas efectivamente pagadas (facturas pendientes excluidas hasta su pago)
                           </p>
                         </div>
 
@@ -10862,13 +11661,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           {[
                             { id: 'todos', label: `Todos (${allCashMovements.length})` },
                             { id: 'entradas', label: `Entradas (${combinedIngresosList.length})` },
-                            { id: 'salidas', label: `Salidas (${combinedGastosList.length})` },
+                            { id: 'salidas', label: `Salidas pagadas (${paidOutflowsList.length})` },
                             { id: 'inversiones', label: `Capital socios (${periodFilteredInvestments.length})` },
                           ].map((flt) => (
                             <button
                               key={flt.id}
                               type="button"
-                              onClick={() => setCashMovementFilter(flt.id)}
+                              onClick={() => {
+                                setCashMovementFilter(flt.id);
+                                setCashMovementsLimit(10);
+                              }}
                               className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer ${cashMovementFilter === flt.id
                                 ? 'bg-[#D97706] text-white shadow-xs'
                                 : 'text-slate-600 hover:text-[#111827] hover:bg-white'
@@ -10881,69 +11683,96 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
 
                       {/* Timeline Table of Movements */}
-                      <div className="space-y-2.5">
-                        {allCashMovements.length === 0 ? (
-                          <div className="p-8 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#EAECEF] text-center">
-                            <p className="text-xs text-slate-500 font-medium">No hay movimientos registrados en este período</p>
-                          </div>
-                        ) : (
-                          allCashMovements
-                            .filter((mov) => {
-                              if (cashMovementFilter === 'entradas') return mov.isPositive;
-                              if (cashMovementFilter === 'salidas') return !mov.isPositive;
-                              if (cashMovementFilter === 'inversiones') return mov.type === 'inversion';
-                              return true;
-                            })
-                            .slice(0, 8)
-                            .map((mov, mIdx) => {
-                              const MovIcon = mov.icon || Landmark;
-                              return (
-                                <div
-                                  key={mIdx}
-                                  className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#FEF3C7]/30 border border-[#EAECEF] flex items-center justify-between gap-3 text-xs transition-colors"
-                                >
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${mov.type === 'inversion'
-                                      ? 'bg-emerald-50 border-emerald-200/70 text-emerald-700'
-                                      : mov.type === 'venta' || mov.type === 'factura'
-                                        ? 'bg-[#FEF3C7] border-[#FDE68A]/70 text-[#D97706]'
-                                        : 'bg-amber-50 border-amber-200/70 text-amber-700'
-                                      }`}>
-                                      <MovIcon className="w-4 h-4" />
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${mov.badgeColor}`}>
-                                          {mov.badge}
-                                        </span>
-                                        {mov.id && <span className="font-mono text-[10px] text-slate-400">#{mov.id}</span>}
-                                      </div>
-                                      <div className="font-bold text-[#111827] truncate mt-1 text-xs">
-                                        {mov.title}
-                                      </div>
-                                      <div className="text-[11px] text-slate-400 font-medium truncate">
-                                        {formatCLPDate(mov.date)} · {mov.paymentMethod} · {mov.subtitle}
-                                      </div>
-                                    </div>
-                                  </div>
+                      {(() => {
+                        const filteredMovements = allCashMovements.filter((mov) => {
+                          if (cashMovementFilter === 'entradas') return mov.isPositive;
+                          if (cashMovementFilter === 'salidas') return !mov.isPositive;
+                          if (cashMovementFilter === 'inversiones') return mov.type === 'inversion';
+                          return true;
+                        });
+                        const visibleMovements = filteredMovements.slice(0, cashMovementsLimit);
 
-                                  <div className="text-right shrink-0 flex flex-col items-end">
-                                    <div className={`font-extrabold tabular-nums text-sm ${mov.isPositive ? 'text-emerald-700' : 'text-[#111827]'
-                                      }`}>
-                                      {mov.isPositive ? '+' : '-'}{formatCLP(mov.amount)}
+                        return (
+                          <div className="space-y-2.5">
+                            {filteredMovements.length === 0 ? (
+                              <div className="p-8 rounded-2xl bg-[#F8FAFC] border border-dashed border-[#EAECEF] text-center">
+                                <p className="text-xs text-slate-500 font-medium">
+                                  No hay movimientos de caja en esta vista para el período seleccionado
+                                </p>
+                              </div>
+                            ) : (
+                              <>
+                                {visibleMovements.map((mov, mIdx) => {
+                                  const MovIcon = mov.icon || Landmark;
+                                  return (
+                                    <div
+                                      key={`${mov.type}-${mov.id || mIdx}-${mIdx}`}
+                                      className="p-3.5 rounded-2xl bg-[#F8FAFC] hover:bg-[#FEF3C7]/30 border border-[#EAECEF] flex items-center justify-between gap-3 text-xs transition-colors"
+                                    >
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${mov.type === 'inversion'
+                                          ? 'bg-emerald-50 border-emerald-200/70 text-emerald-700'
+                                          : mov.type === 'venta' || mov.type === 'factura'
+                                            ? 'bg-[#FEF3C7] border-[#FDE68A]/70 text-[#D97706]'
+                                            : 'bg-amber-50 border-amber-200/70 text-amber-700'
+                                          }`}>
+                                          <MovIcon className="w-4 h-4" />
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${mov.badgeColor}`}>
+                                              {mov.badge}
+                                            </span>
+                                            {mov.id && <span className="font-mono text-[10px] text-slate-400">#{mov.id}</span>}
+                                          </div>
+                                          <div className="font-bold text-[#111827] truncate mt-1 text-xs">
+                                            {mov.title}
+                                          </div>
+                                          <div className="text-[11px] text-slate-400 font-medium truncate">
+                                            {formatCLPDate(mov.date)} · {mov.paymentMethod} · {mov.subtitle}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="text-right shrink-0 flex flex-col items-end">
+                                        <div className={`font-extrabold tabular-nums text-sm ${mov.isPositive ? 'text-emerald-700' : 'text-[#111827]'
+                                          }`}>
+                                          {mov.isPositive ? '+' : '-'}{formatCLP(mov.amount)}
+                                        </div>
+                                        <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border mt-1 ${mov.isPositive
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+                                          : 'bg-white text-slate-600 border-[#EAECEF]'
+                                          }`}>
+                                          {mov.status || (mov.isPositive ? 'Ingresado' : 'Pagado')}
+                                        </span>
+                                      </div>
                                     </div>
-                                    <span className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full border mt-1 ${mov.isPositive
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
-                                      : 'bg-white text-slate-600 border-[#EAECEF]'
-                                      }`}>
-                                      {mov.status || (mov.isPositive ? 'Ingresado' : 'Pagado')}
-                                    </span>
+                                  );
+                                })}
+
+                                {filteredMovements.length > cashMovementsLimit && (
+                                  <div className="pt-2 flex items-center justify-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setCashMovementsLimit((prev) => prev + 15)}
+                                      className="px-4 py-2 rounded-full bg-[#F8FAFC] hover:bg-[#FEF3C7]/60 border border-[#EAECEF] text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
+                                    >
+                                      Ver más ({filteredMovements.length - cashMovementsLimit} restantes)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCashMovementsLimit(filteredMovements.length)}
+                                      className="px-4 py-2 rounded-full bg-white hover:bg-[#F8FAFC] border border-[#EAECEF] text-xs font-semibold text-[#D97706] transition-colors cursor-pointer"
+                                    >
+                                      Ver todos ({filteredMovements.length})
+                                    </button>
                                   </div>
-                                </div>
-                              );
-                            })
-                        )}
-                      </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}
@@ -10994,7 +11823,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-3">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-slate-600">Egresos combinados</span>
+                          <span className="text-sm font-semibold text-slate-600">Egresos devengados</span>
                           <span className="px-2.5 py-0.5 rounded-full bg-[#F8FAFC] border border-[#EAECEF] text-[11px] font-semibold text-slate-500">CLP</span>
                         </div>
                         <div className="flex items-baseline">
@@ -11004,7 +11833,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                         </div>
                         <span className="text-xs text-slate-400 font-medium pt-2 border-t border-[#EAECEF]">
-                          {periodFilteredInvoices.length + periodFilteredExpenses.length} egresos computados
+                          Pagados: {formatCLP(financialMetrics.totalRegisteredOutflows)} · Por pagar: {formatCLP(financialMetrics.pendingInvoicesTotalBruto)}
                         </span>
                       </div>
 
@@ -11022,7 +11851,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                         </div>
                         <span className="text-xs text-[#D97706] font-medium pt-2 border-t border-[#EAECEF]">
-                          {periodFilteredInvoices.length} facturas · +{financialMetrics.invoicesTotalUnits} un. a bodega
+                          {periodFilteredInvoices.length} facturas (incl. flete c/IVA) · +{financialMetrics.invoicesTotalUnits} un.
                         </span>
                       </div>
 
@@ -11104,42 +11933,56 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {/* VISTA 1: TODOS LOS GASTOS (Vista Unificada) */}
                     {gastosTabFilter === 'todos' && (
                       <div className="space-y-4">
-                        {/* Category Breakdown Chips (Pure White FinSet Cards) */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        {/* Category Breakdown Chips (incluye todas las categorías para cuadrar al 100%) */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-[#D97706]" />
-                              <span className="text-xs font-medium text-slate-500">Stock y compras</span>
+                              <span className="text-xs font-medium text-slate-500 truncate">Stock y fletes</span>
                             </div>
                             <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.invoicesTotalBruto)}</div>
                           </div>
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-[#F5BA13]" />
-                              <span className="text-xs font-medium text-slate-500">Notaría y legal</span>
+                              <span className="text-xs font-medium text-slate-500 truncate">Notaría y legal</span>
                             </div>
                             <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.notariaExpenses)}</div>
                           </div>
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-amber-500" />
-                              <span className="text-xs font-medium text-slate-500">Combustible</span>
+                              <span className="text-xs font-medium text-slate-500 truncate">Combustible</span>
                             </div>
                             <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.combustibleExpenses)}</div>
                           </div>
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
                             <div className="flex items-center gap-1.5">
                               <span className="w-2 h-2 rounded-full bg-[#78350F]" />
-                              <span className="text-xs font-medium text-slate-500">Packaging y bolsas</span>
+                              <span className="text-xs font-medium text-slate-500 truncate">Packaging</span>
                             </div>
                             <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.packagingExpenses)}</div>
                           </div>
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
                             <div className="flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-slate-400" />
-                              <span className="text-xs font-medium text-slate-500">Servicios y fijos</span>
+                              <span className="w-2 h-2 rounded-full bg-slate-500" />
+                              <span className="text-xs font-medium text-slate-500 truncate">Servicios y fijos</span>
                             </div>
                             <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.fixedExpenses + financialMetrics.servicesExpenses)}</div>
+                          </div>
+                          <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-sky-500" />
+                              <span className="text-xs font-medium text-slate-500 truncate">Mantenimiento</span>
+                            </div>
+                            <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.maintenanceExpenses)}</div>
+                          </div>
+                          <div className="finset-card bg-white border border-[#EAECEF] rounded-2xl p-3.5 space-y-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-slate-400" />
+                              <span className="text-xs font-medium text-slate-500 truncate">Otros gastos</span>
+                            </div>
+                            <div className="tabular-nums font-extrabold text-[#111827] text-sm">{formatCLP(financialMetrics.otherExpenses)}</div>
                           </div>
                         </div>
 
@@ -11167,75 +12010,93 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-[#EAECEF]">
-                                {combinedGastosList.map((item, idx) => {
-                                  const isPaid = (item.status || '').toLowerCase() === 'pagada' || (item.status || '').toLowerCase() === 'pagado';
-                                  const isOverdue = (item.status || '').toLowerCase() === 'vencida';
+                                {combinedGastosList.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={8} className="py-10 px-6 text-center text-xs text-slate-500 font-medium">
+                                      No hay facturas ni gastos operacionales registrados en este período.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  combinedGastosList.map((item, idx) => {
+                                    const isPaid = isPurchaseInvoicePaid(item);
+                                    const isOverdue = (item.status || '').toLowerCase() === 'vencida';
 
-                                  return (
-                                    <tr
-                                      key={idx}
-                                      onClick={() => {
-                                        if (item.type === 'factura') {
-                                          const fullInv = invoices.find((i) => i.invoiceNumber === item.id) || item;
-                                          setSelectedInvoiceModal(fullInv);
-                                        }
-                                      }}
-                                      className={`transition-colors ${item.type === 'factura'
-                                        ? 'hover:bg-[#FEF3C7]/35 cursor-pointer group'
-                                        : 'hover:bg-[#F8FAFC]'
-                                        }`}
-                                    >
-                                      <td className="py-3.5 px-4">
-                                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${item.type === 'factura' ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]/80' : 'bg-amber-50 text-amber-800 border-amber-200/70'}`}>
-                                          {item.type === 'factura' ? 'Factura stock' : 'Gasto operacional'}
-                                        </span>
-                                      </td>
-                                      <td className="py-3.5 px-4 font-mono font-semibold text-slate-700">
-                                        {item.id ? (
-                                          <span className={item.type === 'factura' ? 'text-[#D97706] font-bold group-hover:underline underline-offset-2 inline-flex items-center gap-1.5' : ''}>
-                                            #{item.id}
-                                            {item.type === 'factura' && (
-                                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-semibold">
-                                                Ver detalle
-                                              </span>
-                                            )}
+                                    return (
+                                      <tr
+                                        key={`${item.type}-${item.invoiceDbId || item.expenseId || item.id || idx}`}
+                                        onClick={() => {
+                                          if (item.type === 'factura') {
+                                            const fullInv =
+                                              invoices.find(
+                                                (i) => i.id === item.invoiceDbId || i.invoiceNumber === item.id
+                                              ) || item;
+                                            setSelectedInvoiceModal(fullInv);
+                                          }
+                                        }}
+                                        className={`transition-colors ${item.type === 'factura'
+                                          ? 'hover:bg-[#FEF3C7]/35 cursor-pointer group'
+                                          : 'hover:bg-[#F8FAFC]'
+                                          }`}
+                                      >
+                                        <td className="py-3.5 px-4">
+                                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border ${item.type === 'factura' ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]/80' : 'bg-amber-50 text-amber-800 border-amber-200/70'}`}>
+                                            {item.type === 'factura' ? 'Factura stock' : 'Gasto operacional'}
                                           </span>
-                                        ) : '-'}
-                                      </td>
-                                      <td className="py-3.5 px-4 font-semibold text-[#111827] max-w-[180px] sm:max-w-[220px]">
-                                        <span className="line-clamp-2 block leading-snug">{item.provider}</span>
-                                      </td>
-                                      <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap tabular-nums text-xs">
-                                        <div className="text-[#111827] font-medium">{formatCLPDate(item.date)}</div>
-                                        {item.type === 'factura' && (
-                                          <div className="text-[11px] text-slate-400">Vence: {formatCLPDate(item.dueDate || item.date)}</div>
-                                        )}
-                                      </td>
-                                      <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(item.neto)}</td>
-                                      <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">+{formatCLP(item.iva)}</td>
-                                      <td className="py-3.5 px-4 tabular-nums font-extrabold text-[#111827]">{formatCLP(item.total)}</td>
-                                      <td className="py-3.5 px-4 text-center">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (item.type === 'factura') handleToggleInvoiceStatus(item.id);
-                                          }}
-                                          className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize border transition-all ${item.type === 'factura' ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'cursor-default'
-                                            } ${isPaid
-                                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
-                                              : isOverdue
-                                                ? 'bg-rose-50 text-rose-700 border-rose-200/70'
-                                                : 'bg-amber-50 text-amber-700 border-amber-200/70'
-                                            }`}
-                                          title={item.type === 'factura' ? 'Clic para alternar estado Pagada / Pendiente' : undefined}
-                                        >
-                                          {item.status || 'Pendiente'}
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                        </td>
+                                        <td className="py-3.5 px-4 font-mono font-semibold text-slate-700">
+                                          {item.id ? (
+                                            <span className={item.type === 'factura' ? 'text-[#D97706] font-bold group-hover:underline underline-offset-2 inline-flex items-center gap-1.5' : ''}>
+                                              #{item.id}
+                                              {item.type === 'factura' && (
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-semibold">
+                                                  Ver detalle
+                                                </span>
+                                              )}
+                                            </span>
+                                          ) : '-'}
+                                        </td>
+                                        <td className="py-3.5 px-4 font-semibold text-[#111827] max-w-[180px] sm:max-w-[220px]">
+                                          <span className="line-clamp-2 block leading-snug">{item.provider}</span>
+                                        </td>
+                                        <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap tabular-nums text-xs">
+                                          <div className="text-[#111827] font-medium">{formatCLPDate(item.date)}</div>
+                                          {item.type === 'factura' && (
+                                            <div className="text-[11px] text-slate-400">Vence: {formatCLPDate(item.dueDate || item.date)}</div>
+                                          )}
+                                        </td>
+                                        <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(item.neto)}</td>
+                                        <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">+{formatCLP(item.iva)}</td>
+                                        <td className="py-3.5 px-4 tabular-nums font-extrabold text-[#111827]">
+                                          <div>{formatCLP(item.total)}</div>
+                                          {item.shippingBruto > 0 && (
+                                            <div className="text-[10px] font-semibold text-[#D97706]">
+                                              incl. flete {formatCLP(item.shippingBruto)}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-3.5 px-4 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (item.type === 'factura') handleToggleInvoiceStatus(item.invoiceDbId || item.id);
+                                            }}
+                                            className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize border transition-all ${item.type === 'factura' ? 'cursor-pointer hover:opacity-80 active:scale-95' : 'cursor-default'
+                                              } ${isPaid
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+                                                : isOverdue
+                                                  ? 'bg-rose-50 text-rose-700 border-rose-200/70'
+                                                  : 'bg-amber-50 text-amber-700 border-amber-200/70'
+                                              }`}
+                                            title={item.type === 'factura' ? 'Clic para alternar estado Pagada / Pendiente' : undefined}
+                                          >
+                                            {isPaid ? (item.type === 'factura' ? 'pagada' : 'pagado') : (item.status || 'pendiente')}
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -11246,14 +12107,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     {/* VISTA 2: FACTURAS DE PROVEEDORES */}
                     {gastosTabFilter === 'facturas' && (
                       <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl overflow-hidden">
-                        {/* Status Filters */}
+                        {/* Status Filters (contadores reales del período filtrado) */}
                         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-[#EAECEF]">
                           <h3 className="text-base font-bold text-[#111827]">Facturas de proveedores</h3>
                           <div className="inline-flex items-center p-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF] gap-1 flex-wrap">
                             {[
-                              { id: 'todas', label: `Todas (${invoices.length})` },
-                              { id: 'pagada', label: `Pagadas (${invoices.filter((i) => i.status === 'pagada').length})` },
-                              { id: 'pendiente', label: `Pendientes (${invoices.filter((i) => i.status === 'pendiente').length})` },
+                              { id: 'todas', label: `Todas (${periodFilteredInvoices.length})` },
+                              { id: 'pagada', label: `Pagadas (${periodFilteredInvoices.filter((i) => isPurchaseInvoicePaid(i)).length})` },
+                              { id: 'pendiente', label: `Pendientes (${periodFilteredInvoices.filter((i) => !isPurchaseInvoicePaid(i)).length})` },
                             ].map((tab) => (
                               <button
                                 key={tab.id}
@@ -11287,58 +12148,75 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[#EAECEF]">
-                              {filteredInvoices.map((inv, idx) => (
-                                <tr
-                                  key={idx}
-                                  onClick={() => setSelectedInvoiceModal(inv)}
-                                  className="hover:bg-[#FEF3C7]/35 transition-colors cursor-pointer group"
-                                >
-                                  <td className="py-3.5 px-4 font-mono font-bold text-[#D97706]">
-                                    <span className="group-hover:underline underline-offset-2 inline-flex items-center gap-1.5">
-                                      #{inv.invoiceNumber}
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-semibold">
-                                        Ver
-                                      </span>
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-4 max-w-[200px]">
-                                    <div className="font-semibold text-[#111827] line-clamp-2 leading-snug">{inv.provider}</div>
-                                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">{inv.rut}</div>
-                                  </td>
-                                  <td className="py-3.5 px-4">
-                                    <div className="font-medium text-[#111827] line-clamp-1">{inv.productName || 'Mercadería surtida'}</div>
-                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] text-[10px] font-semibold border border-[#FDE68A]/70 mt-1">
-                                      +{inv.quantityReceived || inv.itemsCount || 1} un. a bodega
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-4 whitespace-nowrap tabular-nums text-xs">
-                                    <div className="text-[#111827] font-medium">{formatCLPDate(inv.date)}</div>
-                                    <div className="text-[11px] text-slate-400">Vence: {formatCLPDate(inv.dueDate || inv.date)}</div>
-                                  </td>
-                                  <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(inv.totalNeto)}</td>
-                                  <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">+{formatCLP(inv.iva)}</td>
-                                  <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">
-                                    {formatCLP(inv.totalBruto)}
-                                  </td>
-                                  <td className="py-3.5 px-4 text-slate-600 font-medium">{inv.paymentMethod}</td>
-                                  <td className="py-3.5 px-4 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleInvoiceStatus(inv.invoiceNumber);
-                                      }}
-                                      className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize transition-all cursor-pointer border ${inv.status === 'pagada'
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 hover:bg-emerald-100'
-                                        : 'bg-amber-50 text-amber-700 border-amber-200/70 hover:bg-amber-100'
-                                        }`}
-                                      title="Haz clic para cambiar estado Pagada / Pendiente"
-                                    >
-                                      {inv.status}
-                                    </button>
+                              {filteredInvoices.length === 0 ? (
+                                <tr>
+                                  <td colSpan={9} className="py-10 px-6 text-center text-xs text-slate-500 font-medium">
+                                    No hay facturas de proveedores que coincidan con este período y estado.
                                   </td>
                                 </tr>
-                              ))}
+                              ) : (
+                                filteredInvoices.map((inv, idx) => {
+                                  const invTotals = getInvoiceTotalWithFreight(inv);
+                                  const invIsPaid = isPurchaseInvoicePaid(inv);
+                                  return (
+                                    <tr
+                                      key={inv.id || inv.invoiceNumber || idx}
+                                      onClick={() => setSelectedInvoiceModal(inv)}
+                                      className="hover:bg-[#FEF3C7]/35 transition-colors cursor-pointer group"
+                                    >
+                                      <td className="py-3.5 px-4 font-mono font-bold text-[#D97706]">
+                                        <span className="group-hover:underline underline-offset-2 inline-flex items-center gap-1.5">
+                                          #{inv.invoiceNumber}
+                                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] opacity-0 group-hover:opacity-100 transition-opacity font-sans font-semibold">
+                                            Ver
+                                          </span>
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 max-w-[200px]">
+                                        <div className="font-semibold text-[#111827] line-clamp-2 leading-snug">{inv.provider}</div>
+                                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">{inv.rut || 'Sin RUT'}</div>
+                                      </td>
+                                      <td className="py-3.5 px-4">
+                                        <div className="font-medium text-[#111827] line-clamp-1">{inv.productName || 'Mercadería surtida'}</div>
+                                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] text-[10px] font-semibold border border-[#FDE68A]/70 mt-1">
+                                          +{inv.quantityReceived || inv.itemsCount || 1} un. a bodega
+                                        </span>
+                                      </td>
+                                      <td className="py-3.5 px-4 whitespace-nowrap tabular-nums text-xs">
+                                        <div className="text-[#111827] font-medium">{formatCLPDate(inv.date)}</div>
+                                        <div className="text-[11px] text-slate-400">Vence: {formatCLPDate(inv.dueDate || inv.date)}</div>
+                                      </td>
+                                      <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(invTotals.totalNeto)}</td>
+                                      <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">+{formatCLP(invTotals.totalIva)}</td>
+                                      <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">
+                                        <div>{formatCLP(invTotals.totalBruto)}</div>
+                                        {invTotals.shippingBruto > 0 && (
+                                          <div className="text-[10px] font-semibold text-[#D97706]">
+                                            incl. flete {formatCLP(invTotals.shippingBruto)}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-3.5 px-4 text-slate-600 font-medium">{inv.paymentMethod}</td>
+                                      <td className="py-3.5 px-4 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleToggleInvoiceStatus(inv.id || inv.invoiceNumber);
+                                          }}
+                                          className={`px-3 py-1 rounded-full text-[11px] font-semibold capitalize transition-all cursor-pointer border ${invIsPaid
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70 hover:bg-emerald-100'
+                                            : 'bg-amber-50 text-amber-700 border-amber-200/70 hover:bg-amber-100'
+                                            }`}
+                                          title="Haz clic para cambiar estado Pagada / Pendiente"
+                                        >
+                                          {invIsPaid ? 'pagada' : (inv.status || 'pendiente')}
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -11357,7 +12235,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               { id: 'combustible', label: 'Bencina' },
                               { id: 'packaging', label: 'Packaging' },
                               { id: 'fijo', label: 'Arriendos / fijo' },
+                              { id: 'mantenimiento', label: 'Mantenimiento' },
                               { id: 'servicios', label: 'Servicios' },
+                              { id: 'otros', label: 'Otros' },
                             ].map((cat) => (
                               <button
                                 key={cat.id}
@@ -11411,42 +12291,60 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[#EAECEF]">
-                              {filteredExpenses.map((exp) => (
-                                <tr key={exp.id} className="hover:bg-[#F8FAFC] transition-colors">
-                                  <td className="py-3.5 px-4">
-                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#F8FAFC] text-[#78350F] border border-[#EAECEF]">
-                                      <span>{exp.icon || '🧾'}</span>
-                                      <span>{exp.categoryLabel || exp.category}</span>
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-4 font-semibold text-[#111827] max-w-xs">{exp.description}</td>
-                                  <td className="py-3.5 px-4 text-slate-600 max-w-[200px]">
-                                    <span className="line-clamp-2 block leading-snug">{exp.provider}</span>
-                                  </td>
-                                  <td className="py-3.5 px-4 font-mono text-xs">
-                                    <span className="text-[#111827] font-medium">{exp.documentNumber}</span>
-                                    <span className={`block text-[10px] font-sans font-semibold mt-0.5 ${exp.hasIvaCredit ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                      {exp.hasIvaCredit ? 'Genera IVA crédito' : 'Sin crédito fiscal'}
-                                    </span>
-                                  </td>
-                                  <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums text-xs">{formatCLPDate(exp.date)}</td>
-                                  <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(exp.neto)}</td>
-                                  <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">
-                                    {exp.iva > 0 ? `+${formatCLP(exp.iva)}` : '$0'}
-                                  </td>
-                                  <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">{formatCLP(exp.amount)}</td>
-                                  <td className="py-3.5 px-4 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteExpense(exp.id)}
-                                      className="w-8 h-8 rounded-full inline-flex items-center justify-center border border-[#EAECEF] bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                      title="Eliminar gasto"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                              {filteredExpenses.length === 0 ? (
+                                <tr>
+                                  <td colSpan={9} className="py-10 px-6 text-center text-xs text-slate-500 font-medium">
+                                    No hay gastos operacionales que coincidan con estos filtros en el período seleccionado.
                                   </td>
                                 </tr>
-                              ))}
+                              ) : (
+                                filteredExpenses.map((exp) => (
+                                  <tr key={exp.id} className="hover:bg-[#F8FAFC] transition-colors">
+                                    <td className="py-3.5 px-4">
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#F8FAFC] text-[#78350F] border border-[#EAECEF]">
+                                        <span>{exp.icon || '🧾'}</span>
+                                        <span>{exp.categoryLabel || exp.category}</span>
+                                      </span>
+                                    </td>
+                                    <td className="py-3.5 px-4 font-semibold text-[#111827] max-w-xs">{exp.description}</td>
+                                    <td className="py-3.5 px-4 text-slate-600 max-w-[200px]">
+                                      <span className="line-clamp-2 block leading-snug">{exp.provider}</span>
+                                    </td>
+                                    <td className="py-3.5 px-4 font-mono text-xs">
+                                      <span className="text-[#111827] font-medium">{exp.documentNumber}</span>
+                                      <span className={`block text-[10px] font-sans font-semibold mt-0.5 ${isExpenseWithIvaCredit(exp) ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                        {isExpenseWithIvaCredit(exp) ? 'Genera IVA crédito' : 'Sin crédito fiscal'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums text-xs">{formatCLPDate(exp.date)}</td>
+                                    <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(exp.neto)}</td>
+                                    <td className="py-3.5 px-4 tabular-nums font-semibold text-emerald-700">
+                                      {exp.iva > 0 ? `+${formatCLP(exp.iva)}` : '$0'}
+                                    </td>
+                                    <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">{formatCLP(exp.amount)}</td>
+                                    <td className="py-3.5 px-4 text-center">
+                                      <div className="inline-flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditExpense(exp)}
+                                          className="w-8 h-8 rounded-full inline-flex items-center justify-center border border-[#EAECEF] bg-white hover:bg-[#FEF3C7] hover:border-[#FDE68A] text-slate-400 hover:text-[#D97706] transition-colors cursor-pointer"
+                                          title="Editar gasto"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteExpense(exp.id)}
+                                          className="w-8 h-8 rounded-full inline-flex items-center justify-center border border-[#EAECEF] bg-white hover:bg-rose-50 hover:border-rose-200 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                          title="Eliminar gasto"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
                             </tbody>
                           </table>
                         </div>
@@ -11612,19 +12510,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-3">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-semibold text-slate-600">Ventas comerciales</span>
+                              <span className="text-sm font-semibold text-slate-600">Ventas comerciales (neto)</span>
                               <span className="w-8 h-8 rounded-2xl bg-[#FEF3C7] border border-[#FDE68A]/60 flex items-center justify-center text-[#D97706]">
                                 <ShoppingBag className="w-4 h-4" />
                               </span>
                             </div>
                             <div className="flex items-baseline">
                               <span className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight tabular-nums leading-none">
-                                {formatCLP(financialMetrics.totalSales)}
+                                {formatCLP(financialMetrics.totalNetSalesInBank)}
                               </span>
                               <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
                             </div>
                             <span className="text-xs text-slate-400 font-medium pt-2 border-t border-[#EAECEF]">
-                              {periodFilteredOrders.length} pedidos comerciales emitidos
+                              {financialMetrics.mpTotalCostWithIva > 0
+                                ? `Bruto: ${formatCLP(financialMetrics.totalSales)} · Com. -${formatCLP(financialMetrics.mpTotalCostWithIva)}`
+                                : `${periodFilteredOrders.length} pedidos pagados sin comisión`}
                             </span>
                           </div>
 
@@ -11779,17 +12679,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                           </div>
 
-                          {/* Card 3: Ingresos Alamiro Huerta */}
+                          {/* Card 3: Ingresos Alamiro Huerta (reconciliado con gastos operacionales) */}
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-4">
                             <div>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-semibold text-slate-600">Alamiro Huerta</span>
                                 <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70 text-[11px] font-semibold">
-                                  Socio
+                                  Socio 50%
                                 </span>
                               </div>
                               <div className="mt-3 flex items-baseline">
-                                <span className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight tabular-nums leading-none">
+                                <span className={`text-2xl sm:text-[26px] font-extrabold tracking-tight tabular-nums leading-none ${(financialMetrics.partnerDistribution?.alamiro?.total || 0) >= 0 ? 'text-[#111827]' : 'text-rose-600'}`}>
                                   {formatCLP(financialMetrics.partnerDistribution?.alamiro?.total || 0)}
                                 </span>
                                 <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
@@ -11797,13 +12697,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium space-y-1 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between">
-                                <span>50% ganancia:</span>
+                                <span>50% margen pedidos:</span>
                                 <strong className="text-[#111827] tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.productProfit || 0)}
                                 </strong>
                               </div>
+                              {(financialMetrics.partnerDistribution?.alamiro?.opexShare || 0) > 0 && (
+                                <div className="flex justify-between text-rose-600">
+                                  <span>50% gastos operac.:</span>
+                                  <span className="font-semibold tabular-nums">
+                                    -{formatCLP(financialMetrics.partnerDistribution.alamiro.opexShare)}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between text-[#D97706]">
-                                <span>Despachos ({financialMetrics.partnerDistribution?.alamiro?.deliveryCount || 0}):</span>
+                                <span>Despachos entreg. ({financialMetrics.partnerDistribution?.alamiro?.deliveryCount || 0}):</span>
                                 <span className="font-semibold tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.deliveryFees || 0)}
                                 </span>
@@ -11811,17 +12719,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                           </div>
 
-                          {/* Card 4: Ingresos Ignacio Alarcón */}
+                          {/* Card 4: Ingresos Ignacio Alarcón (reconciliado con gastos operacionales) */}
                           <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-5 flex flex-col justify-between gap-4">
                             <div>
                               <div className="flex items-center justify-between gap-2">
                                 <span className="text-sm font-semibold text-slate-600">Ignacio Alarcón</span>
                                 <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70 text-[11px] font-semibold">
-                                  Socio
+                                  Socio 50%
                                 </span>
                               </div>
                               <div className="mt-3 flex items-baseline">
-                                <span className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight tabular-nums leading-none">
+                                <span className={`text-2xl sm:text-[26px] font-extrabold tracking-tight tabular-nums leading-none ${(financialMetrics.partnerDistribution?.ignacio?.total || 0) >= 0 ? 'text-[#111827]' : 'text-rose-600'}`}>
                                   {formatCLP(financialMetrics.partnerDistribution?.ignacio?.total || 0)}
                                 </span>
                                 <span className="finset-suffix text-sm font-semibold text-slate-300 ml-0.5">.00</span>
@@ -11829,19 +12737,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium space-y-1 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between">
-                                <span>50% ganancia:</span>
+                                <span>50% margen pedidos:</span>
                                 <strong className="text-[#111827] tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.productProfit || 0)}
                                 </strong>
                               </div>
+                              {(financialMetrics.partnerDistribution?.ignacio?.opexShare || 0) > 0 && (
+                                <div className="flex justify-between text-rose-600">
+                                  <span>50% gastos operac.:</span>
+                                  <span className="font-semibold tabular-nums">
+                                    -{formatCLP(financialMetrics.partnerDistribution.ignacio.opexShare)}
+                                  </span>
+                                </div>
+                              )}
                               <div className="flex justify-between text-[#D97706]">
-                                <span>Despachos ({financialMetrics.partnerDistribution?.ignacio?.deliveryCount || 0}):</span>
+                                <span>Despachos entreg. ({financialMetrics.partnerDistribution?.ignacio?.deliveryCount || 0}):</span>
                                 <span className="font-semibold tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.deliveryFees || 0)}
                                 </span>
                               </div>
                             </div>
                           </div>
+                        </div>
+
+                        {/* Barra de reconciliación 50/50 */}
+                        <div className="px-4 py-2.5 rounded-2xl bg-[#FAF8F4] border border-[#FDE68A]/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
+                          <span>
+                            Reconciliación 50/50: Margen pedidos <strong className="text-[#111827] tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.ordersMarginBeforeOpex || 0)}</strong> − Gastos operacionales <strong className="text-rose-600 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.registeredOpex || 0)}</strong> = Utilidad repartible <strong className="text-emerald-700 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.netDistributableProfit || 0)}</strong>
+                          </span>
+                          {(financialMetrics.partnerDistribution?.undeliveredCount || 0) > 0 && (
+                            <span className="text-[#D97706] font-semibold">
+                              · {financialMetrics.partnerDistribution.undeliveredCount} pedido(s) pagado(s) aún sin entregar (despacho pendiente)
+                            </span>
+                          )}
                         </div>
 
                         {/* Ventas Table Card with Channel Filter */}
@@ -11908,7 +12836,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
 
                             <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-                              <span>Mostrando {filteredFinancesOrders.length} de {orders.length} pedidos conectados</span>
+                              <span>Mostrando {filteredFinancesOrders.length} de {periodFilteredOrders.length} ventas pagadas del período</span>
                               {(financesSalesChannelFilter !== 'todos' || financesPaymentMethodFilter !== 'todos') && (
                                 <button
                                   type="button"
@@ -11942,64 +12870,86 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-[#EAECEF]">
-                                {filteredFinancesOrders.map((ord) => {
-                                  const isManual = ord.channel === 'manual';
-                                  const orderNeto = Math.round(ord.total / 1.19);
-                                  const orderIva = ord.total - orderNeto;
-                                  const dist = calculateOrderFinancialDistribution(ord);
-                                  const customerName = (typeof ord.customer === 'string' ? ord.customer : ord.customer?.name) || ord.customerName || ord.customer_name || 'Cliente tienda';
+                                {filteredFinancesOrders.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={10} className="py-10 px-6 text-center text-xs text-slate-500 font-medium">
+                                      No hay ventas pagadas que coincidan con estos filtros en el período seleccionado.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  filteredFinancesOrders.map((ord) => {
+                                    const isManual = ord.channel === 'manual';
+                                    const orderNeto = Math.round(ord.total / 1.19);
+                                    const orderIva = ord.total - orderNeto;
+                                    const dist = calculateOrderFinancialDistribution(ord);
+                                    const customerName = (typeof ord.customer === 'string' ? ord.customer : ord.customer?.name) || ord.customerName || ord.customer_name || 'Cliente tienda';
+                                    const customerEmail = (typeof ord.customer === 'object' ? ord.customer?.email : '') || ord.customerEmail || ord.customer_email || ord.email || '';
+                                    const statusDisplay =
+                                      ord.status === 'entregado'
+                                        ? { label: 'Entregado', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200/70' }
+                                        : ord.status === 'en_camino'
+                                          ? { label: 'En camino', cls: 'bg-sky-50 text-sky-700 border-sky-200/70' }
+                                          : ord.status === 'en_preparacion'
+                                            ? { label: 'En preparación', cls: 'bg-amber-50 text-amber-700 border-amber-200/70' }
+                                            : { label: ord.status || 'Confirmado', cls: 'bg-slate-50 text-slate-700 border-slate-200' };
 
-                                  return (
-                                    <tr key={ord.id} className="hover:bg-[#F8FAFC] transition-colors">
-                                      <td className="py-3.5 px-4 font-mono font-bold text-[#D97706]">{ord.id}</td>
-                                      <td className="py-3.5 px-4">
-                                        <div className="font-semibold text-[#111827]">
-                                          {customerName}
-                                        </div>
-                                        <div className="text-[11px] text-slate-400">
-                                          {typeof ord.customer === 'object' ? ord.customer?.email : ord.email || ''}
-                                        </div>
-                                      </td>
-                                      <td className="py-3.5 px-4">
-                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isManual ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'}`}>
-                                          {isManual ? 'Manual' : 'Web'}
-                                        </span>
-                                      </td>
-                                      <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums">{ord.date}</td>
-                                      <td className="py-3.5 px-4">
-                                        {renderPaymentMethodBadge(ord.paymentMethod)}
-                                      </td>
-                                      <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(orderNeto)}</td>
-                                      <td className="py-3.5 px-4 tabular-nums font-semibold text-rose-600">+{formatCLP(orderIva)}</td>
-                                      <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">{formatCLP(ord.total)}</td>
-                                      <td className="py-3.5 px-4 text-center">
-                                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/70">
-                                          {ord.status}
-                                        </span>
-                                        {dist && (
-                                          <div
-                                            className="text-[10px] text-slate-500 font-medium mt-1 whitespace-nowrap"
-                                            title={`Repartición de este pedido:${dist.paymentFee > 0 ? `\n• Comisión ${dist.paymentFeeNorm} (${dist.paymentFeeRate}%): -${formatCLP(dist.paymentFee)}` : ''}\n• Ignacio: ${formatCLP(dist.ignacioTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})\n• Alamiro: ${formatCLP(dist.alamiroTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})`}
-                                          >
-                                            <span>Ignacio: <strong className="text-[#111827] tabular-nums">{formatCLP(dist.ignacioTotal)}</strong></span>
-                                            <span className="mx-1 text-slate-300">|</span>
-                                            <span>Alamiro: <strong className="text-[#111827] tabular-nums">{formatCLP(dist.alamiroTotal)}</strong></span>
+                                    return (
+                                      <tr key={ord.id} className="hover:bg-[#F8FAFC] transition-colors">
+                                        <td className="py-3.5 px-4 font-mono font-bold text-[#D97706]">{ord.id}</td>
+                                        <td className="py-3.5 px-4">
+                                          <div className="font-semibold text-[#111827]">
+                                            {customerName}
                                           </div>
-                                        )}
-                                      </td>
-                                      <td className="py-3.5 px-4 text-center">
-                                        <button
-                                          type="button"
-                                          onClick={() => setSelectedOrderModal(ord)}
-                                          className="w-8 h-8 rounded-full inline-flex items-center justify-center border border-[#EAECEF] bg-white hover:bg-[#FEF3C7] hover:border-[#FDE68A] text-slate-500 hover:text-[#D97706] transition-colors cursor-pointer"
-                                          title="Ver detalle del pedido"
-                                        >
-                                          <Eye className="w-3.5 h-3.5" />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
+                                          {customerEmail && (
+                                            <div className="text-[11px] text-slate-400">
+                                              {customerEmail}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-3.5 px-4">
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isManual ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'}`}>
+                                            {isManual ? 'Manual' : 'Web'}
+                                          </span>
+                                        </td>
+                                        <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums">
+                                          <div className="font-medium text-[#111827]">{ord.date}</div>
+                                          {ord.time && <div className="text-[11px] text-slate-400">{ord.time}</div>}
+                                        </td>
+                                        <td className="py-3.5 px-4">
+                                          {renderPaymentMethodBadge(ord.paymentMethod)}
+                                        </td>
+                                        <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(orderNeto)}</td>
+                                        <td className="py-3.5 px-4 tabular-nums font-semibold text-rose-600">+{formatCLP(orderIva)}</td>
+                                        <td className="py-3.5 px-4 font-extrabold text-[#111827] tabular-nums text-sm">{formatCLP(ord.total)}</td>
+                                        <td className="py-3.5 px-4 text-center">
+                                          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${statusDisplay.cls}`}>
+                                            {statusDisplay.label}
+                                          </span>
+                                          {dist && (
+                                            <div
+                                              className="text-[10px] text-slate-500 font-medium mt-1 whitespace-nowrap"
+                                              title={`Repartición de este pedido:${dist.paymentFee > 0 ? `\n• Comisión ${dist.paymentFeeNorm} (${dist.paymentFeeRate}%): -${formatCLP(dist.paymentFee)}` : ''}\n• Ignacio: ${formatCLP(dist.ignacioTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isIgnacio ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})\n• Alamiro: ${formatCLP(dist.alamiroTotal)} (50% ganancia ${formatCLP(dist.halfProfit)} ${dist.isAlamiro ? `+ ${formatCLP(dist.deliveryCost)} despacho` : ''})`}
+                                            >
+                                              <span>Ignacio: <strong className="text-[#111827] tabular-nums">{formatCLP(dist.ignacioTotal)}</strong></span>
+                                              <span className="mx-1 text-slate-300">|</span>
+                                              <span>Alamiro: <strong className="text-[#111827] tabular-nums">{formatCLP(dist.alamiroTotal)}</strong></span>
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-3.5 px-4 text-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedOrderModal(ord)}
+                                            className="w-8 h-8 rounded-full inline-flex items-center justify-center border border-[#EAECEF] bg-white hover:bg-[#FEF3C7] hover:border-[#FDE68A] text-slate-500 hover:text-[#D97706] transition-colors cursor-pointer"
+                                            title="Ver detalle del pedido"
+                                          >
+                                            <Eye className="w-3.5 h-3.5" />
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })
+                                )}
                               </tbody>
                             </table>
                           </div>
@@ -12334,47 +13284,51 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               </span>
                             </div>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              Cálculo mensual dinámico del IVA débito en ventas e IVA crédito recuperable en compras y gastos
+                              Criterio devengado SII (ventas emitidas del mes) con arrastre automático de remanente de IVA crédito
                             </p>
                           </div>
                         </div>
 
                         {/* Selector de Mes y Período */}
-                        <div className="inline-flex items-center p-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF] self-start lg:self-auto">
-                          <button
-                            type="button"
-                            onClick={handlePrevPeriodMonth}
-                            className="w-8 h-8 rounded-full text-slate-600 hover:text-[#111827] hover:bg-white transition-all cursor-pointer active:scale-95 flex items-center justify-center"
-                            title="Ir al mes anterior"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </button>
-                          <div className="px-3.5 py-1 flex items-center gap-2 select-none min-w-[140px] justify-center">
-                            <span className="text-xs font-bold text-[#111827] tracking-tight capitalize">
-                              {formatPeriodLabel(financesPeriodFilter)}
-                            </span>
-                            {financesPeriodFilter === currentYM && (
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70">
-                                Actual
+                        <div className="flex items-center gap-2 flex-wrap self-start lg:self-auto">
+                          <div className="inline-flex items-center p-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF]">
+                            <button
+                              type="button"
+                              onClick={handlePrevPeriodMonth}
+                              className="w-8 h-8 rounded-full text-slate-600 hover:text-[#111827] hover:bg-white transition-all cursor-pointer active:scale-95 flex items-center justify-center"
+                              title="Ir al mes anterior"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </button>
+                            <div className="px-3.5 py-1 flex items-center gap-2 select-none min-w-[140px] justify-center">
+                              <span className="text-xs font-bold text-[#111827] tracking-tight capitalize">
+                                {financesPeriodFilter === 'todos' ? 'Todo el histórico' : formatPeriodLabel(financesPeriodFilter)}
                               </span>
-                            )}
+                              {financesPeriodFilter === currentYM && (
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/70">
+                                  Actual
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleNextPeriodMonth}
+                              disabled={financesPeriodFilter === 'todos' || financesPeriodFilter >= currentYM}
+                              className={`w-8 h-8 rounded-full transition-all flex items-center justify-center ${financesPeriodFilter === 'todos' || financesPeriodFilter >= currentYM
+                                ? 'opacity-30 cursor-not-allowed text-slate-400'
+                                : 'text-slate-600 hover:text-[#111827] hover:bg-white cursor-pointer active:scale-95'
+                                }`}
+                              title={
+                                financesPeriodFilter === 'todos'
+                                  ? 'Selecciona un mes específico'
+                                  : financesPeriodFilter >= currentYM
+                                    ? 'No es posible avanzar a meses futuros'
+                                    : 'Ir al mes siguiente'
+                              }
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={handleNextPeriodMonth}
-                            disabled={financesPeriodFilter >= currentYM}
-                            className={`w-8 h-8 rounded-full transition-all flex items-center justify-center ${financesPeriodFilter >= currentYM
-                              ? 'opacity-30 cursor-not-allowed text-slate-400'
-                              : 'text-slate-600 hover:text-[#111827] hover:bg-white cursor-pointer active:scale-95'
-                              }`}
-                            title={
-                              financesPeriodFilter >= currentYM
-                                ? 'No es posible avanzar a meses futuros'
-                                : 'Ir al mes siguiente'
-                            }
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -12394,7 +13348,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                           </div>
                           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200/70 shrink-0">
-                            Cobrado
+                            Devengado SII
                           </span>
                         </div>
 
@@ -12414,6 +13368,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <span className="text-slate-500">Ventas manuales:</span>
                             <span className="tabular-nums font-semibold text-[#111827]">{formatCLP(f29FilteredData.manualIvaDebito)}</span>
                           </div>
+                          {f29FilteredData.unpaidOrdersCount > 0 && (
+                            <div className="flex justify-between text-amber-700">
+                              <span>Por cobrar ({f29FilteredData.unpaidOrdersCount} ped.):</span>
+                              <span className="tabular-nums font-semibold">{formatCLP(f29FilteredData.unpaidIvaDebito)} IVA</span>
+                            </div>
+                          )}
                           <div className="pt-2 border-t border-[#EAECEF] flex justify-between font-semibold">
                             <span className="text-slate-600">Ventas netas totales:</span>
                             <span className="tabular-nums text-[#111827]">{formatCLP(f29FilteredData.salesNeto)}</span>
@@ -12421,7 +13381,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                       </div>
 
-                      {/* Box 2: IVA Crédito (Línea 23) */}
+                      {/* Box 2: IVA Crédito (Líneas 23, 24 y Remanente 27) */}
                       <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-6 space-y-4">
                         <div className="flex items-start justify-between gap-2 border-b border-[#EAECEF] pb-3.5">
                           <div className="flex items-center gap-2.5">
@@ -12430,7 +13390,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </span>
                             <div>
                               <h3 className="text-sm font-bold text-[#111827]">2. Crédito fiscal (IVA compras)</h3>
-                              <span className="text-[11px] text-slate-400 font-medium">Líneas 23 y 24 del Formulario 29</span>
+                              <span className="text-[11px] text-slate-400 font-medium">Líneas 23, 24 y 27 del F29</span>
                             </div>
                           </div>
                           <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/70 shrink-0">
@@ -12447,16 +13407,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                         <div className="space-y-2 p-4 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-xs">
                           <div className="flex justify-between">
-                            <span className="text-slate-500">Facturas stock mercadería:</span>
+                            <span className="text-slate-500">Facturas stock (+ flete):</span>
                             <span className="tabular-nums font-semibold text-emerald-700">+{formatCLP(f29FilteredData.invoicesIvaCredito)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-500">Facturas gastos operacionales:</span>
                             <span className="tabular-nums font-semibold text-emerald-700">+{formatCLP(f29FilteredData.expensesIvaCredito)}</span>
                           </div>
+                          {f29FilteredData.remanenteAnterior > 0 && (
+                            <div className="flex justify-between text-[#D97706]">
+                              <span>Remanente mes anterior:</span>
+                              <span className="tabular-nums font-bold">+{formatCLP(f29FilteredData.remanenteAnterior)}</span>
+                            </div>
+                          )}
                           <div className="pt-2 border-t border-[#EAECEF] flex justify-between font-semibold">
-                            <span className="text-slate-600">Documentos computados:</span>
-                            <span className="tabular-nums text-[#111827]">{f29FilteredData.filteredInvoicesCount} facturas</span>
+                            <span className="text-slate-600">Documentos del período:</span>
+                            <span className="tabular-nums text-[#111827]">
+                              {f29FilteredData.purchaseInvoicesCount} stock + {f29FilteredData.expenseInvoicesCount} gastos
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -12470,7 +13438,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </span>
                             <div>
                               <h3 className="text-sm font-bold text-[#111827]">3. Resultado del período</h3>
-                              <span className="text-[11px] text-slate-400 font-medium">Línea 36 del Formulario 29</span>
+                              <span className="text-[11px] text-slate-400 font-medium">Línea 36 / 77 del Formulario 29</span>
                             </div>
                           </div>
                           <span
@@ -12502,8 +13470,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <span className="tabular-nums font-semibold text-[#D97706]">{f29FilteredData.ivaCoveredPercent}% cubierto</span>
                           </div>
                           <div className="pt-2 border-t border-[#EAECEF] flex justify-between font-semibold">
-                            <span className="text-slate-600">Vencimiento legal:</span>
-                            <span className="text-[#78350F]">Día 20 del mes subsiguiente</span>
+                            <span className="text-slate-600">Vencimiento legal (DTE):</span>
+                            <span className="text-[#78350F]">Día 20 del mes siguiente</span>
                           </div>
                         </div>
                       </div>
@@ -12516,8 +13484,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <h3 className="text-base font-bold text-[#111827]">Desglose oficial Formulario 29 · Declaración mensual SII</h3>
                           <p className="text-xs text-slate-500 mt-0.5">Período calculado: {f29FilteredData.periodLabel}</p>
                         </div>
-                        <span className="px-3 py-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF] text-xs font-semibold text-slate-500 self-start sm:self-auto">
-                          RUT: 76.842.119-K (Patitas del Sur SpA)
+                        <span className="px-3 py-1 rounded-full bg-[#F8FAFC] border border-[#EAECEF] text-xs font-semibold text-slate-600 self-start sm:self-auto">
+                          RUT: {COMPANY_INFO.rut} ({COMPANY_INFO.displayName})
                         </span>
                       </div>
 
@@ -12547,7 +13515,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <tr className="hover:bg-[#F8FAFC] transition-colors">
                               <td className="py-3.5 px-4 font-semibold text-[#111827]">Línea 23</td>
                               <td className="py-3.5 px-4 font-mono text-slate-500">[518]</td>
-                              <td className="py-3.5 px-4 text-slate-700">Facturas recibidas por mercadería y stock (crédito fiscal)</td>
+                              <td className="py-3.5 px-4 text-slate-700">Facturas recibidas por mercadería, stock y fletes (crédito fiscal)</td>
                               <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(f29FilteredData.invoicesNeto)}</td>
                               <td className="py-3.5 px-4 font-semibold text-slate-600">19%</td>
                               <td className="py-3.5 px-4 tabular-nums font-bold text-emerald-700 text-right">
@@ -12559,13 +13527,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               <td className="py-3.5 px-4 font-mono text-slate-500">[520]</td>
                               <td className="py-3.5 px-4 text-slate-700">Facturas recibidas por gastos de operación y servicios</td>
                               <td className="py-3.5 px-4 tabular-nums text-slate-700">
-                                {formatCLP(Math.round((f29FilteredData.expensesIvaCredito || 0) / 0.19))}
+                                {formatCLP(f29FilteredData.expensesNetoWithFactura)}
                               </td>
                               <td className="py-3.5 px-4 font-semibold text-slate-600">19%</td>
                               <td className="py-3.5 px-4 tabular-nums font-bold text-emerald-700 text-right">
                                 -{formatCLP(f29FilteredData.expensesIvaCredito)}
                               </td>
                             </tr>
+                            {financesPeriodFilter !== 'todos' && (
+                              <tr className="hover:bg-[#F8FAFC] transition-colors">
+                                <td className="py-3.5 px-4 font-semibold text-[#111827]">Línea 27</td>
+                                <td className="py-3.5 px-4 font-mono text-slate-500">[504]</td>
+                                <td className="py-3.5 px-4 text-slate-700">Remanente de crédito fiscal del mes anterior</td>
+                                <td className="py-3.5 px-4 font-mono text-slate-400">-</td>
+                                <td className="py-3.5 px-4 text-slate-400">-</td>
+                                <td className="py-3.5 px-4 tabular-nums font-bold text-[#D97706] text-right">
+                                  -{formatCLP(f29FilteredData.remanenteAnterior)}
+                                </td>
+                              </tr>
+                            )}
                             <tr className="bg-[#F8FAFC] font-bold text-sm">
                               <td className="py-4 px-4 text-[#111827]">Línea 77</td>
                               <td className="py-4 px-4 font-mono text-slate-500">[89]</td>
@@ -12603,7 +13583,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <span>Exige factura en todo insumo</span>
                           </div>
                           <p className="text-slate-500 leading-relaxed">
-                            Al comprar bolsas kraft, cintas de embalaje y fletes, solicita siempre factura con el RUT de Patitas del Sur SpA para recuperar el 19%.
+                            Al comprar bolsas kraft, cintas de embalaje y fletes, solicita siempre factura con el RUT {COMPANY_INFO.rut} de {COMPANY_INFO.displayName} para recuperar el 19%.
                           </p>
                         </div>
 
@@ -15758,6 +16738,44 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
                     </div>
 
+                    {/* Selector explícito de Estado de Pago (por defecto Pendiente para no inflar Caja/Ventas) */}
+                    <div>
+                      <div className="flex items-center justify-between px-1 mb-1.5">
+                        <span className="text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider">
+                          Estado del Pago
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          {(manualOrderCustomer.paymentStatus || 'pendiente') === 'pagado'
+                            ? 'Se suma de inmediato a Ventas y Caja'
+                            : 'Queda en Por Cobrar hasta confirmar pago'}
+                        </span>
+                      </div>
+                      <div className="bg-white rounded-2xl border border-amber-200/80 p-1.5 shadow-xs grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setManualOrderCustomer({ ...manualOrderCustomer, paymentStatus: 'pendiente' })}
+                          className={`py-2 px-2.5 rounded-xl text-[11px] font-extrabold transition-all text-center border cursor-pointer flex items-center justify-center gap-1.5 ${(manualOrderCustomer.paymentStatus || 'pendiente') !== 'pagado'
+                            ? 'bg-amber-500 border-amber-600 text-white shadow-xs'
+                            : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50'
+                            }`}
+                        >
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span>Pendiente de pago</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setManualOrderCustomer({ ...manualOrderCustomer, paymentStatus: 'pagado' })}
+                          className={`py-2 px-2.5 rounded-xl text-[11px] font-extrabold transition-all text-center border cursor-pointer flex items-center justify-center gap-1.5 ${manualOrderCustomer.paymentStatus === 'pagado'
+                            ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs'
+                            : 'bg-emerald-50/40 border-emerald-200/60 text-slate-600 hover:bg-emerald-50'
+                            }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Ya pagado</span>
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                       {/* Estado */}
                       <div>
@@ -17567,7 +18585,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           <div className="grid grid-cols-2 p-0.5 rounded-xl bg-white border border-slate-200 text-xs h-[35px] items-center">
                             <button
                               type="button"
-                              onClick={() => setNewInvoiceForm({ ...newInvoiceForm, status: 'pendiente' })}
+                              onClick={() =>
+                                setNewInvoiceForm((prev) => ({
+                                  ...prev,
+                                  status: 'pendiente',
+                                  paymentMethod: prev.paymentMethod === 'Transferencia' ? 'Crédito Proveedor' : prev.paymentMethod,
+                                }))
+                              }
                               className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center ${newInvoiceForm.status === 'pendiente'
                                 ? 'bg-amber-500 text-white shadow-xs'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -17577,7 +18601,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setNewInvoiceForm({ ...newInvoiceForm, status: 'pagada' })}
+                              onClick={() =>
+                                setNewInvoiceForm((prev) => ({
+                                  ...prev,
+                                  status: 'pagada',
+                                  paymentMethod: prev.paymentMethod === 'Crédito Proveedor' ? 'Transferencia' : prev.paymentMethod,
+                                }))
+                              }
                               className={`h-[29px] rounded-lg font-bold text-center text-[10px] transition-all cursor-pointer flex items-center justify-center ${newInvoiceForm.status === 'pagada'
                                 ? 'bg-emerald-600 text-white shadow-xs'
                                 : 'text-slate-500 hover:text-slate-800'
@@ -17586,6 +18616,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               Pagada
                             </button>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Medio de Pago de la Factura */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-slate-600 font-bold uppercase text-[10px] mb-1">
+                            Medio de Pago
+                          </label>
+                          <select
+                            value={newInvoiceForm.paymentMethod || 'Crédito Proveedor'}
+                            onChange={(e) =>
+                              setNewInvoiceForm((prev) => ({ ...prev, paymentMethod: e.target.value }))
+                            }
+                            className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 font-semibold text-xs focus:outline-none focus:border-[#D97706] cursor-pointer"
+                          >
+                            <option value="Transferencia">Transferencia Bancaria</option>
+                            <option value="Crédito Proveedor">Crédito Proveedor</option>
+                            <option value="Tarjeta Débito">Tarjeta de Débito</option>
+                            <option value="Tarjeta Crédito">Tarjeta de Crédito</option>
+                            <option value="Efectivo">Efectivo</option>
+                          </select>
                         </div>
                       </div>
                     </div>
@@ -21560,6 +22612,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             inventory={inventory}
             onOpenEditInvoice={handleOpenEditInvoice}
             onToggleInvoiceStatus={handleToggleInvoiceStatus}
+            onDeleteInvoice={handleDeleteInvoice}
             onClose={() => setSelectedInvoiceModal(null)}
           />
         </Suspense>
@@ -22128,15 +23181,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           <MercadoPagoConfigModal
             isOpen={isMercadoPagoModalOpen}
             mercadoPagoConfig={mercadoPagoConfig}
-            setMercadoPagoConfig={setMercadoPagoConfig}
+            onSave={handleSaveMercadoPagoConfig}
             onClose={() => setIsMercadoPagoModalOpen(false)}
-            showToast={showToast}
           />
         </Suspense>
       )}
 
       {/* ======================================================= */}
-      {/* POP-UP: REGISTRAR NUEVO GASTO / BOLETA OPERACIONAL      */}
+      {/* POP-UP: REGISTRAR / EDITAR GASTO OPERACIONAL            */}
       {/* ======================================================= */}
       {isAddExpenseModalOpen && (() => {
         const modalExpAmount = parseInt(newExpenseForm.amount, 10) || 0;
@@ -22145,8 +23197,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const expIva = isFactura ? modalExpAmount - expNeto : 0;
 
         return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+          <div
+            onClick={() => {
+              setIsAddExpenseModalOpen(false);
+              resetExpenseForm();
+            }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            >
               {/* Modal Header */}
               <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
                 <div className="flex items-center gap-3">
@@ -22154,7 +23215,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <Receipt className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-slate-900">Registrar Gasto Operacional</h3>
+                    <h3 className="text-base font-black text-slate-900">
+                      {editingExpenseId ? 'Editar Gasto Operacional' : 'Registrar Gasto Operacional'}
+                    </h3>
                     <p className="text-[11px] text-slate-500 font-medium">
                       Notaría, combustible, packaging, arriendos o trámites legales
                     </p>
@@ -22162,7 +23225,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsAddExpenseModalOpen(false)}
+                  onClick={() => {
+                    setIsAddExpenseModalOpen(false);
+                    resetExpenseForm();
+                  }}
                   className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
@@ -22348,7 +23414,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setIsAddExpenseModalOpen(false)}
+                    onClick={() => {
+                      setIsAddExpenseModalOpen(false);
+                      resetExpenseForm();
+                    }}
                     className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
                   >
                     Cancelar
@@ -22357,8 +23426,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     type="submit"
                     className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black shadow-md transition-all cursor-pointer flex items-center gap-1.5"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Guardar Gasto en Finanzas</span>
+                    {editingExpenseId ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                    <span>{editingExpenseId ? 'Guardar Cambios' : 'Guardar Gasto en Finanzas'}</span>
                   </button>
                 </div>
               </form>
@@ -22507,6 +23576,53 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       Aumento de Capital
                     </button>
                   </div>
+                </div>
+
+                {/* 5. Datos opcionales de trazabilidad (Cuenta, Comprobante y Notas) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      Cuenta Destino (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newInvestmentForm.destinationAccount || ''}
+                      onChange={(e) =>
+                        setNewInvestmentForm((prev) => ({ ...prev, destinationAccount: e.target.value }))
+                      }
+                      placeholder={`Cta. Cte. (${COMPANY_INFO.legalName})`}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                      N° Comprobante / Ref. (Opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newInvestmentForm.referenceNumber || ''}
+                      onChange={(e) =>
+                        setNewInvestmentForm((prev) => ({ ...prev, referenceNumber: e.target.value }))
+                      }
+                      placeholder="Ej: TRF-98412"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs font-semibold text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-slate-500 block">
+                    Notas / Motivo (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newInvestmentForm.notes || ''}
+                    onChange={(e) =>
+                      setNewInvestmentForm((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    placeholder="Ej: Aporte para compra de stock inicial Bravery/Acana"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-900 focus:bg-white focus:border-emerald-500 focus:outline-none"
+                  />
                 </div>
 
                 {/* Resumen visual limpio */}
