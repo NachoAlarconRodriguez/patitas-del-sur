@@ -14,6 +14,7 @@ const LoginView = lazy(() => import('./views/LoginView'));
 const CustomerDashboardView = lazy(() => import('./views/CustomerDashboardView'));
 const AdminDashboardView = lazy(() => import('./views/AdminDashboardView'));
 const LegalView = lazy(() => import('./views/LegalView'));
+const DigitalCatalogView = lazy(() => import('./views/DigitalCatalogView'));
 
 // Components
 import Navbar from './components/Navbar';
@@ -155,6 +156,55 @@ export default function App() {
   });
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  // Atribución ligera de origen (Catálogo Digital / Instagram / WhatsApp WebViews)
+  const [orderSourceLabel, setOrderSourceLabel] = useState(() => {
+    try {
+      return sessionStorage.getItem('patitas_order_source') || '';
+    } catch {
+      return '';
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(location.search || '');
+    const explicitSrc = (params.get('src') || params.get('utm_source') || '').toLowerCase().trim();
+    const ua = navigator.userAgent || '';
+    const ref = (document.referrer || '').toLowerCase();
+
+    const isInstagram =
+      explicitSrc.includes('ig') ||
+      explicitSrc.includes('instagram') ||
+      /instagram/i.test(ua) ||
+      ref.includes('instagram.com') ||
+      ref.includes('l.instagram.com');
+    const isWhatsApp =
+      explicitSrc.includes('wa') ||
+      explicitSrc.includes('whatsapp') ||
+      /whatsapp/i.test(ua) ||
+      ref.includes('whatsapp.com');
+
+    let detected = '';
+    if (location.pathname === '/catalogo') {
+      if (isInstagram) detected = 'Catálogo Digital (Instagram)';
+      else if (isWhatsApp) detected = 'Catálogo Digital (WhatsApp)';
+      else detected = 'Catálogo Digital';
+    } else if (isInstagram) {
+      detected = 'Instagram';
+    } else if (isWhatsApp) {
+      detected = 'WhatsApp';
+    }
+
+    if (detected) {
+      setOrderSourceLabel(detected);
+      try {
+        sessionStorage.setItem('patitas_order_source', detected);
+      } catch {
+        // ignore storage errors in private WebViews
+      }
+    }
+  }, [location.pathname, location.search]);
 
   // Sync cart to localStorage
   useEffect(() => {
@@ -344,7 +394,7 @@ export default function App() {
   };
 
   // Cart Handlers
-  const handleAddToCart = (product, weight, quantity = 1) => {
+  const handleAddToCart = (product, weight, quantity = 1, options = { openDrawer: true }) => {
     if (!product) return;
 
     const selectedWeight =
@@ -415,7 +465,9 @@ export default function App() {
       }
     });
 
-    setIsCartOpen(true);
+    if (options?.openDrawer !== false) {
+      setIsCartOpen(true);
+    }
   };
 
   const handleUpdateQuantity = (index, newQuantity) => {
@@ -450,14 +502,15 @@ export default function App() {
   const totalCartCount = cartItems.reduce((acc, item) => acc + (item.quantity || 1), 0);
   const isLoginPage = location.pathname === '/login';
   const isKiboryHome = location.pathname === '/';
+  const isDigitalCatalog = location.pathname === '/catalogo';
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#F5BA13] selection:text-[#1D1D1F]">
-      <Preloader />
+      {!isDigitalCatalog && <Preloader />}
       <ScrollToTop />
 
-      {/* Global Navigation Bar - Hidden on Login screen and Kibory Home (which has its own floating Kibory header) */}
-      {!isLoginPage && !isKiboryHome && (
+      {/* Global Navigation Bar - Hidden on Login screen, Kibory Home, and Digital Catalog Express */}
+      {!isLoginPage && !isKiboryHome && !isDigitalCatalog && (
         <Navbar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -493,6 +546,19 @@ export default function App() {
                     onOpenCart={() => setIsCartOpen(true)}
                     user={user}
                     onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  />
+                }
+              />
+              <Route
+                path="/catalogo"
+                element={
+                  <DigitalCatalogView
+                    cartItems={cartItems}
+                    onAddToCart={handleAddToCart}
+                    onUpdateQuantity={handleUpdateQuantity}
+                    onRemoveItem={handleRemoveItem}
+                    onOpenCart={() => setIsCartOpen(true)}
+                    onSelectProduct={handleSelectProduct}
                   />
                 }
               />
@@ -607,8 +673,8 @@ export default function App() {
         </RouteErrorBoundary>
       </main>
 
-      {/* Global Footer - Hidden on Login, Admin dashboards, and Kibory Home */}
-      {!isLoginPage && !isKiboryHome && location.pathname !== '/admin' && <Footer />}
+      {/* Global Footer - Hidden on Login, Admin dashboards, Kibory Home, and Digital Catalog Express */}
+      {!isLoginPage && !isKiboryHome && !isDigitalCatalog && location.pathname !== '/admin' && <Footer />}
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer
@@ -620,6 +686,7 @@ export default function App() {
         user={user}
         onClearCart={() => setCartItems([])}
         onAddToCart={handleAddToCart}
+        orderSourceLabel={orderSourceLabel}
       />
 
       {/* Quick View Product Modal */}
@@ -627,7 +694,9 @@ export default function App() {
         <ProductModal
           product={selectedProductModal}
           onClose={handleCloseProductModal}
-          onAddToCart={handleAddToCart}
+          onAddToCart={(prod, weight, qty) =>
+            handleAddToCart(prod, weight, qty, { openDrawer: !isDigitalCatalog })
+          }
         />
       )}
 
@@ -638,8 +707,8 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {/* Mobile Bottom Navigation Bar - Hidden on Login and Admin */}
-      {!isLoginPage && location.pathname !== '/admin' && (
+      {/* Mobile Bottom Navigation Bar - Hidden on Login, Admin, and Digital Catalog Express */}
+      {!isLoginPage && !isDigitalCatalog && location.pathname !== '/admin' && (
         <BottomNavBar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -651,7 +720,7 @@ export default function App() {
       {/* Botón Flotante Oficial de WhatsApp */}
       <FloatingWhatsAppButton
         phoneNumber="56953332492"
-        hidden={isCartOpen || Boolean(selectedProductModal) || isAuthModalOpen}
+        hidden={isDigitalCatalog || isCartOpen || Boolean(selectedProductModal) || isAuthModalOpen}
       />
     </div>
   );

@@ -130,6 +130,7 @@ export default function CartDrawer({
   user,
   onClearCart,
   onAddToCart,
+  orderSourceLabel = '',
 }) {
   const navigate = useNavigate();
 
@@ -1526,7 +1527,14 @@ export default function CartDrawer({
       finalPaymentMethodLabel = 'Tarjeta Débito / Crédito (Mercado Pago)';
     }
 
-    let notesText = deliveryReference.trim() ? `Referencia: ${deliveryReference.trim()}` : 'Pedido desde la web';
+    let notesText = deliveryReference.trim()
+      ? `Referencia: ${deliveryReference.trim()}`
+      : orderSourceLabel
+        ? `Origen: ${orderSourceLabel}`
+        : 'Pedido desde la web';
+    if (deliveryReference.trim() && orderSourceLabel) {
+      notesText += ` · Origen: ${orderSourceLabel}`;
+    }
     if (paymentType === 'contra_entrega' && paymentMethod === 'efectivo' && cashChangeNote.trim()) {
       notesText += ` · Pago Efectivo: ${cashChangeNote.trim()}`;
     }
@@ -1874,7 +1882,7 @@ Asunto: Pedido ${completedOrder?.id}`;
       <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10 w-full justify-end pointer-events-none">
         
         {/* Drawer Panel */}
-        <div className="pointer-events-auto w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-slate-100 h-full">
+        <div className="pointer-events-auto w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-slate-100 h-[100dvh] max-h-[100dvh]">
           
           {/* ========================================================= */}
           {/* HEADER: Dinámico según el paso                            */}
