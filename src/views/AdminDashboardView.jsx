@@ -93,6 +93,7 @@ const ProductSalesHistoryModal = lazy(() => import('./admin/modals/ProductSalesH
 const InvoiceDetailModal = lazy(() => import('./admin/modals/InvoiceDetailModal.jsx'));
 const MercadoPagoConfigModal = lazy(() => import('./admin/modals/MercadoPagoConfigModal.jsx'));
 const PaymentAndCancelOrderModals = lazy(() => import('./admin/modals/PaymentAndCancelOrderModals.jsx'));
+const ProductBowlEditor = lazy(() => import('./admin/components/ProductBowlEditor.jsx'));
 import {
   getDispatchZonesFromSupabase,
   saveDispatchZonesToSupabase,
@@ -116,7 +117,6 @@ import {
   cleanIngredientName,
 } from '../services/productsService.js';
 import { compressImageFile } from '../utils/imageCompressor.js';
-import { resolveProductBowlData, BOWL_IMAGE_PRESETS } from '../utils/productBowlResolver.js';
 import {
   fetchOrdersFromSupabase,
   createOrderInSupabase,
@@ -20851,7 +20851,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           Ingredientes Principales (Ficha Técnica & Pestaña Web)
                         </label>
                         <p className="text-[10px] text-slate-500">
-                          Se mostrarán como etiquetas destacadas en la pestaña "Ingredientes & Análisis". Puedes separar por comas o agregar uno a uno.
+                          Los <strong>6 primeros ingredientes</strong> alimentan en orden el Plato Interactivo (#1 a #6). Usa las flechas para reordenarlos o separa por comas al añadir.
                         </p>
                       </div>
                       <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -20859,16 +20859,63 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </span>
                     </div>
 
-                    {/* Chips de Ingredientes */}
+                    {/* Chips de Ingredientes (#1 a #6 destacados para el Plato Interactivo) */}
                     <div className="flex flex-wrap gap-1.5">
-                      {(editingProduct.ingredients || []).map((ing, idx) => {
+                      {(editingProduct.ingredients || []).map((ing, idx, list) => {
                         const clean = cleanIngredientName(ing) || ing;
+                        const isInBowl = idx < 6;
+                        const moveIngredient = (delta) => {
+                          const targetIdx = idx + delta;
+                          if (targetIdx < 0 || targetIdx >= list.length) return;
+                          setEditingProduct((prev) => {
+                            const next = [...(prev.ingredients || [])];
+                            const [moved] = next.splice(idx, 1);
+                            next.splice(targetIdx, 0, moved);
+                            return { ...prev, ingredients: next };
+                          });
+                        };
                         return (
                           <span
-                            key={idx}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200 shadow-2xs hover:bg-slate-200/70 transition-colors"
+                            key={`${idx}-${clean}`}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-bold border shadow-2xs transition-colors ${
+                              isInBowl
+                                ? 'bg-amber-50 text-amber-950 border-amber-300'
+                                : 'bg-slate-100 text-slate-800 border-slate-200 hover:bg-slate-200/70'
+                            }`}
                           >
+                            {isInBowl && (
+                              <span
+                                className="w-4 h-4 rounded-full bg-[#D97706] text-white text-[9px] font-black flex items-center justify-center shrink-0"
+                                title={`Gajo #${idx + 1} del plato interactivo`}
+                              >
+                                {idx + 1}
+                              </span>
+                            )}
                             <span>{clean}</span>
+                            {list.length > 1 && (
+                              <span className="inline-flex items-center gap-0.5 ml-0.5 pl-1 border-l border-slate-300/60">
+                                {idx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => moveIngredient(-1)}
+                                    className="text-slate-400 hover:text-amber-700 transition-colors cursor-pointer"
+                                    title="Mover antes"
+                                  >
+                                    <ChevronLeft className="w-3 h-3" />
+                                  </button>
+                                )}
+                                {idx < list.length - 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => moveIngredient(1)}
+                                    className="text-slate-400 hover:text-amber-700 transition-colors cursor-pointer"
+                                    title="Mover después"
+                                  >
+                                    <ChevronRight className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() =>
@@ -20877,7 +20924,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   ingredients: prev.ingredients.filter((_, i) => i !== idx),
                                 }))
                               }
-                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                              className="text-slate-400 hover:text-rose-600 transition-colors cursor-pointer ml-0.5"
                               title="Eliminar ingrediente"
                             >
                               <X className="w-3 h-3" />
@@ -20894,7 +20941,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="Ej: Pollo fresco deshidratado, Arvejas, Aceite de salmón..."
+                        placeholder="Ej: Venado fresco, Trucha, Conejo, Manzana verde, Plátano, Piña..."
                         value={newIngredientInput}
                         onChange={(e) => setNewIngredientInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -20937,225 +20984,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Configurador del Plato Interactivo de Ingredientes (6 Gajos en la página del producto) */}
-                  {(() => {
-                    const resolvedBowl = resolveProductBowlData(editingProduct);
-                    const hasCustomBowl = Boolean(
-                      editingProduct.bowlConfig &&
-                      ((Array.isArray(editingProduct.bowlConfig.wedges) &&
-                        editingProduct.bowlConfig.wedges.some((w) => w && (w.name || w.pill || w.desc || w.img))) ||
-                        (Array.isArray(editingProduct.bowlConfig.stickers) &&
-                          editingProduct.bowlConfig.stickers.some(Boolean)) ||
-                        editingProduct.bowlConfig.subtitle)
-                    );
-
-                    const updateWedgeField = (slotIdx, field, val) => {
-                      setEditingProduct((prev) => {
-                        const prevBowl = prev.bowlConfig || {};
-                        const prevWedges = Array.isArray(prevBowl.wedges) ? [...prevBowl.wedges] : [{}, {}, {}, {}, {}, {}];
-                        while (prevWedges.length < 6) prevWedges.push({});
-                        prevWedges[slotIdx] = {
-                          ...(prevWedges[slotIdx] || {}),
-                          [field]: val,
-                        };
-                        return {
-                          ...prev,
-                          bowlConfig: {
-                            ...prevBowl,
-                            wedges: prevWedges,
-                          },
-                        };
-                      });
-                    };
-
-                    const updateStickerField = (stIdx, val) => {
-                      setEditingProduct((prev) => {
-                        const prevBowl = prev.bowlConfig || {};
-                        const prevStickers = Array.isArray(prevBowl.stickers) ? [...prevBowl.stickers] : ['', '', '', ''];
-                        while (prevStickers.length < 4) prevStickers.push('');
-                        prevStickers[stIdx] = val;
-                        return {
-                          ...prev,
-                          bowlConfig: {
-                            ...prevBowl,
-                            stickers: prevStickers,
-                          },
-                        };
-                      });
-                    };
-
-                    return (
-                      <details className="group rounded-2xl bg-amber-50/50 border border-amber-200/80 overflow-hidden">
-                        <summary className="flex items-center justify-between gap-3 p-4 cursor-pointer select-none list-none hover:bg-amber-50 transition-colors">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-7 h-7 rounded-lg bg-[#F5BA13] text-slate-900 flex items-center justify-center font-black text-xs shadow-2xs">
-                              6
-                            </span>
-                            <div>
-                              <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                                Plato Interactivo de Ingredientes (6 Gajos)
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${hasCustomBowl
-                                    ? 'bg-amber-500 text-white'
-                                    : 'bg-emerald-100 text-emerald-800'
-                                    }`}
-                                >
-                                  {hasCustomBowl ? 'Personalizado' : 'Automático'}
-                                </span>
-                              </h5>
-                              <p className="text-[11px] text-slate-500">
-                                Configura los 6 gajos, píldoras, textos y stickers que aparecen en el plato interactivo de esta ficha.
-                              </p>
-                            </div>
-                          </div>
-                          <ChevronDown className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180 shrink-0" />
-                        </summary>
-
-                        <div className="p-4 pt-2 border-t border-amber-200/60 space-y-4 bg-white">
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                            <span className="text-[11px] text-slate-500 font-medium">
-                              Los campos vacíos se rellenan automáticamente usando los ingredientes reales del producto.
-                            </span>
-                            {hasCustomBowl && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditingProduct((prev) => ({
-                                    ...prev,
-                                    bowlConfig: null,
-                                  }))
-                                }
-                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 text-[11px] font-bold border border-slate-200 transition-colors cursor-pointer"
-                              >
-                                Restaurar modo automático
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Subtítulo y 4 Stickers flotantes */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-200/80">
-                            <div className="md:col-span-2">
-                              <label className="block text-[10px] font-extrabold text-slate-600 uppercase mb-1">
-                                Subtítulo bajo la palabra &ldquo;ingredientes&rdquo;
-                              </label>
-                              <input
-                                type="text"
-                                placeholder={resolvedBowl.subtitle}
-                                value={editingProduct.bowlConfig?.subtitle || ''}
-                                onChange={(e) =>
-                                  setEditingProduct((prev) => ({
-                                    ...prev,
-                                    bowlConfig: {
-                                      ...(prev.bowlConfig || {}),
-                                      subtitle: e.target.value,
-                                    },
-                                  }))
-                                }
-                                className="w-full p-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-800 focus:border-[#D97706] focus:outline-none"
-                              />
-                            </div>
-                            {[0, 1, 2, 3].map((stIdx) => (
-                              <div key={stIdx}>
-                                <label className="block text-[10px] font-extrabold text-slate-600 uppercase mb-1">
-                                  Sticker Flotante #{stIdx + 1}
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder={resolvedBowl.stickers[stIdx]}
-                                  value={editingProduct.bowlConfig?.stickers?.[stIdx] || ''}
-                                  onChange={(e) => updateStickerField(stIdx, e.target.value)}
-                                  className="w-full p-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-800 focus:border-[#D97706] focus:outline-none"
-                                />
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Los 6 Gajos del Plato */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {resolvedBowl.wedges.map((w, idx) => {
-                              const customW = editingProduct.bowlConfig?.wedges?.[idx] || {};
-                              return (
-                                <div
-                                  key={w.num}
-                                  className="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2"
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="inline-flex items-center gap-1.5 text-xs font-black text-slate-800">
-                                      <span className="w-5 h-5 rounded-full bg-[#D97706] text-white text-[11px] flex items-center justify-center font-black">
-                                        {w.num}
-                                      </span>
-                                      Gajo #{w.num} ({idx < 3 ? 'Columna Izq.' : 'Columna Der.'})
-                                    </span>
-                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
-                                      {w.pill}
-                                    </span>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                      <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">
-                                        Título del Ingrediente
-                                      </label>
-                                      <input
-                                        type="text"
-                                        placeholder={w.name}
-                                        value={customW.name || ''}
-                                        onChange={(e) => updateWedgeField(idx, 'name', e.target.value)}
-                                        className="w-full p-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-900 focus:border-[#D97706] focus:outline-none"
-                                      />
-                                    </div>
-                                    <div>
-                                      <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">
-                                        Píldora (Beneficio)
-                                      </label>
-                                      <input
-                                        type="text"
-                                        placeholder={w.pill}
-                                        value={customW.pill || ''}
-                                        onChange={(e) => updateWedgeField(idx, 'pill', e.target.value)}
-                                        className="w-full p-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-800 focus:border-[#D97706] focus:outline-none"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">
-                                      Descripción breve
-                                    </label>
-                                    <textarea
-                                      rows={2}
-                                      placeholder={w.desc}
-                                      value={customW.desc || ''}
-                                      onChange={(e) => updateWedgeField(idx, 'desc', e.target.value)}
-                                      className="w-full p-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-medium text-slate-700 focus:border-[#D97706] focus:outline-none resize-none"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">
-                                      Imagen del Gajo
-                                    </label>
-                                    <select
-                                      value={customW.img || ''}
-                                      onChange={(e) => updateWedgeField(idx, 'img', e.target.value)}
-                                      className="w-full p-1.5 rounded-lg border border-slate-200 bg-white text-[11px] font-semibold text-slate-700 focus:border-[#D97706] focus:outline-none"
-                                    >
-                                      <option value="">Automática según posición del gajo</option>
-                                      {BOWL_IMAGE_PRESETS.map((preset) => (
-                                        <option key={preset.id} value={preset.url}>
-                                          {preset.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </details>
-                    );
-                  })()}
+                  {/* Configurador Visual del Plato Interactivo de Ingredientes (Lazy-loaded) */}
+                  <Suspense
+                    fallback={
+                      <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/80 text-xs font-semibold text-amber-800">
+                        Cargando configurador visual del plato...
+                      </div>
+                    }
+                  >
+                    <ProductBowlEditor
+                      editingProduct={editingProduct}
+                      setEditingProduct={setEditingProduct}
+                    />
+                  </Suspense>
 
                   {/* Análisis Nutricional Garantizado (Pestaña "Ingredientes & Análisis") */}
                   <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">

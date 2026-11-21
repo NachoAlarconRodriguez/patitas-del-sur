@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { resolveProductBowlData } from '../utils/productBowlResolver';
+import { BOWL_BASE_IMAGE, resolveProductBowlData } from '../utils/productBowlResolver';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 export default function ProductIngredientsBowl({ product, embedded = false }) {
   const [activeIng, setActiveIng] = useState(0);
+  const [isBowlVisible, setIsBowlVisible] = useState(
+    () => typeof IntersectionObserver === 'undefined'
+  );
   const sectionRef = useRef(null);
   const bowlRef = useRef(null);
   const bowlLinesSvgRef = useRef(null);
@@ -15,6 +18,23 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
   const activeWedgeAngle = wedges[activeIng]?.c ?? 330;
   const cut0 = (((activeWedgeAngle - 30) / 60) + 6) % 6;
   const cut1 = ((activeWedgeAngle + 30) / 60) % 6;
+
+  useEffect(() => {
+    if (isBowlVisible || typeof IntersectionObserver === 'undefined') return;
+    const node = sectionRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsBowlVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '260px 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isBowlVisible]);
 
   const drawBowlLines = useCallback(() => {
     const bowl = bowlRef.current;
@@ -239,27 +259,42 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
 
           <div className="bowl__stage">
             <figure className="bowl__dish" data-ph="Bol con comida · vista cenital">
-              <img
-                src="https://media.kolpusites.com/kibory/bol.webp"
-                alt={`Plato de ingredientes de ${product.name || 'la receta'}`}
-                width="1847"
-                height="1868"
-                loading="lazy"
-                decoding="async"
-              />
+              {isBowlVisible && (
+                <img
+                  src={BOWL_BASE_IMAGE}
+                  alt={`Plato de ingredientes de ${product.name || 'la receta'}`}
+                  width="640"
+                  height="640"
+                  loading="lazy"
+                  decoding="async"
+                />
+              )}
             </figure>
 
-            {wedges.map((item, idx) => (
-              <span
-                key={item.num}
-                className={`bowl__wedge ${activeIng === idx ? 'is-active' : ''}`}
-                data-c={item.c}
-                style={{ '--p0': item.p0, '--pm': item.pm, '--p1': item.p1 }}
-                aria-hidden="true"
-              >
-                <img src={item.img} alt="" width="1200" height="1200" />
-              </span>
-            ))}
+            {wedges.map((item, idx) => {
+              const isAct = activeIng === idx;
+              return (
+                <span
+                  key={item.num}
+                  className={`bowl__wedge ${isAct ? 'is-active' : ''}`}
+                  data-c={item.c}
+                  style={{ '--p0': item.p0, '--pm': item.pm, '--p1': item.p1 }}
+                  aria-hidden="true"
+                >
+                  {isBowlVisible && (
+                    <img
+                      src={item.img}
+                      alt=""
+                      width="640"
+                      height="640"
+                      loading="lazy"
+                      decoding="async"
+                      fetchPriority={isAct ? 'auto' : 'low'}
+                    />
+                  )}
+                </span>
+              );
+            })}
 
             <svg className="bowl__cuts" viewBox="0 0 100 100" aria-hidden="true">
               {[
