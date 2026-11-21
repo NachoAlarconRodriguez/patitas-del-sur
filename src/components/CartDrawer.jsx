@@ -17,7 +17,6 @@ import {
   CreditCard,
   Landmark,
   MapPin,
-  Clock,
   MessageSquare,
   CheckCircle2,
   Banknote,
@@ -45,7 +44,6 @@ import { fetchProductsFromSupabase } from '../services/productsService';
 import { markCouponAsUsed, getLoyaltySettings } from '../services/loyaltyService';
 import { supabase } from '../lib/supabase';
 import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
-import CustomDropdown from './CustomDropdown';
 import CountryCodeDropdown from './CountryCodeDropdown';
 import {
   detectCommuneFromAddress,
@@ -56,11 +54,11 @@ import {
 import {
   getDispatchZonesFromSupabase,
   getUpcomingDeliveryDates,
-  formatDeliveryDaysSummary,
   getLiveDispatchStatusFromSupabase,
   evaluateSmartDeliverySchedule,
 } from '../services/dispatchService';
 import { formatCLP } from '../utils/formatters';
+import CartScheduleStep from './cart/CartScheduleStep';
 import CartSuccessStep from './cart/CartSuccessStep';
 
 // Helper para resolver imágenes de productos en el carrito y recomendaciones
@@ -134,8 +132,15 @@ export default function CartDrawer({
 }) {
   const navigate = useNavigate();
 
-  // Navigation step inside drawer: 'cart' | 'shipping' | 'success'
+  // Navigation step inside drawer: 'cart' | 'shipping' | 'schedule' | 'payment' | 'success'
   const [step, setStep] = useState('cart');
+  const drawerScrollRef = useRef(null);
+
+  useEffect(() => {
+    if (drawerScrollRef.current) {
+      drawerScrollRef.current.scrollTop = 0;
+    }
+  }, [step]);
 
   // Live stock sync for cart items
   const [liveStockMap, setLiveStockMap] = useState({});
@@ -709,7 +714,17 @@ export default function CartDrawer({
     window.history.replaceState({}, '', window.location.pathname);
 
     if (isRejectedOrCanceled) {
-      setStep('shipping');
+      if (savedPendingOrder) {
+        if (savedPendingOrder.recipientName) setRecipientName(savedPendingOrder.recipientName);
+        if (savedPendingOrder.phone) setPhone(formatChileanPhone(savedPendingOrder.phone));
+        if (savedPendingOrder.address) setAddress(savedPendingOrder.address);
+        if (savedPendingOrder.city) setCity(savedPendingOrder.city);
+        if (savedPendingOrder.deliveryDate) setDeliveryDate(savedPendingOrder.deliveryDate);
+        if (savedPendingOrder.deliverySlot) setDeliverySlot(savedPendingOrder.deliverySlot);
+        setStep('payment');
+      } else {
+        setStep('shipping');
+      }
       setPaymentType('anticipado');
       setPaymentMethod('tarjeta');
       setFormError(
@@ -1267,7 +1282,21 @@ export default function CartDrawer({
     setCouponError(null);
   };
 
-  // Validate step 1 to proceed to shipping
+  const focusFieldById = (fieldId) => {
+    if (!fieldId) return;
+    setTimeout(() => {
+      const el = document.getElementById(fieldId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const focusTarget = el.querySelector('input, button') || (typeof el.focus === 'function' ? el : null);
+        if (focusTarget && typeof focusTarget.focus === 'function') {
+          focusTarget.focus({ preventScroll: true });
+        }
+      }
+    }, 80);
+  };
+
+  // Validate step 'cart' -> 'shipping' (Datos y Dirección)
   const handleProceedToShipping = () => {
     if (cartItems.length === 0) return;
     if (hasOutOfStockItems) {
@@ -1275,17 +1304,18 @@ export default function CartDrawer({
       return;
     }
     setFormError(null);
+    setFieldErrors({});
     setStep('shipping');
   };
 
-  // Submit Order to Supabase
-  const handleConfirmOrder = async (e) => {
+  // Validate step 'shipping' (Datos y Dirección) -> 'schedule' (Agenda de Despacho)
+  const handleProceedToSchedule = (e) => {
     e?.preventDefault();
     setFormError(null);
     setFieldErrors({});
 
     if (hasOutOfStockItems) {
-      setFormError('No es posible procesar el pedido con productos agotados en el carrito.');
+      setFormError('No es posible continuar con productos agotados en el carrito.');
       return;
     }
 
@@ -1297,7 +1327,6 @@ export default function CartDrawer({
     const errors = {};
     let firstErrorField = null;
 
-    // Validate fields: Phone is Customer ID and mandatory first field
     const cleanDigits = phone.replace(/\D/g, '');
     if (!phone.trim() || cleanDigits.length !== 9) {
       errors.phone = 'El teléfono móvil (ID de cliente) es obligatorio (9 dígitos en formato 9 xxxx xxxx).';
@@ -1324,20 +1353,125 @@ export default function CartDrawer({
         if (!firstErrorField) firstErrorField = 'checkout-shipping-address';
       }
     }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError(Object.values(errors)[0]);
+      focusFieldById(firstErrorField);
+      return;
+    }
+
+    setStep('schedule');
+  };
+
+  // Validate step 'schedule' (Agenda de Despacho) -> 'payment' (Método de Pago)
+  const handleProceedToPayment = () => {
+    setFormError(null);
+    setFieldErrors({});
+
+    if (hasOutOfStockItems) {
+      setFormError('No es posible continuar con productos agotados en el carrito.');
+      return;
+    }
+
+    if (isOutOfDeliveryZone) {
+      setStep('shipping');
+      setFormError('Tu dirección se encuentra fuera del radio de despacho automático.');
+      return;
+    }
+
+    const errors = {};
+    let firstErrorField = null;
+
+    if (!deliveryDate) {
+      errors.deliveryDate = 'Por favor selecciona el día de entrega.';
+      if (!firstErrorField) firstErrorField = 'field-delivery-date';
+    }
+    if (!deliverySlot) {
+      errors.deliverySlot = 'Por favor selecciona el bloque horario de entrega.';
+      if (!firstErrorField) firstErrorField = 'field-delivery-slot';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setFormError(Object.values(errors)[0]);
+      focusFieldById(firstErrorField);
+      return;
+    }
+
+    setStep('payment');
+  };
+
+  // Submit Order to Supabase
+  const handleConfirmOrder = async (e) => {
+    e?.preventDefault();
+    setFormError(null);
+    setFieldErrors({});
+
+    if (hasOutOfStockItems) {
+      setFormError('No es posible procesar el pedido con productos agotados en el carrito.');
+      return;
+    }
+
+    if (isOutOfDeliveryZone) {
+      setStep('shipping');
+      setFormError('Tu dirección se encuentra fuera del radio de despacho automático. Por favor contáctanos por WhatsApp con el botón de abajo para consultar si podemos despachar a tu ubicación.');
+      return;
+    }
+
+    const errors = {};
+    let firstErrorField = null;
+    let targetErrorStep = null;
+
+    // Validate fields: Phone is Customer ID and mandatory first field
+    const cleanDigits = phone.replace(/\D/g, '');
+    if (!phone.trim() || cleanDigits.length !== 9) {
+      errors.phone = 'El teléfono móvil (ID de cliente) es obligatorio (9 dígitos en formato 9 xxxx xxxx).';
+      if (!firstErrorField) {
+        firstErrorField = 'field-phone';
+        targetErrorStep = 'shipping';
+      }
+    }
+    if (!recipientName.trim()) {
+      errors.recipientName = 'Por favor ingresa el nombre de quien recibe el pedido.';
+      if (!firstErrorField) {
+        firstErrorField = 'field-recipient-name';
+        targetErrorStep = 'shipping';
+      }
+    }
+    if (!address.trim()) {
+      errors.address = 'Por favor ingresa la calle y número para el despacho.';
+      if (!firstErrorField) {
+        if (addressMode === 'habitual') setAddressMode('temporary');
+        firstErrorField = 'checkout-shipping-address';
+        targetErrorStep = 'shipping';
+      }
+    }
+    let effectiveCity = city;
+    if (!effectiveCity && address.trim()) {
+      effectiveCity = detectCommuneFromAddress(address);
+      if (effectiveCity) {
+        setCity(effectiveCity);
+      } else {
+        errors.address = 'Por favor selecciona una dirección sugerida en la lista para detectar tu comuna.';
+        if (!firstErrorField) {
+          firstErrorField = 'checkout-shipping-address';
+          targetErrorStep = 'shipping';
+        }
+      }
+    }
     if (!deliveryDate) {
       errors.deliveryDate = 'Por favor selecciona el día de entrega.';
       if (!firstErrorField) {
-        firstErrorField = addressMode === 'habitual'
-          ? 'field-delivery-date-habitual'
-          : 'field-delivery-date-temporary';
+        firstErrorField = 'field-delivery-date';
+        targetErrorStep = 'schedule';
       }
     }
     if (!deliverySlot) {
       errors.deliverySlot = 'Por favor selecciona el horario preferido de entrega.';
       if (!firstErrorField) {
-        firstErrorField = addressMode === 'habitual'
-          ? 'field-delivery-slot-habitual'
-          : 'field-delivery-slot-temporary';
+        firstErrorField = 'field-delivery-slot';
+        targetErrorStep = 'schedule';
       }
     }
 
@@ -1345,19 +1479,10 @@ export default function CartDrawer({
       setFieldErrors(errors);
       const firstErrorMessage = Object.values(errors)[0];
       setFormError(firstErrorMessage);
-
-      if (firstErrorField) {
-        setTimeout(() => {
-          const el = document.getElementById(firstErrorField);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            const focusTarget = el.querySelector('input, button') || (typeof el.focus === 'function' ? el : null);
-            if (focusTarget && typeof focusTarget.focus === 'function') {
-              focusTarget.focus({ preventScroll: true });
-            }
-          }
-        }, 80);
+      if (targetErrorStep && targetErrorStep !== step) {
+        setStep(targetErrorStep);
       }
+      focusFieldById(firstErrorField);
       return;
     }
 
@@ -1753,40 +1878,116 @@ Asunto: Pedido ${completedOrder?.id}`;
           {/* ========================================================= */}
           {/* HEADER: Dinámico según el paso                            */}
           {/* ========================================================= */}
-          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-            <div className="flex items-center gap-2">
-              {step === 'shipping' && (
-                <button
-                  onClick={() => setStep('cart')}
-                  className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-700 transition-colors mr-1 cursor-pointer"
-                  title="Volver al carrito"
-                  aria-label="Volver al carrito"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-              )}
+          <div className="border-b border-[#1D1D1F]/8 bg-[#FAF8F4]">
+            <div className="p-4 sm:p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {(step === 'shipping' || step === 'schedule' || step === 'payment') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormError(null);
+                      if (step === 'shipping') setStep('cart');
+                      else if (step === 'schedule') setStep('shipping');
+                      else if (step === 'payment') setStep('schedule');
+                    }}
+                    className="p-1.5 rounded-xl hover:bg-[#FEF3C7] text-[#1D1D1F] transition-colors mr-1 cursor-pointer"
+                    title={
+                      step === 'shipping'
+                        ? 'Volver al carrito'
+                        : step === 'schedule'
+                          ? 'Volver a datos y dirección'
+                          : 'Volver a agenda de despacho'
+                    }
+                    aria-label="Volver al paso anterior"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                )}
 
-              <ShoppingBag className="w-5 h-5 text-[#D97706]" />
-              <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                {step === 'cart' && 'Tu Carrito'}
-                {step === 'shipping' && 'Despacho & Pago'}
-                {step === 'success' && '¡Pedido Exitoso!'}
-              </h2>
+                {step === 'schedule' ? (
+                  <Truck className="w-5 h-5 text-[#D97706]" />
+                ) : step === 'payment' ? (
+                  <CreditCard className="w-5 h-5 text-[#D97706]" />
+                ) : (
+                  <ShoppingBag className="w-5 h-5 text-[#D97706]" />
+                )}
 
-              {step === 'cart' && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#10B981]/10 text-[#10B981]">
-                  {cartItems.length} items
-                </span>
-              )}
+                <h2 className="text-lg sm:text-xl font-black text-[#1D1D1F]">
+                  {step === 'cart' && 'Tu Carrito'}
+                  {step === 'shipping' && 'Datos y Dirección'}
+                  {step === 'schedule' && 'Agenda de Despacho'}
+                  {step === 'payment' && 'Método de Pago'}
+                  {step === 'success' && '¡Pedido Exitoso!'}
+                </h2>
+
+                {step === 'cart' && (
+                  <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F5BA13]/40">
+                    {cartItems.length} {cartItems.length === 1 ? 'item' : 'items'}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={step === 'success' ? handleCloseAndFinish : onClose}
+                className="p-2 rounded-full text-slate-500 hover:bg-[#FEF3C7] hover:text-[#1D1D1F] transition-all cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
+                aria-label="Cerrar carrito"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <button
-              onClick={step === 'success' ? handleCloseAndFinish : onClose}
-              className="p-2 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-all cursor-pointer min-w-[40px] min-h-[40px] flex items-center justify-center"
-              aria-label="Cerrar carrito"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {/* Indicador de pasos del checkout (1. Datos → 2. Despacho → 3. Pago) */}
+            {(step === 'shipping' || step === 'schedule' || step === 'payment') && (
+              <div className="px-4 sm:px-5 pb-3">
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { key: 'shipping', num: 1, label: 'Datos' },
+                    { key: 'schedule', num: 2, label: 'Despacho' },
+                    { key: 'payment', num: 3, label: 'Pago' },
+                  ].map((s) => {
+                    const stepOrder = { shipping: 1, schedule: 2, payment: 3 };
+                    const currentIdx = stepOrder[step] || 1;
+                    const isCompleted = s.num < currentIdx;
+                    const isCurrent = s.num === currentIdx;
+                    const canNavigateBack = isCompleted;
+
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        disabled={!canNavigateBack}
+                        onClick={() => {
+                          if (!canNavigateBack) return;
+                          setFormError(null);
+                          setStep(s.key);
+                        }}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-[11px] font-extrabold transition-all border ${
+                          isCurrent
+                            ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-2xs'
+                            : isCompleted
+                              ? 'bg-[#FEF3C7] text-[#78350F] border-[#F5BA13]/50 hover:bg-[#FDE68A] cursor-pointer'
+                              : 'bg-white/70 text-slate-400 border-slate-200/80 cursor-default'
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded-full text-[10px] font-black flex items-center justify-center shrink-0 ${
+                            isCurrent
+                              ? 'bg-[#F5BA13] text-[#1D1D1F]'
+                              : isCompleted
+                                ? 'bg-[#1D1D1F] text-[#F5BA13]'
+                                : 'bg-slate-200 text-slate-500'
+                          }`}
+                        >
+                          {isCompleted ? <Check className="w-2.5 h-2.5 stroke-[3.5]" /> : s.num}
+                        </span>
+                        <span className="truncate">{s.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ========================================================= */}
@@ -2286,11 +2487,11 @@ Asunto: Pedido ${completedOrder?.id}`;
           )}
 
           {/* ========================================================= */}
-          {/* PASO 2: FORMULARIO DE DESPACHO Y MÉTODO DE PAGO          */}
+          {/* PASO 1 DEL CHECKOUT: DATOS PERSONALES Y DIRECCIÓN         */}
           {/* ========================================================= */}
           {step === 'shipping' && (
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
-              <form onSubmit={handleConfirmOrder} className="space-y-4">
+            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+              <form onSubmit={handleProceedToSchedule} className="space-y-4">
                 
                 {/* Error Banner */}
                 {formError && (
@@ -2300,11 +2501,11 @@ Asunto: Pedido ${completedOrder?.id}`;
                   </div>
                 )}
 
-                {/* Sección 1: Datos del Receptor */}
-                <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                {/* Sección 1: Datos del Receptor y Dirección */}
+                <div className="space-y-2.5 bg-[#FAF8F4] p-3.5 rounded-2xl border border-[#1D1D1F]/10">
+                  <h3 className="text-xs font-black text-[#1D1D1F] uppercase tracking-wider flex items-center gap-1.5">
                     <MapPin className="w-3.5 h-3.5 text-[#D97706]" />
-                    <span>1. Datos de Entrega</span>
+                    <span>1. Datos Personales y Dirección</span>
                   </h3>
 
                   <div className="space-y-2">
@@ -2457,18 +2658,18 @@ Asunto: Pedido ${completedOrder?.id}`;
                     {/* Caso A: Dirección Habitual Seleccionada */}
                     {addressMode === 'habitual' && savedAddressesList.length > 0 ? (
                       <div className="space-y-2.5 animate-in fade-in">
-                        <div className="p-3 bg-white rounded-2xl border border-teal-200/90 shadow-2xs space-y-2">
+                        <div className="p-3 bg-white rounded-2xl border border-[#F5BA13]/45 shadow-2xs space-y-2">
                           <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-700 shrink-0">
+                            <div className="w-7 h-7 rounded-xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shrink-0">
                               <Home className="w-4 h-4" />
                             </div>
-                            <span className="text-xs font-black text-slate-800 whitespace-nowrap">
+                            <span className="text-xs font-black text-[#1D1D1F] whitespace-nowrap">
                               Dirección guardada
                             </span>
                           </div>
 
                           <div className="pl-9 space-y-0.5">
-                            <p className="text-xs font-bold text-slate-800 leading-snug">
+                            <p className="text-xs font-bold text-[#1D1D1F] leading-snug">
                               {activeSavedAddress?.address}
                               {activeSavedAddress?.depto && (
                                 <span className="text-slate-500 font-medium"> ({activeSavedAddress.depto})</span>
@@ -2476,7 +2677,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                             </p>
                             {activeSavedAddress?.city && (
                               <p className="text-[11px] text-slate-500 font-medium">
-                                Comuna: <strong className="text-slate-700">{activeSavedAddress.city}</strong>
+                                Comuna: <strong className="text-[#1D1D1F]">{activeSavedAddress.city}</strong>
                               </p>
                             )}
                             {activeSavedAddress?.deliveryReference && (
@@ -2495,10 +2696,10 @@ Asunto: Pedido ${completedOrder?.id}`;
                                   key={addr.id}
                                   type="button"
                                   onClick={() => handleSelectSavedAddress(addr.id)}
-                                  className={`text-[10.5px] px-2 py-0.5 rounded-lg font-bold border transition-all cursor-pointer ${
+                                  className={`text-[10.5px] px-2.5 py-0.5 rounded-lg font-bold border transition-all cursor-pointer ${
                                     selectedSavedAddressId === addr.id
-                                      ? 'bg-teal-50 border-teal-300 text-teal-900 ring-1 ring-teal-200'
-                                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                      ? 'bg-[#1D1D1F] border-[#1D1D1F] text-[#F5BA13] ring-1 ring-[#F5BA13]/40'
+                                      : 'bg-[#FAF8F4] border-[#1D1D1F]/12 text-slate-700 hover:border-[#F5BA13]'
                                   }`}
                                 >
                                   {addr.label || addr.address}
@@ -2506,128 +2707,6 @@ Asunto: Pedido ${completedOrder?.id}`;
                               ))}
                             </div>
                           )}
-                        </div>
-
-                        {/* Banner Inteligente de Ventana de Despacho en Tiempo Real */}
-                        {!isOutOfDeliveryZone && smartScheduleEval?.statusBanner && (
-                          <div
-                            className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in duration-200 ${
-                              selectedSlotData?.isUrgent
-                                ? 'bg-amber-50 border-amber-300 text-amber-950'
-                                : smartScheduleEval.statusBanner.type === 'available'
-                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                                  : 'bg-amber-50/90 border-amber-200 text-amber-950'
-                            }`}
-                          >
-                            <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                                selectedSlotData?.isUrgent
-                                  ? 'bg-amber-500/20 text-amber-800'
-                                  : smartScheduleEval.statusBanner.type === 'available'
-                                    ? 'bg-emerald-500/15 text-emerald-700'
-                                    : 'bg-amber-500/15 text-amber-800'
-                              }`}
-                            >
-                              <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-black text-[11.5px] leading-snug">
-                                  {selectedSlotData?.isUrgent
-                                    ? '⚡ Pedido Urgente (Fuera de ventana horaria)'
-                                    : smartScheduleEval.statusBanner.title}
-                                </span>
-                              </div>
-                              <p className="text-[10.5px] opacity-90 font-medium leading-relaxed mt-0.5">
-                                {selectedSlotData?.isUrgent
-                                  ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00-13:00 y 15:30-19:30), se cobra el despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
-                                  : smartScheduleEval.statusBanner.message}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Día y Horario Preferido */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                          {/* Día de Entrega */}
-                          <div id="field-delivery-date-habitual">
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                                <span>Día de Entrega *</span>
-                              </span>
-                              {matchedDispatchZone && (
-                                <span className="text-[9.5px] font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 truncate max-w-[120px]">
-                                  {formatDeliveryDaysSummary(matchedDispatchZone.deliveryDays || [1, 2, 3, 4, 5, 6])}
-                                </span>
-                              )}
-                            </label>
-                            <CustomDropdown
-                              id="delivery-date-dropdown-habitual"
-                              value={deliveryDate}
-                              options={availableDeliveryDates.map((d) => {
-                                const isSpecial =
-                                  matchedDispatchZone?.hasSpecialDayPricing &&
-                                  (matchedDispatchZone.specialDays || [6]).includes(d.dayOfWeek);
-                                return {
-                                  value: d.isoDate,
-                                  label: d.label,
-                                  desc: isSpecial
-                                    ? `Tarifa especial: $${new Intl.NumberFormat('es-CL').format(matchedDispatchZone.specialDayFee || 0)}${matchedDispatchZone.specialDayNoFreeShipping ? ' • Sin envío gratis' : ''}`
-                                    : undefined,
-                                };
-                              })}
-                              onChange={(val) => {
-                                clearFieldError('deliveryDate');
-                                setDeliveryDate(val);
-                              }}
-                              placeholder={availableDeliveryDates.length === 0 ? 'Sin días disponibles' : 'Seleccionar día...'}
-                              disabled={availableDeliveryDates.length === 0}
-                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
-                                fieldErrors.deliveryDate
-                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                  : 'border border-slate-200 focus:border-[#F5BA13]'
-                              }`}
-                              usePortal={true}
-                            />
-                            {fieldErrors.deliveryDate && (
-                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>{fieldErrors.deliveryDate}</span>
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Horario Preferido */}
-                          <div id="field-delivery-slot-habitual">
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              <span>Horario Preferido *</span>
-                            </label>
-                            <CustomDropdown
-                              id="delivery-slot-dropdown-habitual"
-                              value={deliverySlot}
-                              options={availableSlots}
-                              onChange={(val) => {
-                                clearFieldError('deliverySlot');
-                                setDeliverySlot(val);
-                              }}
-                              placeholder={!city ? 'Primero indica dirección...' : 'Seleccionar horario...'}
-                              disabled={!city}
-                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
-                                fieldErrors.deliverySlot
-                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                  : 'border border-slate-200 focus:border-[#F5BA13]'
-                              }`}
-                              usePortal={true}
-                            />
-                            {fieldErrors.deliverySlot && (
-                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>{fieldErrors.deliverySlot}</span>
-                              </p>
-                            )}
-                          </div>
                         </div>
                       </div>
                     ) : (
@@ -2720,131 +2799,9 @@ Asunto: Pedido ${completedOrder?.id}`;
                           </div>
                         </div>
 
-                        {/* Banner Inteligente de Ventana de Despacho en Tiempo Real */}
-                        {!isOutOfDeliveryZone && smartScheduleEval?.statusBanner && (
-                          <div
-                            className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 animate-in fade-in duration-200 ${
-                              selectedSlotData?.isUrgent
-                                ? 'bg-amber-50 border-amber-300 text-amber-950'
-                                : smartScheduleEval.statusBanner.type === 'available'
-                                  ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                                  : 'bg-amber-50/90 border-amber-200 text-amber-950'
-                            }`}
-                          >
-                            <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                                selectedSlotData?.isUrgent
-                                  ? 'bg-amber-500/20 text-amber-800'
-                                  : smartScheduleEval.statusBanner.type === 'available'
-                                    ? 'bg-emerald-500/15 text-emerald-700'
-                                    : 'bg-amber-500/15 text-amber-800'
-                              }`}
-                            >
-                              <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-black text-[11.5px] leading-snug">
-                                  {selectedSlotData?.isUrgent
-                                    ? '⚡ Pedido Urgente (Fuera de ventana horaria)'
-                                    : smartScheduleEval.statusBanner.title}
-                                </span>
-                              </div>
-                              <p className="text-[10.5px] opacity-90 font-medium leading-relaxed mt-0.5">
-                                {selectedSlotData?.isUrgent
-                                  ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00-13:00 y 15:30-19:30), se cobra el despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
-                                  : smartScheduleEval.statusBanner.message}
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Fila: Día y Horario Preferido */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {/* Día de Entrega */}
-                          <div id="field-delivery-date-temporary">
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-                              <span className="flex items-center gap-1">
-                                <Calendar className="w-3.5 h-3.5 text-amber-600" />
-                                <span>Día de Entrega *</span>
-                              </span>
-                              {matchedDispatchZone && (
-                                <span className="text-[9.5px] font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 truncate max-w-[120px]">
-                                  {formatDeliveryDaysSummary(matchedDispatchZone.deliveryDays || [1, 2, 3, 4, 5, 6])}
-                                </span>
-                              )}
-                            </label>
-                            <CustomDropdown
-                              id="delivery-date-dropdown-temporary"
-                              value={deliveryDate}
-                              options={availableDeliveryDates.map((d) => {
-                                const isSpecial =
-                                  matchedDispatchZone?.hasSpecialDayPricing &&
-                                  (matchedDispatchZone.specialDays || [6]).includes(d.dayOfWeek);
-                                return {
-                                  value: d.isoDate,
-                                  label: d.label,
-                                  desc: isSpecial
-                                    ? `Tarifa especial: $${new Intl.NumberFormat('es-CL').format(matchedDispatchZone.specialDayFee || 0)}${matchedDispatchZone.specialDayNoFreeShipping ? ' • Sin envío gratis' : ''}`
-                                    : undefined,
-                                };
-                              })}
-                              onChange={(val) => {
-                                clearFieldError('deliveryDate');
-                                setDeliveryDate(val);
-                              }}
-                              placeholder={availableDeliveryDates.length === 0 ? 'Sin días disponibles' : 'Seleccionar día...'}
-                              disabled={availableDeliveryDates.length === 0}
-                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
-                                fieldErrors.deliveryDate
-                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                  : 'border border-slate-200 focus:border-[#F5BA13]'
-                              }`}
-                              usePortal={true}
-                            />
-                            {fieldErrors.deliveryDate && (
-                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>{fieldErrors.deliveryDate}</span>
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Horario Preferido */}
-                          <div id="field-delivery-slot-temporary">
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1 flex items-center gap-1">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              <span>Horario Preferido *</span>
-                            </label>
-                            <CustomDropdown
-                              id="delivery-slot-dropdown-temporary"
-                              value={deliverySlot}
-                              options={availableSlots}
-                              onChange={(val) => {
-                                clearFieldError('deliverySlot');
-                                setDeliverySlot(val);
-                              }}
-                              placeholder={!city ? 'Primero indica dirección...' : 'Seleccionar horario...'}
-                              disabled={!city}
-                              buttonClassName={`w-full px-3 py-2 bg-white rounded-xl text-xs font-semibold focus:outline-none text-left flex items-center justify-between transition-all ${
-                                fieldErrors.deliverySlot
-                                  ? '!border-2 !border-rose-500 !ring-2 !ring-rose-500/20 !bg-rose-50/40 text-rose-950'
-                                  : 'border border-slate-200 focus:border-[#F5BA13]'
-                              }`}
-                              usePortal={true}
-                            />
-                            {fieldErrors.deliverySlot && (
-                              <p className="text-[11px] font-bold text-rose-600 mt-1 flex items-center gap-1 animate-in fade-in">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>{fieldErrors.deliverySlot}</span>
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
                         {/* Opción para guardar o no en libreta permanente */}
                         {address.trim().length > 3 && (
-                          <div className="pt-1.5 space-y-1.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                          <div className="pt-1.5 space-y-1.5 bg-white p-2.5 rounded-xl border border-[#1D1D1F]/10">
                             <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
                               <input
                                 type="checkbox"
@@ -2902,14 +2859,155 @@ Asunto: Pedido ${completedOrder?.id}`;
                   </div>
                 </div>
 
-                {/* Sección 2: Selección de Modalidad y Método de Pago */}
-                <div className="space-y-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
+                {hasOutOfStockItems && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-rose-800 text-xs font-bold animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span>Tu carrito contiene artículos agotados en bodega. Regresa al carrito para eliminarlos antes de continuar.</span>
+                  </div>
+                )}
+
+                {isOutOfDeliveryZone ? (
+                  <a
+                    href={outOfZoneWhatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-4 px-4 rounded-2xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xl shadow-[#25D366]/25 transition-all active:scale-95 cursor-pointer text-center"
+                  >
+                    <MessageSquare className="w-4 h-4 shrink-0" />
+                    <span>CONSULTAR DESPACHO POR WHATSAPP</span>
+                  </a>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={hasOutOfStockItems}
+                    className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all ${
+                      hasOutOfStockItems
+                        ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed shadow-none opacity-90'
+                        : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 active:scale-95 cursor-pointer'
+                    }`}
+                  >
+                    <span>ELEGIR DÍA Y HORARIO</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </form>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* PASO 2 DEL CHECKOUT: AGENDA DE DESPACHO (DÍA Y HORARIO)   */}
+          {/* ========================================================= */}
+          {step === 'schedule' && (
+            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+              <CartScheduleStep
+                address={address}
+                depto={depto}
+                city={city}
+                matchedDispatchZone={matchedDispatchZone}
+                availableDeliveryDates={availableDeliveryDates}
+                deliveryDate={deliveryDate}
+                selectedDateObj={selectedDateObj}
+                onSelectDate={(val) => {
+                  clearFieldError('deliveryDate');
+                  setDeliveryDate(val);
+                }}
+                availableSlots={availableSlots}
+                deliverySlot={deliverySlot}
+                selectedSlotData={selectedSlotData}
+                recommendedSlotValue={smartScheduleEval?.recommendedSlotValue}
+                onSelectSlot={(val) => {
+                  clearFieldError('deliverySlot');
+                  setDeliverySlot(val);
+                }}
+                smartScheduleEval={smartScheduleEval}
+                isSpecialDeliveryDay={isSpecialDeliveryDay}
+                zoneBaseFee={zoneBaseFee}
+                effectiveBaseFee={effectiveBaseFee}
+                freeShippingThreshold={freeShippingThreshold}
+                subtotal={subtotal}
+                calculatedShippingCost={calculatedShippingCost}
+                shippingStepTotal={shippingStepTotal}
+                fieldErrors={fieldErrors}
+                formError={formError}
+                onEditAddress={() => {
+                  setFormError(null);
+                  setStep('shipping');
+                }}
+                onContinueToPayment={handleProceedToPayment}
+              />
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* PASO 3 DEL CHECKOUT: MÉTODO DE PAGO Y CONFIRMACIÓN        */}
+          {/* ========================================================= */}
+          {step === 'payment' && (
+            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+              <form onSubmit={handleConfirmOrder} className="space-y-4 animate-in fade-in duration-200">
+                {/* Resumen compacto de entrega y agenda confirmada */}
+                <div className="p-3.5 rounded-2xl bg-[#FAF8F4] border border-[#1D1D1F]/10 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <MapPin className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          Entrega para {recipientName || 'Cliente'}
+                        </p>
+                        <p className="text-xs font-bold text-[#1D1D1F] leading-snug break-words">
+                          {address}
+                          {depto ? ` (${depto})` : ''}
+                          {city ? `, ${city}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormError(null);
+                        setStep('shipping');
+                      }}
+                      className="text-[10.5px] font-extrabold text-[#B45309] hover:text-[#1D1D1F] hover:underline shrink-0 cursor-pointer"
+                    >
+                      Editar
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-[#1D1D1F]/8 flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Calendar className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          Despacho agendado
+                        </p>
+                        <p className="text-xs font-bold text-[#1D1D1F] leading-snug">
+                          {selectedDateObj?.label || deliveryDate}
+                        </p>
+                        <p className="text-[11px] font-semibold text-[#B45309]">
+                          {deliverySlot}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormError(null);
+                        setStep('schedule');
+                      }}
+                      className="text-[10.5px] font-extrabold text-[#B45309] hover:text-[#1D1D1F] hover:underline shrink-0 cursor-pointer"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sección 3: Selección de Modalidad y Método de Pago */}
+                <div className="space-y-3 bg-[#FAF8F4] p-3.5 rounded-2xl border border-[#1D1D1F]/10">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <h3 className="text-xs font-black text-[#1D1D1F] uppercase tracking-wider flex items-center gap-1.5">
                       <CreditCard className="w-3.5 h-3.5 text-[#D97706]" />
-                      <span>2. Método de Pago</span>
+                      <span>3. Método de Pago</span>
                     </h3>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#78350F] border border-[#F5BA13]/40">
                       {paymentType === 'anticipado' ? '💳 Mercado Pago' : '🚚 Contra Entrega'}
                     </span>
                   </div>
