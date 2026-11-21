@@ -36,9 +36,13 @@ const parseSlotDisplay = (slot) => {
   if (slot?.isUrgent) {
     return {
       kind: 'urgent',
-      title: 'Pedido Urgente',
-      timeRange: 'Fuera de ventana horaria',
-      subtitle: 'Entrega prioritaria coordinada (se cobra despacho aunque supere el mínimo).',
+      title: slot?.isSundayOnly ? 'Pedido Urgente · Domingo' : 'Pedido Urgente',
+      timeRange: slot?.isSundayOnly
+        ? '10:00 a 20:00 hrs · Sin reparto estándar'
+        : 'Fuera de ventana horaria',
+      subtitle:
+        slot?.desc ||
+        'Entrega prioritaria coordinada (se cobra despacho aunque supere el mínimo).',
     };
   }
   if (/10:00|13:00|ma[ñn]ana/i.test(rawValue)) {
@@ -101,10 +105,16 @@ export default function CartScheduleStep({
     ? formatDeliveryDaysSummary(matchedDispatchZone.deliveryDays || [1, 2, 3, 4, 5, 6])
     : 'Lunes a Sábado';
 
+  const isSelectedSunday = Boolean(
+    selectedDateObj?.dayOfWeek === 0 || smartScheduleEval?.isSelectedSunday
+  );
+
   const hasMorningSlot = availableSlots.some(
     (s) => !s.isUrgent && /10:00|13:00|ma[ñn]ana/i.test(s.value || s.label || '')
   );
-  const showClosedMorningRow = Boolean(selectedDateObj?.isToday && !hasMorningSlot);
+  const showClosedMorningRow = Boolean(
+    selectedDateObj?.isToday && !isSelectedSunday && !hasMorningSlot
+  );
 
   const getSlotCostInfo = (slot) => {
     const slotNoFree = Boolean(
@@ -174,8 +184,8 @@ export default function CartScheduleStep({
       {smartScheduleEval?.statusBanner && (
         <div
           className={`p-3 rounded-2xl border text-xs flex items-start gap-2.5 transition-colors ${
-            selectedSlotData?.isUrgent
-              ? 'bg-[#FFFBEB] border-[#F5BA13] text-[#78350F]'
+            isSelectedSunday || selectedSlotData?.isUrgent
+              ? 'bg-gradient-to-br from-[#FFFBEB] via-[#FEF3C7]/85 to-[#FDE68A]/45 border-[#D97706]/45 text-[#78350F]'
               : smartScheduleEval.statusBanner.type === 'available'
                 ? 'bg-[#FEF3C7]/55 border-[#F5BA13]/50 text-[#1D1D1F]'
                 : 'bg-[#FAF8F4] border-[#1D1D1F]/12 text-[#1D1D1F]'
@@ -183,27 +193,39 @@ export default function CartScheduleStep({
         >
           <div
             className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
-              selectedSlotData?.isUrgent
-                ? 'bg-[#F5BA13] text-[#1D1D1F]'
+              isSelectedSunday || selectedSlotData?.isUrgent
+                ? 'bg-[#D97706] text-white'
                 : 'bg-[#1D1D1F] text-[#F5BA13]'
             }`}
           >
-            {selectedSlotData?.isUrgent ? (
+            {isSelectedSunday || selectedSlotData?.isUrgent ? (
               <Zap className="w-4 h-4 stroke-[2.5]" />
             ) : (
               <Clock className="w-4 h-4 stroke-[2.2]" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <span className="font-black text-xs leading-snug block text-[#1D1D1F]">
-              {selectedSlotData?.isUrgent
-                ? 'Pedido Urgente seleccionado'
-                : smartScheduleEval.statusBanner.title}
+            <span
+              className={`font-black text-xs leading-snug block ${
+                isSelectedSunday || selectedSlotData?.isUrgent ? 'text-[#78350F]' : 'text-[#1D1D1F]'
+              }`}
+            >
+              {isSelectedSunday
+                ? smartScheduleEval.statusBanner.title
+                : selectedSlotData?.isUrgent
+                  ? 'Pedido Urgente seleccionado'
+                  : smartScheduleEval.statusBanner.title}
             </span>
-            <p className="text-[11px] text-slate-600 font-medium leading-relaxed mt-0.5">
-              {selectedSlotData?.isUrgent
-                ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00–13:00 y 15:30–19:30), se aplica tarifa de despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
-                : smartScheduleEval.statusBanner.message}
+            <p
+              className={`text-[11px] font-medium leading-relaxed mt-0.5 ${
+                isSelectedSunday || selectedSlotData?.isUrgent ? 'text-[#78350F]/85' : 'text-slate-600'
+              }`}
+            >
+              {isSelectedSunday
+                ? smartScheduleEval.statusBanner.message
+                : selectedSlotData?.isUrgent
+                  ? `Al solicitar entrega urgente fuera de las ventanas estándar (10:00–13:00 y 15:30–19:30), se aplica tarifa de despacho (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
+                  : smartScheduleEval.statusBanner.message}
             </p>
           </div>
         </div>
@@ -231,8 +253,10 @@ export default function CartScheduleStep({
           <div className="grid grid-cols-3 gap-2">
             {availableDeliveryDates.map((d) => {
               const isSelected = deliveryDate === d.isoDate;
+              const isSunday = d.dayOfWeek === 0;
               const { eyebrow, dayNum, subLabel } = parseDateCardParts(d);
               const isSpecial =
+                !isSunday &&
                 matchedDispatchZone?.hasSpecialDayPricing &&
                 (matchedDispatchZone.specialDays || [6]).includes(d.dayOfWeek);
 
@@ -243,24 +267,34 @@ export default function CartScheduleStep({
                   onClick={() => onSelectDate(d.isoDate)}
                   aria-pressed={isSelected}
                   className={`relative p-2.5 rounded-2xl border text-center transition-all cursor-pointer active:scale-95 flex flex-col items-center justify-center gap-0.5 ${
-                    isSelected
-                      ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/55'
-                      : 'bg-[#FAF8F4] hover:bg-[#FEF3C7]/60 text-[#1D1D1F] border-[#1D1D1F]/12 hover:border-[#F5BA13]'
+                    isSunday
+                      ? isSelected
+                        ? 'bg-gradient-to-br from-[#FEF3C7] via-[#FDE68A]/80 to-[#FFFBEB] text-[#78350F] border-2 border-[#D97706] shadow-md ring-2 ring-[#F5BA13]/45'
+                        : 'bg-gradient-to-br from-[#FFFBEB] via-[#FEF3C7]/85 to-[#FDE68A]/45 text-[#78350F] border-[#D97706]/40 hover:border-[#D97706]'
+                      : isSelected
+                        ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/55'
+                        : 'bg-[#FAF8F4] hover:bg-[#FEF3C7]/60 text-[#1D1D1F] border-[#1D1D1F]/12 hover:border-[#F5BA13]'
                   }`}
                 >
                   {isSelected && (
-                    <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center">
+                    <span
+                      className={`absolute top-1.5 right-1.5 w-4 h-4 rounded-full flex items-center justify-center ${
+                        isSunday ? 'bg-[#D97706] text-white' : 'bg-[#F5BA13] text-[#1D1D1F]'
+                      }`}
+                    >
                       <Check className="w-2.5 h-2.5 stroke-[3.5]" />
                     </span>
                   )}
 
                   <span
                     className={`text-[10px] font-black tracking-wider uppercase ${
-                      isSelected
-                        ? 'text-[#F5BA13]'
-                        : d.isToday
-                          ? 'text-[#D97706]'
-                          : 'text-slate-500'
+                      isSunday
+                        ? 'text-[#B45309]'
+                        : isSelected
+                          ? 'text-[#F5BA13]'
+                          : d.isToday
+                            ? 'text-[#D97706]'
+                            : 'text-slate-500'
                     }`}
                   >
                     {eyebrow}
@@ -272,11 +306,22 @@ export default function CartScheduleStep({
 
                   <span
                     className={`text-[10.5px] font-semibold leading-none ${
-                      isSelected ? 'text-white/80' : 'text-slate-500'
+                      isSunday
+                        ? 'text-[#78350F]/80'
+                        : isSelected
+                          ? 'text-white/80'
+                          : 'text-slate-500'
                     }`}
                   >
                     {subLabel}
                   </span>
+
+                  {isSunday && (
+                    <span className="mt-1 inline-flex items-center gap-0.5 text-[9px] font-black uppercase tracking-tight px-1.5 py-0.5 rounded-full leading-none bg-[#78350F] text-[#FDE68A]">
+                      <Zap className="w-2.5 h-2.5 fill-current" />
+                      <span>Urgente</span>
+                    </span>
+                  )}
 
                   {isSpecial && (
                     <span
@@ -315,8 +360,14 @@ export default function CartScheduleStep({
       {/* ================================================================= */}
       <div id="field-delivery-slot" className="space-y-2.5 pt-1">
         <h3 className="text-xs font-black text-[#1D1D1F] uppercase tracking-wider flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-[#D97706]" />
-          <span>2. Bloque Horario</span>
+          {isSelectedSunday ? (
+            <Zap className="w-3.5 h-3.5 text-[#D97706]" />
+          ) : (
+            <Clock className="w-3.5 h-3.5 text-[#D97706]" />
+          )}
+          <span>
+            {isSelectedSunday ? '2. Entrega Disponible (Domingo)' : '2. Bloque Horario'}
+          </span>
         </h3>
 
         <div className="space-y-2">
@@ -357,6 +408,8 @@ export default function CartScheduleStep({
                     ? Sunset
                     : Clock;
 
+            const isFreeSlot = !slot.isUrgent && costInfo.isFree;
+
             return (
               <button
                 key={slot.value}
@@ -364,21 +417,33 @@ export default function CartScheduleStep({
                 onClick={() => onSelectSlot(slot.value)}
                 aria-pressed={isSelected}
                 className={`w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer active:scale-[0.99] flex items-start gap-3 ${
-                  isSelected
-                    ? slot.isUrgent
-                      ? 'bg-[#FFFBEB] border-2 border-[#D97706] ring-2 ring-[#F5BA13]/30 shadow-sm'
-                      : 'bg-white border-2 border-[#F5BA13] ring-2 ring-[#F5BA13]/25 shadow-sm'
-                    : 'bg-[#FAF8F4] hover:bg-white border-[#1D1D1F]/12 hover:border-[#F5BA13]/70'
+                  slot.isUrgent
+                    ? isSelected
+                      ? 'bg-gradient-to-br from-[#FEF3C7] via-[#FDE68A]/75 to-[#FFFBEB] border-2 border-[#D97706] ring-2 ring-[#F5BA13]/45 shadow-md'
+                      : 'bg-gradient-to-br from-[#FFFBEB] via-[#FEF3C7]/85 to-[#FDE68A]/45 border border-[#D97706]/40 hover:border-[#D97706] shadow-2xs'
+                    : isFreeSlot
+                      ? isSelected
+                        ? 'bg-gradient-to-br from-emerald-50 via-emerald-100/65 to-white border-2 border-emerald-500 ring-2 ring-emerald-500/25 shadow-md'
+                        : 'bg-emerald-50/65 hover:bg-emerald-50 border-emerald-200/90 hover:border-emerald-400 shadow-2xs'
+                      : isSelected
+                        ? 'bg-white border-2 border-[#F5BA13] ring-2 ring-[#F5BA13]/25 shadow-sm'
+                        : 'bg-[#FAF8F4] hover:bg-white border-[#1D1D1F]/12 hover:border-[#F5BA13]/70'
                 }`}
               >
                 {/* Ícono del bloque */}
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                    isSelected
-                      ? slot.isUrgent
-                        ? 'bg-[#F5BA13] text-[#1D1D1F]'
-                        : 'bg-[#1D1D1F] text-[#F5BA13]'
-                      : 'bg-white text-[#D97706] border border-[#1D1D1F]/10'
+                    slot.isUrgent
+                      ? isSelected
+                        ? 'bg-[#D97706] text-white shadow-xs'
+                        : 'bg-[#F5BA13]/35 text-[#92400E] border border-[#D97706]/30'
+                      : isFreeSlot
+                        ? isSelected
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'bg-white text-emerald-700 border border-emerald-200'
+                        : isSelected
+                          ? 'bg-[#1D1D1F] text-[#F5BA13]'
+                          : 'bg-white text-[#D97706] border border-[#1D1D1F]/10'
                   }`}
                 >
                   <SlotIcon className="w-4 h-4" />
@@ -389,17 +454,40 @@ export default function CartScheduleStep({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs sm:text-[13px] font-black text-[#1D1D1F] leading-snug">
+                        <span
+                          className={`text-xs sm:text-[13px] font-black leading-snug ${
+                            slot.isUrgent
+                              ? 'text-[#78350F]'
+                              : isFreeSlot
+                                ? 'text-emerald-950'
+                                : 'text-[#1D1D1F]'
+                          }`}
+                        >
                           {info.title}
                         </span>
+                        {slot.isUrgent && (
+                          <span className="text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#78350F] text-[#FDE68A]">
+                            Express
+                          </span>
+                        )}
                         {isRecommended && (
-                          <span className="text-[9.5px] font-black px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#F5BA13]/50">
+                          <span
+                            className={`text-[9.5px] font-black px-2 py-0.5 rounded-full border ${
+                              isFreeSlot
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300/80'
+                                : 'bg-[#FEF3C7] text-[#92400E] border-[#F5BA13]/50'
+                            }`}
+                          >
                             Más rápido
                           </span>
                         )}
                       </div>
                       {info.timeRange && (
-                        <p className="text-xs font-extrabold text-[#B45309] mt-0.5">
+                        <p
+                          className={`text-xs font-extrabold mt-0.5 ${
+                            isFreeSlot ? 'text-emerald-700' : 'text-[#B45309]'
+                          }`}
+                        >
                           {info.timeRange}
                         </p>
                       )}
@@ -408,8 +496,12 @@ export default function CartScheduleStep({
                     {/* Precio o Gratis + indicador de selección */}
                     <div className="flex items-center gap-2 shrink-0">
                       {costInfo.isFree ? (
-                        <span className="text-[10.5px] font-black px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="text-[10.5px] font-black px-2.5 py-0.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
                           GRATIS
+                        </span>
+                      ) : slot.isUrgent ? (
+                        <span className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-[#1D1D1F] text-[#F5BA13] border border-[#1D1D1F] shadow-2xs">
+                          {formatCLP(costInfo.cost)}
                         </span>
                       ) : (
                         <span className="text-[11px] font-black px-2 py-0.5 rounded-lg bg-[#FEF3C7]/80 text-[#78350F] border border-[#F5BA13]/40">
@@ -420,8 +512,16 @@ export default function CartScheduleStep({
                       <span
                         className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
                           isSelected
-                            ? 'bg-[#1D1D1F] border-[#1D1D1F] text-[#F5BA13]'
-                            : 'bg-white border-slate-300'
+                            ? slot.isUrgent
+                              ? 'bg-[#D97706] border-[#D97706] text-white'
+                              : isFreeSlot
+                                ? 'bg-emerald-600 border-emerald-600 text-white'
+                                : 'bg-[#1D1D1F] border-[#1D1D1F] text-[#F5BA13]'
+                            : slot.isUrgent
+                              ? 'bg-white/90 border-[#D97706]/50'
+                              : isFreeSlot
+                                ? 'bg-white border-emerald-300'
+                                : 'bg-white border-slate-300'
                         }`}
                       >
                         {isSelected && <Check className="w-3 h-3 stroke-[3.5]" />}
@@ -430,7 +530,15 @@ export default function CartScheduleStep({
                   </div>
 
                   {info.subtitle && (
-                    <p className="text-[11px] text-slate-500 font-medium leading-relaxed mt-1">
+                    <p
+                      className={`text-[11px] font-medium leading-relaxed mt-1 ${
+                        slot.isUrgent
+                          ? 'text-[#78350F]/85'
+                          : isFreeSlot
+                            ? 'text-emerald-900/75'
+                            : 'text-slate-500'
+                      }`}
+                    >
                       {info.subtitle}
                     </p>
                   )}

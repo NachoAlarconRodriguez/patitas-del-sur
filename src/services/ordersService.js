@@ -130,7 +130,7 @@ export async function createOrderInSupabase(orderData, items = []) {
           month: '2-digit',
           day: '2-digit',
         }).format(new Date()),
-      delivery_slot: orderData.deliverySlot || 'Tarde (14:00 - 19:00 hrs)',
+      delivery_slot: orderData.deliverySlot || 'Tarde (15:30 - 19:30 hrs)',
       address: orderData.address || '',
       city: orderData.city || 'Puerto Varas',
       delivery_zone: orderData.deliveryZone || 'Zona 1: Radio Urbano Puerto Varas',

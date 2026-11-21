@@ -58,6 +58,7 @@ import {
   Stethoscope,
   ExternalLink,
   Receipt,
+  Zap,
   CreditCard,
   BarChart3,
   Layers,
@@ -103,6 +104,8 @@ import {
   DEFAULT_DISPATCH_VEHICLES,
   getLiveDispatchStatusFromSupabase,
   saveManualDispatchStatusToSupabase,
+  formatOrderScheduleSummary,
+  OFFICIAL_AFTERNOON_SLOT_LABEL,
 } from '../services/dispatchService.js';
 import { WhatsAppIcon, GoogleMapsIcon } from '../components/OfficialIcons';
 import {
@@ -548,7 +551,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               city: orderCity,
               googleMapsUrl: googleMapsUrl,
               mapsUrl: googleMapsUrl,
-              deliverySlot: o.delivery_slot || 'Tarde (14:00 - 19:00 hrs)',
+              deliveryDate: o.delivery_date || null,
+              deliveryDayText: o.delivery_day_text || '',
+              deliverySlot: o.delivery_slot || OFFICIAL_AFTERNOON_SLOT_LABEL,
+              deliveryZone: o.delivery_zone || '',
               items: items.length > 0 ? items : undefined,
               invoiceNumber: o.invoice_number || `BOL-2026-${o.id}`,
               channel: o.channel || 'web',
@@ -8199,6 +8205,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   </div>
                                 </div>
 
+                                {/* Agenda de Despacho (Día + Ventana Horaria + Alerta Urgente) */}
+                                {(() => {
+                                  const sched = formatOrderScheduleSummary(order);
+                                  return (
+                                    <div
+                                      className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold border ${
+                                        sched.isUrgent
+                                          ? 'bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FDE68A]/50 border-[#D97706]/45 text-[#78350F]'
+                                          : 'bg-[#FAF8F4] border-[#1D1D1F]/10 text-[#1D1D1F]'
+                                      }`}
+                                    >
+                                      <span className="flex items-center gap-1.5 min-w-0 truncate">
+                                        {sched.isUrgent ? (
+                                          <Zap className="w-3.5 h-3.5 text-[#D97706] shrink-0 fill-current" />
+                                        ) : (
+                                          <Calendar className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                                        )}
+                                        <span className="truncate">{sched.dateShort}</span>
+                                      </span>
+                                      <span
+                                        className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                                          sched.isUrgent
+                                            ? 'bg-[#78350F] text-[#FDE68A]'
+                                            : 'bg-white text-[#B45309] border border-[#F5BA13]/45'
+                                        }`}
+                                      >
+                                        {sched.shortSlot}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+
                                 {/* Vista según estado de contracción: Contraída vs Expandida */}
                                 {isCollapsed ? (
                                   <div className="flex items-center justify-between text-[13px] text-[#8E8E93] pt-2.5 border-t border-[#3C3C43]/10">
@@ -8482,7 +8520,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 })}
                               </div>
                             </td>
-                            <td className="py-4 px-4 text-slate-600 min-w-[170px] max-w-[240px]">
+                            <td className="py-4 px-4 text-slate-600 min-w-[190px] max-w-[260px]">
                               <div className="font-semibold text-[#111827] text-xs leading-snug break-words" title={order.address}>
                                 {order.address}
                               </div>
@@ -8490,6 +8528,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <MapPin className="w-3 h-3 text-[#D97706] shrink-0" />
                                 <span>{order.city}</span>
                               </div>
+                              {(() => {
+                                const sched = formatOrderScheduleSummary(order);
+                                return (
+                                  <div
+                                    className={`mt-1.5 inline-flex flex-wrap items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                                      sched.isUrgent
+                                        ? 'bg-[#FEF3C7] text-[#78350F] border-[#D97706]/50'
+                                        : 'bg-[#FAF8F4] text-slate-700 border-slate-200/90'
+                                    }`}
+                                    title={`${sched.dateFull} · ${sched.fullSlot}`}
+                                  >
+                                    {sched.isUrgent ? (
+                                      <Zap className="w-3 h-3 text-[#D97706] shrink-0 fill-current" />
+                                    ) : (
+                                      <Calendar className="w-3 h-3 text-[#D97706] shrink-0" />
+                                    )}
+                                    <span>{sched.dateShort}</span>
+                                    <span className="opacity-50">·</span>
+                                    <span className={sched.isUrgent ? 'text-[#92400E] font-black' : 'text-[#B45309]'}>
+                                      {sched.shortSlot}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="py-4 px-4 whitespace-nowrap">
                               <div className="font-extrabold text-[#111827] text-sm">
@@ -13492,9 +13554,64 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     <MapPin className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold text-[#111827]">{selectedOrderModal.address}</div>
-                      <div className="text-slate-500 text-[11px]">{selectedOrderModal.city || selectedOrderModal.deliveryZone}</div>
+                      <div className="text-slate-500 text-[11px]">
+                        {selectedOrderModal.city}
+                        {selectedOrderModal.deliveryZone ? ` · ${selectedOrderModal.deliveryZone}` : ''}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Agenda de Entrega Programada */}
+                  {(() => {
+                    const sched = formatOrderScheduleSummary(selectedOrderModal);
+                    return (
+                      <div
+                        className={`p-3 rounded-2xl border flex items-start justify-between gap-2.5 ${
+                          sched.isUrgent
+                            ? 'bg-gradient-to-br from-[#FFFBEB] via-[#FEF3C7]/90 to-[#FDE68A]/50 border-[#D97706]/50 text-[#78350F]'
+                            : 'bg-[#FAF8F4] border-[#1D1D1F]/10 text-[#1D1D1F]'
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div
+                            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                              sched.isUrgent
+                                ? 'bg-[#D97706] text-white'
+                                : 'bg-[#1D1D1F] text-[#F5BA13]'
+                            }`}
+                          >
+                            {sched.isUrgent ? (
+                              <Zap className="w-4 h-4 fill-current" />
+                            ) : (
+                              <Calendar className="w-4 h-4" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-extrabold uppercase tracking-wider opacity-70">
+                              {sched.isUrgent ? 'Despacho Urgente Agendado' : 'Agenda de Entrega'}
+                            </div>
+                            <div className="font-extrabold text-xs leading-snug mt-0.5">
+                              {sched.dateFull}
+                            </div>
+                            <div
+                              className={`text-[11px] font-bold mt-0.5 ${
+                                sched.isUrgent ? 'text-[#92400E]' : 'text-[#B45309]'
+                              }`}
+                            >
+                              {sched.fullSlot}
+                            </div>
+                          </div>
+                        </div>
+
+                        {sched.isUrgent && (
+                          <span className="text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#78350F] text-[#FDE68A] shrink-0">
+                            ⚡ Urgente
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {selectedOrderModal.notes && (
                     <div className="p-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-amber-900 text-[11px]">
                       <strong>Nota de entrega:</strong> "{selectedOrderModal.notes}"

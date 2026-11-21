@@ -1,7 +1,8 @@
 import React from 'react';
-import { X, MapPin, Copy, ExternalLink } from 'lucide-react';
+import { X, MapPin, Copy, ExternalLink, Calendar, Zap } from 'lucide-react';
 import { WhatsAppIcon, GoogleMapsIcon } from '../../../components/OfficialIcons';
 import { CENTRAL_HUB, getSingleOrderNavigationUrl } from '../../../services/googleMapsService';
+import { formatOrderScheduleSummary } from '../../../services/dispatchService';
 
 /**
  * Modal Optimizador de Rutas Multiparada (Google Maps)
@@ -95,10 +96,16 @@ export default function RouteOptimizerModal({
 
           {/* Stop Sequence */}
           <div className="relative pl-4 space-y-3 before:absolute before:left-7.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#EAECEF]">
-            {optimizedRouteData.optimizedOrders.map((order, idx) => (
+            {optimizedRouteData.optimizedOrders.map((order, idx) => {
+              const sched = formatOrderScheduleSummary(order);
+              return (
               <div
                 key={order.id || idx}
-                className="relative flex items-start gap-3 p-3.5 rounded-2xl bg-white border border-[#EAECEF] hover:border-[#FDE68A] transition-all text-xs"
+                className={`relative flex items-start gap-3 p-3.5 rounded-2xl border transition-all text-xs ${
+                  sched.isUrgent
+                    ? 'bg-gradient-to-br from-[#FFFBEB] via-[#FEF3C7]/60 to-white border-[#D97706]/50'
+                    : 'bg-white border-[#EAECEF] hover:border-[#FDE68A]'
+                }`}
               >
                 <div className="w-7 h-7 rounded-full bg-[#D97706] text-white font-bold text-xs flex items-center justify-center shrink-0 z-10 ring-4 ring-white">
                   {order.stopNumber}
@@ -123,6 +130,26 @@ export default function RouteOptimizerModal({
                     <MapPin className="w-3.5 h-3.5 text-[#D97706] shrink-0 mt-0.5" />
                     <span className="truncate">
                       {order.address}, <strong className="text-[#111827]">{order.city || 'Puerto Varas'}</strong>
+                    </span>
+                  </div>
+
+                  {/* Día y ventana agendada */}
+                  <div
+                    className={`inline-flex flex-wrap items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                      sched.isUrgent
+                        ? 'bg-[#FEF3C7] text-[#78350F] border-[#D97706]/50'
+                        : 'bg-[#FAF8F4] text-slate-700 border-slate-200/90'
+                    }`}
+                  >
+                    {sched.isUrgent ? (
+                      <Zap className="w-3 h-3 text-[#D97706] shrink-0 fill-current" />
+                    ) : (
+                      <Calendar className="w-3 h-3 text-[#D97706] shrink-0" />
+                    )}
+                    <span>{sched.dateShort}</span>
+                    <span className="opacity-50">·</span>
+                    <span className={sched.isUrgent ? 'text-[#92400E] font-black' : 'text-[#B45309]'}>
+                      {sched.shortSlot}
                     </span>
                   </div>
 
@@ -165,7 +192,8 @@ export default function RouteOptimizerModal({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

@@ -56,6 +56,7 @@ import {
   getUpcomingDeliveryDates,
   getLiveDispatchStatusFromSupabase,
   evaluateSmartDeliverySchedule,
+  getChileNowParts,
 } from '../services/dispatchService';
 import { formatCLP } from '../utils/formatters';
 import CartScheduleStep from './cart/CartScheduleStep';
@@ -1546,8 +1547,8 @@ export default function CartDrawer({
       discount: discountAmount,
       total,
       pointsEarned,
-      deliveryDayText: selectedDateObj?.label || 'Hoy Mismo',
-      deliveryDate: deliveryDate || new Date().toISOString().split('T')[0],
+      deliveryDayText: selectedDateObj?.cleanLabel || selectedDateObj?.label || 'Por confirmar',
+      deliveryDate: deliveryDate || getChileNowParts().isoDate,
       deliverySlot: deliverySlot,
       address: fullAddress,
       city: effectiveCity,
@@ -2909,6 +2910,9 @@ Asunto: Pedido ${completedOrder?.id}`;
                 selectedDateObj={selectedDateObj}
                 onSelectDate={(val) => {
                   clearFieldError('deliveryDate');
+                  if (selectedDateObj?.dayOfWeek === 0 || selectedSlotData?.isSundayOnly) {
+                    setDeliverySlot('');
+                  }
                   setDeliveryDate(val);
                 }}
                 availableSlots={availableSlots}
@@ -3279,7 +3283,9 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
                       <span>
                         {selectedSlotData?.isUrgent
-                          ? `Pedido Urgente (fuera de ventana): se cobra despacho obligatorio (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
+                          ? selectedDateObj?.dayOfWeek === 0
+                            ? `Domingo · Pedido Urgente (10:00 a 20:00 hrs): los domingos no hay reparto estándar, se aplica tarifa fija de ${formatCLP(effectiveBaseFee)} (sin envío gratis).`
+                            : `Pedido Urgente (fuera de ventana): se cobra despacho obligatorio (${formatCLP(effectiveBaseFee)}) aunque el pedido supere los ${formatCLP(freeShippingThreshold)}.`
                           : isSpecialDeliveryDay && matchedDispatchZone?.specialDayNoFreeShipping
                             ? `Tarifa especial para el día ${selectedDateObj?.label?.split(' - ').pop() || 'seleccionado'}: no aplica envío gratis.`
                             : 'El horario seleccionado tiene condiciones especiales: no aplica envío gratis.'}

@@ -89,6 +89,8 @@ export const DISPATCH_LIVE_STATUS_KEY = 'dispatch_live_status';
 export const OFFICIAL_MORNING_SLOT_LABEL = 'Mañana (10:00 - 13:00 hrs)';
 export const OFFICIAL_AFTERNOON_SLOT_LABEL = 'Tarde (15:30 - 19:30 hrs)';
 export const URGENT_EXPRESS_SLOT_LABEL = '⚡ Pedido Urgente (Fuera de ventana horaria)';
+export const SUNDAY_URGENT_SLOT_LABEL = '⚡ Pedido Urgente Domingo (10:00 - 20:00 hrs)';
+export const URGENT_EXPRESS_FEE = 3500;
 
 export const DEFAULT_DELIVERY_SCHEDULES = [
   {
@@ -513,80 +515,110 @@ export function evaluateSmartDeliverySchedule({
   }
 
   const isSelectedToday = Boolean(selectedDateIso && selectedDateIso === todayIso);
+  const isSelectedSunday = (() => {
+    if (!selectedDateIso) return false;
+    const parts = String(selectedDateIso).split('-').map(Number);
+    if (parts.length !== 3 || parts.some(Number.isNaN)) return false;
+    return new Date(parts[0], parts[1] - 1, parts[2]).getDay() === 0;
+  })();
+
   const slots = [];
 
-  if (isSelectedToday) {
-    // Evaluar Ventana 1 (10:00 - 13:00) para HOY
-    if (totalMinutes < MORNING_START) {
-      slots.push({
-        value: OFFICIAL_MORNING_SLOT_LABEL,
-        label: 'Mañana (10:00 - 13:00 hrs)',
-        desc: '1ª ventana del día · Envío gratis sobre $25.000',
-        noFreeShipping: false,
-        isUrgent: false,
-      });
-    } else if (totalMinutes >= MORNING_START && totalMinutes <= MORNING_CUTOFF && !isFleetOnRoute) {
-      slots.push({
-        value: 'Hoy antes de las 13:00 hrs (Ventana 10:00 - 13:00)',
-        label: '🟢 Hoy antes de las 13:00 hrs (10:00 - 13:00)',
-        desc: 'Sin reparto en ruta: llega hoy antes de las 13:00 hrs',
-        noFreeShipping: false,
-        isUrgent: false,
-      });
-    }
+  if (isSelectedSunday) {
+    // Los domingos no existen ventanas horarias estándar: solo Pedido Urgente entre 10:00 y 20:00 hrs ($3.500)
+    statusBanner = {
+      type: 'sunday_urgent',
+      badge: 'Domingo · 10:00 a 20:00 hrs',
+      title: 'Domingo: entrega exclusiva con Pedido Urgente (10:00 a 20:00 hrs)',
+      message:
+        'Los domingos no hay reparto regular. Puedes solicitar entrega prioritaria entre las 10:00 y 20:00 hrs con tarifa fija de $3.500 (sin envío gratis).',
+    };
 
-    // Evaluar Ventana 2 (15:30 - 19:30) para HOY
-    if (totalMinutes < AFTERNOON_START) {
-      slots.push({
-        value: OFFICIAL_AFTERNOON_SLOT_LABEL,
-        label: 'Tarde (15:30 - 19:30 hrs)',
-        desc: '2ª ventana del día · Envío gratis sobre $25.000',
-        noFreeShipping: false,
-        isUrgent: false,
-      });
-    } else if (totalMinutes >= AFTERNOON_START && totalMinutes <= AFTERNOON_CUTOFF && !isFleetOnRoute) {
-      slots.push({
-        value: 'Hoy antes de las 19:30 hrs (Ventana 15:30 - 19:30)',
-        label: '🟢 Hoy antes de las 19:30 hrs (15:30 - 19:30)',
-        desc: 'Sin reparto en ruta: se entrega hoy antes de las 19:30 hrs',
-        noFreeShipping: false,
-        isUrgent: false,
-      });
-    }
+    slots.push({
+      value: SUNDAY_URGENT_SLOT_LABEL,
+      label: SUNDAY_URGENT_SLOT_LABEL,
+      desc: 'Horario domingo: 10:00 a 20:00 hrs · Tarifa fija $3.500 (sin envío gratis).',
+      fee: URGENT_EXPRESS_FEE,
+      noFreeShipping: true,
+      isUrgent: true,
+      isSundayOnly: true,
+    });
   } else {
-    // Para Mañana o días futuros: ambas ventanas estándar están abiertas
-    slots.push(
-      {
-        value: OFFICIAL_MORNING_SLOT_LABEL,
-        label: 'Mañana (10:00 - 13:00 hrs)',
-        desc: '1ª ventana de reparto · Envío gratis sobre $25.000',
-        noFreeShipping: false,
-        isUrgent: false,
-      },
-      {
-        value: OFFICIAL_AFTERNOON_SLOT_LABEL,
-        label: 'Tarde (15:30 - 19:30 hrs)',
-        desc: '2ª ventana de reparto · Envío gratis sobre $25.000',
-        noFreeShipping: false,
-        isUrgent: false,
+    if (isSelectedToday) {
+      // Evaluar Ventana 1 (10:00 - 13:00) para HOY
+      if (totalMinutes < MORNING_START) {
+        slots.push({
+          value: OFFICIAL_MORNING_SLOT_LABEL,
+          label: 'Mañana (10:00 - 13:00 hrs)',
+          desc: '1ª ventana del día · Envío gratis sobre $25.000',
+          noFreeShipping: false,
+          isUrgent: false,
+        });
+      } else if (totalMinutes >= MORNING_START && totalMinutes <= MORNING_CUTOFF && !isFleetOnRoute) {
+        slots.push({
+          value: 'Hoy antes de las 13:00 hrs (Ventana 10:00 - 13:00)',
+          label: '🟢 Hoy antes de las 13:00 hrs (10:00 - 13:00)',
+          desc: 'Sin reparto en ruta: llega hoy antes de las 13:00 hrs',
+          noFreeShipping: false,
+          isUrgent: false,
+        });
       }
-    );
-  }
 
-  // Opción 3: Pedido Urgente (Fuera de ventana horaria -> Cobra despacho sí o sí aunque supere $25.000)
-  slots.push({
-    value: URGENT_EXPRESS_SLOT_LABEL,
-    label: URGENT_EXPRESS_SLOT_LABEL,
-    desc: 'Fuera de ventana: se cobra despacho sí o sí (sin envío gratis sobre $25.000)',
-    noFreeShipping: true,
-    isUrgent: true,
-  });
+      // Evaluar Ventana 2 (15:30 - 19:30) para HOY
+      if (totalMinutes < AFTERNOON_START) {
+        slots.push({
+          value: OFFICIAL_AFTERNOON_SLOT_LABEL,
+          label: 'Tarde (15:30 - 19:30 hrs)',
+          desc: '2ª ventana del día · Envío gratis sobre $25.000',
+          noFreeShipping: false,
+          isUrgent: false,
+        });
+      } else if (totalMinutes >= AFTERNOON_START && totalMinutes <= AFTERNOON_CUTOFF && !isFleetOnRoute) {
+        slots.push({
+          value: 'Hoy antes de las 19:30 hrs (Ventana 15:30 - 19:30)',
+          label: '🟢 Hoy antes de las 19:30 hrs (15:30 - 19:30)',
+          desc: 'Sin reparto en ruta: se entrega hoy antes de las 19:30 hrs',
+          noFreeShipping: false,
+          isUrgent: false,
+        });
+      }
+    } else {
+      // Para Mañana o días futuros (Lunes a Sábado): ambas ventanas estándar están abiertas
+      slots.push(
+        {
+          value: OFFICIAL_MORNING_SLOT_LABEL,
+          label: 'Mañana (10:00 - 13:00 hrs)',
+          desc: '1ª ventana de reparto · Envío gratis sobre $25.000',
+          noFreeShipping: false,
+          isUrgent: false,
+        },
+        {
+          value: OFFICIAL_AFTERNOON_SLOT_LABEL,
+          label: 'Tarde (15:30 - 19:30 hrs)',
+          desc: '2ª ventana de reparto · Envío gratis sobre $25.000',
+          noFreeShipping: false,
+          isUrgent: false,
+        }
+      );
+    }
+
+    // Opción 3: Pedido Urgente (Fuera de ventana horaria -> Tarifa fija $3.500, sin envío gratis)
+    slots.push({
+      value: URGENT_EXPRESS_SLOT_LABEL,
+      label: URGENT_EXPRESS_SLOT_LABEL,
+      desc: 'Fuera de ventana: tarifa fija $3.500 (sin envío gratis sobre $25.000)',
+      fee: URGENT_EXPRESS_FEE,
+      noFreeShipping: true,
+      isUrgent: true,
+    });
+  }
 
   const recommendedSlotValue = slots[0]?.value || OFFICIAL_MORNING_SLOT_LABEL;
 
   return {
     chileNow,
     isTodayClosedForStandard,
+    isSelectedSunday,
     statusBanner,
     slots,
     recommendedSlotValue,
@@ -616,57 +648,147 @@ export function formatDeliveryDaysSummary(days = [1, 2, 3, 4, 5, 6]) {
 }
 
 /**
- * Retorna las próximas fechas disponibles de entrega según los días habilitados de la zona
+ * Retorna las próximas fechas disponibles de entrega según los días habilitados de la zona.
+ * Siempre incluye Domingo (0) como opción de Pedido Urgente (10:00 a 20:00 hrs) aunque la zona sea Lun-Sáb.
+ * Genera todas las fechas usando la fecha oficial de Chile (America/Santiago).
  */
 export function getUpcomingDeliveryDates(allowedDays = [1, 2, 3, 4, 5, 6], maxDays = 6, options = {}) {
   const dates = [];
   const now = new Date();
   const chileNow = getChileNowParts(now);
-  const { totalMinutes } = chileNow;
+  const { year: baseYear, month: baseMonth, day: baseDay, totalMinutes } = chileNow;
   const isFleetOnRoute = Boolean(options?.isFleetOnRoute);
 
+  const normalizedAllowed = Array.isArray(allowedDays) && allowedDays.length > 0
+    ? allowedDays
+    : [1, 2, 3, 4, 5, 6];
+  // Los domingos siempre están disponibles como despacho urgente ($3.500), aunque la zona sea Lun-Sáb
+  const effectiveAllowedDays = normalizedAllowed.includes(0)
+    ? normalizedAllowed
+    : [...normalizedAllowed, 0];
+
+  const todayChileDate = new Date(baseYear, baseMonth - 1, baseDay);
+  const isTodaySunday = todayChileDate.getDay() === 0;
+
   // Hitos de cierre del día actual:
-  // - Después de las 18:45 hrs (corte de la ventana 15:30 - 19:30), o
-  // - De las 15:30 hrs en adelante si el vehículo ya anda en reparto (pasa a mañana a las 10:00 hrs)
+  // - Domingos: disponible para Pedido Urgente hasta las 20:00 hrs (10:00 a 20:00 hrs)
+  // - Lunes a Sábado: cierra a las 18:45 hrs o desde las 15:30 si la flota ya anda en ruta
   const AFTERNOON_START = 15 * 60 + 30;  // 15:30
   const AFTERNOON_CUTOFF = 18 * 60 + 45; // 18:45
-  const isTodayClosed =
-    totalMinutes > AFTERNOON_CUTOFF ||
-    (totalMinutes >= AFTERNOON_START && isFleetOnRoute);
+  const SUNDAY_END = 20 * 60;            // 20:00
+
+  const isTodayClosed = isTodaySunday
+    ? totalMinutes >= SUNDAY_END
+    : totalMinutes > AFTERNOON_CUTOFF || (totalMinutes >= AFTERNOON_START && isFleetOnRoute);
 
   const startOffset = isTodayClosed ? 1 : 0;
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
   for (let i = startOffset; i < 21 && dates.length < maxDays; i++) {
-    const d = new Date();
-    d.setDate(now.getDate() + i);
+    const d = new Date(baseYear, baseMonth - 1, baseDay + i);
     const dayOfWeek = d.getDay(); // 0 = Domingo, 1 = Lunes, etc.
 
-    if (allowedDays.includes(dayOfWeek)) {
+    if (effectiveAllowedDays.includes(dayOfWeek)) {
       const yyyy = d.getFullYear();
       const mm = String(d.getMonth() + 1).padStart(2, '0');
       const dd = String(d.getDate()).padStart(2, '0');
       const isoDate = `${yyyy}-${mm}-${dd}`;
 
-      const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-      const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-
+      const cleanLabel = `${dayNames[dayOfWeek]} ${d.getDate()} de ${monthNames[d.getMonth()]}`;
       let relativePrefix = '';
       if (i === 0) relativePrefix = 'Hoy - ';
       else if (i === 1) relativePrefix = 'Mañana - ';
 
-      const label = `${relativePrefix}${dayNames[dayOfWeek]} ${d.getDate()} de ${monthNames[d.getMonth()]}`;
+      const label = `${relativePrefix}${cleanLabel}`;
 
       dates.push({
         isoDate,
         dayOfWeek,
         label,
+        cleanLabel,
         isToday: i === 0,
         isTomorrow: i === 1,
+        isSunday: dayOfWeek === 0,
       });
     }
   }
 
   return dates;
+}
+
+/**
+ * Formatea el resumen de día y ventana de despacho de una orden para Admin y Optimizador de Rutas,
+ * calculando dinámicamente "Hoy" / "Mañana" respecto a la hora actual de Chile (America/Santiago).
+ */
+export function formatOrderScheduleSummary(order) {
+  const rawDate = String(order?.deliveryDate || order?.delivery_date || '').trim();
+  const rawDayText = String(order?.deliveryDayText || order?.delivery_day_text || '').trim();
+  const rawSlot = String(order?.deliverySlot || order?.delivery_slot || '').trim();
+
+  const shortDays = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const fullDays = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  const shortMonths = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+  const chileNow = getChileNowParts();
+  const todayIso = chileNow.isoDate;
+  const tomorrowObj = new Date(chileNow.year, chileNow.month - 1, chileNow.day + 1);
+  const tomorrowIso = `${tomorrowObj.getFullYear()}-${String(tomorrowObj.getMonth() + 1).padStart(2, '0')}-${String(tomorrowObj.getDate()).padStart(2, '0')}`;
+
+  let dateShort = '';
+  let dateFull = '';
+  let relativeTag = '';
+  let isSunday = false;
+
+  const isoMatch = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, yStr, mStr, dStr] = isoMatch;
+    const isoNorm = `${yStr}-${mStr}-${dStr}`;
+    const dt = new Date(Number(yStr), Number(mStr) - 1, Number(dStr));
+    const dow = dt.getDay();
+    isSunday = dow === 0;
+    const dayNum = Number(dStr);
+    const mon = shortMonths[Number(mStr) - 1] || '';
+
+    if (isoNorm === todayIso) relativeTag = 'Hoy';
+    else if (isoNorm === tomorrowIso) relativeTag = 'Mañana';
+
+    dateShort = relativeTag ? `${relativeTag} · ${shortDays[dow]} ${dayNum} ${mon}` : `${shortDays[dow]} ${dayNum} ${mon}`;
+    dateFull = relativeTag ? `${relativeTag} · ${fullDays[dow]} ${dayNum} de ${mon}` : `${fullDays[dow]} ${dayNum} de ${mon}`;
+  } else if (rawDayText) {
+    const cleaned = rawDayText.replace(/^(Hoy|Mañana)\s*[-–·:]\s*/i, '').trim() || rawDayText;
+    isSunday = /domingo/i.test(cleaned);
+    dateShort = cleaned;
+    dateFull = cleaned;
+  } else {
+    dateShort = 'Por coordinar';
+    dateFull = 'Fecha por coordinar';
+  }
+
+  const slotLower = rawSlot.toLowerCase();
+  const isUrgent = slotLower.includes('urgente') || slotLower.includes('express') || isSunday;
+
+  let shortSlot = rawSlot || 'Horario por coordinar';
+  if (isUrgent && (isSunday || slotLower.includes('domingo') || slotLower.includes('20:00'))) {
+    shortSlot = 'Urgente Dom · 10:00–20:00';
+  } else if (isUrgent) {
+    shortSlot = 'Pedido Urgente';
+  } else if (/10:00|13:00|ma[ñn]ana/i.test(rawSlot)) {
+    shortSlot = 'Mañana · 10:00–13:00';
+  } else if (/15:30|19:30|14:00|19:00|tarde/i.test(rawSlot)) {
+    shortSlot = 'Tarde · 15:30–19:30';
+  }
+
+  return {
+    dateShort,
+    dateFull,
+    relativeTag,
+    shortSlot,
+    fullSlot: rawSlot || OFFICIAL_AFTERNOON_SLOT_LABEL,
+    isUrgent,
+    isSunday,
+    hasExplicitDate: Boolean(isoMatch || rawDayText),
+  };
 }
 
 // =========================================================================
