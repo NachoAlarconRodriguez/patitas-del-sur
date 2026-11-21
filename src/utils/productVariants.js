@@ -108,7 +108,7 @@ export function extractProductFormat(item) {
  * @param {string} [brand] 
  * @returns {string}
  */
-export function cleanBaseProductName(rawName, brand = '') {
+export function cleanBaseProductName(rawName, _brand = '') {
   if (!rawName) return 'Producto';
   let name = String(rawName).trim();
 

@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
   CalendarPlus,
-  Clock,
   BookOpen,
   X,
   Check,
   ChevronLeft,
   ChevronRight,
-  Heart,
-  Scale
 } from 'lucide-react';
 
 // Selector de Fecha Sedoso y Minimalista
@@ -305,7 +302,7 @@ export default function VeterinaryConsultationModal({
   const [logIndications, setLogIndications] = useState('');
 
   // Redirigir a la pantalla principal del cliente: Mis Mascotas (Imagen 2)
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (onClose) {
       onClose();
     }
@@ -313,7 +310,7 @@ export default function VeterinaryConsultationModal({
     window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: 'mascotas' }));
     window.dispatchEvent(new CustomEvent('patitas_customer_tab', { detail: 'mascotas' }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, [onClose, navigate]);
 
   // Cerrar con Escape
   useEffect(() => {
@@ -328,7 +325,7 @@ export default function VeterinaryConsultationModal({
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [isOpen]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen || !pet) return null;
 

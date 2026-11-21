@@ -86,8 +86,8 @@ export default function PromoCarousel({
   petType = 'perros',
   onAddToCart,
   onSelectProduct,
-  products = null,
-  fullWidth = false,
+  products: _products = null,
+  fullWidth: _fullWidth = false,
   onColorChange,
   showScrollIndicator = false,
 }) {
@@ -103,7 +103,7 @@ export default function PromoCarousel({
     setPreviousSlide(null);
   }, [petType]);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+  const [isAutoPlaying] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
   const [justAddedId, setJustAddedId] = useState(null);
 
@@ -393,10 +393,6 @@ export default function PromoCarousel({
     const prevIdx = (currentSlide - 1 + promos.length) % promos.length;
     changeToSlide(prevIdx);
   }, [currentSlide, promos.length, changeToSlide]);
-
-  const handleReplay = useCallback(() => {
-    changeToSlide(0);
-  }, [changeToSlide]);
 
   // Keyboard navigation (ArrowLeft / ArrowRight)
   useEffect(() => {

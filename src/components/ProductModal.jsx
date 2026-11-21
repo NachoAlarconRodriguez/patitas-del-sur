@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Star, Check, ShieldCheck, Heart, ShoppingBag, Truck } from 'lucide-react';
+import { X, Star, Check, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
 import { getFlavorSwatchStyle } from '../utils/productVariants';
+import { formatCLP } from '../utils/formatters';
 
 export default function ProductModal({ product, onClose, onAddToCart }) {
   const [selectedWeight, setSelectedWeight] = useState(
@@ -9,14 +10,6 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
   const [quantity, setQuantity] = useState(1);
 
   if (!product) return null;
-
-  const formatCLP = (price) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
 
   const isDog = product.petType === 'perros';
   const variants = product?.variants || [];

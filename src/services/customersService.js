@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js';
+import { isAdminCustomer } from '../utils/adminAuth.js';
 
 /**
  * Servicio de Clientes y Mascotas para sincronización con Supabase
@@ -314,7 +315,7 @@ export function formatIsoDate(dateVal) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
 
     // Formato latinoamericano: DD/MM/YYYY o DD-MM-YYYY
-    const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
     if (dmyMatch) {
       return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
     }
@@ -436,17 +437,7 @@ export async function fetchAllCustomersForAdmin() {
 
     if (customersRes.error) throw customersRes.error;
 
-    const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
-    const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
-
-    const nonAdmins = (customersRes.data || []).filter((c) => {
-      if (String(c.role || 'cliente').toLowerCase() === 'admin') return false;
-      const email = String(c.email || '').trim().toLowerCase();
-      if (email && adminEmails.includes(email)) return false;
-      const name = String(c.full_name || c.name || '').trim().toLowerCase();
-      if (name && adminNames.includes(name)) return false;
-      return true;
-    });
+    const nonAdmins = (customersRes.data || []).filter((c) => !isAdminCustomer(c));
 
     const validOrders = (ordersRes.data || []).filter((o) => o && o.status !== 'cancelado');
 

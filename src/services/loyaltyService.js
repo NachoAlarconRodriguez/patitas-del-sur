@@ -241,7 +241,7 @@ export async function redeemRewardForCustomer(customer, tier) {
 /**
  * Marcar cupón como utilizado cuando se finaliza una compra
  */
-export async function markCouponAsUsed(couponCode, orderId) {
+export async function markCouponAsUsed(couponCode, _orderId) {
   if (!couponCode) return;
   try {
     const { data, error } = await supabase

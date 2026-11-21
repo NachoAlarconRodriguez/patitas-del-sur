@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Heart,
@@ -8,7 +8,6 @@ import {
   Award,
   Clock,
   Sparkles,
-  RefreshCw,
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
@@ -20,27 +19,17 @@ import {
   Minus,
   Trash2,
   X,
-  Check,
-  Utensils,
   Stethoscope,
   Syringe,
   Pill,
   UserCheck,
   Search,
   Calendar,
-  Filter,
-  RotateCcw,
   Truck,
-  Dumbbell,
   Scale,
-  Layers,
-  Bone,
   MapPin,
-  Phone,
-  Shield,
   BookOpen,
   ArrowLeft,
-  ArrowRight,
   FileText,
   User,
   Gift,
@@ -48,14 +37,11 @@ import {
   SlidersHorizontal,
   ShieldCheck,
 } from 'lucide-react';
-import { PRODUCTS, BRANDS } from '../data/mockData';
+import { PRODUCTS } from '../data/mockData';
 import { isProductOutOfStock, resolveProductImage } from '../utils/productVariants';
-import ProductCard from '../components/ProductCard';
-import PromoCarousel from '../components/PromoCarousel';
-import AdvancedFilterPanel from '../components/AdvancedFilterPanel';
+import { formatCLP } from '../utils/formatters';
 import CustomDatePicker from '../components/CustomDatePicker';
 import CustomDropdown from '../components/CustomDropdown';
-import { WhatsAppIcon } from '../components/OfficialIcons';
 import VeterinaryConsultationModal from '../components/VeterinaryConsultationModal';
 import AntiparasiticModal from '../components/AntiparasiticModal';
 import SEOHead from '../components/SEOHead';
@@ -63,6 +49,11 @@ import CustomerProfileModal from '../components/CustomerProfileModal';
 import RedeemPointsModal from '../components/RedeemPointsModal';
 import CustomerMembershipCard from './customer/CustomerMembershipCard';
 import CustomerOrdersTable from './customer/CustomerOrdersTable';
+import FeaturedProductsCarousel from './customer/FeaturedProductsCarousel';
+import LiveDispatchTrackingModal from './customer/LiveDispatchTrackingModal';
+import AlternativeFoodModal from './customer/AlternativeFoodModal';
+import AddHabitualProductModal from './customer/AddHabitualProductModal';
+import { extractBrandAndCleanName } from './customer/customerUtils';
 import {
   getLoyaltySettings,
   DEFAULT_LOYALTY_SETTINGS,
@@ -85,341 +76,13 @@ import {
 import {
   fetchOrdersFromSupabase,
   createOrderInSupabase,
-  getNextOrderId,
 } from '../services/ordersService.js';
 import {
   fetchProductsFromSupabase,
 } from '../services/productsService.js';
 import { supabase } from '../lib/supabase.js';
 
-const KNOWN_BRANDS = [
-  'Alpha Spirit',
-  'Acana',
-  'Orijen',
-  'Bravery',
-  'Fit',
-  'Nomade',
-  'Stay Happy',
-  'Dr. Pet',
-  'Dr Pet',
-  'Patagonia Holística',
-  'Patagonia',
-  'Sur Natural',
-  'Austral Bio',
-  'Chiloé Sea',
-];
-
-// Helper para extraer la marca y limpiar el nombre del producto en vistas compactas (Opción 1 Apple Eyebrow)
-const extractBrandAndCleanName = (product) => {
-  let brand = (product?.brand || '').trim();
-  let cleanName = (product?.name || product?.foodName || '').trim();
-
-  if (!brand) {
-    const matchedBrand = KNOWN_BRANDS.find((b) =>
-      cleanName.toLowerCase().startsWith(b.toLowerCase())
-    );
-    if (matchedBrand) {
-      brand = matchedBrand;
-    }
-  }
-
-  if (brand && cleanName.toLowerCase().startsWith(brand.toLowerCase())) {
-    cleanName = cleanName.slice(brand.length).trim();
-  }
-
-  cleanName = cleanName.replace(/^[-–—:·\s]+/, '');
-
-  return {
-    brand: brand.toUpperCase(),
-    cleanName: cleanName || product?.name || product?.foodName || '',
-  };
-};
-
-/* Carrusel Automático de Productos Destacados con Motions de Transición de Alto Nivel */
-function FeaturedProductsCarousel({ pet, currentProduct, catalogProducts, onAddToCart, onSelectProduct, setOrderToastMessage, formatCLP }) {
-  const [featuredIndex, setFeaturedIndex] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-
-  // Computar productos destacados según especie de la mascota (excluyendo el alimento habitual actual)
-  const featuredProducts = useMemo(() => {
-    const source = (catalogProducts && catalogProducts.length > 0) ? catalogProducts : PRODUCTS;
-    const species = pet?.type === 'gato' ? 'gatos' : 'perros';
-    const filtered = source.filter(p => {
-      const pPetType = (p.petType || p.pet_type || '').toLowerCase();
-      const matchSpecies = pPetType.includes(pet?.type === 'gato' ? 'gato' : 'perro') || pPetType === 'ambos' || pPetType === 'todos';
-      const isNotPaused = !p.isPaused && !p.is_paused && p.isActive !== false && p.is_active !== false;
-      return matchSpecies && p.id !== currentProduct?.id && isNotPaused;
-    });
-    if (filtered.length < 4) {
-      const fallback = source.filter(p => p.id !== currentProduct?.id && !p.isPaused && !p.is_paused);
-      return [...filtered, ...fallback].slice(0, 9);
-    }
-    return filtered.slice(0, 9);
-  }, [pet?.type, currentProduct?.id, catalogProducts]);
-
-  // Reiniciar slide al cambiar de mascota
-  useEffect(() => {
-    setFeaturedIndex(0);
-  }, [pet?.id]);
-
-  const maxIndex = Math.max(0, featuredProducts.length - 3);
-
-  // Avance automático con temporizador y pausa al interactuar
-  useEffect(() => {
-    if (isPaused || maxIndex === 0) return;
-
-    const timer = setInterval(() => {
-      setFeaturedIndex(prev => (prev >= maxIndex ? 0 : prev + 1));
-    }, 3200);
-
-    return () => clearInterval(timer);
-  }, [isPaused, maxIndex]);
-
-  if (!featuredProducts || featuredProducts.length === 0) return null;
-
-  return (
-    <div className="pt-2 space-y-2">
-      {/* Header del Carrusel: Título, Indicadores de Slide y Controles */}
-      <div className="flex items-center justify-between px-0.5">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-          <span className="text-[11px] sm:text-xs font-black text-slate-800 tracking-tight">
-            Destacados para {pet?.name ? pet.name.split(' ')[0] : 'tu regalón'}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {/* Indicadores en forma de cápsula dinámica */}
-          <div className="flex items-center gap-1 mr-0.5">
-            {Array.from({ length: maxIndex + 1 }).map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setFeaturedIndex(idx)}
-                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                  featuredIndex === idx
-                    ? 'w-3.5 bg-[#F5BA13]'
-                    : 'w-1.5 bg-slate-200 hover:bg-slate-300'
-                }`}
-                aria-label={`Slide ${idx + 1}`}
-              />
-            ))}
-          </div>
-
-          {/* Botones de navegación táctil/click ergonómicos */}
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setFeaturedIndex(prev => prev <= 0 ? maxIndex : prev - 1)}
-              className="w-7 h-7 rounded-xl bg-white border border-slate-200 hover:border-[#F5BA13] text-slate-600 hover:text-amber-900 flex items-center justify-center transition-all cursor-pointer active:scale-90 shadow-2xs"
-              title="Producto anterior"
-              aria-label="Producto anterior"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setFeaturedIndex(prev => prev >= maxIndex ? 0 : prev + 1)}
-              className="w-7 h-7 rounded-xl bg-white border border-slate-200 hover:border-[#F5BA13] text-slate-600 hover:text-amber-900 flex items-center justify-center transition-all cursor-pointer active:scale-90 shadow-2xs"
-              title="Siguiente producto"
-              aria-label="Siguiente producto"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Viewport del carrusel: 3 cards lado a lado con motion cúbico de alta fidelidad */}
-      <div
-        className="relative overflow-hidden w-full py-0.5 select-none"
-        onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
-        onTouchStart={() => setIsPaused(true)}
-        onTouchEnd={() => setIsPaused(false)}
-      >
-        <div
-          className="smooth-carousel-track flex gap-2"
-          style={{
-            transform: `translateX(calc(-${featuredIndex} * ((100% + 8px) / 3)))`,
-          }}
-        >
-          {featuredProducts.map((prod) => {
-            const isOutOfStock = isProductOutOfStock(prod);
-            return (
-              <div
-                key={prod.id}
-                onClick={() => onSelectProduct && onSelectProduct(prod)}
-                className={`w-[calc((100%-16px)/3)] shrink-0 bg-white border rounded-2xl p-2 sm:p-2.5 flex flex-col justify-between transition-all duration-300 group select-none ${
-                  isOutOfStock
-                    ? 'border-slate-200/60 opacity-80'
-                    : 'border-slate-200/90 hover:border-[#F5BA13]/60 shadow-2xs hover:shadow-md cursor-pointer active:scale-[0.98]'
-                }`}
-              >
-                {/* Tag / Badge */}
-                <div className="flex items-center justify-between mb-1">
-                  {isOutOfStock ? (
-                    <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-md truncate max-w-full">
-                      Agotado
-                    </span>
-                  ) : (
-                    <span className="text-[9px] font-extrabold text-amber-900 bg-amber-50 border border-amber-200/70 px-1.5 py-0.5 rounded-md truncate max-w-full">
-                      {prod.badge || prod.brand || 'Destacado'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Imagen centrada con resolución nítida */}
-                <div className="w-full h-16 sm:h-18 rounded-xl bg-slate-50/80 p-1.5 flex items-center justify-center my-0.5 overflow-hidden">
-                  <img
-                    src={resolveProductImage(prod)}
-                    alt={prod.name}
-                    className={`max-h-full max-w-full object-contain duration-500 ease-out ${
-                      isOutOfStock ? 'grayscale-[35%]' : 'group-hover:scale-105 transition-transform'
-                    }`}
-                    loading="lazy"
-                  />
-                </div>
-
-                {/* Información y Compra Rápida */}
-                <div className="mt-1 space-y-1">
-                  <h4
-                    className="text-[10.5px] sm:text-xs font-bold text-slate-800 line-clamp-1 leading-tight group-hover:text-amber-800 transition-colors"
-                    title={prod.name}
-                  >
-                    {extractBrandAndCleanName(prod).cleanName}
-                  </h4>
-
-                  <div className="flex items-center justify-between pt-0.5">
-                    <span className="text-[10px] sm:text-[11.5px] font-black text-slate-900 truncate">
-                      {formatCLP(prod.price)}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isOutOfStock}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (isOutOfStock) return;
-                        const weight = prod.weights?.[0] || '1 unidad';
-                        onAddToCart(prod, weight, 1);
-                        setOrderToastMessage(`✓ ${prod.name.split(' ')[0]} agregado al carrito`);
-                      }}
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                        isOutOfStock
-                          ? 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
-                          : 'bg-amber-50 hover:bg-[#F5BA13] text-amber-900 hover:text-[#1D1D1F] border border-amber-200/70 shadow-2xs active:scale-90 cursor-pointer'
-                      }`}
-                      title={isOutOfStock ? 'Producto sin stock' : 'Agregar al carrito'}
-                    >
-                      {isOutOfStock ? <X className="w-3 h-3 text-slate-400" /> : <Plus className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* Card de Selección de Producto para la Despensa Habitual */
-function HabitualProductCard({ product, onAdd, formatCLP }) {
-  const weights = Array.isArray(product.weights) && product.weights.length > 0
-    ? product.weights
-    : [product.weight || product.format || 'Formato Estándar'];
-
-  const [selectedWeight, setSelectedWeight] = useState(weights[0]);
-  const [quantity, setQuantity] = useState(1);
-
-  // Resolver precio según variante
-  const variant = (product.variants || []).find((v) => v.format === selectedWeight || v.weight === selectedWeight);
-  const currentPrice = variant && typeof variant.price === 'number' ? variant.price : (product.price || 0);
-
-  return (
-    <div className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 hover:border-[#F5BA13]/60 transition-all flex flex-col sm:flex-row items-center sm:items-start justify-between gap-3 shadow-2xs hover:shadow-xs">
-      <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
-        <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-100 p-1 shrink-0 flex items-center justify-center">
-          <img
-            src={product.image || '/images/hero_dog.png'}
-            alt={product.name}
-            className="w-full h-full object-contain"
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          {product.brand && (
-            <span className="block text-[9.5px] font-black uppercase text-slate-400">
-              {product.brand}
-            </span>
-          )}
-          <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate" title={product.name}>
-            {product.name}
-          </h4>
-          <span className="text-xs font-black text-slate-900 block mt-0.5">
-            {formatCLP(currentPrice)}
-          </span>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
-        {/* Selector de Formato si tiene más de 1 peso */}
-        {weights.length > 1 ? (
-          <select
-            value={selectedWeight}
-            onChange={(e) => setSelectedWeight(e.target.value)}
-            className="text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-xl px-2 py-1.5 text-slate-700 focus:outline-hidden focus:border-[#F5BA13] cursor-pointer"
-          >
-            {weights.map((w) => (
-              <option key={w} value={w}>
-                {w}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">
-            {selectedWeight}
-          </span>
-        )}
-
-        {/* Stepper de Cantidad */}
-        <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-0.5 shadow-2xs">
-          <button
-            type="button"
-            onClick={() => setQuantity(Math.max(1, quantity - 1))}
-            className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:bg-slate-200 font-black text-xs cursor-pointer active:scale-95"
-            title="Disminuir cantidad"
-          >
-            -
-          </button>
-          <span className="text-xs font-black text-slate-900 min-w-[18px] text-center">
-            {quantity}
-          </span>
-          <button
-            type="button"
-            onClick={() => setQuantity(quantity + 1)}
-            className="w-6 h-6 rounded-lg flex items-center justify-center text-amber-800 hover:bg-amber-100/70 font-black text-xs cursor-pointer active:scale-95"
-            title="Aumentar cantidad"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Botón Agregar */}
-        <button
-          type="button"
-          onClick={() => onAdd(selectedWeight, quantity)}
-          className="px-3.5 py-2 rounded-xl bg-[#F5BA13] hover:bg-[#e2aa10] text-[#1D1D1F] text-xs font-black shadow-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5 stroke-[3]" />
-          <span>Agregar</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export default function CustomerDashboardView({ user, onLogout, onAddToCart, onSelectProduct, onSwitchRole }) {
+export default function CustomerDashboardView({ user, onLogout, onAddToCart, onSelectProduct, onSwitchRole: _onSwitchRole }) {
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -457,8 +120,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tabParam = params.get('tab');
-    if (tabParam && tabParam !== activeTab) {
-      setActiveTab(tabParam);
+    if (tabParam) {
+      setActiveTab((prev) => (tabParam !== prev ? tabParam : prev));
     }
   }, [location.search]);
 
@@ -498,7 +161,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     return catalogProducts && catalogProducts.length > 0 ? catalogProducts : PRODUCTS;
   }, [catalogProducts]);
 
-  const [storeFilter, setStoreFilter] = useState('todos'); // 'todos' | 'perro' | 'gato'
   const [storeMobileCategory, setStoreMobileCategory] = useState('destacados'); // 'destacados' | 'alimento' | 'antiparasitarios' | 'snacks' | 'todos'
   
   // Modal for adding a new pet (Multi-step Wizard)
@@ -522,106 +184,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [newPetAge, setNewPetAge] = useState('');
   const [newPetWeight, setNewPetWeight] = useState('');
   const [newPetSterilized, setNewPetSterilized] = useState('si');
-  const [newPetFoodSearch, setNewPetFoodSearch] = useState('');
-  const [newPetFood, setNewPetFood] = useState('');
-  const [newPetSelectedProduct, setNewPetSelectedProduct] = useState(null);
-  const [isCustomFood, setIsCustomFood] = useState(false);
-  const [customFoodName, setCustomFoodName] = useState('');
-  const [isFoodDropdownOpen, setIsFoodDropdownOpen] = useState(false);
-  const [newPetDuration, setNewPetDuration] = useState('30');
-  const foodDropdownRef = useRef(null);
-
-  // Alimentos filtrados inteligentemente desde el backend para el Asistente de Registro de Mascota
-  const availablePetFoods = useMemo(() => {
-    if (!activeCatalog || activeCatalog.length === 0) return [];
-
-    // 1. Filtrar SOLO alimentos (excluyendo arena sanitaria, antiparasitarios, etc.)
-    const foodOnly = activeCatalog.filter((p) => {
-      if (!p) return false;
-      if (p.isActive === false || p.is_active === false) return false;
-
-      const cat = (p.category || '').toLowerCase().trim();
-      const nonFoodKeywords = [
-        'arena',
-        'arena sanitaria',
-        'antiparasitario',
-        'pipeta',
-        'collar',
-        'comprimido',
-        'accesorio',
-        'juguete',
-        'higiene',
-        'shampoo',
-        'champu',
-        'farmacia',
-        'cama',
-        'correa',
-        'plato',
-        'comedero'
-      ];
-      if (nonFoodKeywords.some((nfc) => cat.includes(nfc))) {
-        return false;
-      }
-      if (cat.includes('alimento') || cat.includes('comida') || cat.includes('pienso') || cat.includes('nutricion')) {
-        return true;
-      }
-      return cat === '' || cat === 'general';
-    });
-
-    // 2. Filtrar por especie (perro vs gato) para no mostrar un listado infinito
-    const speciesFoods = foodOnly.filter((p) => {
-      if (!newPetType) return true;
-      const pt = (p.petType || p.pet_type || p.type || '').toLowerCase().trim();
-      if (newPetType === 'perro') {
-        return pt.includes('perro') || pt.includes('canin') || pt === 'ambos' || pt === 'todos' || pt === '';
-      }
-      if (newPetType === 'gato') {
-        return pt.includes('gato') || pt.includes('felin') || pt === 'ambos' || pt === 'todos' || pt === '';
-      }
-      return true;
-    });
-
-    // 3. Filtrar en tiempo real según lo que el usuario está escribiendo
-    const q = (newPetFoodSearch || '').trim();
-    if (!q) {
-      return speciesFoods;
-    }
-
-    const normalize = (str) =>
-      (str || '')
-        .toString()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
-
-    const searchWords = normalize(q).split(/\s+/).filter(Boolean);
-
-    return speciesFoods.filter((p) => {
-      const weightStr = Array.isArray(p.weights) ? p.weights.join(' ') : (p.weight || p.format || '');
-      const searchable = normalize(`
-        ${p.name || ''} 
-        ${p.brand || ''} 
-        ${p.tagline || p.description || ''} 
-        ${p.category || ''}
-        ${weightStr}
-      `);
-      return searchWords.every((word) => searchable.includes(word));
-    });
-  }, [activeCatalog, newPetType, newPetFoodSearch]);
-
-  // Cerrar el menú flotante de alimentos al hacer clic fuera
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (foodDropdownRef.current && !foodDropdownRef.current.contains(event.target)) {
-        setIsFoodDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Recargar productos desde el backend al abrir el modal de mascota
   useEffect(() => {
@@ -642,13 +204,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setNewPetAge('');
     setNewPetWeight('');
     setNewPetSterilized('si');
-    setNewPetFoodSearch('');
-    setNewPetFood('');
-    setNewPetSelectedProduct(null);
-    setIsCustomFood(false);
-    setCustomFoodName('');
-    setIsFoodDropdownOpen(false);
-    setNewPetDuration('30');
     setIsAddPetModalOpen(false);
   };
 
@@ -743,14 +298,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [isHealthBitacoraOpen, setIsHealthBitacoraOpen] = useState(false);
   const [logCategoryFilter, setLogCategoryFilter] = useState('vacunas'); // 'vacunas' | 'antiparasitario' | 'consulta'
 
-  const formatCLP = (price) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
-
   const MONTH_NAMES_ES = [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -808,7 +355,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [newLogDate, setNewLogDate] = useState(todaySpanish);
   const [newLogFrequency, setNewLogFrequency] = useState('12'); // meses
   const [newLogNextDue, setNewLogNextDue] = useState(calculateNextDueDate(12, todaySpanish));
-  const [newLogReminder, setNewLogReminder] = useState(true);
+  const [newLogReminder] = useState(true);
   const [isCustomVaccine, setIsCustomVaccine] = useState(false);
   const [customVaccineName, setCustomVaccineName] = useState('');
   const [selectedAntiparasiticId, setSelectedAntiparasiticId] = useState('nexgard-spectra-dog');
@@ -863,7 +410,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [selectedReplenishPet, setSelectedReplenishPet] = useState(null);
   const [replenishWeight, setReplenishWeight] = useState('');
   const [replenishQuantity, setReplenishQuantity] = useState(1);
-  const [replenishAddedSuccess, setReplenishAddedSuccess] = useState(false);
   const [selectedSimilarWeight, setSelectedSimilarWeight] = useState({});
   const similarSliderRef = useRef(null);
 
@@ -879,7 +425,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   // Estados para nuevas opciones de la PWA del cliente
   const [isAlternativeFoodModalOpen, setIsAlternativeFoodModalOpen] = useState(false);
   const [isQuickLogModalOpen, setIsQuickLogModalOpen] = useState(false);
-  const [quickLogCategory, setQuickLogCategory] = useState('consulta'); // 'consulta' | 'antiparasitario'
+  const [quickLogCategory] = useState('consulta'); // 'consulta' | 'antiparasitario'
   const [quickAntiparasiticType, setQuickAntiparasiticType] = useState('externo'); // 'interno' | 'externo'
   const [isVetConsultationModalOpen, setIsVetConsultationModalOpen] = useState(false);
   const [isAntiparasiticModalOpen, setIsAntiparasiticModalOpen] = useState(false);
@@ -1015,12 +561,11 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     }, 4500);
   };
 
-  const getReplenishProducts = (pet) => {
+  const getReplenishProducts = useCallback((pet) => {
     if (!pet) return { currentProduct: null, similarProducts: [] };
 
     const pool = activeCatalog && activeCatalog.length > 0 ? activeCatalog : PRODUCTS;
-    const petTypeFilter = pet.type === 'gato' ? 'gatos' : 'perros';
-    
+
     // Find current main product matching species and name
     const currentProduct = pool.find(p => {
       const pPetType = (p.petType || p.pet_type || '').toLowerCase();
@@ -1049,24 +594,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     });
 
     return { currentProduct, similarProducts: otherProducts };
-  };
-
-  const handleOpenReplenishModal = (pet) => {
-    setSelectedReplenishPet(pet);
-    setReplenishQuantity(1);
-    setReplenishAddedSuccess(false);
-
-    if (!schedAddress && profileData?.address) {
-      const fullAddr = profileData.address + (profileData.dept ? `, ${profileData.dept}` : '') + (profileData.city ? `, ${profileData.city}` : '');
-      setSchedAddress(fullAddr);
-    }
-
-    const { currentProduct } = getReplenishProducts(pet);
-    if (currentProduct && currentProduct.weights && currentProduct.weights.length > 0) {
-      const matchWeight = currentProduct.weights.find(w => pet.bagSize && w.includes(pet.bagSize.replace(' ', '')));
-      setReplenishWeight(matchWeight || currentProduct.weights[currentProduct.weights.length - 1]);
-    }
-  };
+  }, [activeCatalog]);
 
   const getFlavorBadge = (product) => {
     const text = (product.name + ' ' + (product.mainProtein || '') + ' ' + (product.flavor || '')).toLowerCase();
@@ -1160,11 +688,19 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     setTimeout(() => setOrderToastMessage(null), 3500);
   };
 
+  const profileSyncRef = useRef(null);
+  profileSyncRef.current = {
+    profileEmail: profileData.email,
+    profilePhone: profileData.phone,
+    tiers: loyaltySettings?.tiers,
+  };
+
   // Sincronizar Perfil de Cliente y Puntos desde Supabase al iniciar
   useEffect(() => {
     let isMounted = true;
-    const targetEmail = (user?.email || profileData.email || '').toLowerCase().trim();
-    const targetPhone = (user?.phone || profileData.phone || '').trim();
+    const syncCtx = profileSyncRef.current;
+    const targetEmail = (user?.email || syncCtx.profileEmail || '').toLowerCase().trim();
+    const targetPhone = (user?.phone || syncCtx.profilePhone || '').trim();
     const userId = user?.id || user?.auth_user_id;
 
     if (!targetEmail && !targetPhone && !userId) return;
@@ -1199,7 +735,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
             .order('created_at', { ascending: false });
 
           if (Array.isArray(dbCoupons)) {
-            const currentTiers = loyaltySettings?.tiers || DEFAULT_LOYALTY_SETTINGS.tiers;
+            const currentTiers = profileSyncRef.current?.tiers || DEFAULT_LOYALTY_SETTINGS.tiers;
             const mapped = dbCoupons.map((c) => {
               const matchedTier = currentTiers.find(
                 (t) => t.id === c.reward_id || Number(t.points) === Number(c.points_spent)
@@ -1260,7 +796,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       window.removeEventListener('patitas_customers_updated', handleCustomerSync);
       window.removeEventListener('patitas_orders_updated', handleCustomerSync);
     };
-  }, [user?.email, user?.phone, user?.id]);
+  }, [user?.email, user?.phone, user?.id, user?.auth_user_id]);
 
   // Sincronizar Mascotas y Bitácora de Salud desde Supabase
   useEffect(() => {
@@ -1291,7 +827,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           const stillPending = pendingTempPets.filter((p) => !mappedPets.some((mp) => mp.name === p.name));
           return [...mappedPets, ...stillPending];
         });
-        if (!mappedPets.some((p) => p.id === selectedPetId)) {
+        if (!mappedPets.some((p) => p.id === selectedPetIdRef.current)) {
           setSelectedPetId(mappedPets[0].id);
           setCuadernoActivePetId(mappedPets[0].id);
         }
@@ -1391,6 +927,8 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   // Mascota activa seleccionada desde las cápsulas superiores
   const [selectedPetId, setSelectedPetId] = useState(() => pets[0]?.id || null);
+  const selectedPetIdRef = useRef(selectedPetId);
+  selectedPetIdRef.current = selectedPetId;
   const activeSelectedPet = pets.find(p => p.id === selectedPetId) || pets[0] || null;
 
   // Sincronizar selectedPetId si cambia el listado de mascotas
@@ -1423,11 +961,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     if (!pet) return;
     setSelectedPetId(pet.id);
     setCuadernoActivePetId(pet.id);
-    const targetSpecies = pet.type === 'gato' ? 'gato' : 'perro';
-    setStoreFilter(targetSpecies);
     setStoreMobileCategory('destacados');
-    setStoreCategoryFilter('Todos');
-    setStoreSelectedBrand('Todas');
     setStoreSearchQuery('');
   };
 
@@ -1436,7 +970,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
     if (!activeSelectedPet) return null;
     const { currentProduct } = getReplenishProducts(activeSelectedPet);
     return currentProduct;
-  }, [activeSelectedPet, activeCatalog]);
+  }, [activeSelectedPet, getReplenishProducts]);
 
   // State for Health Logs (Bitácora Médica por Mascota con Recordatorios de Vacunas y Antiparasitarios)
   const [healthLogs, setHealthLogs] = useState(() => {
@@ -1679,38 +1213,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       setNewLogNextDue(calculateNextDueDate(6));
     }
     setIsAddLogFormOpen(true);
-  };
-
-  // Abrir modal rápido para Consulta o Antiparasitario desde la pantalla principal
-  const handleOpenQuickLog = (category, targetPet = null) => {
-    const pet = targetPet || activeSelectedPet || pets[0];
-    if (!pet) return;
-    setSelectedHealthPet(pet);
-    setQuickLogCategory(category);
-    setNewLogCategory(category);
-    if (category === 'antiparasitario') {
-      const petAntiparasitics = PRODUCTS.filter(p => 
-        p.category === 'Antiparasitarios' && (
-          pet.type === 'gato' ? p.petType === 'gatos' : p.petType === 'perros'
-        )
-      );
-      if (petAntiparasitics.length > 0) {
-        setSelectedAntiparasiticId(petAntiparasitics[0].id);
-        setNewLogTitle(petAntiparasitics[0].name);
-        setNewLogFrequency(`${petAntiparasitics[0].frequencyMonths || 1}`);
-        setNewLogNextDue(calculateNextDueDate(petAntiparasitics[0].frequencyMonths || 1));
-      } else {
-        setNewLogTitle('Antiparasitario Interno / Externo');
-        setNewLogFrequency('1');
-        setNewLogNextDue(calculateNextDueDate(1));
-      }
-    } else {
-      setNewLogTitle('Consulta Médica & Evaluación Veterinaria');
-      setNewLogFrequency('6');
-      setNewLogNextDue(calculateNextDueDate(6));
-      setNewLogNotes('');
-    }
-    setIsQuickLogModalOpen(true);
   };
 
   // Guardar registro rápido de Consulta o Antiparasitario
@@ -1966,9 +1468,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
   const [orderFilterCategory, setOrderFilterCategory] = useState('todos');
   const [orderFilterStatus, setOrderFilterStatus] = useState('todos');
   const [orderFilterSearch, setOrderFilterSearch] = useState('');
-
-  // Orders Mock Data with Categories, Delivery Schedules & Payment Types (0 for production)
-  const INITIAL_MOCK_ORDERS = [];
 
   const [ordersList, setOrdersList] = useState([]);
 
@@ -2339,88 +1838,14 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
   // Store Filter States (Matching public store)
   const [storeSearchQuery, setStoreSearchQuery] = useState('');
-  const [storeSelectedBrand, setStoreSelectedBrand] = useState('Todas');
-  const [storeProteinFilter, setStoreProteinFilter] = useState('Todos');
-  const [storeWeightFilter, setStoreWeightFilter] = useState('Todos');
-  const [storeCategoryFilter, setStoreCategoryFilter] = useState('Todos');
 
-  const baseStoreProducts = useMemo(() => {
-    return activeCatalog.filter((p) => {
-      if (storeFilter === 'perro') return p.petType === 'perros' || p.petType === 'ambos';
-      if (storeFilter === 'gato') return p.petType === 'gatos' || p.petType === 'ambos';
-      return true;
-    });
-  }, [storeFilter, activeCatalog]);
-
-  // Brand product counts
-  const storeBrandCounts = useMemo(() => {
-    const counts = {};
-    baseStoreProducts.forEach((p) => {
-      if (p.brand) {
-        counts[p.brand] = (counts[p.brand] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [baseStoreProducts]);
-
-  // Master Filtered Store Products
-  const storeFilteredProducts = useMemo(() => {
-    return baseStoreProducts.filter((product) => {
-      // 1. Brand filter
-      if (storeSelectedBrand !== 'Todas' && product.brand !== storeSelectedBrand) {
-        return false;
-      }
-
-      // 2. Search query
-      if (storeSearchQuery.trim()) {
-        const q = storeSearchQuery.toLowerCase();
-        const matchName = product.name.toLowerCase().includes(q);
-        const matchTagline = product.tagline ? product.tagline.toLowerCase().includes(q) : false;
-        const matchBrand = product.brand ? product.brand.toLowerCase().includes(q) : false;
-        const matchIngredients = product.ingredients
-          ? product.ingredients.some((ing) => ing.toLowerCase().includes(q))
-          : false;
-        if (!matchName && !matchTagline && !matchBrand && !matchIngredients) {
-          return false;
-        }
-      }
-
-      // 3. Protein % Filter
-      if (storeProteinFilter !== 'Todos') {
-        const prot = product.proteinValue || 0;
-        if (storeProteinFilter === 'high' && (prot < 30 || prot > 40)) return false;
-        if (storeProteinFilter === 'super' && prot <= 40) return false;
-        if (storeProteinFilter === 'moderate' && prot >= 30) return false;
-      }
-
-      // 4. Weight Filter
-      if (storeWeightFilter !== 'Todos') {
-        const weights = product.weights || [];
-        if (storeWeightFilter === 'snacks') {
-          const isSnackWeight = weights.some((w) => w.includes('g') && !w.includes('kg'));
-          if (!isSnackWeight) return false;
-        } else if (storeWeightFilter === 'standard') {
-          const isStandardWeight = weights.some((w) => w.includes('2 kg') || w.includes('3 kg') || w.includes('1.5 kg') || w.includes('4 kg') || w.includes('7 kg'));
-          if (!isStandardWeight) return false;
-        } else if (storeWeightFilter === 'bulk') {
-          const isBulkWeight = weights.some((w) => w.includes('5 kg') || w.includes('10 kg') || w.includes('12 kg') || w.includes('15 kg'));
-          if (!isBulkWeight) return false;
-        }
-      }
-
-      // 5. Category Filter
-      if (storeCategoryFilter !== 'Todos' && product.category !== storeCategoryFilter) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [baseStoreProducts, storeSelectedBrand, storeSearchQuery, storeProteinFilter, storeWeightFilter, storeCategoryFilter]);
+  const hasActivePet = Boolean(activeSelectedPet);
+  const activePetType = activeSelectedPet?.type;
 
   // Productos ordenados para la tienda adaptados a la mascota activa o catálogo general
   const mobileStoreProducts = useMemo(() => {
-    const isCat = activeSelectedPet?.type === 'gato';
-    const targetSpecies = activeSelectedPet ? (isCat ? 'gatos' : 'perros') : null;
+    const isCat = activePetType === 'gato';
+    const targetSpecies = hasActivePet ? (isCat ? 'gatos' : 'perros') : null;
     const catalogPool = activeCatalog && activeCatalog.length > 0 ? activeCatalog : PRODUCTS;
 
     // Base: productos para la especie de la mascota activa o catálogo general si aún no tiene mascotas
@@ -2531,61 +1956,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
 
     // 'todos'
     return speciesProducts;
-  }, [activeCatalog, activeSelectedPet?.id, activeSelectedPet?.type, storeMobileCategory, storeSearchQuery, currentPetFoodProduct]);
-
-  const [hoveredStoreCircle, setHoveredStoreCircle] = useState(null);
-
-  const proteinChips = [
-    { label: 'Todas', value: 'Todos', emoji: '✨' },
-    { label: 'Alta (30%-40%)', value: 'high', emoji: '💪' },
-    { label: 'Súper (>70%)', value: 'super', emoji: '⚡' },
-    { label: 'Moderada (<30%)', value: 'moderate', emoji: '🌱' },
-  ];
-
-  const weightChips = [
-    { label: 'Todos', value: 'Todos', emoji: '✨' },
-    { label: 'Snacks (100-250g)', value: 'snacks', emoji: '🍖' },
-    { label: 'Bolsas (1.5-4kg)', value: 'standard', emoji: '📦' },
-    { label: 'Granel (5-15kg)', value: 'bulk', emoji: '🏔️' },
-  ];
-
-  const categoryChips = [
-    { label: 'Todos', value: 'Todos', emoji: '✨' },
-    { label: 'Alimento Seco', value: 'Alimento Seco', emoji: '🥣' },
-    { label: 'Snacks Naturales', value: 'Snacks Naturales', emoji: '🍖' },
-    { label: 'Alimento Húmedo', value: 'Alimento Húmedo', emoji: '🥫' },
-    { label: 'Suplementos', value: 'Suplementos', emoji: '🧪' },
-  ];
-
-  const getActiveProteinLabel = () => {
-    const found = proteinChips.find((c) => c.value === storeProteinFilter);
-    return found ? found.label : 'Proteína';
-  };
-
-  const getActiveWeightLabel = () => {
-    const found = weightChips.find((c) => c.value === storeWeightFilter);
-    return found ? found.label : 'Formato (Peso)';
-  };
-
-  const getActiveCategoryLabel = () => {
-    const found = categoryChips.find((c) => c.value === storeCategoryFilter);
-    return found ? found.label : 'Tipo de Alimento';
-  };
-
-  const handleResetStoreFilters = () => {
-    setStoreSelectedBrand('Todas');
-    setStoreSearchQuery('');
-    setStoreProteinFilter('Todos');
-    setStoreWeightFilter('Todos');
-    setStoreCategoryFilter('Todos');
-  };
-
-  const activeStoreFiltersCount =
-    (storeSearchQuery ? 1 : 0) +
-    (storeSelectedBrand !== 'Todas' ? 1 : 0) +
-    (storeProteinFilter !== 'Todos' ? 1 : 0) +
-    (storeWeightFilter !== 'Todos' ? 1 : 0) +
-    (storeCategoryFilter !== 'Todos' ? 1 : 0);
+  }, [activeCatalog, hasActivePet, activePetType, storeMobileCategory, storeSearchQuery, currentPetFoodProduct]);
 
   return (
     <div className="min-h-screen bg-[#FAF9F6] pt-4 pb-20 px-4 md:px-8">
@@ -2913,8 +2284,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
           // Si el cliente tiene al menos una mascota registrada
           const pet = activeSelectedPet || pets[0];
           const { currentProduct } = getReplenishProducts(pet);
-          const priceDisplay = currentProduct?.price ? `${formatCLP(currentProduct.price)} CLP` : '$68.990 CLP';
-          const isCurrentFoodOutOfStock = isProductOutOfStock(currentProduct);
 
           return (
             <div className="w-full max-w-5xl lg:max-w-6xl mx-auto space-y-4 animate-in fade-in duration-200">
@@ -5718,8 +5087,6 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                           onClick={() => {
                             if (isMainProductOutOfStock) return;
                             onAddToCart(currentProduct, replenishWeight || currentProduct.weights?.[0] || '12 kg', replenishQuantity);
-                            setReplenishAddedSuccess(true);
-                            setTimeout(() => setReplenishAddedSuccess(false), 2500);
                           }}
                           className={`px-4 py-3 rounded-2xl font-black text-xs transition-all border flex items-center justify-center gap-1.5 ${
                             isMainProductOutOfStock
@@ -5992,316 +5359,38 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
         pointsPerThousand={loyaltySettings.pointsPerThousand || 1}
       />
 
-          {/* MODAL: SEGUIMIENTO EN VIVO DE DESPACHO PWA CLIENTES */}
-      {liveTrackingOrder && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setLiveTrackingOrder(null)}
-        >
-          <div
-            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="p-5 bg-gradient-to-br from-[#1D1D1F] via-[#2A1D0E] to-[#120D06] border-b border-amber-500/20 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/10 backdrop-blur-md flex items-center justify-center text-xl shadow-inner">
-                  🚚
-                </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase text-[#F5BA13] tracking-wider block">
-                    Seguimiento en Tiempo Real
-                  </span>
-                  <h3 className="text-base font-black leading-tight text-white">
-                    Pedido {liveTrackingOrder.id}
-                  </h3>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setLiveTrackingOrder(null)}
-                className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Stepper Progress */}
-            <div className="p-6 space-y-5">
-              <div className="space-y-4">
-                {[
-                  {
-                    step: 1,
-                    title: 'Pedido Confirmado',
-                    sub: 'Tu orden fue ingresada y validada en el sistema.',
-                    done: true,
-                    active: false,
-                  },
-                  {
-                    step: 2,
-                    title: 'Preparación en Bodega',
-                    sub: 'Empaque hermético y revisión de lote en Puerto Varas.',
-                    done: liveTrackingOrder.statusCode === 'en_camino' || liveTrackingOrder.statusCode === 'entregado',
-                    active: liveTrackingOrder.statusCode === 'en_preparacion',
-                  },
-                  {
-                    step: 3,
-                    title: 'En Camino a tu Domicilio',
-                    sub: `Despacho en móvil de reparto. Franja: ${liveTrackingOrder.deliverySlot || '14:00 - 19:00 hrs'}.`,
-                    done: liveTrackingOrder.statusCode === 'entregado',
-                    active: liveTrackingOrder.statusCode === 'en_camino',
-                  },
-                  {
-                    step: 4,
-                    title: 'Entregado en Domicilio',
-                    sub: 'Completado y firmado por el tutor.',
-                    done: liveTrackingOrder.statusCode === 'entregado',
-                    active: false,
-                  },
-                ].map((st, idx) => (
-                  <div key={idx} className="flex items-start gap-3.5 relative">
-                    {idx < 3 && (
-                      <div
-                        className={`absolute left-4 top-8 w-0.5 h-8 ${
-                          st.done ? 'bg-amber-500' : 'bg-slate-200'
-                        }`}
-                      />
-                    )}
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center font-black text-xs shrink-0 z-10 ${
-                        st.done
-                          ? 'bg-amber-500 text-white shadow-xs'
-                          : st.active
-                          ? 'bg-[#F5BA13] text-[#1D1D1F] ring-4 ring-[#F5BA13]/25 animate-pulse'
-                          : 'bg-slate-100 text-slate-400 border border-slate-200'
-                      }`}
-                    >
-                      {st.done ? '✓' : st.step}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4
-                          className={`text-xs font-black ${
-                            st.active ? 'text-amber-800' : st.done ? 'text-slate-900' : 'text-slate-400'
-                          }`}
-                        >
-                          {st.title}
-                        </h4>
-                        {st.active && (
-                          <span className="text-[10px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-300">
-                            En Curso ⏳
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 font-medium">{st.sub}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Order Details Inset Card */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
-                <div className="flex justify-between text-slate-600">
-                  <span className="font-bold">Producto:</span>
-                  <span className="font-extrabold text-slate-900 truncate max-w-[200px]">{liveTrackingOrder.product}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span className="font-bold">Entrega:</span>
-                  <span className="font-black text-amber-900">{liveTrackingOrder.deliveryDayText || liveTrackingOrder.date} · {liveTrackingOrder.deliverySlot || 'Tarde'}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span className="font-bold">Pago:</span>
-                  <span className="font-bold text-slate-800">{liveTrackingOrder.paymentMethod || 'Tarjeta'}</span>
-                </div>
-                <div className="flex justify-between text-slate-600">
-                  <span className="font-bold">Dirección:</span>
-                  <span className="font-medium text-slate-700 truncate max-w-[200px]">{liveTrackingOrder.address || 'Av. Los Colonos 1420, Puerto Varas'}</span>
-                </div>
-              </div>
-
-              {/* Driver & Support Row */}
-              <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">
-                    👨‍✈️
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-900">Rodrigo Muñoz</div>
-                    <div className="text-[10px] text-slate-500 font-bold">Repartidor Patitas Móvil</div>
-                  </div>
-                </div>
-
-                <a
-                  href={`https://wa.me/56953332492?text=${encodeURIComponent(`Hola, tengo una consulta sobre mi entrega del pedido ${liveTrackingOrder.id}.`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs border border-emerald-200 flex items-center gap-1.5 transition-colors cursor-pointer"
-                  title="Contactar por WhatsApp"
-                >
-                  <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
-                  <span>WhatsApp</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* MODAL: SEGUIMIENTO EN VIVO DE DESPACHO PWA CLIENTES */}
+      <LiveDispatchTrackingModal
+        order={liveTrackingOrder}
+        onClose={() => setLiveTrackingOrder(null)}
+      />
 
       {/* MODAL: OTRAS OPCIONES DE ALIMENTO PARA LA MASCOTA */}
-      {isAlternativeFoodModalOpen && activeSelectedPet && (() => {
-        const { currentProduct, similarProducts } = getReplenishProducts(activeSelectedPet);
-
-        return (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
-              {/* Header */}
-              <div className="p-5 sm:p-6 bg-gradient-to-br from-[#1D1D1F] via-[#2A1D0E] to-[#120D06] border-b border-amber-500/20 text-white flex items-center justify-between gap-3 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/10 backdrop-blur-sm flex items-center justify-center text-xl shrink-0">
-                    🔄
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-black leading-tight">
-                      Otras Opciones de Alimento para {activeSelectedPet.name}
-                    </h3>
-                    <p className="text-[11px] text-amber-200/90 font-medium">
-                      Variedades monoproteicas y grain free compatibles con su digestión.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsAlternativeFoodModalOpen(false)}
-                  className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center transition-all cursor-pointer shrink-0 border border-white/20 active:scale-95"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-                <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-xs text-amber-950 flex items-start gap-2.5">
-                  <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong>Rotación de proteínas segura:</strong> Todas estas opciones pertenecen a líneas de calidad holística super premium, permitiendo alternar sabores (salmón, cordero, pollo, cerdo ibérico) sin alterar la flora intestinal de {activeSelectedPet.name}.
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {similarProducts.map((prod) => {
-                    const flavor = getFlavorBadge(prod);
-                    const defaultWeight = prod.weights?.[0] || '12 kg';
-                    const isProdOutOfStock = isProductOutOfStock(prod, defaultWeight);
-
-                    return (
-                      <div
-                        key={prod.id}
-                        className={`p-4 rounded-2xl bg-slate-50 border transition-all flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 shadow-2xs ${
-                          isProdOutOfStock
-                            ? 'border-slate-200/60 opacity-85'
-                            : 'hover:bg-white border-slate-200 hover:border-amber-400 hover:shadow-md'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                          <div className="w-20 h-20 rounded-xl bg-white p-2 border border-slate-200 shrink-0 flex items-center justify-center relative overflow-hidden">
-                            <img
-                              src={prod.image}
-                              alt={prod.name}
-                              className={`w-full h-full object-contain ${isProdOutOfStock ? 'opacity-40 grayscale' : ''}`}
-                            />
-                            {isProdOutOfStock && (
-                              <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px] flex items-center justify-center">
-                                <span className="text-[8px] font-black uppercase text-white bg-rose-600/90 px-1 py-0.5 rounded">
-                                  Sin Stock
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="space-y-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider">
-                                {prod.brand}
-                              </span>
-                              {flavor && (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${flavor.bg}`}>
-                                  {flavor.emoji} {flavor.label}
-                                </span>
-                              )}
-                              {isProdOutOfStock && (
-                                <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200">
-                                  Agotado en Bodega
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-snug">
-                              {prod.name}
-                            </h4>
-                            <div className="text-xs font-black text-slate-900">
-                              {formatCLP(prod.price)} CLP <span className="text-[10px] text-slate-400 font-normal">({defaultWeight})</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex sm:flex-col items-center gap-2 shrink-0 w-full sm:w-auto">
-                          <button
-                            type="button"
-                            disabled={isProdOutOfStock}
-                            onClick={() => {
-                              if (isProdOutOfStock) return;
-                              onAddToCart(prod, defaultWeight, 1);
-                              setOrderToastMessage(`✓ Añadido al pedido: ${prod.name} (${defaultWeight})`);
-                              setTimeout(() => setOrderToastMessage(null), 4000);
-                              setIsAlternativeFoodModalOpen(false);
-                            }}
-                            className={`flex-1 sm:flex-initial px-4 py-2 rounded-xl font-black text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 whitespace-nowrap active:scale-95 ${
-                              isProdOutOfStock
-                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                : 'bg-[#F5BA13] hover:bg-[#e2aa10] text-[#1D1D1F] cursor-pointer shadow-md shadow-[#F5BA13]/20'
-                            }`}
-                          >
-                            <ShoppingBag className="w-3.5 h-3.5" />
-                            <span>{isProdOutOfStock ? 'Sin stock' : 'Añadir a mi pedido'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPets(prev => prev.map(p => p.id === activeSelectedPet.id ? { ...p, foodName: prod.name } : p));
-                              setOrderToastMessage(`✓ Alimento habitual de ${activeSelectedPet.name} actualizado a ${prod.name}`);
-                              setTimeout(() => setOrderToastMessage(null), 4000);
-                              setIsAlternativeFoodModalOpen(false);
-                            }}
-                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-extrabold text-[11px] border border-slate-200 transition-all cursor-pointer whitespace-nowrap active:scale-95"
-                          >
-                            <span>Elegir como habitual</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs text-slate-500 font-medium">¿Buscas algo diferente?</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAlternativeFoodModalOpen(false);
-                      setActiveTab('tienda');
-                      setStoreCategoryFilter('Alimento Seco');
-                    }}
-                    className="text-xs font-black text-amber-800 hover:text-amber-950 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Ver todos los alimentos en la Tienda Online</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {isAlternativeFoodModalOpen && activeSelectedPet && (
+        <AlternativeFoodModal
+          pet={activeSelectedPet}
+          similarProducts={getReplenishProducts(activeSelectedPet).similarProducts}
+          getFlavorBadge={getFlavorBadge}
+          onAddProduct={(prod, defaultWeight) => {
+            onAddToCart(prod, defaultWeight, 1);
+            setOrderToastMessage(`✓ Añadido al pedido: ${prod.name} (${defaultWeight})`);
+            setTimeout(() => setOrderToastMessage(null), 4000);
+            setIsAlternativeFoodModalOpen(false);
+          }}
+          onSelectAsHabitual={(prod) => {
+            setPets((prev) => prev.map((p) => (p.id === activeSelectedPet.id ? { ...p, foodName: prod.name } : p)));
+            setOrderToastMessage(`✓ Alimento habitual de ${activeSelectedPet.name} actualizado a ${prod.name}`);
+            setTimeout(() => setOrderToastMessage(null), 4000);
+            setIsAlternativeFoodModalOpen(false);
+          }}
+          onExploreStore={() => {
+            setIsAlternativeFoodModalOpen(false);
+            setActiveTab('tienda');
+            setStoreMobileCategory('alimento');
+          }}
+          onClose={() => setIsAlternativeFoodModalOpen(false)}
+        />
+      )}
 
       {/* MODAL PANTALLA COMPLETA: CONSULTA VETERINARIA (AGENDAR & GOOGLE CALENDAR + CUADERNO DE SALUD) */}
       <VeterinaryConsultationModal
@@ -6619,123 +5708,17 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       )}
 
       {/* MODAL: AGREGAR PRODUCTO A LA DESPENSA HABITUAL */}
-      {isAddHabitualProductModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Header */}
-            <div className="p-4 sm:p-5 bg-gradient-to-br from-[#1D1D1F] via-[#2A1D0E] to-[#120D06] border-b border-amber-500/20 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center text-xl shadow-inner border border-white/20">
-                  🥫
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-white tracking-tight">
-                    Agregar a tu Despensa Habitual
-                  </h3>
-                  <p className="text-[11px] text-amber-200/90 font-medium">
-                    Elige los sacos de alimento o snacks que compras mes a mes
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsAddHabitualProductModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
-                title="Cerrar"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Filtros y Buscador */}
-            <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-50/70 space-y-3 shrink-0">
-              {/* Buscador */}
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Buscar por nombre o marca (ej. Acana, Bravery, Hills)..."
-                  value={habitualSearchQuery}
-                  onChange={(e) => setHabitualSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-amber-400 shadow-2xs"
-                  autoFocus
-                />
-                {habitualSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setHabitualSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Chips de Categoría */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-[11px] font-bold">
-                {[
-                  { id: 'todos', label: 'Todos los productos' },
-                  { id: 'perro', label: '🐶 Perros' },
-                  { id: 'gato', label: '🐱 Gatos' },
-                  { id: 'alimento', label: '🥣 Alimento' },
-                  { id: 'snacks', label: '🥩 Snacks' },
-                ].map((chip) => (
-                  <button
-                    key={chip.id}
-                    type="button"
-                    onClick={() => setHabitualCategoryFilter(chip.id)}
-                    className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all cursor-pointer ${
-                      habitualCategoryFilter === chip.id
-                        ? 'bg-[#1D1D1F] text-[#F5BA13] shadow-2xs font-black'
-                        : 'bg-white hover:bg-amber-50/50 text-slate-600 border border-slate-200'
-                    }`}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Listado de Productos */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-2.5">
-              {filteredCatalogForHabitual.length === 0 ? (
-                <div className="py-12 text-center space-y-2">
-                  <div className="text-3xl">🔍</div>
-                  <p className="text-xs font-black text-slate-700">
-                    No encontramos productos con ese filtro o búsqueda
-                  </p>
-                  <p className="text-[11px] text-slate-400">
-                    Intenta buscar con otra palabra clave o quita los filtros.
-                  </p>
-                </div>
-              ) : (
-                filteredCatalogForHabitual.slice(0, 40).map((prod) => (
-                  <HabitualProductCard
-                    key={prod.id || prod.name}
-                    product={prod}
-                    onAdd={(weight, qty) => handleAddProductToHabitual(prod, weight, qty)}
-                    formatCLP={formatCLP}
-                  />
-                ))
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-3 sm:p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3 shrink-0">
-              <p className="text-[11px] text-slate-500 font-medium hidden sm:block">
-                💡 Los productos agregados se guardarán para reposición cada {replenishmentCycle.frequencyDays} días.
-              </p>
-              <button
-                type="button"
-                onClick={() => setIsAddHabitualProductModalOpen(false)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold transition-all cursor-pointer"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddHabitualProductModal
+        isOpen={isAddHabitualProductModalOpen}
+        searchQuery={habitualSearchQuery}
+        onSearchChange={setHabitualSearchQuery}
+        categoryFilter={habitualCategoryFilter}
+        onCategoryChange={setHabitualCategoryFilter}
+        filteredProducts={filteredCatalogForHabitual}
+        frequencyDays={replenishmentCycle.frequencyDays}
+        onAddProduct={handleAddProductToHabitual}
+        onClose={() => setIsAddHabitualProductModalOpen(false)}
+      />
 
     </div>
   );

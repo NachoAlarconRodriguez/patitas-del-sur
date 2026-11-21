@@ -140,8 +140,6 @@ export const LOCAL_FALLBACK_STREETS = [
 ];
 
 let googleMapsScriptPromise = null;
-let placesServiceInstance = null;
-let autocompleteServiceInstance = null;
 
 /**
  * Carga el script de Google Maps API de forma dinámica y única

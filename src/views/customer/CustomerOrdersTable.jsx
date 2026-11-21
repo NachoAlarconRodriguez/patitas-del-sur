@@ -14,7 +14,7 @@ function parseDateToIso(dateStr) {
   }
 
   // DD/MM/YYYY o DD-MM-YYYY
-  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  const dmyMatch = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
   if (dmyMatch) {
     const d = dmyMatch[1].padStart(2, '0');
     const m = dmyMatch[2].padStart(2, '0');
@@ -122,7 +122,7 @@ function getDeliveryInfo(order) {
   }
 
   // Si tiene el rango entre paréntesis (ej: "Mañana (10:00 - 13:30 hrs)"), extraer solo las horas
-  const timeRangeMatch = cleanSlot.match(/\(([\d\:\s\-–]+(?:hrs|horas)?)\)/i);
+  const timeRangeMatch = cleanSlot.match(/\(([\d:\s\-–]+(?:hrs|horas)?)\)/i);
   if (timeRangeMatch && timeRangeMatch[1]) {
     cleanSlot = timeRangeMatch[1].trim();
   }
@@ -145,7 +145,7 @@ export default function CustomerOrdersTable({
   setOrderFilterStatus,
   orderFilterSearch = '',
   setOrderFilterSearch,
-  onOpenLiveTracking,
+  onOpenLiveTracking: _onOpenLiveTracking,
 }) {
   return (
     <div className="p-6 md:p-8 rounded-3xl bg-white border border-slate-200/90 shadow-md space-y-6">

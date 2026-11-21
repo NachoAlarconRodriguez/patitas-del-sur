@@ -7,8 +7,8 @@ import './index.css';
 // Register PWA Service Worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
-      console.log('SW registration note: ', err);
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Service Worker opcional en entornos sin soporte o dev
     });
   });
 }

@@ -89,6 +89,7 @@ export default function DeliveryCoverageMap({
   const [loadError, setLoadError] = useState(false);
   const [mapType, setMapType] = useState('roadmap'); // 'roadmap' | 'terrain' | 'hybrid'
   const [, setActiveSpotTooltip] = useState(null);
+  const initialZoneRef = useRef(activeZone);
 
   // Inicializar Google Maps
   useEffect(() => {
@@ -99,14 +100,15 @@ export default function DeliveryCoverageMap({
         if (!isMounted || !mapContainerRef.current) return;
 
         if (!mapInstanceRef.current) {
-          const initialCenter = activeZone?.coordinates || {
+          const initZone = initialZoneRef.current;
+          const initialCenter = initZone?.coordinates || {
             lat: CENTRAL_HUB.lat,
             lng: CENTRAL_HUB.lng,
           };
 
           const map = new maps.Map(mapContainerRef.current, {
             center: initialCenter,
-            zoom: activeZone?.mapZoom || 12,
+            zoom: initZone?.mapZoom || 12,
             mapTypeId: 'roadmap',
             disableDefaultUI: true,
             zoomControl: false,

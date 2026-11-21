@@ -91,7 +91,7 @@ export async function verifyCouponInSupabase(couponCode) {
 
   try {
     // 1. Buscar en cupones de 1 solo uso
-    const { data: singleUseCoupon, error: singleErr } = await supabase
+    const { data: singleUseCoupon } = await supabase
       .from('convenio_coupons')
       .select(`
         *,
@@ -117,7 +117,7 @@ export async function verifyCouponInSupabase(couponCode) {
     }
 
     // 2. Buscar en convenios de código general (ej. CONV-PATITAS)
-    const { data: generalConvenio, error: genErr } = await supabase
+    const { data: generalConvenio } = await supabase
       .from('convenios')
       .select('*')
       .eq('id', code.toLowerCase())

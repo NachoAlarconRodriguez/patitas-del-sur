@@ -16,18 +16,10 @@ import {
 } from '../services/dispatchService';
 import { supabase } from '../lib/supabase';
 import { TOWN_COORDINATES, CENTRAL_HUB } from '../services/googleMapsService';
-
-// Formateador de moneda chilena
-const formatCLP = (amount) => {
-  return new Intl.NumberFormat('es-CL', {
-    style: 'currency',
-    currency: 'CLP',
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
-};
+import { formatCLP } from '../utils/formatters';
 
 // Base de sectores y parcelaciones destacadas por comuna para el mapa
-export const KNOWN_CITY_SPOTS = {
+const KNOWN_CITY_SPOTS = {
   frutillar: [
     {
       id: 'fr-punta-larga',

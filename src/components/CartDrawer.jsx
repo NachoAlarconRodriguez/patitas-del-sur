@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
@@ -8,7 +8,6 @@ import {
   ShoppingBag,
   ArrowRight,
   ArrowLeft,
-  ShieldCheck,
   Truck,
   Ticket,
   Check,
@@ -18,11 +17,8 @@ import {
   CreditCard,
   Landmark,
   MapPin,
-  Phone,
-  Mail,
   Clock,
   MessageSquare,
-  Copy,
   CheckCircle2,
   Banknote,
   Globe,
@@ -45,14 +41,13 @@ import {
   upsertCustomerProfile,
   saveCustomerReplenishmentData,
 } from '../services/customersService';
-import { updateProductInSupabase, fetchProductsFromSupabase } from '../services/productsService';
+import { fetchProductsFromSupabase } from '../services/productsService';
 import { markCouponAsUsed, getLoyaltySettings } from '../services/loyaltyService';
 import { supabase } from '../lib/supabase';
 import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
 import CustomDropdown from './CustomDropdown';
 import CountryCodeDropdown from './CountryCodeDropdown';
 import {
-  ALLOWED_COMMUNES,
   detectCommuneFromAddress,
   CENTRAL_HUB,
   TOWN_COORDINATES,
@@ -60,15 +55,13 @@ import {
 } from '../services/googleMapsService';
 import {
   getDispatchZonesFromSupabase,
-  getDeliverySchedulesFromSupabase,
-  getSlotsForCity,
-  DEFAULT_DELIVERY_SCHEDULES,
   getUpcomingDeliveryDates,
   formatDeliveryDaysSummary,
-  WEEKDAYS,
   getLiveDispatchStatusFromSupabase,
   evaluateSmartDeliverySchedule,
 } from '../services/dispatchService';
+import { formatCLP } from '../utils/formatters';
+import CartSuccessStep from './cart/CartSuccessStep';
 
 // Helper para resolver imágenes de productos en el carrito y recomendaciones
 const resolveProductImage = (prod) => {
@@ -232,7 +225,7 @@ export default function CartDrawer({
     };
   }, [isOpen]);
 
-  const getItemStock = (item) => {
+  const getItemStock = useCallback((item) => {
     if (!item) return 10;
     // 1. Direct ID match
     if (item.id && liveStockMap[item.id] !== undefined) {
@@ -272,7 +265,7 @@ export default function CartDrawer({
       }
     }
     return typeof item.stock === 'number' ? item.stock : 10;
-  };
+  }, [liveStockMap, rawDbProducts]);
 
   // Auto-ajustar cantidades en el carrito al stock real disponible en bodega si excede
   useEffect(() => {
@@ -283,14 +276,14 @@ export default function CartDrawer({
         onUpdateQuantity(idx, avail);
       }
     });
-  }, [liveStockMap, cartItems.length]);
+  }, [liveStockMap, cartItems, getItemStock, onUpdateQuantity]);
 
   const hasOutOfStockItems = useMemo(() => {
     return cartItems.some((item) => {
       const avail = getItemStock(item);
       return avail <= 0 || item.quantity > avail;
     });
-  }, [cartItems, liveStockMap]);
+  }, [cartItems, getItemStock]);
 
   // Coupon state
   const [couponInput, setCouponInput] = useState('');
@@ -463,6 +456,18 @@ export default function CartDrawer({
     }
   };
 
+  const shippingAutofillRef = useRef(null);
+  shippingAutofillRef.current = {
+    phone,
+    recipientName,
+    address,
+    city,
+    depto,
+    deliveryReference,
+    email,
+    handlePhoneChange,
+  };
+
   // Auto-cargar datos del cliente guardados en perfil al entrar al paso de despacho
   useEffect(() => {
     if (isOpen && step === 'shipping') {
@@ -472,25 +477,26 @@ export default function CartDrawer({
           localStorage.getItem('patitas_pwa_session');
         if (raw) {
           const profile = JSON.parse(raw);
-          if (profile.phone && !phone) {
-            handlePhoneChange(profile.phone);
+          const cur = shippingAutofillRef.current;
+          if (profile.phone && !cur.phone) {
+            cur.handlePhoneChange(profile.phone);
           } else if (profile) {
-            if (!recipientName && (profile.name || profile.full_name)) {
+            if (!cur.recipientName && (profile.name || profile.full_name)) {
               setRecipientName(profile.name || profile.full_name);
             }
-            if (!address && profile.address) {
+            if (!cur.address && profile.address) {
               setAddress(profile.address);
             }
-            if (!city && profile.city) {
+            if (!cur.city && profile.city) {
               setCity(profile.city);
             }
-            if (!depto && (profile.depto || profile.dept)) {
+            if (!cur.depto && (profile.depto || profile.dept)) {
               setDepto(profile.depto || profile.dept);
             }
-            if (!deliveryReference && (profile.delivery_reference || profile.notes || profile.deliveryReference)) {
+            if (!cur.deliveryReference && (profile.delivery_reference || profile.notes || profile.deliveryReference)) {
               setDeliveryReference(profile.delivery_reference || profile.notes || profile.deliveryReference);
             }
-            if (!email && profile.email) {
+            if (!cur.email && profile.email) {
               setEmail(profile.email);
             }
           }
@@ -528,17 +534,10 @@ export default function CartDrawer({
     }
   };
 
-  // Delivery Schedules y estado en vivo de reparto ("En Reparto" vs "En Bodega") desde Supabase
-  const [deliverySchedules, setDeliverySchedules] = useState(DEFAULT_DELIVERY_SCHEDULES);
+  // Estado en vivo de reparto ("En Reparto" vs "En Bodega") desde Supabase
   const [isFleetOnRoute, setIsFleetOnRoute] = useState(false);
 
   useEffect(() => {
-    getDeliverySchedulesFromSupabase().then((schedules) => {
-      if (Array.isArray(schedules) && schedules.length > 0) {
-        setDeliverySchedules(schedules);
-      }
-    });
-
     const refreshLiveRouteStatus = () => {
       getLiveDispatchStatusFromSupabase().then((res) => {
         if (res && typeof res.isFleetOnRoute === 'boolean') {
@@ -549,20 +548,13 @@ export default function CartDrawer({
 
     refreshLiveRouteStatus();
 
-    const handleSchedulesUpdated = (e) => {
-      if (Array.isArray(e.detail)) {
-        setDeliverySchedules(e.detail);
-      }
-    };
     const handleLiveStatusUpdated = () => {
       refreshLiveRouteStatus();
     };
 
-    window.addEventListener('patitas_delivery_schedules_updated', handleSchedulesUpdated);
     window.addEventListener('patitas_dispatch_live_status_updated', handleLiveStatusUpdated);
     window.addEventListener('patitas_orders_updated', handleLiveStatusUpdated);
     return () => {
-      window.removeEventListener('patitas_delivery_schedules_updated', handleSchedulesUpdated);
       window.removeEventListener('patitas_dispatch_live_status_updated', handleLiveStatusUpdated);
       window.removeEventListener('patitas_orders_updated', handleLiveStatusUpdated);
     };
@@ -590,10 +582,25 @@ export default function CartDrawer({
     setFormError(null);
   };
 
+  const mpReturnFallbackRef = useRef(null);
+  mpReturnFallbackRef.current = {
+    subtotal: cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0),
+    recipientName,
+    user,
+    phone,
+    address,
+    city,
+    deliveryDate,
+    deliverySlot,
+    cartItems,
+    onClearCart,
+  };
+
   // Procesar URLs de retorno de Mercado Pago (Paso 3: success_url, failure_url, pending_url)
   // o verificar el estado en vivo si existe una orden pendiente en localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const fallbackCtx = mpReturnFallbackRef.current;
 
     const params = new URLSearchParams(window.location.search || '');
     const mpReturn = params.get('mp_return'); // 'success' | 'failure' | 'pending'
@@ -651,7 +658,7 @@ export default function CartDrawer({
             setCompletedOrder(restoredOrder);
             setStep('success');
             localStorage.removeItem('patitas_pending_mp_order');
-            if (onClearCart) onClearCart();
+            if (fallbackCtx.onClearCart) fallbackCtx.onClearCart();
             window.dispatchEvent(new Event('patitas_open_cart'));
 
             if (savedPendingOrder.id) {
@@ -724,16 +731,16 @@ export default function CartDrawer({
         }
       : {
           id: targetOrderId || 'PED-MP',
-          total: subtotal,
-          pointsEarned: Math.floor(subtotal / 1000),
-          recipientName: recipientName || user?.name || 'Cliente Web',
-          phone: phone || user?.phone || '',
-          customerId: user?.id || null,
-          address: address || user?.address || 'Dirección registrada',
-          city: city || user?.city || 'Puerto Varas',
+          total: fallbackCtx.subtotal,
+          pointsEarned: Math.floor(fallbackCtx.subtotal / 1000),
+          recipientName: fallbackCtx.recipientName || fallbackCtx.user?.name || 'Cliente Web',
+          phone: fallbackCtx.phone || fallbackCtx.user?.phone || '',
+          customerId: fallbackCtx.user?.id || null,
+          address: fallbackCtx.address || fallbackCtx.user?.address || 'Dirección registrada',
+          city: fallbackCtx.city || fallbackCtx.user?.city || 'Puerto Varas',
           deliveryDayText: 'Según programación',
-          deliveryDate: deliveryDate || '',
-          deliverySlot: deliverySlot || 'Horario programado',
+          deliveryDate: fallbackCtx.deliveryDate || '',
+          deliverySlot: fallbackCtx.deliverySlot || 'Horario programado',
           paymentMethod: 'Tarjeta Débito / Crédito (Mercado Pago)',
           paymentType: 'anticipado',
           specificMethod: 'tarjeta',
@@ -741,8 +748,8 @@ export default function CartDrawer({
           mpPaymentId: cleanPaymentId,
           mpOrderId: cleanMpOrderId,
           mpPaymentType: mpPaymentType && mpPaymentType !== 'null' ? mpPaymentType : null,
-          itemsCount: cartItems.length,
-          items: cartItems,
+          itemsCount: fallbackCtx.cartItems.length,
+          items: fallbackCtx.cartItems,
           hasFoodItem: false,
         };
 
@@ -750,8 +757,8 @@ export default function CartDrawer({
     setCompletedOrder(restoredOrder);
     setStep('success');
     localStorage.removeItem('patitas_pending_mp_order');
-    if (onClearCart) {
-      onClearCart();
+    if (fallbackCtx.onClearCart) {
+      fallbackCtx.onClearCart();
     }
     window.dispatchEvent(new Event('patitas_open_cart'));
 
@@ -787,14 +794,6 @@ export default function CartDrawer({
       setStep('cart');
     }
   }, [cartItems, step]);
-
-  const formatCLP = (price) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      maximumFractionDigits: 0,
-    }).format(price);
-  };
 
   const subtotal = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
@@ -1142,7 +1141,7 @@ export default function CartDrawer({
     try {
       // 1. Verificar si es un cupón del Club Patitas (PTS-XXXXX)
       if (cleanCode.startsWith('PTS-')) {
-        const { data: redemption, error: redErr } = await supabase
+        const { data: redemption } = await supabase
           .from('points_redemptions')
           .select('*')
           .eq('coupon_code', cleanCode)
@@ -3267,273 +3266,15 @@ Asunto: Pedido ${completedOrder?.id}`;
           {/* PASO 3: CONFIRMACIÓN DE COMPRA EXITOSA (MODERNA, SIN ALERT) */}
           {/* ========================================================= */}
           {step === 'success' && completedOrder && (
-            <div className="flex-1 overflow-y-auto p-5 space-y-4 flex flex-col justify-between">
-              <div className="space-y-4 animate-in fade-in duration-300">
-                
-                {/* Banner de Éxito */}
-                <div className="text-center py-4 px-2 space-y-2">
-                  <div className="w-14 h-14 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto text-2xl shadow-lg shadow-emerald-500/30">
-                    ✓
-                  </div>
-                  <h3 className="text-xl font-black text-slate-900">
-                    ¡Pedido Recibido con Éxito! 🐾
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Número de Orden:{' '}
-                    <span className="font-mono font-black text-[#D97706] bg-[#F5BA13]/20 px-2 py-0.5 rounded-md">
-                      {completedOrder.id}
-                    </span>
-                  </p>
-                </div>
-
-                {/* Resumen de Entrega */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                    <span className="text-slate-500">Destinatario:</span>
-                    <span className="font-bold text-slate-900">{completedOrder.recipientName}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                    <span className="text-slate-500">Dirección:</span>
-                    <span className="font-bold text-slate-900 text-right max-w-[200px] truncate">
-                      {completedOrder.address}, {completedOrder.city}
-                    </span>
-                  </div>
-
-                  {completedOrder.deliveryDate && (
-                    <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                      <span className="text-slate-500">Día de Entrega:</span>
-                      <span className="font-bold text-slate-900">{completedOrder.deliveryDate}</span>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                    <span className="text-slate-500">Ventana de Entrega:</span>
-                    <span className="font-bold text-emerald-800">{completedOrder.deliverySlot}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">Total:</span>
-                    <span className="font-black text-sm text-[#D97706]">
-                      {formatCLP(completedOrder.total)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Puntos Acumulados */}
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-emerald-600" />
-                    <span className="text-xs font-bold text-emerald-900">
-                      Puntos Club Patitas Ganados
-                    </span>
-                  </div>
-                  <span className="text-xs font-black text-emerald-700 bg-emerald-200/60 px-2 py-0.5 rounded-full">
-                    +{completedOrder.pointsEarned} Pts
-                  </span>
-                </div>
-
-                {/* Información según el método de pago seleccionado */}
-                {completedOrder.paymentMethod?.toLowerCase().includes('efectivo') ? (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 text-emerald-950 animate-in fade-in">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                        <Banknote className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
-                          <span>Pago Contra Entrega (Efectivo)</span>
-                        </h4>
-                        <p className="text-[11px] text-emerald-700 font-medium">
-                          Pagarás en efectivo al repartidor al recibir tu pedido.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-white border border-emerald-200/80 text-xs space-y-1.5">
-                      <div className="flex justify-between font-extrabold text-slate-800">
-                        <span>Total a pagar en efectivo:</span>
-                        <span className="text-emerald-700 font-black text-sm">{formatCLP(completedOrder.total)}</span>
-                      </div>
-                      {completedOrder.cashChangeNote && (
-                        <div className="text-[11px] text-slate-600 pt-1 border-t border-slate-100">
-                          <strong>Indicación de vuelto:</strong> {completedOrder.cashChangeNote}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : completedOrder.paymentMethod?.toLowerCase().includes('pos') ? (
-                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl space-y-2 text-purple-950 animate-in fade-in">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                        <CreditCard className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-black uppercase tracking-wider text-purple-950">
-                          Tarjeta al Recibir (Máquina POS)
-                        </h4>
-                        <p className="text-[11px] text-purple-700 font-medium">
-                          El repartidor llevará la máquina para cobrarte con tarjeta directamente en tu puerta.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : completedOrder.paymentMethod?.toLowerCase().includes('transferencia') ? (
-                  <div className="p-4 bg-teal-50 border border-teal-200 rounded-2xl space-y-3 animate-in fade-in">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-black text-teal-950 uppercase tracking-wider flex items-center gap-1.5">
-                        <Landmark className="w-4 h-4 text-[#D97706]" />
-                        <span>Datos para Transferir al Recibir</span>
-                      </h4>
-                      <button
-                        onClick={handleCopyBankData}
-                        className="text-[11px] font-bold text-[#D97706] hover:underline flex items-center gap-1 cursor-pointer"
-                      >
-                        {copiedBankData ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Copiado</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5" />
-                            <span>Copiar Datos</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    <div className="text-xs space-y-1 text-slate-700 font-medium font-mono">
-                      <div><strong className="font-sans">Banco:</strong> Banco de Chile</div>
-                      <div><strong className="font-sans">Tipo:</strong> Cuenta Corriente</div>
-                      <div><strong className="font-sans">N°:</strong> 00-123-45678-09</div>
-                      <div><strong className="font-sans">RUT:</strong> 77.892.451-2</div>
-                      <div><strong className="font-sans">Titular:</strong> Comercial Kira SpA</div>
-                      <div><strong className="font-sans">Email:</strong> pagos@patitasdelsur.cl</div>
-                      <div><strong className="font-sans">Asunto:</strong> Pedido {completedOrder.id}</div>
-                    </div>
-
-                    <a
-                      href={`https://wa.me/56953332492?text=Hola%20Patitas%20del%20Sur%2C%20adjunto%20comprobante%20de%20mi%20pedido%20${completedOrder.id}%20por%20${encodeURIComponent(formatCLP(completedOrder.total))}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-sm"
-                    >
-                      <MessageSquare className="w-4 h-4" />
-                      <span>Enviar Comprobante por WhatsApp</span>
-                    </a>
-                  </div>
-                ) : completedOrder.paymentStatus === 'pendiente' ? (
-                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-950 space-y-1.5 animate-in fade-in">
-                    <p className="font-bold flex items-center gap-1.5 text-amber-900">
-                      <Clock className="w-4 h-4 text-amber-600" />
-                      <span>Pago en Mercado Pago en Proceso</span>
-                    </p>
-                    <p className="text-[11px] text-amber-800">
-                      Tu pedido fue registrado y estamos esperando la confirmación final de tu pago por parte de Mercado Pago.
-                    </p>
-                    {(completedOrder.mpPaymentId || completedOrder.mpOrderId) && (
-                      <div className="pt-1 border-t border-amber-200/70 flex flex-wrap gap-2 text-[10px] font-mono text-amber-900">
-                        {completedOrder.mpPaymentId && (
-                          <span>Operación MP: #{completedOrder.mpPaymentId}</span>
-                        )}
-                        {completedOrder.mpOrderId && (
-                          <span>Orden MP: {completedOrder.mpOrderId}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-xs text-sky-950 space-y-1.5 animate-in fade-in">
-                    <p className="font-bold flex items-center gap-1.5 text-sky-900">
-                      <CreditCard className="w-4 h-4 text-sky-600" />
-                      <span>Pago con Mercado Pago Aprobado</span>
-                    </p>
-                    <p className="text-[11px] text-sky-700">
-                      Tu pago anticipado fue confirmado vía Mercado Pago y tu pedido ya está en preparación.
-                    </p>
-                    {(completedOrder.mpPaymentId || completedOrder.mpOrderId) && (
-                      <div className="pt-1 border-t border-sky-200/70 flex flex-wrap gap-2 text-[10px] font-mono text-sky-900">
-                        {completedOrder.mpPaymentId && (
-                          <span>Operación MP: #{completedOrder.mpPaymentId}</span>
-                        )}
-                        {completedOrder.mpOrderId && (
-                          <span>Orden MP: {completedOrder.mpOrderId}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 🥫 DESPENSA INTELIGENTE: PREGUNTAR FRECUENCIA SI HAY ALIMENTO */}
-                {completedOrder.hasFoodItem && (
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 via-teal-50/80 to-[#E6F4F1] border-2 border-[#F5BA13]/30 shadow-sm space-y-3 animate-in fade-in duration-300">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#F5BA13] text-[#1D1D1F] text-white flex items-center justify-center shrink-0 shadow-sm text-lg">
-                        🥫
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
-                            Despensa Inteligente
-                          </span>
-                          <span className="text-[10px] font-bold text-teal-700">1 solo clic</span>
-                        </div>
-                        <h4 className="text-xs sm:text-sm font-black text-slate-900 mt-1">
-                          ¿Cada cuánto tiempo sueles reponer el alimento seco en casa?
-                        </h4>
-                        <p className="text-[11px] text-slate-600 font-medium">
-                          Así tendremos listo tu próximo pedido habitual para que lo repitas sin complicaciones.
-                        </p>
-                      </div>
-                    </div>
-
-                    {replenishmentSaved ? (
-                      <div className="p-3 bg-white/95 rounded-xl border border-emerald-300 flex items-center gap-2.5 text-xs font-bold text-emerald-800 animate-in zoom-in-95 shadow-2xs">
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                        <span>¡Anotado! Te recordaremos reponer en <strong>{selectedReplenishFrequency} días</strong> y podrás pedir todo junto con 1 clic en tu perfil.</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                          {[15, 21, 30, 45, 60].map((days) => (
-                            <button
-                              key={days}
-                              type="button"
-                              onClick={() => handleSaveReplenishment(days)}
-                              className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
-                                selectedReplenishFrequency === days
-                                  ? 'bg-[#F5BA13] text-[#1D1D1F] text-white border-[#F5BA13] shadow-sm font-black scale-102'
-                                  : 'bg-white hover:bg-emerald-50/80 text-slate-700 border-slate-200/90 font-bold hover:border-[#F5BA13]/40'
-                              }`}
-                            >
-                              <div className="text-xs font-black">{days} días</div>
-                              <div className={`text-[9px] font-semibold ${selectedReplenishFrequency === days ? 'text-emerald-100' : 'text-slate-400'}`}>
-                                {days === 30 ? '⭐ Habitual' : days < 30 ? 'Quincenal' : 'Bimestral'}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                        <div className="text-center">
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            Toca los días para activar tu reposición automática sin cálculos manuales
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              </div>
-
-              {/* Botón de Finalizar */}
-              <button
-                onClick={handleCloseAndFinish}
-                className="w-full py-3.5 rounded-2xl bg-[#F5BA13] text-[#1D1D1F] hover:bg-[#10B981] text-white font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer mt-4"
-              >
-                <span>FINALIZAR Y SEGUIR EXPLORANDO</span>
-              </button>
-            </div>
+            <CartSuccessStep
+              completedOrder={completedOrder}
+              copiedBankData={copiedBankData}
+              onCopyBankData={handleCopyBankData}
+              replenishmentSaved={replenishmentSaved}
+              selectedReplenishFrequency={selectedReplenishFrequency}
+              onSaveReplenishment={handleSaveReplenishment}
+              onCloseAndFinish={handleCloseAndFinish}
+            />
           )}
 
         </div>

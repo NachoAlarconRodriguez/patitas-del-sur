@@ -1,30 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Award,
   Sparkles,
   Save,
   RefreshCw,
   Search,
-  Filter,
   Check,
   CheckCircle2,
-  Clock,
   Copy,
   Plus,
-  Minus,
   User,
   DollarSign,
   Ticket,
-  ShoppingBag,
   AlertCircle,
-  ExternalLink,
-  Users,
   Trophy,
   Phone,
-  ArrowUpDown,
   ChevronLeft,
   ChevronRight,
-  Sliders,
   Star,
   MessageCircle,
 } from 'lucide-react';
@@ -35,11 +27,11 @@ import {
   DEFAULT_LOYALTY_SETTINGS,
 } from '../../services/loyaltyService';
 import { updateCustomerPoints } from '../../services/customersService';
+import { isAdminCustomer, isAdminName } from '../../utils/adminAuth';
 
 export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
   // Configuración de reglas y niveles
   const [settings, setSettings] = useState(DEFAULT_LOYALTY_SETTINGS);
-  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
@@ -67,14 +59,11 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
 
   // Cargar configuración de fidelización desde Supabase
   const loadSettings = async () => {
-    setIsLoadingSettings(true);
     try {
       const data = await getLoyaltySettings();
       setSettings(data);
     } catch (err) {
       console.error('Error loading loyalty settings:', err);
-    } finally {
-      setIsLoadingSettings(false);
     }
   };
 
@@ -109,7 +98,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       } else {
         alert('Error al guardar: ' + res.error);
       }
-    } catch (err) {
+    } catch {
       alert('Error inesperado al guardar configuración.');
     } finally {
       setIsSavingSettings(false);
@@ -171,7 +160,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       } else {
         setAdjustErrorMsg('No se pudo actualizar los puntos.');
       }
-    } catch (err) {
+    } catch {
       setAdjustErrorMsg('Error en el servidor al actualizar puntos.');
     } finally {
       setIsAdjusting(false);
@@ -200,7 +189,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     return Number(activeTiers[activeTiers.length - 1].points) || 500;
   }, [activeTiers]);
 
-  const getCustomerTierInfo = (points) => {
+  const getCustomerTierInfo = useCallback((points) => {
     const pts = Number(points) || 0;
     const qualified = [...activeTiers].reverse().find((t) => pts >= t.points);
     const nextTier = activeTiers.find((t) => pts < t.points);
@@ -232,23 +221,11 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
       badgeIcon,
       canRedeem: !!qualified,
     };
-  };
+  }, [activeTiers]);
 
   // Filtrar administradores y cruzar con pedidos para que siempre estén todos los clientes reales y sus puntos
   const enrichedCustomers = useMemo(() => {
-    const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
-    const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
-    const isAdmin = (c) => {
-      if (!c) return false;
-      if (String(c.role || '').toLowerCase() === 'admin') return true;
-      const email = String(c.email || '').trim().toLowerCase();
-      if (email && adminEmails.includes(email)) return true;
-      const name = String(c.name || c.full_name || '').trim().toLowerCase();
-      if (name && adminNames.includes(name)) return true;
-      return false;
-    };
-
-    const baseList = (customers || []).filter((c) => !isAdmin(c));
+    const baseList = (customers || []).filter((c) => !isAdminCustomer(c));
     const knownNames = new Set(
       baseList.map((c) => String(c.name || c.full_name || '').trim().toLowerCase()).filter(Boolean)
     );
@@ -260,7 +237,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
     for (const o of validOrders) {
       const oName = String(o.customer || o.customer_name || '').trim();
       const normName = oName.toLowerCase();
-      if (!oName || normName === 'cliente patitas' || adminNames.includes(normName)) continue;
+      if (!oName || normName === 'cliente patitas' || isAdminName(normName)) continue;
       if ((o.customerId && knownIds.has(String(o.customerId))) || knownNames.has(normName)) continue;
 
       if (!extraCustomersMap.has(normName)) {
@@ -340,7 +317,7 @@ export default function LoyaltyAdminTab({ customers = [], orders = [] }) {
         calculatedTotalSpent,
       };
     });
-  }, [customers, orders, settings.pointsPerThousand, activeTiers]);
+  }, [customers, orders, settings.pointsPerThousand, getCustomerTierInfo]);
 
   // Estadísticas Calculadas
   const totalCustomerPoints = useMemo(() => {

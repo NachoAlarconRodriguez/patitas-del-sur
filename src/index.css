@@ -160,44 +160,6 @@ h4,
   padding-top: max(1rem, env(safe-area-inset-top, 1rem));
 }
 
-/* 2-Card Fullscreen Split Screen Mechanics (Opción 1: 50%/50% Fijo y Estable) */
-.split-hero-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  position: relative;
-}
-
-@media (min-width: 768px) {
-  .split-hero-container {
-    flex-direction: row;
-    height: 100%;
-  }
-}
-
-.split-card {
-  position: relative;
-  flex: 1 1 50%;
-  height: 100%;
-  overflow: hidden;
-  cursor: pointer;
-  /* Ancho 50% fijo y estable sin desplazamientos al hacer hover */
-}
-
-/* Internal Background Zoom & Lighting Effect on Hover */
-.split-card-bg {
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  background-position: center;
-  transition: transform 0.8s cubic-bezier(0.25, 1, 0.5, 1), filter 0.5s ease;
-}
-
-.split-card:hover .split-card-bg {
-  transform: scale(1.08);
-}
-
 /* Animated Moving Border for Product Card (Green to Black Gradient Beam) */
 @keyframes rotate-conic-border {
   0% {

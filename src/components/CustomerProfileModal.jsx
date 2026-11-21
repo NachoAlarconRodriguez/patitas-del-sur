@@ -82,9 +82,6 @@ export default function CustomerProfileModal({
   const [formData, setFormData] = useState({
     name: profileData?.name || profileData?.full_name || '',
     email: profileData?.email || '',
-    address: cleanInitialAddress,
-    dept: cleanInitialDept,
-    depto: cleanInitialDept,
     city: profileData?.city || '',
     notes: profileData?.notes || profileData?.delivery_reference || profileData?.deliveryReference || '',
     delivery_reference: profileData?.notes || profileData?.delivery_reference || profileData?.deliveryReference || '',
@@ -93,6 +90,7 @@ export default function CustomerProfileModal({
     ...profileData,
     address: cleanInitialAddress,
     dept: cleanInitialDept,
+    depto: cleanInitialDept,
   });
 
   const [isSaving, setIsSaving] = useState(false);

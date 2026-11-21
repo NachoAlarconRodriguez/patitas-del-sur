@@ -12,8 +12,8 @@ import { PRODUCTS } from '../data/mockData.js';
 export function cleanIngredientName(str) {
   if (!str || typeof str !== 'string') return '';
   return str
-    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F600}-\u{1F64F}\u{1F1E0}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{2388}-\u{2B55}]/gu, '')
-    .replace(/^[\s•\-\*\,\.]+/g, '')
+    .replace(/(?:[\p{Extended_Pictographic}\u{1F1E0}-\u{1F1FF}]|\uFE0F)/gu, '')
+    .replace(/^[\s•\-*,.]+/g, '')
     .trim();
 }
 
@@ -186,8 +186,6 @@ export async function updateProductInSupabase(productId, updates) {
         payload.main_protein = value || null;
       } else if (key === 'grainLevel' || key === 'grain_level' || key === 'gama') {
         payload.gama = value || 'free';
-      } else if (key === 'isVeterinary' || key === 'is_veterinary') {
-        payload.is_veterinary = Boolean(value);
       } else if (key === 'vetDetail' || key === 'vet_detail') {
         payload.vet_detail = value || null;
       } else if (key === 'lifeStage' || key === 'life_stage') {

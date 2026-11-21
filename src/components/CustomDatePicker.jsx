@@ -13,7 +13,7 @@ export default function CustomDatePicker({
   icon: Icon,
   value,
   onChange,
-  placeholder = "Seleccionar fecha...",
+  placeholder: _placeholder = "Seleccionar fecha...",
   showAgePresets = false,
   showTodayButton = true,
   className = "",

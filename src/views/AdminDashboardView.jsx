@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef, useCallback, useId } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useRef, useCallback, useId, lazy, Suspense } from 'react';
+import { Link } from 'react-router-dom';
 import SEOHead from '../components/SEOHead';
 import {
   Ticket,
@@ -26,32 +26,26 @@ import {
   Edit2,
   Trash2,
   Eye,
-  EyeOff,
   Pause,
-  Play,
   CheckCircle2,
   Clock,
   AlertTriangle,
   FileText,
   TrendingUp,
-  TrendingDown,
   ArrowUpRight,
   ArrowUpDown,
   Shield,
-  Store,
   MapPin,
   Phone,
   Mail,
   Calendar,
   Building2,
   Percent,
-  Settings,
   RefreshCw,
   Download,
   Check,
   Loader2,
   X,
-  XCircle,
   ChevronRight,
   ChevronLeft,
   ChevronUp,
@@ -61,31 +55,20 @@ import {
   Sparkles,
   Heart,
   Bell,
-  Scissors,
-  GraduationCap,
   Stethoscope,
   ExternalLink,
   Receipt,
   CreditCard,
   BarChart3,
-  PieChart,
   Layers,
   Lock,
-  ArrowLeft,
   MessageSquare,
-  Send,
   AlertCircle,
-  Target,
-  Radio,
-  Locate,
-  Navigation,
   Compass,
   Fuel,
   Wallet,
   SlidersHorizontal,
   Car,
-  Gauge,
-  Zap,
   Calculator,
   Image as ImageIcon,
   Upload,
@@ -94,14 +77,21 @@ import {
   Drumstick,
   Fish,
   Star,
-  Printer,
   Save,
 } from 'lucide-react';
-import { PRODUCTS, BRANDS } from '../data/mockData';
+import { PRODUCTS } from '../data/mockData';
 import CustomDropdown from '../components/CustomDropdown';
 import AdminDatePicker from '../components/AdminDatePicker';
-import AdminConveniosManager from './admin/AdminConveniosManager';
 import DispatchGoogleMap from '../components/DispatchGoogleMap';
+import AdminLoginScreen from './admin/modals/AdminLoginScreen.jsx';
+
+const AdminConveniosManager = lazy(() => import('./admin/AdminConveniosManager'));
+const LoyaltyAdminTab = lazy(() => import('./admin/LoyaltyAdminTab.jsx'));
+const RouteOptimizerModal = lazy(() => import('./admin/modals/RouteOptimizerModal.jsx'));
+const ProductSalesHistoryModal = lazy(() => import('./admin/modals/ProductSalesHistoryModal.jsx'));
+const InvoiceDetailModal = lazy(() => import('./admin/modals/InvoiceDetailModal.jsx'));
+const MercadoPagoConfigModal = lazy(() => import('./admin/modals/MercadoPagoConfigModal.jsx'));
+const PaymentAndCancelOrderModals = lazy(() => import('./admin/modals/PaymentAndCancelOrderModals.jsx'));
 import {
   getDispatchZonesFromSupabase,
   saveDispatchZonesToSupabase,
@@ -144,7 +134,6 @@ import {
   createConvenioCouponsInSupabase,
   deleteConvenioCouponFromSupabase,
 } from '../services/conveniosService.js';
-
 import {
   fetchPurchaseInvoicesFromSupabase,
   createPurchaseInvoiceInSupabase,
@@ -159,7 +148,7 @@ import {
   savePartnerInvestmentsToSupabase,
 } from '../services/financesService.js';
 import { supabase } from '../lib/supabase.js';
-import { areProductsSameGroup, cleanBaseProductName, extractProductFormat, resolveInventoryVariant } from '../utils/productVariants.js';
+import { cleanBaseProductName, extractProductFormat, resolveInventoryVariant } from '../utils/productVariants.js';
 import {
   getGooglePlacePredictions,
   getPlaceDetails,
@@ -167,1003 +156,50 @@ import {
   optimizeDeliveryRoute,
   detectCommuneFromAddress,
   CENTRAL_HUB,
-  ALLOWED_COMMUNES,
 } from '../services/googleMapsService.js';
-import LoyaltyAdminTab from './admin/LoyaltyAdminTab.jsx';
-
-// ==========================================
-// INITIAL MOCK DATASETS
-// ==========================================
-
-const ALLY_TYPE_OPTIONS = [
-  { value: 'peluqueria', label: '✂️ Peluquería & Spa' },
-  { value: 'veterinaria', label: '🏥 Clínica Veterinaria' },
-  { value: 'entrenamiento', label: '🐕 Adiestramiento / K9' },
-  { value: 'guarderia', label: '🏡 Guardería & Hotel' },
-];
-
-const INITIAL_COUPON_OPTIONS = [
-  { value: 5, label: '5 cupones' },
-  { value: 10, label: '10 cupones (Recomendado)' },
-  { value: 20, label: '20 cupones' },
-  { value: 50, label: '50 cupones' },
-];
-
-const INVOICE_PRODUCT_CATEGORIES = [
-  { value: 'Alimento Seco', label: '🥣 Alimento Seco' },
-  { value: 'Alimento Húmedo', label: '🥫 Alimento Húmedo (Latas/Pouch)' },
-  { value: 'Snacks Naturales', label: '🍖 Snacks & Premios' },
-  { value: 'Arena Sanitaria', label: '🏖️ Arena Sanitaria' },
-  { value: 'Farmacia & Salud', label: '💊 Farmacia & Suplementos' },
-  { value: 'Accesorios & Juguetes', label: '🎾 Accesorios & Juguetes' },
-  { value: 'Higiene & Cuidados', label: '🧴 Higiene & Cuidados' },
-  { value: 'Otro', label: '✨ Otro (Personalizado)' },
-];
-
-const POPULAR_MAPS_ADDRESSES = [
-  { address: 'San Francisco 416', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Av. Gramado 1240', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Costanera Vicente Pérez Rosales 1300', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Santa Rosa 575', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Walker Martínez 450', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Del Salvador 320', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Imperial 650', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Los Colonos 1100', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Pinto 240', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'San Pedro 350', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'San Ignacio 810', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Klenner 220', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Ruta 5 Sur Km 1012', city: 'Puerto Varas', region: 'Los Lagos' },
-  { address: 'Av. Vicente Pérez Rosales 820', city: 'Llanquihue', region: 'Los Lagos' },
-  { address: 'Bernardo O\'Higgins 310', city: 'Llanquihue', region: 'Los Lagos' },
-  { address: 'Ernesto Riquelme 450', city: 'Llanquihue', region: 'Los Lagos' },
-  { address: 'Av. Philippi 450', city: 'Frutillar', region: 'Los Lagos' },
-  { address: 'Av. Carlos Richter 280', city: 'Frutillar', region: 'Los Lagos' },
-  { address: 'Cristóbal Colón 120', city: 'Frutillar', region: 'Los Lagos' },
-  { address: 'Diego Portales 2000', city: 'Puerto Montt', region: 'Los Lagos' },
-  { address: 'Av. Angelmó 1850', city: 'Puerto Montt', region: 'Los Lagos' },
-  { address: 'Urmeneta 520', city: 'Puerto Montt', region: 'Los Lagos' },
-  { address: 'Guillermo Gallardo 340', city: 'Puerto Montt', region: 'Los Lagos' },
-  { address: 'Ruta 225 Km 42', city: 'Ensenada', region: 'Los Lagos' },
-  { address: 'Eleuterio Ramírez 900', city: 'Osorno', region: 'Los Lagos' },
-  { address: 'Av. Costanera Arturo Prat 500', city: 'Valdivia', region: 'Los Ríos' },
-  { address: 'Av. Alemania 0850', city: 'Temuco', region: 'Araucanía' },
-];
-
-const getMockOrderDate = (daysAgo = 0) => {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-};
-
-const getPetBirthdayDetails = (birthdateStr) => {
-  if (!birthdateStr) {
-    return { formatted: 'No registrada', shortDate: 'Sin fecha', fullDate: 'Sin fecha', isCurrentMonth: false, monthName: '' };
-  }
-  const parts = birthdateStr.split('-');
-  if (parts.length < 3) {
-    return { formatted: birthdateStr, shortDate: birthdateStr, fullDate: birthdateStr, isCurrentMonth: false, monthName: '' };
-  }
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-  const now = new Date();
-  const isCurrentMonth = month === now.getMonth();
-  const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-  const fullMonths = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-  return {
-    formatted: `${day} de ${fullMonths[month]} (${year})`,
-    shortDate: `${day} de ${months[month]}`,
-    fullDate: `${day} de ${fullMonths[month]}`,
-    isCurrentMonth,
-    day,
-    monthName: fullMonths[month],
-    year,
-  };
-};
+import { isAdminCustomer } from '../utils/adminAuth.js';
+import {
+  ALLY_TYPE_OPTIONS,
+  INITIAL_COUPON_OPTIONS,
+  INVOICE_PRODUCT_CATEGORIES,
+  SHIPPING_DISTRIBUTION_OPTIONS,
+  CHART_SLIDE_TABS,
+} from './admin/adminConstants.js';
+import {
+  formatCLP,
+  getChileDateString,
+  getChileTimeFormatted,
+  buildChileOrderIso,
+  formatCLPDate,
+  getYearMonthFromDate,
+  formatPeriodLabel,
+  getMockOrderDate,
+  getPetBirthdayDetails,
+  generateRandomCouponCode,
+  getProductUnitCostNetoTotal,
+  getProductUnitCostWithIva,
+  resolveInvoiceItems,
+  normalizePaymentMethod,
+  getOrderPaymentStatus,
+  getDynamicGreeting,
+  getProductImage,
+} from './admin/adminUtils.js';
+import {
+  renderPaymentMethodBadge,
+  renderPaymentCollectionBanner,
+} from './admin/adminPaymentUI.jsx';
 
 const INITIAL_ORDERS = [];
-
-
 const INITIAL_CUSTOMERS = [];
-
 const INITIAL_CONVENIOS = [];
-
-// Helper generator for unique single-use coupon codes (e.g. SWD-7K9P)
-const generateRandomCouponCode = (prefix = 'SWD-') => {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let randomPart = '';
-  for (let i = 0; i < 4; i++) {
-    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `${prefix}${randomPart}`;
-};
-
 const INITIAL_INVENTORY = [];
-
 const INITIAL_PURCHASE_INVOICES = [];
-
 const INITIAL_EXPENSES = [];
-
 const INITIAL_PARTNER_INVESTMENTS = [];
-
-const INVESTMENT_TYPE_OPTIONS = [
-  { id: 'capital_inicial', label: 'Capital Inicial', desc: 'Aporte fundacional para inicio de operaciones' },
-  { id: 'aumento_capital', label: 'Aumento de Capital', desc: 'Formalización de incremento societario' },
-];
-
-const SHIPPING_DISTRIBUTION_OPTIONS = [
-  {
-    value: 'value',
-    label: 'Proporcional al valor neto (Recomendado)',
-    desc: 'Distribuye según el porcentaje del valor neto de cada ítem',
-  },
-  {
-    value: 'units',
-    label: 'Por unidades (Equitativo)',
-    desc: 'Divide el flete en partes iguales por cada unidad de producto',
-  },
-];
-
 const INITIAL_DISPATCH_ZONES = [];
 const INITIAL_VEHICLES = DEFAULT_DISPATCH_VEHICLES;
 
-// Helper currency formatter (preserva ,5 cuando la división 50/50 de utilidad impar genera medios pesos)
-const formatCLP = (amount) => {
-  const num = Number(amount || 0);
-  const roundedHalf = Math.round(num * 2) / 2;
-  const isNegative = roundedHalf < 0;
-  const absVal = Math.abs(roundedHalf);
-  const intPart = Math.floor(absVal);
-  const hasHalf = Math.abs(absVal - intPart - 0.5) < 0.01;
-  const formattedInt = new Intl.NumberFormat('es-CL', {
-    maximumFractionDigits: 0,
-  }).format(intPart);
-  return `${isNegative ? '-' : ''}$${formattedInt}${hasHalf ? ',5' : ''}`;
-};
-
-// Helper para obtener la fecha actual en zona horaria de Chile (YYYY-MM-DD)
-const getChileDateString = (dateObj = new Date()) => {
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'America/Santiago',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(dateObj);
-  } catch {
-    const offsetMs = dateObj.getTime() - dateObj.getTimezoneOffset() * 60000;
-    return new Date(offsetMs).toISOString().split('T')[0];
-  }
-};
-
-// Helper para obtener la hora actual en zona horaria de Chile (ej: "11:05 p. m." / "23:05")
-const getChileTimeFormatted = (dateObj = new Date()) => {
-  try {
-    return dateObj.toLocaleTimeString('es-CL', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'America/Santiago',
-    });
-  } catch {
-    return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
-  }
-};
-
-// Helper para construir un ISO timestamp alineado con la fecha seleccionada y la hora actual de Chile
-const buildChileOrderIso = (dateStr) => {
-  const now = new Date();
-  const todayChile = getChileDateString(now);
-  if (!dateStr || dateStr === todayChile) {
-    return now.toISOString();
-  }
-  const [ordY, ordM, ordD] = String(dateStr).split('-').map(Number);
-  if (!ordY || !ordM || !ordD) return now.toISOString();
-  const localDate = new Date(
-    ordY,
-    ordM - 1,
-    ordD,
-    now.getHours(),
-    now.getMinutes(),
-    now.getSeconds(),
-    now.getMilliseconds()
-  );
-  return localDate.toISOString();
-};
-
-// Helper date formatter DD/MM/YYYY
-const formatCLPDate = (dateVal) => {
-  if (!dateVal) return '-';
-  const str = String(dateVal).trim();
-  if (str.includes('T')) {
-    const parsed = new Date(str);
-    if (!isNaN(parsed.getTime())) {
-      const chileIso = getChileDateString(parsed);
-      const parts = chileIso.split('-');
-      if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-  }
-  if (str.includes('-')) {
-    const parts = str.split('T')[0].split('-');
-    if (parts.length === 3 && parts[0].length === 4) {
-      return `${parts[2]}/${parts[1]}/${parts[0]}`;
-    }
-  }
-  return str;
-};
-
-// Helper universal para extraer YYYY-MM desde cualquier formato de fecha (ISO, YYYY-MM-DD, o español "22 Oct 2026")
-export const getYearMonthFromDate = (dateVal, createdAtVal) => {
-  const str = String(dateVal || createdAtVal || '').trim();
-  if (!str) return null;
-
-  // Si es un timestamp completo con T (UTC), convertir primero a fecha de Chile
-  if (str.includes('T')) {
-    const parsedTs = new Date(str);
-    if (!isNaN(parsedTs.getTime())) {
-      return getChileDateString(parsedTs).slice(0, 7);
-    }
-  }
-
-  // 1. Matches YYYY-MM-DD o YYYY-MM
-  const isoMatch = str.match(/^(\d{4})-(\d{2})/);
-  if (isoMatch) {
-    return `${isoMatch[1]}-${isoMatch[2]}`;
-  }
-
-  // 2. Si createdAtVal existe y coincide con YYYY-MM (considerando zona horaria de Chile si tiene T)
-  if (createdAtVal) {
-    const cStr = String(createdAtVal);
-    if (cStr.includes('T')) {
-      const parsedCreated = new Date(cStr);
-      if (!isNaN(parsedCreated.getTime())) {
-        return getChileDateString(parsedCreated).slice(0, 7);
-      }
-    }
-    const cMatch = cStr.match(/^(\d{4})-(\d{2})/);
-    if (cMatch) return `${cMatch[1]}-${cMatch[2]}`;
-  }
-
-  // 3. Formato en español tipo "22 Oct 2026", "22 oct. 2026", etc.
-  const lower = str.toLowerCase();
-  const yearMatch = lower.match(/(20\d\d)/);
-  const year = yearMatch ? yearMatch[1] : new Date().getFullYear().toString();
-
-  const monthMap = {
-    ene: '01', jan: '01',
-    feb: '02',
-    mar: '03',
-    abr: '04', apr: '04',
-    may: '05',
-    jun: '06',
-    jul: '07',
-    ago: '08', aug: '08',
-    sep: '09', set: '09',
-    oct: '10',
-    nov: '11',
-    dic: '12', dec: '12',
-  };
-
-  for (const [prefix, mm] of Object.entries(monthMap)) {
-    if (lower.includes(prefix)) {
-      return `${year}-${mm}`;
-    }
-  }
-
-  if (lower.includes('hoy') || lower.includes('ayer')) {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  }
-
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime())) {
-    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
-  }
-
-  return null;
-};
-
-// Helper para convertir YYYY-MM a etiqueta legible en español ("Octubre 2026")
-const formatPeriodLabel = (ym) => {
-  if (!ym || ym === 'todos') return 'Todo el Histórico';
-  const parts = String(ym).split('-');
-  if (parts.length < 2) return ym;
-  const [year, month] = parts;
-  const monthNames = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ];
-  const mIndex = parseInt(month, 10) - 1;
-  const name = monthNames[mIndex] || month;
-  return `${name} ${year}`;
-};
-
-// Helper centralizado: Costo Unitario Neto Total puesto en bodega (Producto Neto + Despacho/Flete Unitario Neto)
-const getProductUnitCostNetoTotal = (prod) => {
-  if (!prod) return 0;
-  const unitNeto = Number(prod.unitCostNeto ?? prod.unit_cost_neto) || 0;
-  const shippingUnitCost = Number(prod.shippingUnitCost ?? prod.shipping_unit_cost) || 0;
-  return unitNeto + shippingUnitCost;
-};
-
-// Helper centralizado: al Precio Unitario Neto y al Despacho Unitario Neto se les calcula el IVA (19%)
-// Si se pasa `order` y corresponde al lote histórico de la Factura #78954 (previo a Factura #81006 del 20/10/2026),
-// utiliza el prorrateo proporcional de transporte de la Factura #78954 ($20.084 neto / $23.900 c/IVA sobre $204.804 neto).
-const getProductUnitCostWithIva = (prod, order = null) => {
-  if (!prod) return 0;
-  const unitNeto = Number(prod.unitCostNeto ?? prod.unit_cost_neto) || 0;
-  let shippingUnitCost = Number(prod.shippingUnitCost ?? prod.shipping_unit_cost) || 0;
-
-  if (order && shippingUnitCost > 0) {
-    const orderId = String(order.id || order.order_number || '').trim();
-    const orderDate = String(order.date || order.created_at || '').slice(0, 10);
-    const isBatch78954 =
-      ['PED-0001', 'PED-0002', 'PED-0003', 'PED-0004'].includes(orderId) ||
-      (orderDate && orderDate < '2026-10-20');
-
-    if (isBatch78954) {
-      shippingUnitCost = Math.round((unitNeto / 204804) * 20084);
-    }
-  }
-
-  return Math.round(unitNeto * 1.19) + Math.round(shippingUnitCost * 1.19);
-};
-
-// Helper para resolver el listado ordenado de productos, formatos, unidades y costo unitario neto de una factura
-const resolveInvoiceItems = (inv, inventoryList = []) => {
-  if (!inv) return [];
-
-  const cleanInvNum = String(inv.invoiceNumber || inv.invoice_number || inv.id || '').trim();
-  const is81006 = cleanInvNum === '81006';
-  const is78954 = cleanInvNum === '78954';
-  const hasShipping = Boolean(
-    inv.hasShippingCost ||
-    inv.has_shipping_cost ||
-    (parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) || 0) > 0 ||
-    is81006 ||
-    is78954
-  );
-  const shippingNeto =
-    parseFloat(inv.shippingCostNeto || inv.shipping_cost_neto) ||
-    (is81006 ? 23277 : is78954 ? 20084 : 0);
-  const shippingMethod = inv.shippingDistributionMethod || inv.shipping_distribution_method || 'value';
-
-  // 1. Si la factura ya trae un array estructurado de ítems
-  if (Array.isArray(inv.items) && inv.items.length > 0) {
-    const totalUnits = inv.items.reduce((acc, it) => acc + (parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1), 0);
-    const totalNetoMercaderia = inv.items.reduce((acc, it) => {
-      const q = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
-      const u = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
-      return acc + q * u;
-    }, 0);
-
-    return inv.items.map((it, idx) => {
-      const qty = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
-      const supplierUnitNeto = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
-      let unitShippingCost = parseInt(it.unitShippingCost || it.shippingUnitCost || it.shippingCostPerUnit, 10) || 0;
-
-      if (!unitShippingCost && hasShipping && shippingNeto > 0) {
-        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
-          const itemNeto = qty * supplierUnitNeto;
-          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
-        } else if (totalUnits > 0) {
-          unitShippingCost = Math.round(shippingNeto / totalUnits);
-        }
-      }
-
-      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
-      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
-
-      return {
-        index: idx + 1,
-        name: it.fullProdTitle || it.cleanName || it.productName || it.name || `Ítem #${idx + 1}`,
-        format: it.format || '10 kg',
-        qty,
-        supplierUnitNeto,
-        unitShippingCost,
-        unitShippingCostWithIva,
-        unitCostWithIva,
-        landedUnitNeto: supplierUnitNeto,
-        unitNeto: supplierUnitNeto,
-        subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
-      };
-    });
-  }
-
-  // 2. Casos estructurados verificados para Facturas #94258, #78954 y #81006
-  if (cleanInvNum === '94258') {
-    const raw94258 = [
-      { name: 'Arena Fit Carbón', format: '10 kg', qty: 1, supplierUnitNeto: 8125 },
-      { name: 'Stay Happy Arena Aglutinante Café', format: '10 kg', qty: 1, supplierUnitNeto: 8581 },
-      { name: 'Fit Adulto Raza Pequeña', format: '10 kg', qty: 2, supplierUnitNeto: 16467 },
-      { name: 'Fit Adulto Raza Pequeña', format: '3 kg', qty: 2, supplierUnitNeto: 7982 },
-      { name: 'Fit Adulto Raza Mediana y Grande', format: '20 kg', qty: 1, supplierUnitNeto: 30095 },
-      { name: 'Fit Cachorro', format: '10 kg', qty: 1, supplierUnitNeto: 17564 },
-      { name: 'Fit Cachorro', format: '3 kg', qty: 1, supplierUnitNeto: 9081 },
-      { name: 'Fit Gato Adulto', format: '11 kg', qty: 2, supplierUnitNeto: 22359 },
-      { name: 'Nomade Adulto Raza Mediana y Grande', format: '20 kg', qty: 2, supplierUnitNeto: 30378 },
-      { name: 'Nomade Adulto Raza Pequeña', format: '10 kg', qty: 1, supplierUnitNeto: 16105 },
-    ];
-    return raw94258.map((it, idx) => {
-      const qty = it.qty;
-      const supplierUnitNeto = it.supplierUnitNeto;
-      const unitShippingCost = 0;
-      const unitShippingCostWithIva = 0;
-      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19);
-      return {
-        index: idx + 1,
-        name: it.name,
-        format: it.format,
-        qty,
-        supplierUnitNeto,
-        unitShippingCost,
-        unitShippingCostWithIva,
-        unitCostWithIva,
-        landedUnitNeto: supplierUnitNeto,
-        unitNeto: supplierUnitNeto,
-        subtotalNeto: qty * supplierUnitNeto,
-      };
-    });
-  }
-
-  if (cleanInvNum === '78954') {
-    const raw78954 = [
-      { name: 'Alpha Spirit Lata Cordero & Pera', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Conejo & Platano', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Salmón & Piña', format: '400 gr', qty: 1, supplierUnitNeto: 1757 },
-      { name: 'Acana Free Run Poultry', format: '11,35 kg', qty: 2, supplierUnitNeto: 48410 },
-      { name: 'Acana Freshwater Fish', format: '11,35 kg', qty: 2, supplierUnitNeto: 50478 },
-    ];
-    const totalUnits = 8;
-    const totalNetoMercaderia = 204804;
-
-    return raw78954.map((it, idx) => {
-      const qty = it.qty;
-      const supplierUnitNeto = it.supplierUnitNeto;
-      let unitShippingCost = 0;
-
-      if (hasShipping && shippingNeto > 0) {
-        if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
-          const itemNeto = qty * supplierUnitNeto;
-          unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
-        } else if (totalUnits > 0) {
-          unitShippingCost = Math.round(shippingNeto / totalUnits);
-        }
-      }
-
-      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
-      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
-
-      return {
-        index: idx + 1,
-        name: it.name,
-        format: it.format,
-        qty,
-        supplierUnitNeto,
-        unitShippingCost,
-        unitShippingCostWithIva,
-        unitCostWithIva,
-        landedUnitNeto: supplierUnitNeto,
-        unitNeto: supplierUnitNeto,
-        subtotalNeto: qty * supplierUnitNeto,
-      };
-    });
-  }
-
-  if (cleanInvNum === '81006') {
-    const raw81006 = [
-      { name: 'Alpha Spirit Lata Vacuno & Melón', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Cordero & Pera', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Conejo & Platano', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Pato & Manzana Verde', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
-      { name: 'Alpha Spirit Lata Salmón & Piña', format: '400 gr', qty: 2, supplierUnitNeto: 1757 },
-      { name: 'Acana Free Run Poultry', format: '11,35 kg', qty: 2, supplierUnitNeto: 48410 },
-      { name: 'Acana Freshwater Fish', format: '11,35 kg', qty: 2, supplierUnitNeto: 50478 },
-      { name: 'Acana Light & Fit', format: '11,35 kg', qty: 1, supplierUnitNeto: 50672 },
-    ];
-    const totalUnits = 15;
-    const totalNetoMercaderia = 266018;
-
-    return raw81006.map((it, idx) => {
-      const qty = it.qty;
-      const supplierUnitNeto = it.supplierUnitNeto;
-      let unitShippingCost = hasShipping && shippingNeto > 0
-        ? (shippingMethod === 'value' && totalNetoMercaderia > 0
-          ? Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * shippingNeto) / qty)
-          : Math.round(shippingNeto / totalUnits))
-        : Math.round((((qty * supplierUnitNeto) / totalNetoMercaderia) * 23277) / qty);
-
-      const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
-      const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
-
-      return {
-        index: idx + 1,
-        name: it.name,
-        format: it.format,
-        qty,
-        supplierUnitNeto,
-        unitShippingCost,
-        unitShippingCostWithIva,
-        unitCostWithIva,
-        landedUnitNeto: supplierUnitNeto,
-        unitNeto: supplierUnitNeto,
-        subtotalNeto: qty * supplierUnitNeto,
-      };
-    });
-  }
-
-  // 2.5 Si se guardó en caché local de ítems de factura
-  try {
-    const cached = localStorage.getItem('patitas_invoice_items_' + (inv.invoiceNumber || inv.id));
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const totalUnits = parsed.reduce((acc, it) => acc + (parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1), 0);
-        const totalNetoMercaderia = parsed.reduce((acc, it) => {
-          const q = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
-          const u = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
-          return acc + q * u;
-        }, 0);
-
-        return parsed.map((it, idx) => {
-          const qty = parseInt(it.quantityReceived || it.qty || it.quantity, 10) || 1;
-          const supplierUnitNeto = parseInt(it.supplierUnitNeto || it.unitCostNeto || it.unitNeto || it.cost, 10) || 0;
-          let unitShippingCost = parseInt(it.unitShippingCost || it.shippingUnitCost || it.shippingCostPerUnit, 10) || 0;
-
-          if (!unitShippingCost && hasShipping && shippingNeto > 0) {
-            if (shippingMethod === 'value' && totalNetoMercaderia > 0) {
-              const itemNeto = qty * supplierUnitNeto;
-              unitShippingCost = Math.round(((itemNeto / totalNetoMercaderia) * shippingNeto) / qty);
-            } else if (totalUnits > 0) {
-              unitShippingCost = Math.round(shippingNeto / totalUnits);
-            }
-          }
-
-          const unitShippingCostWithIva = Math.round(unitShippingCost * 1.19);
-          const unitCostWithIva = Math.round(supplierUnitNeto * 1.19) + unitShippingCostWithIva;
-
-          return {
-            index: idx + 1,
-            name: it.fullProdTitle || it.cleanName || it.productName || it.name || `Ítem #${idx + 1}`,
-            format: it.format || '10 kg',
-            qty,
-            supplierUnitNeto,
-            unitShippingCost,
-            unitShippingCostWithIva,
-            unitCostWithIva,
-            landedUnitNeto: supplierUnitNeto,
-            unitNeto: supplierUnitNeto,
-            subtotalNeto: it.subtotalNeto ? parseInt(it.subtotalNeto, 10) : qty * supplierUnitNeto,
-          };
-        });
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // 3. Descomponer y reconstruir desde la cadena product_name respetando variantes por formato (ej. 3 kg vs 10 kg)
-  const rawNames = (inv.productName || inv.product_name || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (rawNames.length === 0) {
-    const fallbackQty = inv.quantityReceived || inv.quantity_received || inv.itemsCount || 1;
-    const fallbackNeto = inv.totalNeto || inv.total_neto || 0;
-    const fallbackUnit = inv.unitCostNeto || inv.unit_cost_neto || (fallbackQty > 0 ? Math.round(fallbackNeto / fallbackQty) : 0);
-    const unitShippingCost = hasShipping && shippingNeto > 0 && fallbackQty > 0 ? Math.round(shippingNeto / fallbackQty) : 0;
-    const unitCostWithIva = Math.round(fallbackUnit * 1.19) + unitShippingCost;
-    return [
-      {
-        index: 1,
-        name: 'Mercadería y reposición de bodega',
-        format: 'Formato Estándar',
-        qty: fallbackQty,
-        supplierUnitNeto: fallbackUnit,
-        unitShippingCost,
-        unitCostWithIva,
-        landedUnitNeto: fallbackUnit,
-        unitNeto: fallbackUnit,
-        subtotalNeto: fallbackNeto,
-      },
-    ];
-  }
-
-  // Contar ocurrencias de nombres limpios en la lista de la factura
-  const counts = {};
-  rawNames.forEach((n) => {
-    let clean = n.trim();
-    if (clean.toLowerCase() === 'fit cachorr') clean = 'Fit Cachorro';
-    counts[clean] = (counts[clean] || 0) + 1;
-  });
-
-  const expectedTotalUnits = parseInt(inv.quantityReceived || inv.quantity_received || inv.itemsCount, 10) || 0;
-  const expectedTotalNeto = parseFloat(inv.totalNeto || inv.total_neto) || 0;
-
-  let itemsParsed = [];
-  Object.entries(counts).forEach(([name, countQty]) => {
-    const allMatches = (inventoryList || []).filter((p) => {
-      const pName = (p.name || '').toLowerCase().trim();
-      const nName = name.toLowerCase().trim();
-      return pName === nName || pName.includes(nName) || nName.includes(pName);
-    });
-
-    // Si hay múltiples formatos del mismo producto (ej. Fit Adulto Raza Pequeña 3 kg y 10 kg) y el nombre aparece varias veces en la factura,
-    // separar cada formato como su propio ítem independiente en vez de fusionarlos en uno solo
-    if (allMatches.length > 1 && countQty >= allMatches.length) {
-      allMatches.forEach((matchedProd, mIdx) => {
-        const unitNeto = Number(matchedProd.unitCostNeto || matchedProd.unit_cost_neto) || 0;
-        const format = Array.isArray(matchedProd.weights)
-          ? matchedProd.weights[0]
-          : (matchedProd.format || '10 kg');
-        const assignedQty = mIdx === 0 ? countQty - (allMatches.length - 1) : 1;
-        itemsParsed.push({
-          name: matchedProd.name || name,
-          format,
-          qty: assignedQty,
-          supplierUnitNeto: unitNeto,
-          unitNeto,
-          subtotalNeto: assignedQty * unitNeto,
-        });
-      });
-    } else {
-      const matched = allMatches[0];
-      const unitNeto = matched
-        ? (Number(matched.unitCostNeto || matched.unit_cost_neto) || 0)
-        : (Number(inv.unitCostNeto || inv.unit_cost_neto) || 8500);
-      const format = matched
-        ? (Array.isArray(matched.weights) ? matched.weights[0] : (matched.format || matched.weights || '10 kg'))
-        : '10 kg';
-
-      itemsParsed.push({
-        name,
-        format,
-        qty: countQty,
-        supplierUnitNeto: unitNeto,
-        unitNeto,
-        subtotalNeto: countQty * unitNeto,
-      });
-    }
-  });
-
-  // Reconciliación si la factura registra más unidades totales que los nombres únicos
-  const currentUnitsSum = itemsParsed.reduce((s, it) => s + it.qty, 0);
-  if (expectedTotalUnits > currentUnitsSum && expectedTotalNeto > 0) {
-    const unitsDiff = expectedTotalUnits - currentUnitsSum;
-    const currentNetoSum = itemsParsed.reduce((s, it) => s + (it.qty * it.supplierUnitNeto), 0);
-    const netoDiff = expectedTotalNeto - currentNetoSum;
-
-    if (netoDiff > 0 && unitsDiff > 0) {
-      const sortedByCost = [...itemsParsed].sort((a, b) => b.supplierUnitNeto - a.supplierUnitNeto);
-      let remainingUnits = unitsDiff;
-      for (const target of sortedByCost) {
-        if (remainingUnits <= 0) break;
-        if (target.supplierUnitNeto > 0) {
-          const canAdd = Math.min(remainingUnits, Math.round(netoDiff / target.supplierUnitNeto));
-          if (canAdd > 0) {
-            target.qty += canAdd;
-            target.subtotalNeto = target.qty * target.supplierUnitNeto;
-            remainingUnits -= canAdd;
-          }
-        }
-      }
-    }
-  }
-
-  const finalTotalUnits = itemsParsed.reduce((s, it) => s + it.qty, 0);
-  const finalTotalNeto = itemsParsed.reduce((s, it) => s + (it.qty * it.supplierUnitNeto), 0);
-
-  return itemsParsed.map((it, idx) => {
-    let unitShippingCost = 0;
-    if (hasShipping && shippingNeto > 0) {
-      if (shippingMethod === 'value' && finalTotalNeto > 0) {
-        unitShippingCost = Math.round(((it.subtotalNeto / finalTotalNeto) * shippingNeto) / it.qty);
-      } else if (finalTotalUnits > 0) {
-        unitShippingCost = Math.round(shippingNeto / finalTotalUnits);
-      }
-    }
-    const landedUnitNeto = it.supplierUnitNeto + unitShippingCost;
-    return {
-      index: idx + 1,
-      name: it.name,
-      format: it.format,
-      qty: it.qty,
-      supplierUnitNeto: it.supplierUnitNeto,
-      unitShippingCost,
-      landedUnitNeto,
-      unitNeto: landedUnitNeto || it.supplierUnitNeto,
-      subtotalNeto: it.qty * it.supplierUnitNeto,
-    };
-  });
-};
-
-// Normalizador oficial de Medios de Pago según requerimiento
-const normalizePaymentMethod = (pm) => {
-  if (!pm) return 'Web';
-  const s = String(pm).trim().toLowerCase();
-  if (s === 'web' || s === 'webpay' || s.includes('webpay') || s.includes('online')) return 'Web';
-  if (
-    s === 'tarjeta' ||
-    s.includes('tarjeta') ||
-    s.includes('débito') ||
-    s.includes('debito') ||
-    s.includes('crédito') ||
-    s.includes('credito') ||
-    s.includes('mercado pago') ||
-    s.includes('mercadopago')
-  ) {
-    return 'Tarjeta';
-  }
-  if (s === 'efectivo' || s.includes('efectivo')) return 'Efectivo';
-  if (s === 'transferencia' || s.includes('transferencia') || s.includes('bci') || s.includes('santander') || s.includes('banco')) {
-    return 'Transferencia';
-  }
-  return 'Web';
-};
-
-const renderPaymentMethodBadge = (pm) => {
-  const norm = normalizePaymentMethod(pm);
-  switch (norm) {
-    case 'Web':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
-          <Globe className="w-3 h-3 text-[#D97706] shrink-0" />
-          <span>Botón Web</span>
-        </span>
-      );
-    case 'Tarjeta':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FAF8F4] text-[#78350F] border border-[#EAECEF]">
-          <CreditCard className="w-3 h-3 text-[#D97706] shrink-0" />
-          <span>Tarjeta Web</span>
-        </span>
-      );
-    case 'Efectivo':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-          <Banknote className="w-3 h-3 text-emerald-600 shrink-0" />
-          <span>Efectivo</span>
-        </span>
-      );
-    case 'Transferencia':
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
-          <Landmark className="w-3 h-3 text-amber-600 shrink-0" />
-          <span>Transferencia</span>
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#F8FAFC] text-slate-600 border border-[#EAECEF]">
-          <span>{pm || 'Web'}</span>
-        </span>
-      );
-  }
-};
-
-// Obtiene el estado detallado y consistente del pago de una orden
-const getOrderPaymentStatus = (order) => {
-  if (!order) {
-    return {
-      norm: 'Web',
-      isPaid: false,
-      shouldCollect: true,
-      statusText: '⚠️ Cobrar en entrega',
-      badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/90',
-      actionBadgeText: 'Cobrar',
-      actionBadgeColor: 'text-amber-700 bg-amber-50 border-amber-200',
-    };
-  }
-
-  const norm = normalizePaymentMethod(order.paymentMethod);
-  const pmLower = String(order.paymentMethod || '').toLowerCase();
-  const psLower = String(order.paymentStatus || '').toLowerCase();
-  const isPaidStatus = psLower === 'pagado';
-  const isExplicitlyPending = psLower === 'pendiente';
-  const isExplicitlyPaidOnline = order.isPaidOnline === true && !isExplicitlyPending;
-
-  // Si es Webpay / Tarjeta Web anticipada (salvo que el admin lo haya marcado explícitamente como pendiente)
-  const isWebCard =
-    ((norm === 'Tarjeta' && !pmLower.includes('contra entrega') && !pmLower.includes('pos')) || norm === 'Web') &&
-    !isExplicitlyPending;
-
-  // Si está pagado
-  const isPaid = isPaidStatus || isExplicitlyPaidOnline || isWebCard;
-  const shouldCollect = !isPaid;
-
-  let statusText = '';
-  let badgeColor = '';
-  let actionBadgeText = 'Cobrar';
-  let actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
-
-  if (norm === 'Transferencia') {
-    if (isPaid) {
-      statusText = '✓ Pagado Transferencia';
-      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
-      actionBadgeText = 'No cobrar';
-      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    } else {
-      statusText = '⏳ Transferencia pendiente';
-      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
-      actionBadgeText = 'Por verificar';
-      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    }
-  } else if (isWebCard) {
-    if (isPaid) {
-      statusText = '✓ Pagado Web';
-      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
-      actionBadgeText = 'No cobrar';
-      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    } else {
-      statusText = '⏳ Pago Web pendiente';
-      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
-      actionBadgeText = 'Pendiente Web';
-      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    }
-  } else if (norm === 'Efectivo') {
-    if (isPaid) {
-      statusText = '✓ Pagado Efectivo';
-      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
-      actionBadgeText = 'No cobrar';
-      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    } else {
-      statusText = '⚠️ Cobrar en entrega';
-      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
-      actionBadgeText = 'Cobrar efectivo';
-      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    }
-  } else {
-    // POS u otro
-    if (isPaid) {
-      statusText = '✓ Pagado POS';
-      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
-      actionBadgeText = 'No cobrar';
-      actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
-    } else {
-      statusText = '⚠️ Cobrar con POS';
-      badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
-      actionBadgeText = 'Cobrar con POS';
-      actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
-    }
-  }
-
-  return {
-    norm,
-    isPaid,
-    shouldCollect,
-    statusText,
-    badgeColor,
-    actionBadgeText,
-    actionBadgeColor,
-  };
-};
-
-// Determina si el pedido fue o será pagado online mediante el botón de pago de la web
-const isOrderPaidOnline = (order) => {
-  return !getOrderPaymentStatus(order).shouldCollect;
-};
-
-// Banner visual de cobro/no cobro para el repartidor (PWA)
-const renderPaymentCollectionBanner = (order, isCompact = false) => {
-  if (!order) return null;
-  const paymentInfo = getOrderPaymentStatus(order);
-
-  if (!paymentInfo.shouldCollect) {
-    const detailText =
-      paymentInfo.norm === 'Transferencia'
-        ? 'TRANSFERENCIA ACREDITADA · NO COBRAR AL CLIENTE'
-        : 'PAGADO EN WEB · NO COBRAR AL CLIENTE';
-
-    return (
-      <div
-        className={`flex items-center gap-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold shadow-2xs ${isCompact ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1.5 text-xs'
-          }`}
-      >
-        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 stroke-[2.5]" />
-        <span className="truncate">{detailText}</span>
-      </div>
-    );
-  }
-
-  const collectText =
-    paymentInfo.norm === 'Transferencia'
-      ? `TRANSFERENCIA PENDIENTE · CONFIRMAR COMPROBANTE (${formatCLP(order.total)})`
-      : `COBRAR AL ENTREGAR: ${formatCLP(order.total)} (${paymentInfo.norm})`;
-
-  return (
-    <div
-      className={`flex items-center gap-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 font-extrabold shadow-2xs ${isCompact ? 'px-2 py-1 text-[10px]' : 'px-2.5 py-1.5 text-xs'
-        }`}
-    >
-      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 stroke-[2.5]" />
-      <span className="truncate">{collectText}</span>
-    </div>
-  );
-};
-
-
-// Subpestañas / Cápsulas para navegar directamente los 7 gráficos del Dashboard
-const CHART_SLIDE_TABS = [
-  { id: 0, label: 'Ventas', icon: DollarSign },
-  { id: 1, label: 'Pedidos', icon: ShoppingBag },
-  { id: 2, label: 'Comunas', icon: MapPin },
-  { id: 3, label: 'Modalidad', icon: Truck },
-  { id: 4, label: 'Top Productos', icon: Award },
-  { id: 5, label: 'Convenios', icon: Handshake },
-  { id: 6, label: 'Horarios', icon: Flame },
-];
-
-
-// 14 Frases motivacionales y cariñosas que representan el espíritu de Patitas del Sur (ciclo rotativo de 14 días)
-const MOTIVATIONAL_PHRASES = [
-  "Cada bolsa entregada lleva el amor y la pureza de los ríos y bosques del sur a un hogar feliz. 🏔️🐾",
-  "Nutrir con ingredientes reales es el acto de amor más noble que podemos regalar a nuestros peludos. 🐟❤️",
-  "Hoy es un gran día para llenar platos con salud, vitalidad y sonrisas de cuatro patas. ✨🐶",
-  "Nuestra pasión nace en la Patagonia: alimentar con honestidad, cuidar con el corazón. 🌿🌲",
-  "Detrás de cada pedido hay una familia que confía en nosotros para ver a su compañero saltar de alegría. 🐾🏡",
-  "El salmón fresco y las praderas limpias no son solo ingredientes, son nuestra promesa de bienestar animal. 🌊🐕",
-  "Un perro sano y un gato juguetón son el mejor testimonio de un trabajo hecho con amor y dedicación. 🐱✨",
-  "Que hoy la fuerza de la naturaleza austral inspire cada despacho y cada conversación con nuestros tutores. 🏔️🚀",
-  "Amar a las mascotas es elegir lo mejor para ellas todos los días, sin atajos ni rellenos artificiales. 🥩🐾",
-  "Transformamos la nutrición en momentos de felicidad compartida en cada rincón de Chile. 🇨🇱❤️",
-  "La lealtad infinita de nuestras mascotas merece lo más puro de nuestra tierra patagónica. 🐶🌲",
-  "Pequeños cambios en su alimentación crean vidas más largas, saludables y llenas de juegos. 🏃‍♂️🐾",
-  "Cuidar de Kira, Jack y miles de peludos es el motor que llena de energía a Patitas del Sur cada mañana. 🐾☀️",
-  "Conectando la magia del sur con el corazón de cada familia. ¡Excelente jornada para todo el equipo! 🏔️✨",
-];
-
-// Saludo dinámico según la hora del sistema
-const getDynamicGreeting = (user, adminEmail) => {
-  const hour = new Date().getHours();
-  let name = 'Ignacio';
-  if (user && user.name) {
-    name = user.name.split(' ')[0];
-  } else if (adminEmail) {
-    const prefix = adminEmail.split('@')[0];
-    name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
-  }
-
-  if (hour >= 5 && hour < 12) {
-    return `¡Buenos días, ${name}! ☀️`;
-  } else if (hour >= 12 && hour < 20) {
-    return `¡Buenas tardes, ${name}! 🌤️`;
-  } else {
-    return `¡Buenas noches, ${name}! 🌙`;
-  }
-};
-
-// Frase del día basada en el día del año (ciclo de 14 días rotativo)
-const getDailyMotivationalQuote = () => {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  const diffDays = Math.floor((now - startOfYear) / (1000 * 60 * 60 * 24));
-  const dayIndex = ((diffDays % 14) + 14) % 14;
-  return {
-    quote: MOTIVATIONAL_PHRASES[dayIndex],
-    dayNumber: dayIndex + 1,
-  };
-};
-
-// Helper to resolve high-res product packshots
-const getProductImage = (itemName = '') => {
-  const lower = itemName.toLowerCase();
-  if (lower.includes('pollo') || lower.includes('chicken')) return '/images/bravery_chicken.jpg';
-  if (lower.includes('cordero') || lower.includes('lamb')) return '/images/bravery_lamb.jpg';
-  if (lower.includes('salmón') || lower.includes('salmon') || lower.includes('bravery')) return '/images/bravery_salmon.jpg';
-  if (lower.includes('trucha') || lower.includes('patagonia')) return '/images/cat_food_tuna.png';
-  if (lower.includes('urinary') || lower.includes('dr. pet') || lower.includes('dr pet')) return '/images/cat_food_tuna.png';
-  if (lower.includes('ciervo') || lower.includes('deshidratado')) return '/images/dog_food_ingredients.png';
-  if (lower.includes('hueso') || lower.includes('recreativo')) return '/images/dog_kibble_detail.png';
-  if (lower.includes('omega') || lower.includes('suplemento')) return '/images/dog_food_salmon.png';
-  return '/images/bravery_salmon.jpg';
-};
-
 export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
-  const navigate = useNavigate();
-
   // Nombre del Administrador en sesión
   const currentAdminName = user?.name || user?.user_metadata?.full_name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerta' : 'Ignacio Alarcón');
 
@@ -1212,9 +248,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // Order Day Filter for PWA Mobile Dispatchers ('todos' | 'hoy')
   const [orderDayFilter, setOrderDayFilter] = useState('todos');
 
-  // Frase del día activa
-  const dailyQuote = useMemo(() => getDailyMotivationalQuote(), []);
-
   // Active Tab: 'dashboard' | 'pedidos' | 'clientes' | 'convenios' | 'inventario' | 'finanzas' | 'despachos'
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -1232,9 +265,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Estado para expandir/colapsar tarjetas completas de pedidos en la PWA (por defecto todas contraídas)
   const [expandedOrders, setExpandedOrders] = useState({});
-
-  // Estado para desplegar listado exclusivo de productos con alerta de stock crítico
-  const [isCriticalStockExpanded, setIsCriticalStockExpanded] = useState(false);
 
   // Datasets State
   const [orders, setOrders] = useState(INITIAL_ORDERS);
@@ -1564,16 +594,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         const dbCustomers = await fetchAllCustomersForAdmin();
         if (!isMounted) return;
         if (dbCustomers && dbCustomers.length > 0) {
-          const adminEmails = ['ialarconr.684@gmail.com', 'alamirohuertac@hotmail.com', 'admin@patitasdelsur.cl'];
-          const adminNames = ['ignacio alarcón', 'ignacio alarcon', 'alamiro huerto', 'alamiro huerta'];
-          const nonAdminCustomers = dbCustomers.filter((c) => {
-            if (String(c.role || 'cliente').toLowerCase() === 'admin') return false;
-            const email = String(c.email || '').trim().toLowerCase();
-            if (email && adminEmails.includes(email)) return false;
-            const name = String(c.full_name || c.name || '').trim().toLowerCase();
-            if (name && adminNames.includes(name)) return false;
-            return true;
-          });
+          const nonAdminCustomers = dbCustomers.filter((c) => !isAdminCustomer(c));
 
           const mapped = nonAdminCustomers.map((c) => {
             const rawPets = Array.isArray(c.pets) ? c.pets : [];
@@ -1925,7 +946,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
     showToast(`Estado de pago actualizado a ${newPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente'} en Pedido ${orderId}`);
   };
-  const [convenioFilter, setConvenioFilter] = useState('todos');
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('todos'); // 'todos' | 'combustible' | 'packaging' | 'fijo' | 'mantenimiento' | 'servicios' | 'notaria'
   const [financesSubTab, setFinancesSubTab] = useState('resumen'); // 'resumen' | 'gastos' | 'ingresos' | 'f29'
   const [gastosTabFilter, setGastosTabFilter] = useState('todos'); // 'todos' | 'facturas' | 'operacionales'
@@ -1940,8 +960,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const f29PeriodFilter = financesPeriodFilter;
-  const setF29PeriodFilter = setFinancesPeriodFilter;
 
   // Navegación de meses: solo meses pasados y mes actual (bloqueo estricto a meses futuros)
   const handlePrevPeriodMonth = () => {
@@ -2017,11 +1035,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       { value: 'disponible', label: `✓ Stock Óptimo (${okCount})` },
       { value: 'bajo', label: `⚠️ Stock Bajo (${lowCount})` },
     ];
-  }, [inventory]);
-
-  // Lista exclusiva de productos que tienen alerta de stock crítico
-  const criticalStockProducts = useMemo(() => {
-    return inventory.filter((p) => p.stock <= (p.minStock || 5) || p.status === 'stock_bajo');
   }, [inventory]);
 
   // Estados de ordenamiento de columnas de inventario
@@ -2260,138 +1273,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [selectedFromMaps, setSelectedFromMaps] = useState(false);
   const mapsSearchTimerRef = useRef(null);
   const mapsSearchReqIdRef = useRef(0);
-  const orderMapsSearchTimerRef = useRef(null);
-  const orderMapsSearchReqIdRef = useRef(0);
-
-  // Estado para editar la dirección de entrega de un pedido existente con Google Maps API
-  const [isEditingOrderAddress, setIsEditingOrderAddress] = useState(false);
-  const [orderAddressEditQuery, setOrderAddressEditQuery] = useState('');
-  const [orderAddressEditCity, setOrderAddressEditCity] = useState('Frutillar');
-  const [orderAddressEditResults, setOrderAddressEditResults] = useState([]);
-  const [showOrderMapsDropdown, setShowOrderMapsDropdown] = useState(false);
-  const [isSearchingOrderMaps, setIsSearchingOrderMaps] = useState(false);
-
-  useEffect(() => {
-    setIsEditingOrderAddress(false);
-    setShowOrderMapsDropdown(false);
-  }, [selectedOrderModal?.id]);
-
-  const handleOrderAddressMapsSearch = (val) => {
-    setOrderAddressEditQuery(val);
-    if (orderMapsSearchTimerRef.current) {
-      clearTimeout(orderMapsSearchTimerRef.current);
-    }
-
-    if (!val || val.trim().length < 2) {
-      setOrderAddressEditResults([]);
-      setShowOrderMapsDropdown(false);
-      setIsSearchingOrderMaps(false);
-      return;
-    }
-
-    setIsSearchingOrderMaps(true);
-    setShowOrderMapsDropdown(true);
-    const reqId = ++orderMapsSearchReqIdRef.current;
-
-    orderMapsSearchTimerRef.current = setTimeout(async () => {
-      try {
-        const results = await getGooglePlacePredictions(val);
-        if (orderMapsSearchReqIdRef.current === reqId) {
-          setOrderAddressEditResults(results);
-        }
-      } catch {
-        if (orderMapsSearchReqIdRef.current === reqId) {
-          setOrderAddressEditResults([]);
-        }
-      } finally {
-        if (orderMapsSearchReqIdRef.current === reqId) {
-          setIsSearchingOrderMaps(false);
-        }
-      }
-    }, 200);
-  };
-
-  const handleSaveOrderAddress = async (orderId, newAddress, newCity) => {
-    const cleanAddr = (newAddress || '').trim();
-    if (!cleanAddr) {
-      showToast('⚠️ Ingresa una dirección válida');
-      return;
-    }
-    const cleanCity = (newCity || selectedOrderModal?.city || 'Frutillar').trim();
-    const newDeliveryZone = `Entrega ${cleanCity}`;
-
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, address: cleanAddr, city: cleanCity, deliveryZone: newDeliveryZone }
-          : o
-      )
-    );
-
-    if (selectedOrderModal?.id === orderId) {
-      setSelectedOrderModal((prev) => ({
-        ...prev,
-        address: cleanAddr,
-        city: cleanCity,
-        deliveryZone: newDeliveryZone,
-      }));
-    }
-
-    setIsEditingOrderAddress(false);
-    setShowOrderMapsDropdown(false);
-
-    try {
-      await supabase
-        .from('orders')
-        .update({
-          address: cleanAddr,
-          city: cleanCity,
-          delivery_zone: newDeliveryZone,
-        })
-        .eq('id', orderId);
-      window.dispatchEvent(new Event('patitas_orders_updated'));
-    } catch (err) {
-      console.warn('Error actualizando dirección en Supabase:', err);
-    }
-
-    showToast(`📍 Dirección actualizada: ${cleanAddr}, ${cleanCity}`);
-  };
-
-  const handleSelectOrderMapsAddress = async (item) => {
-    const typedQuery = (orderAddressEditQuery || '').trim();
-    const typedNumberMatch = typedQuery.match(/\b(\d+[a-zA-Z]?)\b/);
-    let streetName = item.mainText || item.address || item.fullAddress;
-    let cityName =
-      item.city ||
-      detectCommuneFromAddress(item.fullAddress || item.address) ||
-      orderAddressEditCity ||
-      selectedOrderModal?.city ||
-      'Frutillar';
-
-    if (item.placeId && item.source === 'google') {
-      try {
-        const details = await getPlaceDetails(item.placeId);
-        if (details) {
-          streetName = details.street || streetName;
-          cityName = details.city || cityName;
-        }
-      } catch (err) {
-        console.warn('Google Place details error:', err);
-      }
-    }
-
-    if (typedNumberMatch && streetName && !new RegExp(`\\b${typedNumberMatch[1]}\\b`).test(streetName)) {
-      streetName = `${streetName} ${typedNumberMatch[1]}`.trim();
-    }
-
-    setOrderAddressEditQuery(streetName);
-    setOrderAddressEditCity(cityName);
-    setShowOrderMapsDropdown(false);
-
-    if (selectedOrderModal?.id) {
-      await handleSaveOrderAddress(selectedOrderModal.id, streetName, cityName);
-    }
-  };
 
   // Route Optimizer Modal State & Live Driver GPS Origin ($0 API cost via navigator.geolocation)
   const [isRouteOptimizerModalOpen, setIsRouteOptimizerModalOpen] = useState(false);
@@ -2712,10 +1593,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // Al abrir el modal, sincronizar automáticamente con el socio en sesión activa o predeterminado
   useEffect(() => {
     if (isAddInvestmentModalOpen) {
-      const activePartner = (newInvestmentForm.partnerName || user?.name || user?.fullName || (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerta' : 'Ignacio Alarcón')).trim();
+      const defaultPartner = (
+        user?.name ||
+        user?.fullName ||
+        (user?.email?.toLowerCase().includes('alamiro') ? 'Alamiro Huerta' : 'Ignacio Alarcón')
+      ).trim();
       setNewInvestmentForm((prev) => ({
         ...prev,
-        partnerName: prev.partnerName || activePartner,
+        partnerName: prev.partnerName || defaultPartner,
         amount: '',
         date: getChileDateString(),
         investmentType: 'capital_inicial',
@@ -2873,8 +1758,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const totalEff = vehicles.reduce((sum, v) => sum + (parseFloat(v.efficiencyKmPerL) || 12), 0);
     const avgEfficiency = (totalEff / count).toFixed(1);
 
-    const names = vehicles.slice(0, 2).map((v) => v.brand || 'Auto').join(' y ');
-
     return {
       count,
       avgCostPerKm,
@@ -2893,8 +1776,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   }, [vehicles]);
 
   // Google Maps Radial Delivery State
-  const mapType = 'streets';
-  const [mapZoomLevel, setMapZoomLevel] = useState(1);
   const [simulatedAddress, setSimulatedAddress] = useState('Alerce Norte, Puerto Varas');
   const [simulatedDistanceKm, setSimulatedDistanceKm] = useState(11.5);
   const [selectedConfigZoneId, setSelectedConfigZoneId] = useState(null);
@@ -3186,15 +2067,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     showToast('Gasto eliminado del registro contable.');
   };
 
-  const handlePartnerRutChange = (e) => {
-    const rawVal = e.target.value;
-    const formattedVal = formatRutLive(rawVal, newInvestmentForm.partnerRut);
-    setNewInvestmentForm((prev) => ({
-      ...prev,
-      partnerRut: formattedVal,
-    }));
-  };
-
   const handleSaveNewInvestment = (e) => {
     e.preventDefault();
     const cleanAmount = parseInt(String(newInvestmentForm.amount).replace(/\D/g, ''), 10) || 0;
@@ -3387,7 +2259,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           deliveredByName: adminName,
           deliveredAt: deliveryTimestamp,
         }));
-      } catch (e) { }
+      } catch {
+        // Ignorar error de almacenamiento local
+      }
     }
 
     // 1. Manejo de Stock en Bodega:
@@ -3697,7 +2571,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           deliveredByName: adminName,
           deliveredAt: deliveryTimestamp,
         }));
-      } catch (e) { }
+      } catch {
+        // Ignorar error de almacenamiento local
+      }
 
       const baseOrderNotes = String(order?.notes || 'Pedido registrado en el panel')
         .replace(/\s*\|\s*Repartidor:\s*[^|\n]+/gi, '')
@@ -5285,7 +4161,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
 
-    const prodNameNorm = normalize(product.name);
     const prodIdNorm = String(product.id || '').trim();
     const prodSkuNorm = String(product.sku || '').trim().toLowerCase();
 
@@ -5626,18 +4501,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       handleDeleteZone(targetZone.id);
     }
   };
-
-  // Vehículo principal y métricas de consumo de combustible
-  const activeVehicle = useMemo(() => {
-    return vehicles.find((v) => v.isDefault) || vehicles[0] || null;
-  }, [vehicles]);
-
-  const activeVehicleCostPerKm = useMemo(() => {
-    if (!activeVehicle || !activeVehicle.efficiencyKmPerL || activeVehicle.efficiencyKmPerL <= 0) return 0;
-    const price = Number(activeVehicle.fuelPricePerL) || 0;
-    const eff = Number(activeVehicle.efficiencyKmPerL) || 1;
-    return Math.round(price / eff);
-  }, [activeVehicle]);
 
   const handleOpenCreateVehicleModal = () => {
     setVehicleModalForm({
@@ -6768,110 +5631,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     });
   }, [customers]);
 
-  // Zona de despacho calculada dinámicamente en base a KM
-  const simulatedZoneResult = useMemo(() => {
-    if (!dispatchZones || dispatchZones.length === 0) {
-      return { baseFee: 0, name: 'Sin zona configurada', freeThreshold: 0, radiusMaxKm: 0 };
-    }
-    const d = parseFloat(simulatedDistanceKm) || 0;
-    const sorted = [...dispatchZones].sort((a, b) => (a.radiusMaxKm || 0) - (b.radiusMaxKm || 0));
-    const found = sorted.find((z) => d <= (z.radiusMaxKm ?? 999)) || sorted[sorted.length - 1];
-    return found || { baseFee: 0, name: 'Sin zona configurada', freeThreshold: 0, radiusMaxKm: 0 };
-  }, [simulatedDistanceKm, dispatchZones]);
-
   // =========================================================================
   // VIEW 1: LIGHT & WARM AUTHENTICATION SCREEN IF NOT AUTHENTICATED
   // =========================================================================
   if (!isAdminAuthenticated) {
     return (
-      <div className="finset-admin min-h-screen bg-[#F8FAFC] text-[#111827] flex items-center justify-center p-4 relative overflow-hidden font-sans">
-        <SEOHead
-          title="Acceso Administración"
-          canonical="/admin"
-          noindex={true}
-        />
-        {/* Subtle FinSet Mint Ambient Glow */}
-        <div className="absolute top-1/4 -left-24 w-96 h-96 rounded-full bg-[#FDE68A]/35 blur-[110px] pointer-events-none" />
-        <div className="absolute bottom-1/4 -right-24 w-96 h-96 rounded-full bg-[#D97706]/10 blur-[110px] pointer-events-none" />
-
-        <div className="max-w-md w-full relative z-10">
-          <div className="mb-6 flex items-center justify-between">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-[#D97706] transition-colors bg-white border border-[#EAECEF] px-4 py-2 rounded-full shadow-2xs"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 text-[#D97706]" />
-              <span>Volver a la tienda</span>
-            </Link>
-
-            <span className="text-[11px] font-bold text-[#D97706] bg-[#FEF3C7] border border-[#FDE68A] px-3 py-1 rounded-full">
-              Acceso restringido
-            </span>
-          </div>
-
-          <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-8 sm:p-10 space-y-6">
-            <div className="text-center space-y-3">
-              <div className="w-14 h-14 rounded-full bg-[#1D1D1F] mx-auto flex items-center justify-center shadow-sm">
-                <Shield className="w-7 h-7 text-[#FDE68A]" />
-              </div>
-              <h1 className="text-2xl sm:text-[26px] font-extrabold text-[#111827] tracking-tight">
-                Panel de administración
-              </h1>
-              <p className="text-xs text-slate-400 font-medium leading-relaxed">
-                Control central de operaciones, pedidos, clientes CRM, convenios y finanzas de Patitas del Sur.
-              </p>
-            </div>
-
-            {authError && (
-              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
-                <span>{authError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  Correo de administrador
-                </label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="admin@patitasdelsur.cl"
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-[#111827] text-sm focus:outline-none focus:bg-white transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                  Contraseña de seguridad
-                </label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-[#111827] text-sm focus:outline-none focus:bg-white transition-colors"
-                  />
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-full bg-[#D97706] hover:bg-[#B45309] text-white font-bold text-xs shadow-sm shadow-[#D97706]/25 transition-all cursor-pointer active:scale-98 mt-2"
-              >
-                Iniciar sesión
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
+      <AdminLoginScreen
+        adminEmail={adminEmail}
+        setAdminEmail={setAdminEmail}
+        adminPassword={adminPassword}
+        setAdminPassword={setAdminPassword}
+        authError={authError}
+        onSubmit={handleLoginSubmit}
+      />
     );
   }
 
@@ -6879,7 +5651,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // VIEW 2: FINSET BENTO ADMIN PORTAL WITH PILL SIDEBAR MENU
   // =========================================================================
   const pendingOrdersCount = orders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length;
-  const lowStockCount = inventory.filter((p) => p.stock <= p.minStock).length;
 
   return (
     <div className="finset-admin h-screen bg-[#F8FAFC] text-[#111827] flex font-sans antialiased overflow-hidden">
@@ -10410,24 +9181,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           {/* TAB 4: CONVENIOS (Entidades Locales: Veterinarias, Adiestramiento, Spa)    */}
           {/* ========================================================================= */}
           {activeTab === 'convenios' && (
-            <AdminConveniosManager
-              convenios={convenios}
-              setIsAddAgreementModalOpen={setIsAddAgreementModalOpen}
-              handleToggleConvenio={handleToggleConvenio}
-              handleDeleteConvenio={handleDeleteConvenio}
-              setSelectedConvenioForCoupons={setSelectedConvenioForCoupons}
-              handleShareCouponsWhatsApp={handleShareCouponsWhatsApp}
-            />
+            <Suspense fallback={<div className="p-8 text-center text-xs font-semibold text-slate-400">Cargando convenios...</div>}>
+              <AdminConveniosManager
+                convenios={convenios}
+                setIsAddAgreementModalOpen={setIsAddAgreementModalOpen}
+                handleToggleConvenio={handleToggleConvenio}
+                handleDeleteConvenio={handleDeleteConvenio}
+                setSelectedConvenioForCoupons={setSelectedConvenioForCoupons}
+                handleShareCouponsWhatsApp={handleShareCouponsWhatsApp}
+              />
+            </Suspense>
           )}
 
           {/* ========================================================================= */}
           {/* TAB 4.5: CLUB PATITAS & FIDELIZACIÓN (Premios en Dinero & Auditoría)     */}
           {/* ========================================================================= */}
           {activeTab === 'fidelizacion' && (
-            <LoyaltyAdminTab
-              customers={customers}
-              orders={orders}
-            />
+            <Suspense fallback={<div className="p-8 text-center text-xs font-semibold text-slate-400">Cargando fidelización...</div>}>
+              <LoyaltyAdminTab
+                customers={customers}
+                orders={orders}
+              />
+            </Suspense>
           )}
 
           {/* ========================================================================= */}
@@ -14442,200 +13217,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* MODAL: OPTIMIZADOR DE RUTAS MULTIPARADA (Google Maps - FinSet Bento UI)   */}
       {/* ========================================================================= */}
       {isRouteOptimizerModalOpen && optimizedRouteData && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
-          onClick={() => setIsRouteOptimizerModalOpen(false)}
-        >
-          <div
-            className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-[#EAECEF] text-[#111827] overflow-hidden flex flex-col max-h-[90vh] font-sans"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="p-5 sm:p-6 bg-white border-b border-[#EAECEF] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-2xl bg-[#FEF3C7] border border-[#FDE68A]/60 flex items-center justify-center text-[#D97706] shrink-0">
-                  <GoogleMapsIcon className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base sm:text-lg font-bold text-[#111827] tracking-tight flex items-center gap-2">
-                    <span>Ruta óptima de despacho</span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/60 text-[10px] font-bold">
-                      Google Maps
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Secuencia inteligente ordenada para menor consumo de combustible
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsRouteOptimizerModalOpen(false)}
-                className="w-9 h-9 rounded-full bg-[#F8FAFC] hover:bg-slate-100 border border-[#EAECEF] text-slate-500 hover:text-[#111827] flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Quick Metrics Bar */}
-            <div className="grid grid-cols-3 gap-2.5 px-5 sm:px-6 py-3.5 bg-[#F8FAFC] border-b border-[#EAECEF] text-xs shrink-0">
-              <div className="p-3 rounded-2xl bg-white border border-[#EAECEF]">
-                <span className="text-[11px] font-semibold text-slate-500 block">Paradas</span>
-                <span className="text-base font-extrabold text-[#111827] mt-0.5 block">
-                  {optimizedRouteData.optimizedOrders.length} domicilios
-                </span>
-              </div>
-              <div className="p-3 rounded-2xl bg-white border border-[#EAECEF]">
-                <span className="text-[11px] font-semibold text-slate-500 block">Distancia aprox.</span>
-                <span className="text-base font-extrabold text-[#D97706] mt-0.5 block">
-                  ~{optimizedRouteData.totalDistanceKm} km
-                </span>
-              </div>
-              <div className="p-3 rounded-2xl bg-white border border-[#EAECEF]">
-                <span className="text-[11px] font-semibold text-slate-500 block">Costo de la API</span>
-                <span className="text-base font-extrabold text-[#78350F] mt-0.5 block">
-                  $0 CLP (Gratis)
-                </span>
-              </div>
-            </div>
-
-            {/* Stops Timeline (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-3">
-              {/* Origin Hub Card */}
-              <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FEF3C7]/70 border border-[#FDE68A]/70 text-xs">
-                <div className="w-8 h-8 rounded-full bg-[#D97706] text-white font-bold text-xs flex items-center justify-center shrink-0">
-                  🏢
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-bold text-[#78350F] text-xs">
-                      Punto de partida (Bodega central)
-                    </span>
-                    <span className="text-[10px] font-bold text-[#D97706] bg-white px-2.5 py-0.5 rounded-full border border-[#FDE68A]">
-                      Inicio
-                    </span>
-                  </div>
-                  <p className="font-bold text-[#111827] mt-0.5">
-                    {CENTRAL_HUB.name}
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    {CENTRAL_HUB.address}
-                  </p>
-                </div>
-              </div>
-
-              {/* Stop Sequence */}
-              <div className="relative pl-4 space-y-3 before:absolute before:left-7.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-[#EAECEF]">
-                {optimizedRouteData.optimizedOrders.map((order, idx) => (
-                  <div
-                    key={order.id || idx}
-                    className="relative flex items-start gap-3 p-3.5 rounded-2xl bg-white border border-[#EAECEF] hover:border-[#FDE68A] transition-all text-xs"
-                  >
-                    {/* Badge Number */}
-                    <div className="w-7 h-7 rounded-full bg-[#D97706] text-white font-bold text-xs flex items-center justify-center shrink-0 z-10 ring-4 ring-white">
-                      {order.stopNumber}
-                    </div>
-
-                    {/* Order Details */}
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className="font-bold text-[#111827] truncate block text-xs">
-                            {order.customer}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            Pedido #{order.id}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-bold text-[#D97706] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full border border-[#FDE68A]/60 shrink-0">
-                          +{order.legDistanceKm} km
-                        </span>
-                      </div>
-
-                      <div className="flex items-start gap-1.5 text-slate-600 text-[11px]">
-                        <MapPin className="w-3.5 h-3.5 text-[#D97706] shrink-0 mt-0.5" />
-                        <span className="truncate">
-                          {order.address}, <strong className="text-[#111827]">{order.city || 'Puerto Varas'}</strong>
-                        </span>
-                      </div>
-
-                      {order.items && order.items.length > 0 && (
-                        <div className="text-[10px] text-slate-500 truncate pt-0.5">
-                          📦 {order.items.map((it) => `${it.quantity}x ${it.name}`).join(', ')}
-                        </div>
-                      )}
-
-                      <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px]">
-                        <span className="font-bold text-[#111827] tabular-nums">
-                          Total: ${Number(order.total || 0).toLocaleString('es-CL')}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {order.phone && (
-                            <a
-                              href={`https://wa.me/${order.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${order.customer}! Te contactamos de Patitas del Sur, tu pedido #${order.id} va en camino a ${order.address}. 🐾`)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2.5 py-0.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold border border-emerald-200/80 transition-colors flex items-center gap-1"
-                              title="Avisar por WhatsApp"
-                            >
-                              <WhatsAppIcon className="w-3 h-3" />
-                              <span>WhatsApp</span>
-                            </a>
-                          )}
-                          <a
-                            href={getSingleOrderNavigationUrl(order)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2.5 py-0.5 rounded-full bg-[#F8FAFC] hover:bg-[#FEF3C7] text-[#111827] hover:text-[#D97706] font-semibold border border-[#EAECEF] transition-colors flex items-center gap-1"
-                            title="Navegar a esta parada en Google Maps"
-                          >
-                            <GoogleMapsIcon className="w-3 h-3" />
-                            <span>Solo este</span>
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Modal Footer / CTAs */}
-            <div className="p-4 sm:p-5 bg-[#F8FAFC] border-t border-[#EAECEF] flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(optimizedRouteData.googleMapsUrl);
-                  showToast('📋 ¡Enlace de ruta copiado al portapapeles! Puedes enviarlo por WhatsApp al repartidor.');
-                }}
-                className="w-full sm:w-auto px-4 py-2.5 rounded-full bg-white hover:bg-slate-50 text-[#111827] border border-[#EAECEF] text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5 text-[#D97706]" />
-                <span>Copiar enlace de ruta</span>
-              </button>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsRouteOptimizerModalOpen(false)}
-                  className="px-4 py-2.5 rounded-full bg-white hover:bg-slate-50 text-slate-600 border border-[#EAECEF] text-xs font-semibold transition-all cursor-pointer"
-                >
-                  Cerrar
-                </button>
-                <a
-                  href={optimizedRouteData.googleMapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-full bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <GoogleMapsIcon className="w-4 h-4 shrink-0" />
-                  <span>Iniciar ruta multiparada</span>
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <RouteOptimizerModal
+            isOpen={isRouteOptimizerModalOpen}
+            optimizedRouteData={optimizedRouteData}
+            onClose={() => setIsRouteOptimizerModalOpen(false)}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
 
       {/* ========================================================================= */}
@@ -15380,8 +13969,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           if (filter === 'gatos') return raw.includes('gato') || raw === 'cat' || raw === 'cats';
           return true;
         };
-
-        const currentSelectedProduct = catalogProducts.find((p) => p.id === selectedProductToAdd) || catalogProducts[0];
 
         const extractChilePhone9 = (rawVal) => {
           const digits = String(rawVal || '').replace(/\D/g, '');
@@ -21370,728 +19957,33 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* ======================================================= */}
       {/* POP-UP: DETALLE DE VENTAS Y GRÁFICOS POR PRODUCTO       */}
       {/* ======================================================= */}
-      {selectedProductSalesModal && (() => {
-        const prod =
-          inventory.find((p) => p.id === selectedProductSalesModal.id) ||
-          selectedProductSalesModal;
-        const analytics = getProductSalesAnalytics(prod);
-        if (!analytics) return null;
-
-        const unitCostNeto = Number(prod.unitCostNeto) || 0;
-        const shippingUnitNeto = Number(prod.shippingUnitCost) || 0;
-        const totalUnitCostNeto = getProductUnitCostNetoTotal(prod);
-        const shippingUnitWithIva = Math.round(shippingUnitNeto * 1.19);
-        const unitCostWithIva = getProductUnitCostWithIva(prod);
-        const salePrice = Number(prod.salePrice) || 0;
-        const unitProfit = salePrice - unitCostWithIva;
-        const unitMarginPct = salePrice > 0 ? Math.round((unitProfit / salePrice) * 100) : 0;
-        const totalSkuNetValue = (Number(prod.stock) || 0) * totalUnitCostNeto;
-        const formatLabel = prod.format || extractProductFormat(prod);
-
-        const handleOpenEditFromModal = () => {
-          setSelectedProductSalesModal(null);
-          setEditingProduct({
-            ...prod,
-            images: Array.isArray(prod.images) ? prod.images : [],
-            tagline: prod.tagline || '',
-            description: prod.description || prod.tagline || '',
-            badge: prod.badge || '',
-            benefits: Array.isArray(prod.benefits) ? prod.benefits : [],
-            ingredients: Array.isArray(prod.ingredients)
-              ? prod.ingredients.map(cleanIngredientName).filter(Boolean)
-              : (typeof prod.ingredients === 'string' && prod.ingredients.trim()
-                ? prod.ingredients.split(',').map(cleanIngredientName).filter(Boolean)
-                : []),
-            guaranteedAnalysis:
-              prod.guaranteedAnalysis &&
-              typeof prod.guaranteedAnalysis === 'object' &&
-              Object.keys(prod.guaranteedAnalysis).length > 0
-                ? { ...prod.guaranteedAnalysis }
-                : { 'Proteína Cruda': '32%', 'Grasa Cruda': '16%', 'Fibra Cruda': '4%', 'Humedad': '10%' },
-            animalPercent:
-              prod.animalPercent ??
-              (prod.brand?.toLowerCase().includes('acana')
-                ? 65
-                : prod.brand?.toLowerCase().includes('bravery')
-                  ? 85
-                  : 70),
-            proteinValue: prod.proteinValue || 30,
-            mainProtein: prod.mainProtein || 'Pollo',
-            grainLevel: prod.grainLevel || 'free',
-            isVeterinary: Boolean(prod.isVeterinary),
-            vetDetail: prod.vetDetail || '',
-            lifeStage: prod.lifeStage || 'adulto',
-          });
-          setEditProductStep(1);
-        };
-
-        const currentChartData =
-          productSalesPeriod === '7d'
-            ? analytics.days7
-            : productSalesPeriod === '30d'
-              ? analytics.weeks30
-              : analytics.months12;
-
-        const maxUnits = Math.max(...currentChartData.map((d) => d.units), 1);
-        const periodTotalUnits = currentChartData.reduce((acc, d) => acc + d.units, 0);
-        const periodTotalRevenue = currentChartData.reduce((acc, d) => acc + d.revenue, 0);
-        const periodTotalMargin = currentChartData.reduce((acc, d) => acc + d.margin, 0);
-
-        return (
-          <div
-            onClick={() => setSelectedProductSalesModal(null)}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-200"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-3xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh] no-scrollbar"
-            >
-              {/* Modal Header */}
-              <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-50 via-amber-50/30 to-white shrink-0">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 p-1.5 shadow-xs shrink-0 flex items-center justify-center">
-                    <img
-                      src={getProductImage(prod.name)}
-                      alt={prod.name}
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-md bg-[#D97706]/10 text-[#D97706] font-black text-[10px] uppercase tracking-wider border border-[#D97706]/20">
-                        {prod.brand}
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-500">
-                        {prod.sku ? `SKU: ${prod.sku} • ` : ''}{formatLabel}
-                      </span>
-                      {prod.isPaused && (
-                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-black uppercase border border-amber-200 inline-flex items-center gap-1">
-                          <Pause className="w-2.5 h-2.5 fill-current" />
-                          <span>Pausado en tienda</span>
-                        </span>
-                      )}
-                      {prod.inCarousel && (
-                        <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200 inline-flex items-center gap-1">
-                          <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-500" />
-                          <span>En Carrusel</span>
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug mt-0.5">
-                      {prod.name}
-                    </h3>
-                  </div>
-                </div>
-
-                {/* Acciones rápidas del producto en la cabecera */}
-                <div className="flex items-center gap-1.5 self-end sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleCarouselProduct(prod)}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${prod.inCarousel
-                      ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                      }`}
-                    title={prod.inCarousel ? 'Quitar del Carrusel Promocional' : 'Destacar en Carrusel Promocional'}
-                  >
-                    <Star className={`w-3.5 h-3.5 ${prod.inCarousel ? 'fill-amber-400 text-amber-500' : 'text-slate-400'}`} />
-                    <span>{prod.inCarousel ? 'Destacado' : 'Carrusel'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleTogglePauseProduct(prod)}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1.5 ${prod.isPaused
-                      ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
-                      : 'bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-800 border-slate-200'
-                      }`}
-                    title={prod.isPaused ? 'Reactivar producto en tienda pública' : 'Pausar producto en tienda pública'}
-                  >
-                    {prod.isPaused ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
-                    <span>{prod.isPaused ? 'Reactivar' : 'Pausar'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenEditFromModal}
-                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FEF3C7] text-slate-700 hover:text-[#D97706] border border-slate-200 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                    title="Editar producto"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Editar</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProductSalesModal(null)}
-                    className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer ml-1"
-                    title="Cerrar ventana"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Body */}
-              <div className="p-5 sm:p-6 overflow-y-auto space-y-5 no-scrollbar text-xs">
-                {/* Ficha Financiera de Costos, Precios y Valorización en Bodega */}
-                <div className="bg-[#F8FAFC] border border-[#EAECEF] rounded-2xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                      <Package className="w-3.5 h-3.5 text-[#D97706]" />
-                      <span>Detalle de Costos, Precios y Bodega ({formatLabel})</span>
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      Valorización Total SKU ({prod.stock} u.): <strong className="text-slate-900">{formatCLP(totalSkuNetValue)} neto</strong>
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Neto Total</span>
-                      <span className="text-sm font-mono font-bold text-slate-800 mt-0.5 block">{formatCLP(totalUnitCostNeto)}</span>
-                      {shippingUnitNeto > 0 ? (
-                        <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
-                          Prod. {formatCLP(unitCostNeto)} + Flete {formatCLP(shippingUnitNeto)}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400 block mt-0.5">Sin recargo de flete</span>
-                      )}
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Costo Total c/IVA (19%)</span>
-                      <span className="text-sm font-mono font-bold text-slate-900 mt-0.5 block">{formatCLP(unitCostWithIva)}</span>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        {shippingUnitWithIva > 0 ? `Prod. + Flete con 19% IVA` : `Costo Neto × 1,19`}
-                      </span>
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Precio de Venta</span>
-                      <span className="text-sm font-mono font-extrabold text-slate-900 mt-0.5 block">{formatCLP(salePrice)}</span>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">PVP Tienda &amp; Manual</span>
-                    </div>
-                    <div className="bg-white rounded-xl p-3 border border-[#EAECEF]">
-                      <span className="text-[10px] font-semibold text-slate-400 uppercase block">Ganancia Unitaria</span>
-                      <span className={`text-sm font-mono font-extrabold mt-0.5 block ${unitProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {unitProfit >= 0 ? `+${formatCLP(unitProfit)}` : `-${formatCLP(Math.abs(unitProfit))}`} ({unitMarginPct >= 0 ? `+${unitMarginPct}%` : `${unitMarginPct}%`})
-                      </span>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">Por cada unidad vendida</span>
-                    </div>
-                  </div>
-                </div>
-                {/* 4 KPI Highlights */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {/* KPI 1: Unidades vendidas */}
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Unidades Vendidas</span>
-                      <ShoppingBag className="w-4 h-4 text-[#D97706]" />
-                    </div>
-                    <div className="text-xl font-black text-slate-900">
-                      {analytics.totalUnitsSold} <span className="text-xs font-bold text-slate-500">u.</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-medium">
-                      Promedio: <strong className="text-slate-700">{analytics.monthlyAverageUnits} u./mes</strong>
-                    </div>
-                  </div>
-
-                  {/* KPI 2: Facturación Total */}
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Facturación Total</span>
-                      <DollarSign className="w-4 h-4 text-emerald-600" />
-                    </div>
-                    <div className="text-xl font-black text-emerald-600">
-                      {formatCLP(analytics.totalRevenue)}
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-medium">
-                      PVP Unitario: <strong className="text-slate-700">{formatCLP(prod.salePrice)}</strong>
-                    </div>
-                  </div>
-
-                  {/* KPI 3: Margen Bruto */}
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Margen Bruto Total</span>
-                      <TrendingUp className="w-4 h-4 text-[#D97706]" />
-                    </div>
-                    <div className="text-xl font-black text-slate-900">
-                      {formatCLP(analytics.totalMargin)}
-                    </div>
-                    <div className="text-[10px] font-medium text-emerald-700">
-                      Margen: <strong className="font-extrabold">+{analytics.marginPercent}%</strong> por unidad
-                    </div>
-                  </div>
-
-                  {/* KPI 4: Stock & Cobertura */}
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 space-y-1">
-                    <div className="flex items-center justify-between text-slate-400">
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Stock & Cobertura</span>
-                      <Package className="w-4 h-4 text-amber-500" />
-                    </div>
-                    <div className="text-xl font-black text-slate-900">
-                      {prod.stock} <span className="text-xs font-bold text-slate-500">en bodega</span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 font-medium">
-                      Cobertura estimada: <strong className="text-slate-700">{analytics.stockCoverageDays}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section: Gráfico interactivo de Ventas */}
-                <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4 text-[#D97706]" />
-                        <h4 className="font-black text-slate-900 text-sm">
-                          Gráfico de Ventas & Evolución Histórica
-                        </h4>
-                      </div>
-                      <p className="text-[11px] text-slate-500">
-                        {productSalesPeriod === '7d'
-                          ? 'Ventas diarias de los últimos 7 días con desglose por jornada.'
-                          : productSalesPeriod === '30d'
-                            ? 'Ventas semanales del último mes de facturación.'
-                            : 'Ventas mes a mes durante los últimos 12 meses.'}
-                      </p>
-                    </div>
-
-                    {/* Selector de periodo */}
-                    <div className="inline-flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0 self-start sm:self-auto">
-                      <button
-                        type="button"
-                        onClick={() => setProductSalesPeriod('7d')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${productSalesPeriod === '7d'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        7 Días (Diario)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setProductSalesPeriod('30d')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${productSalesPeriod === '30d'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        30 Días (Semanas)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setProductSalesPeriod('mes')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${productSalesPeriod === 'mes'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                      >
-                        12 Meses
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Summary row for selected period */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-2xl border border-slate-100 text-center">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Unidades Periodo</span>
-                      <span className="text-sm font-black text-slate-900">{periodTotalUnits} u.</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Facturación Periodo</span>
-                      <span className="text-sm font-black text-emerald-600">{formatCLP(periodTotalRevenue)}</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">Ganancia Bruta</span>
-                      <span className="text-sm font-black text-[#D97706]">{formatCLP(periodTotalMargin)}</span>
-                    </div>
-                  </div>
-
-                  {/* Visual Line Chart (Gráfico de Líneas con Curva Suave, Área y Tooltips) */}
-                  <div className="pt-2 pb-1">
-                    {(() => {
-                      const chartWidth = 720;
-                      const chartHeight = 180;
-                      const padX = 42;
-                      const padTop = 32;
-                      const padBottom = 26;
-                      const availableWidth = chartWidth - padX * 2;
-                      const availableHeight = chartHeight - padTop - padBottom;
-
-                      const pts = currentChartData.map((item, idx) => {
-                        const x =
-                          currentChartData.length > 1
-                            ? padX + (idx / (currentChartData.length - 1)) * availableWidth
-                            : chartWidth / 2;
-                        const normalizedValue = maxUnits > 0 ? item.units / maxUnits : 0;
-                        const y = chartHeight - padBottom - normalizedValue * availableHeight;
-                        return { x, y, item, idx };
-                      });
-
-                      // Generar curva suave bezier (spline)
-                      let linePath = '';
-                      if (pts.length === 1) {
-                        linePath = `M ${pts[0].x - 30},${pts[0].y} L ${pts[0].x + 30},${pts[0].y}`;
-                      } else if (pts.length > 1) {
-                        linePath = `M ${pts[0].x},${pts[0].y}`;
-                        for (let i = 0; i < pts.length - 1; i++) {
-                          const p0 = i > 0 ? pts[i - 1] : pts[i];
-                          const p1 = pts[i];
-                          const p2 = pts[i + 1];
-                          const p3 = i < pts.length - 2 ? pts[i + 2] : p2;
-                          const cp1x = p1.x + (p2.x - p0.x) / 6;
-                          const cp1y = p1.y + (p2.y - p0.y) / 6;
-                          const cp2x = p2.x - (p3.x - p1.x) / 6;
-                          const cp2y = p2.y - (p3.y - p1.y) / 6;
-                          linePath += ` C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
-                        }
-                      }
-
-                      const areaPath =
-                        pts.length > 1
-                          ? `${linePath} L ${pts[pts.length - 1].x},${chartHeight - padBottom + 10} L ${pts[0].x},${chartHeight - padBottom + 10} Z`
-                          : '';
-
-                      return (
-                        <div className="relative w-full">
-                          <svg
-                            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                            className="w-full h-48 overflow-visible"
-                            preserveAspectRatio="none"
-                          >
-                            <defs>
-                              <linearGradient id="lineSalesGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#D97706" stopOpacity="0.28" />
-                                <stop offset="70%" stopColor="#D97706" stopOpacity="0.05" />
-                                <stop offset="100%" stopColor="#D97706" stopOpacity="0" />
-                              </linearGradient>
-                              <linearGradient id="strokeLineGradient" x1="0" y1="0" x2="1" y2="0">
-                                <stop offset="0%" stopColor="#D97706" />
-                                <stop offset="50%" stopColor="#2DD4BF" />
-                                <stop offset="100%" stopColor="#D97706" />
-                              </linearGradient>
-                              <filter id="pointShadow" x="-50%" y="-50%" width="200%" height="200%">
-                                <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#D97706" floodOpacity="0.35" />
-                              </filter>
-                            </defs>
-
-                            {/* Líneas horizontales de guía (Grid lines) */}
-                            <line
-                              x1={padX - 10}
-                              y1={padTop}
-                              x2={chartWidth - padX + 10}
-                              y2={padTop}
-                              stroke="#F1F5F9"
-                              strokeWidth="1.5"
-                              strokeDasharray="4 4"
-                            />
-                            <line
-                              x1={padX - 10}
-                              y1={padTop + availableHeight / 2}
-                              x2={chartWidth - padX + 10}
-                              y2={padTop + availableHeight / 2}
-                              stroke="#F1F5F9"
-                              strokeWidth="1.5"
-                              strokeDasharray="4 4"
-                            />
-                            <line
-                              x1={padX - 10}
-                              y1={chartHeight - padBottom}
-                              x2={chartWidth - padX + 10}
-                              y2={chartHeight - padBottom}
-                              stroke="#E2E8F0"
-                              strokeWidth="1.5"
-                            />
-
-                            {/* Área con gradiente suave bajo la línea */}
-                            {areaPath && (
-                              <path
-                                d={areaPath}
-                                fill="url(#lineSalesGradient)"
-                              />
-                            )}
-
-                            {/* Línea de tendencia continua */}
-                            {linePath && (
-                              <path
-                                d={linePath}
-                                fill="none"
-                                stroke="url(#strokeLineGradient)"
-                                strokeWidth="3.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            )}
-
-                            {/* Puntos de datos y Tooltips */}
-                            {pts.map((pt, idx) => (
-                              <g key={idx} className="group/pt cursor-pointer">
-                                {/* Zona táctil / hover invisible amplia */}
-                                <circle
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="20"
-                                  fill="transparent"
-                                />
-
-                                {/* Línea vertical guía en hover */}
-                                <line
-                                  x1={pt.x}
-                                  y1={pt.y}
-                                  x2={pt.x}
-                                  y2={chartHeight - padBottom}
-                                  stroke="#D97706"
-                                  strokeWidth="1.5"
-                                  strokeDasharray="3 3"
-                                  className="opacity-0 group-hover/pt:opacity-70 transition-opacity"
-                                />
-
-                                {/* Punto externo brillante */}
-                                <circle
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="5.5"
-                                  fill="#FFFFFF"
-                                  stroke="#D97706"
-                                  strokeWidth="3"
-                                  filter="url(#pointShadow)"
-                                  className="group-hover/pt:scale-125 transition-transform origin-center"
-                                />
-
-                                {/* Punto central */}
-                                <circle
-                                  cx={pt.x}
-                                  cy={pt.y}
-                                  r="2"
-                                  fill="#D97706"
-                                />
-
-                                {/* Valor numérico permanente encima del punto */}
-                                <text
-                                  x={pt.x}
-                                  y={pt.y - 11}
-                                  textAnchor="middle"
-                                  className="text-[10px] font-black fill-slate-700 select-none group-hover/pt:fill-[#D97706]"
-                                >
-                                  {pt.item.units}
-                                </text>
-
-                                {/* Tooltip Flotante al pasar el mouse */}
-                                <g className="opacity-0 group-hover/pt:opacity-100 transition-opacity pointer-events-none z-30">
-                                  <rect
-                                    x={Math.max(10, Math.min(chartWidth - 140, pt.x - 65))}
-                                    y={Math.max(5, pt.y - 65)}
-                                    width="130"
-                                    height="48"
-                                    rx="10"
-                                    fill="#0F172A"
-                                    opacity="0.95"
-                                    stroke="#334155"
-                                    strokeWidth="1"
-                                    filter="url(#pointShadow)"
-                                  />
-                                  <text
-                                    x={Math.max(10, Math.min(chartWidth - 140, pt.x - 65)) + 65}
-                                    y={Math.max(5, pt.y - 65) + 16}
-                                    textAnchor="middle"
-                                    fill="#5EEAD4"
-                                    fontSize="10"
-                                    fontWeight="bold"
-                                  >
-                                    {pt.item.label}
-                                  </text>
-                                  <text
-                                    x={Math.max(10, Math.min(chartWidth - 140, pt.x - 65)) + 65}
-                                    y={Math.max(5, pt.y - 65) + 30}
-                                    textAnchor="middle"
-                                    fill="#FFFFFF"
-                                    fontSize="10"
-                                    fontWeight="bold"
-                                  >
-                                    {pt.item.units} u. • {formatCLP(pt.item.revenue)}
-                                  </text>
-                                  <text
-                                    x={Math.max(10, Math.min(chartWidth - 140, pt.x - 65)) + 65}
-                                    y={Math.max(5, pt.y - 65) + 42}
-                                    textAnchor="middle"
-                                    fill="#34D399"
-                                    fontSize="9"
-                                    fontWeight="semibold"
-                                  >
-                                    Margen: {formatCLP(pt.item.margin)}
-                                  </text>
-                                </g>
-                              </g>
-                            ))}
-                          </svg>
-
-                          {/* Eje X con nombres de días / semanas / meses */}
-                          <div className="flex items-center justify-between px-3 sm:px-6 pt-1 text-[11px] font-bold text-slate-500">
-                            {currentChartData.map((d, i) => (
-                              <span
-                                key={i}
-                                className="truncate text-center hover:text-[#D97706] transition-colors"
-                                style={{
-                                  width: `${100 / currentChartData.length}%`,
-                                }}
-                              >
-                                {d.day}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {/* Section: Pedidos Recientes de este Producto */}
-                <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs space-y-3">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-[#D97706]" />
-                      <h4 className="font-black text-slate-900 text-sm">
-                        Últimos Pedidos con este Producto ({analytics.recentOrders.length})
-                      </h4>
-                    </div>
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      Trazabilidad por cliente y despacho
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 text-[10px] uppercase font-bold tracking-wider">
-                          <th className="py-2.5 px-3">Pedido</th>
-                          <th className="py-2.5 px-3">Fecha</th>
-                          <th className="py-2.5 px-3">Cliente & Mascota</th>
-                          <th className="py-2.5 px-3 text-center">Cantidad</th>
-                          <th className="py-2.5 px-3">Total CLP</th>
-                          <th className="py-2.5 px-3">Método Pago</th>
-                          <th className="py-2.5 px-3 text-center">Estado</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {analytics.recentOrders.length === 0 ? (
-                          <tr>
-                            <td colSpan="7" className="py-8 text-center text-slate-400">
-                              <Package className="w-6 h-6 mx-auto mb-1.5 text-slate-300 stroke-[1.5]" />
-                              <span>Aún no hay pedidos registrados con este producto.</span>
-                            </td>
-                          </tr>
-                        ) : (
-                          analytics.recentOrders.map((ord) => (
-                            <tr key={ord.id} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                                {ord.id}
-                              </td>
-                              <td className="py-2.5 px-3 text-slate-500 whitespace-nowrap">
-                                {ord.date}
-                              </td>
-                              <td className="py-2.5 px-3">
-                                <div className="font-bold text-slate-800">{ord.customer}</div>
-                                <div className="text-[10px] text-slate-400">{ord.pet}</div>
-                              </td>
-                              <td className="py-2.5 px-3 text-center font-black text-slate-900">
-                                {ord.units} u.
-                              </td>
-                              <td className="py-2.5 px-3 font-black text-emerald-600 font-mono">
-                                {formatCLP(ord.total)}
-                              </td>
-                              <td className="py-2.5 px-3 text-slate-600">
-                                <span className="inline-block px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-medium">
-                                  {ord.paymentMethod}
-                                </span>
-                              </td>
-                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                                {ord.status === 'cancelado' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold">
-                                    <X className="w-3 h-3 stroke-[2.5]" />
-                                    Cancelado
-                                  </span>
-                                ) : ord.status === 'entregado' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                                    <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />
-                                    Entregado
-                                  </span>
-                                ) : ord.status === 'en_camino' ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
-                                    <Truck className="w-3 h-3 stroke-[2.5]" />
-                                    En camino
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
-                                    <Clock className="w-3 h-3 stroke-[2.5]" />
-                                    En preparación
-                                  </span>
-                                )}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const p = prod;
-                    setSelectedProductSalesModal(null);
-                    setDeleteProductConfirm(p);
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Eliminar Producto</span>
-                </button>
-
-                <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const p = prod;
-                      setSelectedProductSalesModal(null);
-                      setStockAdjustModal({
-                        prod: p,
-                        type: 'sumar',
-                        amount: 1,
-                        reason: 'Ajuste manual desde ficha de producto',
-                      });
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <SlidersHorizontal className="w-3.5 h-3.5" />
-                    <span>Ajustar Stock</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenEditFromModal}
-                    className="px-3.5 py-2 rounded-xl bg-white hover:bg-[#FEF3C7] text-slate-700 hover:text-[#D97706] border border-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Editar Producto</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProductSalesModal(null)}
-                    className="px-5 py-2 rounded-xl bg-[#D97706] hover:bg-[#78350F] text-white font-bold text-xs transition-colors shadow-xs cursor-pointer"
-                  >
-                    Cerrar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {selectedProductSalesModal && (
+        <Suspense fallback={null}>
+          <ProductSalesHistoryModal
+            selectedProduct={selectedProductSalesModal}
+            inventory={inventory}
+            getProductSalesAnalytics={getProductSalesAnalytics}
+            productSalesPeriod={productSalesPeriod}
+            setProductSalesPeriod={setProductSalesPeriod}
+            onToggleCarouselProduct={handleToggleCarouselProduct}
+            onTogglePauseProduct={handleTogglePauseProduct}
+            onEditProduct={(preparedProd) => {
+              setEditingProduct(preparedProd);
+              setEditProductStep(1);
+            }}
+            onRequestDeleteProduct={(prod) => setDeleteProductConfirm(prod)}
+            onRequestAdjustStock={(prod) =>
+              setStockAdjustModal({
+                prod,
+                type: 'sumar',
+                amount: 1,
+                reason: 'Ajuste manual desde ficha de producto',
+              })
+            }
+            onClose={() => setSelectedProductSalesModal(null)}
+          />
+        </Suspense>
+      )}
 
       {/* ======================================================= */}
       {/* POP-UP: EDITAR PRODUCTO                                 */}
@@ -22158,7 +20050,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 { step: 3, label: '3. Descripción', icon: FileText },
                 { step: 4, label: '4. Datos Técnicos', icon: SlidersHorizontal },
               ].map((item) => {
-                const IconComp = item.icon;
                 const isActive = editProductStep === item.step;
                 const isPassed = editProductStep > item.step;
                 return (
@@ -23704,404 +21595,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* ======================================================= */}
       {/* POP-UP: DETALLE DE FACTURA ELECTRÓNICA (FORMATO OFICIAL) */}
       {/* ======================================================= */}
-      {selectedInvoiceModal && (() => {
-        const invItems = resolveInvoiceItems(selectedInvoiceModal, inventory);
-        const invNumber = selectedInvoiceModal.invoiceNumber || selectedInvoiceModal.id;
-        const isPaid = (selectedInvoiceModal.status || '').toLowerCase() === 'pagada' || (selectedInvoiceModal.status || '').toLowerCase() === 'pagado';
-        const isOverdue = (selectedInvoiceModal.status || '').toLowerCase() === 'vencida';
-        const totalUnits = invItems.reduce((acc, it) => acc + (it.qty || 1), 0);
-
-        return (
-          <div
-            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200"
-            onClick={() => setSelectedInvoiceModal(null)}
-          >
-            <div
-              className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header Toolbar del Pop-up */}
-              <div className="px-6 py-4 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-[#D97706] flex items-center justify-center shadow-2xs">
-                    <Receipt className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-base font-black text-slate-900">
-                        Detalle de Factura
-                      </h3>
-                      <span className="font-mono text-xs font-bold text-[#D97706] bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200/60">
-                        #{invNumber}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Documento Tributario Electrónico (DTE) • Compra y reposición de stock
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditInvoice(selectedInvoiceModal)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200/90 text-amber-800 hover:bg-amber-100 text-xs font-bold shadow-2xs transition-all cursor-pointer"
-                    title="Editar productos y costo de transporte"
-                  >
-                    <Edit2 className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Editar</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    title="Imprimir o guardar comprobante"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Imprimir</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInvoiceModal(null)}
-                    className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                    title="Cerrar"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Hoja de Factura Oficial Ordenada */}
-              <div className="p-6 sm:p-8 overflow-y-auto flex-1 space-y-6 text-xs text-slate-800 bg-white no-scrollbar">
-
-                {/* 1. Encabezado DTE: Emisor & Recuadro Rojo Oficial SII */}
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-6 pb-6 border-b border-slate-200">
-                  {/* Datos Proveedor Emisor */}
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider">
-                      <Building2 className="w-3 h-3" />
-                      <span>Proveedor Emisor</span>
-                    </div>
-                    <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-tight">
-                      {selectedInvoiceModal.provider || 'Proveedor Autorizado'}
-                    </h2>
-                    <div className="space-y-0.5 text-[11px] text-slate-600 font-medium">
-                      <p>
-                        <span className="text-slate-400 font-normal">R.U.T.:</span>{' '}
-                        <strong className="font-mono font-bold text-slate-900">
-                          {selectedInvoiceModal.rut || '78.920.800-K'}
-                        </strong>
-                      </p>
-                      <p>
-                        <span className="text-slate-400 font-normal">Giro:</span> Distribución Mayorista de Alimentos y Artículos para Mascotas
-                      </p>
-                      <p>
-                        <span className="text-slate-400 font-normal">Ciudad:</span> Puerto Varas, Región de Los Lagos
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Recuadro Rojo de Factura Electrónica Chilena */}
-                  <div className="border-2 border-red-600 rounded-2xl p-4 text-center bg-red-50/20 text-red-700 min-w-[210px] shrink-0 shadow-2xs self-center sm:self-start">
-                    <div className="font-mono font-bold text-xs text-red-800 tracking-wide">
-                      R.U.T.: {selectedInvoiceModal.rut || '78.920.800-K'}
-                    </div>
-                    <div className="font-black text-xs uppercase tracking-wider text-red-600 my-1 py-1 border-y border-red-600/30">
-                      FACTURA ELECTRÓNICA
-                    </div>
-                    <div className="font-mono text-xl font-black text-red-700">
-                      N° {invNumber}
-                    </div>
-                    <div className="text-[9px] font-bold text-red-500 uppercase tracking-widest mt-1">
-                      S.I.I. - PUERTO MONTT
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Datos del Receptor y Fechas */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 text-xs">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
-                      Receptor / Adquiriente:
-                    </span>
-                    <p className="font-black text-slate-900 text-sm">Patitas del Sur SpA</p>
-                    <p className="text-slate-600 text-[11px]">
-                      <span className="text-slate-400 font-normal">R.U.T.:</span> <span className="font-mono font-bold text-slate-800">77.654.321-8</span>
-                    </p>
-                    <p className="text-slate-600 text-[11px]">
-                      <span className="text-slate-400 font-normal">Giro:</span> Venta al por menor de alimentos y accesorios para mascotas
-                    </p>
-                    <p className="text-slate-600 text-[11px]">
-                      <span className="text-slate-400 font-normal">Dirección:</span> Puerto Varas, Chile
-                    </p>
-                  </div>
-
-                  <div className="space-y-1 sm:border-l sm:border-slate-200 sm:pl-4">
-                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">
-                      Condiciones del Documento:
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 pt-0.5">
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Fecha Emisión:</span>
-                        <span className="font-mono font-bold text-slate-800 text-[11px]">
-                          {formatCLPDate(selectedInvoiceModal.date)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Fecha Vencimiento:</span>
-                        <span className="font-mono font-bold text-slate-800 text-[11px]">
-                          {formatCLPDate(selectedInvoiceModal.dueDate || selectedInvoiceModal.date)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Forma de Pago:</span>
-                        <span className="font-bold text-slate-700 text-[11px]">
-                          {selectedInvoiceModal.paymentMethod || 'Crédito Proveedor'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 text-[10px] block">Estado Factura:</span>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleInvoiceStatus(invNumber)}
-                          className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase border mt-0.5 inline-flex items-center gap-1 cursor-pointer transition-all hover:scale-105 ${isPaid
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : isOverdue
-                              ? 'bg-rose-50 text-rose-700 border-rose-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                            }`}
-                          title="Clic para cambiar estado Pagada / Pendiente"
-                        >
-                          <span>●</span>
-                          <span>{selectedInvoiceModal.status || 'pendiente'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bloque Informativo: Flete / Transporte Asociado al Pedido */}
-                {(() => {
-                  const cleanModalNum = String(invNumber).trim();
-                  const is81006 = cleanModalNum === '81006';
-                  const is78954 = cleanModalNum === '78954';
-                  const sNeto =
-                    parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) ||
-                    (is81006 ? 23277 : is78954 ? 20084 : 0);
-                  const hasShip = Boolean(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || sNeto > 0);
-                  if (!hasShip || sNeto <= 0) return null;
-                  const sConIva = Math.round(sNeto * 1.19);
-                  const sMethod = selectedInvoiceModal.shippingDistributionMethod || selectedInvoiceModal.shipping_distribution_method || 'value';
-                  const sInvNum = selectedInvoiceModal.shippingInvoiceNumber || selectedInvoiceModal.shipping_invoice_number;
-                  const sProv = selectedInvoiceModal.shippingProvider || selectedInvoiceModal.shipping_provider;
-
-                  return (
-                    <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-white border border-amber-200 text-[#D97706] flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
-                          <Truck className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-black text-slate-900 text-xs">
-                              Transporte y Despacho Asociado al Pedido
-                            </span>
-                            {sInvNum && (
-                              <span className="font-mono text-[10px] font-bold text-[#D97706] bg-white px-2 py-0.5 rounded-md border border-amber-200 shadow-2xs">
-                                DTE Flete #{sInvNum}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-600 mt-0.5">
-                            Transportista: <strong className="text-slate-800">{sProv || 'Despacho Proveedor'}</strong> • Flete neto:{' '}
-                            <strong className="text-slate-900 font-mono">+{formatCLP(sNeto)}</strong> • Flete c/IVA (19%):{' '}
-                            <strong className="text-[#D97706] font-mono">+{formatCLP(sConIva)}</strong>
-                          </p>
-                        </div>
-                      </div>
-                      <div className="sm:text-right shrink-0 bg-white/70 sm:bg-transparent p-2 sm:p-0 rounded-xl">
-                        <span className="text-[9px] font-bold uppercase text-slate-400 block tracking-wider">Criterio Prorrateo</span>
-                        <span className="text-[11px] font-bold text-[#D97706]">
-                          {sMethod === 'value' ? 'Proporcional por Valor Neto' : 'Equitativo por Unidades'}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 3. Tabla Detallada de Productos (Requerimiento Principal) */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase text-slate-700 tracking-wider">
-                      Detalle de Productos, Unidades & Costos Netos
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-                      {invItems.length} ítems en factura • {totalUnits} unidades
-                    </span>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-100/90 text-slate-600 uppercase tracking-wider text-[10px] border-b border-slate-200">
-                        <tr>
-                          <th className="py-2.5 px-3 text-center w-10">#</th>
-                          <th className="py-2.5 px-3">Descripción del Producto</th>
-                          <th className="py-2.5 px-3 text-center">Formato / Peso</th>
-                          <th className="py-2.5 px-3 text-center">Cantidad</th>
-                          <th className="py-2.5 px-3 text-right">
-                            Costo Unitario (Neto)
-                          </th>
-                          <th className="py-2.5 px-3 text-right">Subtotal Neto</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {invItems.map((it) => (
-                          <tr key={it.index} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-2.5 px-3 text-center text-slate-400 font-mono font-bold text-[10px]">
-                              {it.index}
-                            </td>
-                            <td className="py-2.5 px-3 font-bold text-slate-900">
-                              {it.name}
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-mono font-semibold">
-                                {it.format}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-center font-mono font-black text-slate-800">
-                              <span className="inline-flex items-center gap-1 text-[#D97706] font-bold">
-                                {it.qty} un.
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-mono">
-                              {it.unitShippingCost > 0 ? (
-                                <div>
-                                  <div className="font-black text-slate-900">{formatCLP(it.supplierUnitNeto || it.unitNeto)}</div>
-                                  <div className="text-[9px] text-slate-400 font-normal">
-                                    c/IVA + Desp.: {formatCLP(it.unitCostWithIva)} <span className="text-[#D97706] font-bold">(+{formatCLP(it.unitShippingCostWithIva || Math.round(it.unitShippingCost * 1.19))} desp. c/IVA)</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="font-semibold text-slate-700">{formatCLP(it.supplierUnitNeto || it.unitNeto)}</span>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900">
-                              {formatCLP(it.subtotalNeto)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* 4. Pie de Factura: Timbre SII y Totales */}
-                <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-2 border-t border-slate-200">
-                  {/* Timbre Electrónico DTE simulado */}
-                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-[10px] text-slate-500 space-y-1.5 max-w-xs shrink-0 text-center sm:text-left">
-                    <div className="flex items-center justify-center sm:justify-start gap-1 font-bold text-slate-700">
-                      <span>🛡️ Timbre Electrónico SII</span>
-                    </div>
-                    {/* Barras DTE */}
-                    <div className="h-6 bg-slate-900/10 rounded flex items-center justify-around px-2 overflow-hidden opacity-70">
-                      {Array.from({ length: 30 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="h-full bg-slate-800"
-                          style={{ width: `${(i % 3) + 1}px` }}
-                        />
-                      ))}
-                    </div>
-                    <p className="text-[9px] text-slate-400 font-mono leading-tight">
-                      Res. N° 80 de 2014 • Verifique documento en www.sii.cl
-                    </p>
-                  </div>
-
-                  {/* Resumen Financiero de Totales */}
-                  {(() => {
-                    const cleanModalNum = String(invNumber).trim();
-                    const is81006 = cleanModalNum === '81006';
-                    const is78954 = cleanModalNum === '78954';
-                    const sNeto =
-                      parseFloat(selectedInvoiceModal.shippingCostNeto || selectedInvoiceModal.shipping_cost_neto) ||
-                      (is81006 ? 23277 : is78954 ? 20084 : 0);
-                    const hasShipping = Boolean(selectedInvoiceModal.hasShippingCost || selectedInvoiceModal.has_shipping_cost || sNeto > 0);
-                    const sConIva = Math.round(sNeto * 1.19);
-
-                    return (
-                      <div className="w-full sm:w-80 p-4 rounded-2xl bg-slate-50/90 border border-slate-200/80 space-y-2">
-                        <div className="flex items-center justify-between text-xs text-slate-600">
-                          <span>Monto Neto Mercadería:</span>
-                          <span className="font-mono font-bold text-slate-900">
-                            {formatCLP(selectedInvoiceModal.totalNeto || selectedInvoiceModal.neto)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-emerald-700 font-semibold">
-                          <span>IVA Crédito Fiscal (19%):</span>
-                          <span className="font-mono font-bold">
-                            +{formatCLP(selectedInvoiceModal.iva)}
-                          </span>
-                        </div>
-                        <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
-                          <span className="font-black text-slate-900 text-sm">TOTAL FACTURA PROVEEDOR:</span>
-                          <span className="font-black font-mono text-base sm:text-lg text-slate-900">
-                            {formatCLP(selectedInvoiceModal.totalBruto || selectedInvoiceModal.total)}
-                          </span>
-                        </div>
-                        {hasShipping && sNeto > 0 && (
-                          <>
-                            <div className="pt-1.5 border-t border-dashed border-amber-200/80 flex items-center justify-between text-xs text-[#D97706] font-medium">
-                              <span className="flex items-center gap-1">
-                                <Truck className="w-3.5 h-3.5" />
-                                <span>Flete Asociado (Neto / c/IVA):</span>
-                              </span>
-                              <span className="font-mono font-bold">
-                                +{formatCLP(sNeto)} / +{formatCLP(sConIva)}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-[11px] text-amber-900">
-                              <span className="font-bold">Total Desembolso (c/ Flete + IVA):</span>
-                              <span className="font-mono font-black text-slate-900 text-xs">
-                                {formatCLP((selectedInvoiceModal.totalBruto || selectedInvoiceModal.total) + sConIva)}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-
-              </div>
-
-              {/* Footer con Acciones */}
-              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between gap-3 shrink-0">
-                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
-                  📦 {totalUnits} unidades registradas en inventario físico
-                </span>
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedInvoiceModal(null)}
-                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
-                  >
-                    Cerrar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="px-4 py-2 rounded-xl bg-[#D97706] hover:bg-[#B45309] text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Imprimir Factura</span>
-                  </button>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
+      {selectedInvoiceModal && (
+        <Suspense fallback={null}>
+          <InvoiceDetailModal
+            invoice={selectedInvoiceModal}
+            inventory={inventory}
+            onOpenEditInvoice={handleOpenEditInvoice}
+            onToggleInvoiceStatus={handleToggleInvoiceStatus}
+            onClose={() => setSelectedInvoiceModal(null)}
+          />
+        </Suspense>
+      )}
 
       {/* ======================================================= */}
       {/* MODAL: EDITAR PRODUCTOS Y COSTO DE TRANSPORTE DE FACTURA */}
@@ -24662,186 +22166,15 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* POP-UP: CONFIGURACIÓN DE MERCADO PAGO                   */}
       {/* ======================================================= */}
       {isMercadoPagoModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/80">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-blue-600 text-white shadow-xs">
-                  <CreditCard className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">Comisiones de Tarjeta & Botón de Pago</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    Porcentajes descontados antes de repartir la ganancia 50/50 entre socios
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsMercadoPagoModalOpen(false)}
-                className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Form */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setIsMercadoPagoModalOpen(false);
-                showToast(`Tasas actualizadas: Tarjeta ${mercadoPagoConfig.cardRatePercent ?? 2.55}% • Botón de Pago ${mercadoPagoConfig.webRatePercent ?? 3.19}%.`);
-              }}
-              className="p-6 space-y-4 text-xs"
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    💳 Máquina / Tarjeta (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="15"
-                      value={mercadoPagoConfig.cardRatePercent ?? 2.55}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        setMercadoPagoConfig((prev) => ({
-                          ...prev,
-                          cardRatePercent: val,
-                        }));
-                      }}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Tasa fija única (cubre Débito/Crédito: 2,55%)</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    🌐 Botón de Pago Web (%)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max="15"
-                      value={mercadoPagoConfig.webRatePercent ?? mercadoPagoConfig.commissionRatePercent ?? 3.19}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value) || 0;
-                        setMercadoPagoConfig((prev) => ({
-                          ...prev,
-                          webRatePercent: val,
-                          commissionRatePercent: val,
-                        }));
-                      }}
-                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Sobre el monto total c/IVA (3,19%)</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    Modo de Cálculo (IVA)
-                  </label>
-                  <select
-                    value={mercadoPagoConfig.addIvaToCommission ? 'add_iva' : 'direct'}
-                    onChange={(e) =>
-                      setMercadoPagoConfig((prev) => ({
-                        ...prev,
-                        addIvaToCommission: e.target.value === 'add_iva',
-                      }))
-                    }
-                    className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none cursor-pointer"
-                  >
-                    <option value="direct">Opción A: % directo final (IVA incl.)</option>
-                    <option value="add_iva">Opción B: Sumar +19% IVA a comisión</option>
-                  </select>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Opción A activa por defecto</span>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                    Cargo Fijo Opcional ($ CLP)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="10"
-                      min="0"
-                      value={mercadoPagoConfig.fixedFeeCLP ?? 0}
-                      onChange={(e) =>
-                        setMercadoPagoConfig((prev) => ({
-                          ...prev,
-                          fixedFeeCLP: parseInt(e.target.value, 10) || 0,
-                        }))
-                      }
-                      className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">CLP</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 mt-1 block">Por defecto $0 CLP</span>
-                </div>
-              </div>
-
-              {/* Simulation Box */}
-              {(() => {
-                const cRate = Number(mercadoPagoConfig.cardRatePercent ?? 2.55);
-                const wRate = Number(mercadoPagoConfig.webRatePercent ?? 3.19);
-                const fixed = Number(mercadoPagoConfig.fixedFeeCLP || 0);
-                const mult = mercadoPagoConfig.addIvaToCommission ? 1 + (Number(mercadoPagoConfig.ivaPercent || 19) / 100) : 1;
-                const sampleCardFee = Math.round((10000 * (cRate / 100) + fixed) * mult);
-                const sampleWebFee = Math.round((10000 * (wRate / 100) + fixed) * mult);
-
-                return (
-                  <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-2">
-                    <div className="text-[11px] font-bold text-blue-900">
-                      Simulación sobre una venta de $10.000 CLP (ej. PED-0006):
-                    </div>
-                    <div className="grid grid-cols-2 gap-2.5 text-[10px]">
-                      <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
-                        <div className="font-black text-slate-800">💳 Con Tarjeta ({cRate}%)</div>
-                        <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleCardFee)}</div>
-                        <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleCardFee)}</div>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
-                        <div className="font-black text-slate-800">🌐 Botón Web ({wRate}%)</div>
-                        <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleWebFee)}</div>
-                        <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleWebFee)}</div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Modal Actions */}
-              <div className="pt-2 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setIsMercadoPagoModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black shadow-md shadow-blue-600/20 transition-all cursor-pointer"
-                >
-                  Guardar Configuración
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <Suspense fallback={null}>
+          <MercadoPagoConfigModal
+            isOpen={isMercadoPagoModalOpen}
+            mercadoPagoConfig={mercadoPagoConfig}
+            setMercadoPagoConfig={setMercadoPagoConfig}
+            onClose={() => setIsMercadoPagoModalOpen(false)}
+            showToast={showToast}
+          />
+        </Suspense>
       )}
 
       {/* ======================================================= */}
@@ -25256,366 +22589,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       })()}
 
       {/* ======================================================= */}
-      {/* MODAL: CONFIRMACIÓN DE PAGO AL ENTREGAR PEDIDO          */}
+      {/* MODALES: CONFIRMACIÓN DE PAGO AL ENTREGAR Y CANCELACIÓN */}
       {/* ======================================================= */}
-      {paymentDeliveryConfirmModal && (() => {
-        const { order, paymentMethod, paymentMode = 'pagado' } = paymentDeliveryConfirmModal;
-        const isPendingDelivery = paymentMode === 'pendiente';
-        const totalFormatted = formatCLP(order.total || 0);
-        const pointsToEarn = order.pointsEarned ?? Math.floor((order.total || 0) / 1000);
-
-        return (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
-
-              {/* Header */}
-              <div className="p-6 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-slate-100 flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700 shadow-xs shrink-0">
-                    <DollarSign className="w-6 h-6 stroke-[2.5]" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 tracking-tight">
-                      Confirmar Pago para Entrega
-                    </h3>
-                    <p className="text-xs text-slate-500 font-semibold">
-                      Pedido <strong>{order.id}</strong> · {order.customer || order.customerName || 'Cliente'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPaymentDeliveryConfirmModal(null)}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                  title="Cerrar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-6 space-y-4">
-
-                {/* Total box */}
-                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-amber-800 tracking-wider block">
-                      Monto del pedido
-                    </span>
-                    <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
-                      {totalFormatted}
-                    </span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                    <Clock className="w-3 h-3 text-amber-700" />
-                    Pago Pendiente
-                  </span>
-                </div>
-
-                {/* Explicación clara */}
-                <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                  Al marcar el pedido como <strong>Entregado</strong>, selecciona si el pago ya fue recibido o si se entrega dejando el <strong>pago pendiente</strong> (cuando el cliente transferirá después):
-                </p>
-
-                {/* Selector de Método / Estado de Pago */}
-                <div className="space-y-2.5">
-                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                    ¿Cuál es el estado del pago al entregar?
-                  </span>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {/* Opción 1: Transferencia Recibida */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPaymentDeliveryConfirmModal((prev) => ({
-                          ...prev,
-                          paymentMethod: 'Transferencia',
-                          paymentMode: 'pagado',
-                        }))
-                      }
-                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${!isPendingDelivery && paymentMethod === 'Transferencia'
-                        ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${!isPendingDelivery && paymentMethod === 'Transferencia' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                          <Landmark className="w-4 h-4" />
-                        </div>
-                        {!isPendingDelivery && paymentMethod === 'Transferencia' && (
-                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">✓</span>
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-black text-xs text-slate-900">Pagado · Transferencia</div>
-                        <div className="text-[10px] text-slate-500 font-medium">Recibida y verificada en cuenta bancaria</div>
-                      </div>
-                    </button>
-
-                    {/* Opción 2: Efectivo Recibido */}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPaymentDeliveryConfirmModal((prev) => ({
-                          ...prev,
-                          paymentMethod: 'Efectivo',
-                          paymentMode: 'pagado',
-                        }))
-                      }
-                      className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${!isPendingDelivery && paymentMethod === 'Efectivo'
-                        ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
-                        }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${!isPendingDelivery && paymentMethod === 'Efectivo' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                          <Banknote className="w-4 h-4" />
-                        </div>
-                        {!isPendingDelivery && paymentMethod === 'Efectivo' && (
-                          <span className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">✓</span>
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-black text-xs text-slate-900">Pagado · Efectivo</div>
-                        <div className="text-[10px] text-slate-500 font-medium">Recibido en mano durante la entrega</div>
-                      </div>
-                    </button>
-                  </div>
-
-                  {/* Opción 3: Entregar con Pago Pendiente (Transferirá después) */}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPaymentDeliveryConfirmModal((prev) => ({
-                        ...prev,
-                        paymentMethod: 'Transferencia',
-                        paymentMode: 'pendiente',
-                      }))
-                    }
-                    className={`w-full p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-3 ${isPendingDelivery
-                      ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/25 shadow-xs'
-                      : 'bg-white border-slate-200 hover:bg-amber-50/40 hover:border-amber-200'
-                      }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isPendingDelivery ? 'bg-amber-500 text-slate-950' : 'bg-amber-50 text-amber-700 border border-amber-200'
-                        }`}>
-                        <Clock className="w-4 h-4 stroke-[2.5]" />
-                      </div>
-                      <div>
-                        <div className="font-black text-xs text-slate-900">
-                          ⏳ Entregar con Pago Pendiente (Transferirá después)
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-medium">
-                          Marca el pedido como Entregado pero mantiene el cobro en &quot;Pendiente de pago&quot;
-                        </div>
-                      </div>
-                    </div>
-                    {isPendingDelivery && (
-                      <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 font-black flex items-center justify-center text-[11px] shrink-0">
-                        ✓
-                      </span>
-                    )}
-                  </button>
-                </div>
-
-                {/* Repartidor Responsable de la Entrega */}
-                <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-xl bg-[#D97706] text-white flex items-center justify-center font-black text-xs shadow-2xs">
-                      {currentAdminName.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-[#D97706] font-extrabold uppercase tracking-wider block">
-                        Repartidor Responsable
-                      </span>
-                      <strong className="text-slate-900 font-black">
-                        {currentAdminName}
-                      </strong>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-amber-800 bg-white/90 px-2 py-0.5 rounded-lg border border-amber-200">
-                    Administrador
-                  </span>
-                </div>
-
-                {/* Nota de resultado automático */}
-                {isPendingDelivery ? (
-                  <div className="p-3 rounded-2xl bg-amber-50/80 border border-amber-200/90 text-[11px] text-amber-900 flex items-start gap-2">
-                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <span>
-                      El pedido quedará como <strong>Entregado</strong> por <strong>{currentAdminName}</strong> y con estado <strong>Pendiente de pago</strong>. Cuando recibas la transferencia, podrás marcarlo como <strong>Pagado</strong> con un clic en la tabla.
-                    </span>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80 text-[11px] text-slate-600 flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>
-                      Al confirmar, el pedido pasará a <strong>Pagado</strong> y <strong>Entregado</strong> por <strong>{currentAdminName}</strong>, y se acreditarán automáticamente <strong>+{pointsToEarn} Pts</strong> Club Patitas al cliente.
-                    </span>
-                  </div>
-                )}
-
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 sm:px-6 bg-slate-50 border-t border-slate-200/80 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setPaymentDeliveryConfirmModal(null)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-bold hover:bg-slate-100 transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmPaymentAndDelivery}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-black shadow-md transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 ${isPendingDelivery
-                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/20'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                    }`}
-                >
-                  {isPendingDelivery ? (
-                    <>
-                      <Clock className="w-4 h-4 stroke-[2.5]" />
-                      <span>Entregar con Pago Pendiente</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Confirmar Pago y Entregar</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ======================================================= */}
-      {/* MODAL: CONFIRMACIÓN DE CANCELACIÓN DE PEDIDO             */}
-      {/* ======================================================= */}
-      {cancelOrderConfirmModal && (() => {
-        const order = cancelOrderConfirmModal;
-        const totalFormatted = formatCLP(order.total || 0);
-        const orderItems = order.items && order.items.length > 0
-          ? order.items
-          : (order.product ? [{ name: order.product, quantity: order.qty || 1 }] : []);
-
-        return (
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-200">
-
-              {/* Header */}
-              <div className="p-6 bg-gradient-to-r from-rose-500/10 via-rose-500/5 to-transparent border-b border-slate-100 flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-700 shadow-xs shrink-0">
-                    <AlertTriangle className="w-6 h-6 stroke-[2.5]" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-slate-900 tracking-tight">
-                      ¿Cancelar Pedido?
-                    </h3>
-                    <p className="text-xs text-slate-500 font-semibold">
-                      Pedido <strong>{order.id}</strong> · {order.customer || order.customerName || 'Cliente'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCancelOrderConfirmModal(null)}
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
-                  title="Cerrar"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Body */}
-              <div className="p-6 space-y-4">
-                {/* Total box */}
-                <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200/80 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-rose-800 tracking-wider block">
-                      Monto del Pedido
-                    </span>
-                    <span className="text-2xl font-black text-slate-950 font-mono tracking-tight">
-                      {totalFormatted}
-                    </span>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-black bg-rose-200 text-rose-900 border border-rose-300 flex items-center gap-1 shadow-2xs">
-                    <X className="w-3 h-3 text-rose-700" />
-                    Se marcará como Cancelado
-                  </span>
-                </div>
-
-                {/* Explicación de impacto */}
-                <div className="space-y-2 text-xs text-slate-600 font-medium">
-                  <p className="font-bold text-slate-800">
-                    Al confirmar la cancelación de este pedido:
-                  </p>
-                  <ul className="space-y-1.5 list-disc list-inside text-slate-600 text-[11px]">
-                    <li>
-                      <strong>Stock en Bodega:</strong> Se reintegrará automáticamente el inventario de los productos de este pedido ({orderItems.length} {orderItems.length === 1 ? 'producto' : 'productos'}).
-                    </li>
-                    <li>
-                      <strong>Finanzas y Ganancias:</strong> No se sumará a las ventas totales, flujo de caja ni distribución a socios.
-                    </li>
-                    <li>
-                      <strong>Despachos:</strong> No figurará en rutas de entrega activas ni pendientes.
-                    </li>
-                  </ul>
-                </div>
-
-                {orderItems.length > 0 && (
-                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 text-xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                      Productos a devolver al stock:
-                    </span>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {orderItems.map((it, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-slate-700 font-semibold text-[11px]">
-                          <span className="truncate pr-2">{it.name}</span>
-                          <span className="font-mono font-bold text-emerald-700 shrink-0">+{it.quantity || it.qty || 1} un.</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="p-4 sm:px-6 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setCancelOrderConfirmModal(null)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Volver / No Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const orderId = order.id;
-                    setCancelOrderConfirmModal(null);
-                    applyOrderStatusUpdate(orderId, 'cancelado');
-                  }}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-md shadow-rose-600/20 transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                >
-                  <X className="w-4 h-4 stroke-[3]" />
-                  <span>Sí, Cancelar Pedido</span>
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
+      {(paymentDeliveryConfirmModal || cancelOrderConfirmModal) && (
+        <Suspense fallback={null}>
+          <PaymentAndCancelOrderModals
+            paymentDeliveryConfirmModal={paymentDeliveryConfirmModal}
+            setPaymentDeliveryConfirmModal={setPaymentDeliveryConfirmModal}
+            currentAdminName={currentAdminName}
+            onConfirmPaymentAndDelivery={handleConfirmPaymentAndDelivery}
+            cancelOrderConfirmModal={cancelOrderConfirmModal}
+            setCancelOrderConfirmModal={setCancelOrderConfirmModal}
+            onConfirmCancelOrder={(orderId) => applyOrderStatusUpdate(orderId, 'cancelado')}
+          />
+        </Suspense>
+      )}
 
       {/* ======================================================= */}
       {/* iOS 18 NATIVE TRANSLUCENT BOTTOM TAB BAR                 */}

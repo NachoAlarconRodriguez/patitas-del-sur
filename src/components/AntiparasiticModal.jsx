@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Pill,
   Shield,
-  ShieldCheck,
   Calendar,
-  Clock,
   Check,
   X,
   ChevronLeft,
@@ -13,11 +11,8 @@ import {
   ChevronDown,
   Bell,
   Sparkles,
-  Heart,
   ShoppingBag,
   Star,
-  CheckCircle2,
-  AlertCircle
 } from 'lucide-react';
 
 // Formateador de moneda CLP
@@ -718,16 +713,24 @@ export default function AntiparasiticModal({
   };
 
   const productList = buildProductList();
+  const autoDetectRef = useRef({ findCustomerAntiparasiticOrder, productList, isCustomProduct });
+  autoDetectRef.current = { findCustomerAntiparasiticOrder, productList, isCustomProduct };
 
   // 3. AUTO-REGISTRO / DETECCIÓN AUTOMÁTICA AL ABRIR O CAMBIAR DE PESTAÑA
   useEffect(() => {
     if (!isOpen) return;
 
-    const detectedOrder = findCustomerAntiparasiticOrder();
+    const {
+      findCustomerAntiparasiticOrder: findOrder,
+      productList: currentProducts,
+      isCustomProduct: customFlag,
+    } = autoDetectRef.current;
+
+    const detectedOrder = findOrder();
     if (detectedOrder) {
       setAutoDetectedOrder(detectedOrder);
-      const firstItem = productList[0];
-      if (firstItem && !isCustomProduct) {
+      const firstItem = currentProducts[0];
+      if (firstItem && !customFlag) {
         setSelectedProduct(firstItem.name);
         setFrequencyMonths(firstItem.duration || '1');
         // Si el cliente compró, pre-cargamos la fecha de la compra como administración automática
@@ -738,9 +741,9 @@ export default function AntiparasiticModal({
       }
     } else {
       setAutoDetectedOrder(null);
-      if (productList.length > 0 && !isCustomProduct) {
-        setSelectedProduct(productList[0].name);
-        setFrequencyMonths(productList[0].duration || '1');
+      if (currentProducts.length > 0 && !customFlag) {
+        setSelectedProduct(currentProducts[0].name);
+        setFrequencyMonths(currentProducts[0].duration || '1');
       }
     }
   }, [isOpen, activeTab, pet?.id]);
@@ -759,7 +762,7 @@ export default function AntiparasiticModal({
   const nextDueDateFriendly = formatDateSpanish(nextDueDate);
 
   // Redirigir a la pantalla principal "Mis Mascotas" (donde están las cards)
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (onClose) {
       onClose();
     }
@@ -767,7 +770,7 @@ export default function AntiparasiticModal({
     window.dispatchEvent(new CustomEvent('patitas_customer_tab_changed', { detail: 'mascotas' }));
     window.dispatchEvent(new CustomEvent('patitas_customer_tab', { detail: 'mascotas' }));
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  }, [onClose, navigate]);
 
   // Cerrar con tecla Escape
   useEffect(() => {
@@ -782,7 +785,7 @@ export default function AntiparasiticModal({
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [isOpen]);
+  }, [isOpen, handleClose]);
 
   if (!isOpen || !pet) return null;
 

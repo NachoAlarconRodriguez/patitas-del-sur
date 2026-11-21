@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Layers, Dumbbell, Scale, Bone, RefreshCw, X, Sparkles, Check, ChevronDown } from 'lucide-react';
+import { Search, Layers, Dumbbell, Scale, Bone, RefreshCw, X, Check, ChevronDown } from 'lucide-react';
 import { BRANDS } from '../data/mockData';
 
 /**

@@ -2,18 +2,11 @@ import React, { useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, Stethoscope, Check } from 'lucide-react';
 import { getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
+import { formatCLP } from '../utils/formatters';
 
-export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
+export default function ProductCard({ product, onSelectProduct: _onSelectProduct, onAddToCart }) {
   const navigate = useNavigate();
   const cardRef = useRef(null);
-
-  const formatCLP = (price) => {
-    return new Intl.NumberFormat('es-CL', {
-      style: 'currency',
-      currency: 'CLP',
-      maximumFractionDigits: 0,
-    }).format(price || 0);
-  };
 
   const variants = product.variants || [];
   const hasVariants = variants.length > 1;
@@ -208,7 +201,7 @@ export default function ProductCard({ product, onSelectProduct, onAddToCart }) {
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               <span>Agotado</span>
             </span>
-          ) : Boolean(product.isVeterinary) ? (
+          ) : product.isVeterinary ? (
             <span className="flex items-center gap-1 bg-teal-900/90 text-white backdrop-blur-md px-2.5 py-1 rounded-full text-[10.5px] font-black shadow-sm border border-teal-400/30">
               <Stethoscope className="w-3 h-3 text-teal-300" />
               <span>Receta Vet</span>

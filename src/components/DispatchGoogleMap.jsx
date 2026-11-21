@@ -1,15 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Compass, Search, MapPin, Layers, Navigation, AlertCircle, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Compass, Search, AlertCircle } from 'lucide-react';
 import { loadGoogleMapsScript, CENTRAL_HUB } from '../services/googleMapsService.js';
-
-// Format currency CLP helper
-const formatCLP = (amount) => {
-  return new Intl.NumberFormat('es-CL', {
-    style: 'currency',
-    currency: 'CLP',
-    maximumFractionDigits: 0,
-  }).format(amount || 0);
-};
+import { formatCLP } from '../utils/formatters';
 
 export default function DispatchGoogleMap({
   dispatchZones = [],
@@ -35,6 +27,10 @@ export default function DispatchGoogleMap({
   const [mapType, setMapType] = useState('roadmap'); // 'roadmap' | 'hybrid' | 'terrain'
   const [localSearchQuery, setLocalSearchQuery] = useState(simulatedAddress || '');
   const [isSearching, setIsSearching] = useState(false);
+
+  const onAddressSelectedRef = useRef(onAddressSelected);
+  onAddressSelectedRef.current = onAddressSelected;
+  const renderDestinationRef = useRef(null);
 
   // 1. Inicializar Google Maps
   useEffect(() => {
@@ -165,7 +161,7 @@ export default function DispatchGoogleMap({
                 }
 
                 setLocalSearchQuery(addressName);
-                onAddressSelected({
+                onAddressSelectedRef.current({
                   address: addressName,
                   distanceKm: distKm,
                   lat: destLat,
@@ -173,7 +169,7 @@ export default function DispatchGoogleMap({
                 });
 
                 // Posicionar destino en el mapa
-                renderDestinationOnMap(destLat, destLng, addressName, distKm);
+                renderDestinationRef.current?.(destLat, destLng, addressName, distKm);
               }
             });
           }
@@ -403,6 +399,7 @@ export default function DispatchGoogleMap({
     },
     [isMapLoaded, dispatchZones]
   );
+  renderDestinationRef.current = renderDestinationOnMap;
 
   // 4. Manejar búsqueda manual rápida (ej. presionar Enter)
   const handleManualSearch = (e) => {
