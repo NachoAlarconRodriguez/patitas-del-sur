@@ -287,7 +287,7 @@ export async function createMercadoPagoOrder({
       origin ||
       (typeof window !== 'undefined' && window.location?.origin
         ? window.location.origin
-        : 'https://patitas-del-sur.vercel.app');
+        : 'https://www.patitas-delsur.cl');
 
     const response = await fetch('/api/mercadopago-order', {
       method: 'POST',

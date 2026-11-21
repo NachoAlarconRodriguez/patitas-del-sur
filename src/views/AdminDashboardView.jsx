@@ -3131,7 +3131,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
     const cleanPhone = (conv.phone || '').replace(/[^0-9]/g, '');
     const codesList = availableCoupons.slice(0, 20).map((c, i) => `${i + 1}. *${c.code}*`).join('\n');
-    const message = `¡Hola ${conv.contactPerson || conv.name}! 🐾\nAquí tienes un lote de cupones con un *${conv.discountPercent || 10}% de descuento* de Patitas del Sur para los clientes de *${conv.name}*:\n\n${codesList}\n\n*Condición:* Cada cupón es de 1 solo uso exclusivo en https://patitasdelsur.cl al procesar la compra en el carrito.\n¡Muchas gracias por la alianza!`;
+    const message = `¡Hola ${conv.contactPerson || conv.name}! 🐾\nAquí tienes un lote de cupones con un *${conv.discountPercent || 10}% de descuento* de Patitas del Sur para los clientes de *${conv.name}*:\n\n${codesList}\n\n*Condición:* Cada cupón es de 1 solo uso exclusivo en https://www.patitas-delsur.cl al procesar la compra en el carrito.\n¡Muchas gracias por la alianza!`;
     const url = cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
   };

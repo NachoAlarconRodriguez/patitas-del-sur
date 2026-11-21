@@ -5,7 +5,7 @@
 
 import { COMPANY_INFO, SITE_URL } from '../constants.js';
 
-export const BASE_URL = String(SITE_URL || COMPANY_INFO.url || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
+export const BASE_URL = String(SITE_URL || COMPANY_INFO.url || 'https://www.patitas-delsur.cl').replace(/\/+$/, '');
 
 /**
  * Global Organization Schema for Comercial Kira SpA / Patitas del Sur

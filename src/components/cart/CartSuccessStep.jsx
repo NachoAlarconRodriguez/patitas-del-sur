@@ -167,12 +167,12 @@ export default function CartSuccessStep({
             </div>
 
             <div className="text-xs space-y-1 text-slate-700 font-medium font-mono">
-              <div><strong className="font-sans">Banco:</strong> Banco de Chile</div>
-              <div><strong className="font-sans">Tipo:</strong> Cuenta Corriente</div>
-              <div><strong className="font-sans">N°:</strong> 00-123-45678-09</div>
-              <div><strong className="font-sans">RUT:</strong> {COMPANY_INFO.rut}</div>
-              <div><strong className="font-sans">Titular:</strong> {COMPANY_INFO.legalName}</div>
-              <div><strong className="font-sans">Email:</strong> {COMPANY_INFO.paymentsEmail}</div>
+              <div><strong className="font-sans">Banco:</strong> {COMPANY_INFO.bankTransfer.bank}</div>
+              <div><strong className="font-sans">Tipo:</strong> {COMPANY_INFO.bankTransfer.accountType}</div>
+              <div><strong className="font-sans">N°:</strong> {COMPANY_INFO.bankTransfer.accountNumber}</div>
+              <div><strong className="font-sans">RUT:</strong> {COMPANY_INFO.bankTransfer.rut}</div>
+              <div><strong className="font-sans">Titular:</strong> {COMPANY_INFO.bankTransfer.holder}</div>
+              <div><strong className="font-sans">Email:</strong> {COMPANY_INFO.bankTransfer.email}</div>
               <div><strong className="font-sans">Asunto:</strong> Pedido {completedOrder.id}</div>
             </div>
 

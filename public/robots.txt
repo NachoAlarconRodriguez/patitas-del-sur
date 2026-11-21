@@ -57,6 +57,6 @@ Disallow: /mi-cuenta
 Disallow: /login
 
 # Dynamic XML Sitemap & AI Knowledge Base (LLMs.txt Standard)
-Sitemap: https://patitas-del-sur.vercel.app/sitemap.xml
-# LLMs.txt: https://patitas-del-sur.vercel.app/llms.txt
-# LLMs-full.txt: https://patitas-del-sur.vercel.app/llms-full.txt
+Sitemap: https://www.patitas-delsur.cl/sitemap.xml
+# LLMs.txt: https://www.patitas-delsur.cl/llms.txt
+# LLMs-full.txt: https://www.patitas-delsur.cl/llms-full.txt

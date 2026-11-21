@@ -58,6 +58,7 @@ import {
   evaluateSmartDeliverySchedule,
   getChileNowParts,
 } from '../services/dispatchService';
+import { COMPANY_INFO } from '../constants';
 import { formatCLP } from '../utils/formatters';
 import CartScheduleStep from './cart/CartScheduleStep';
 import CartSuccessStep from './cart/CartSuccessStep';
@@ -1579,7 +1580,7 @@ export default function CartDrawer({
         mpOrderResult = await createMercadoPagoOrder({
           externalReference: orderId,
           totalAmount: total,
-          payerEmail: email.trim() || user?.email || 'cliente@patitasdelsur.cl',
+          payerEmail: email.trim() || user?.email || COMPANY_INFO.email,
           payerFirstName,
           payerLastName,
           payerName: recipientName.trim() || user?.name || 'Cliente Patitas del Sur',
@@ -1847,12 +1848,12 @@ export default function CartDrawer({
 
   const handleCopyBankData = () => {
     const bankText = `Patitas del Sur - Datos de Transferencia:
-Banco: Banco de Chile
-Tipo: Cuenta Corriente
-N° Cuenta: 00-123-45678-09
-RUT: 77.892.451-2
-Titular: Comercial Kira SpA
-Email: pagos@patitasdelsur.cl
+Banco: ${COMPANY_INFO.bankTransfer.bank}
+Tipo: ${COMPANY_INFO.bankTransfer.accountType}
+N° Cuenta: ${COMPANY_INFO.bankTransfer.accountNumber}
+RUT: ${COMPANY_INFO.bankTransfer.rut}
+Titular: ${COMPANY_INFO.bankTransfer.holder}
+Email: ${COMPANY_INFO.bankTransfer.email}
 Monto: ${formatCLP(completedOrder?.total || total)}
 Asunto: Pedido ${completedOrder?.id}`;
 

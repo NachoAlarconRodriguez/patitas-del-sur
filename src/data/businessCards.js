@@ -69,7 +69,7 @@ export function getBusinessCardBySlug(slug) {
  * para guardar el contacto directo en la agenda en 1 toque.
  */
 export function buildVCardContent(card) {
-  const cleanSiteUrl = String(SITE_URL || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
+  const cleanSiteUrl = String(SITE_URL || 'https://www.patitas-delsur.cl').replace(/\/+$/, '');
   const cardUrl = `${cleanSiteUrl}/tarjeta/${card.slug}`;
   const cleanPhone = `+${String(card.phoneRaw || '').replace(/\D/g, '')}`;
 

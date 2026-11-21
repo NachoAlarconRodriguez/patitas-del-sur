@@ -16,7 +16,7 @@ export default function SEOHead({
   noindex = false,
 }) {
   useEffect(() => {
-    const baseUrl = String(SITE_URL || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
+    const baseUrl = String(SITE_URL || 'https://www.patitas-delsur.cl').replace(/\/+$/, '');
 
     // 1. Update Document Title (avoid duplicating brand suffix if already present)
     const hasBrandSuffix = title && /patitas del sur/i.test(title);

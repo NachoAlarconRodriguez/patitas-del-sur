@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const SITE_URL = (
   process.env.SITE_URL ||
   process.env.VITE_SITE_URL ||
-  'https://patitas-del-sur.vercel.app'
+  'https://www.patitas-delsur.cl'
 ).replace(/\/+$/, '');
 
 const SUPABASE_URL =

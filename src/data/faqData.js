@@ -46,7 +46,7 @@ export const FRUTILLAR_FAQS = [
     shortAnswer:
       'Aceptamos Pago Anticipado online vía Mercado Pago (tarjetas de crédito, débito Redcompra y prepago) y Pago Contra Entrega al recibir en tu puerta (transferencia bancaria, efectivo o tarjeta con máquina POS móvil).',
     details:
-      'Todas las ventas son emitidas formalmente por Comercial Kira SpA (RUT 77.892.451-2) y suman 1 punto Club Patitas por cada $1.000 CLP de compra.',
+      'Todas las ventas son emitidas formalmente por Comercial Kira SpA (RUT 78.493.053-K) y suman 1 punto Club Patitas por cada $1.000 CLP de compra.',
   },
 ];
 

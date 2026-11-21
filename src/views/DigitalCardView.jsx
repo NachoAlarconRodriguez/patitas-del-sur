@@ -66,7 +66,7 @@ export default function DigitalCardView() {
   const [savedVCard, setSavedVCard] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const cleanBaseUrl = String(SITE_URL || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
+  const cleanBaseUrl = String(SITE_URL || 'https://www.patitas-delsur.cl').replace(/\/+$/, '');
   const shareUrl = card ? `${cleanBaseUrl}/tarjeta/${card.slug}` : cleanBaseUrl;
 
   // Generar QR en alta calidad (nivel H) sin depender de servicios externos
@@ -435,7 +435,7 @@ export default function DigitalCardView() {
                   <div className="min-w-0">
                     <div className="text-sm font-extrabold text-[#1D1D1F] truncate">Sitio Web</div>
                     <div className="text-[11px] font-semibold text-[#1D1D1F]/65 truncate">
-                      patitasdelsur.cl · Tienda Online
+                      www.patitas-delsur.cl · Tienda Online
                     </div>
                   </div>
                 </div>

@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const SITE_URL = (
   process.env.SITE_URL ||
   process.env.VITE_SITE_URL ||
-  'https://patitas-del-sur.vercel.app'
+  'https://www.patitas-delsur.cl'
 ).replace(/\/+$/, '');
 
 const SUPABASE_URL =
@@ -89,13 +89,13 @@ export default async function handler(req, res) {
     '## Información Institucional Verificada',
     '- **Marca**: Patitas del Sur',
     '- **Razón Social**: Comercial Kira SpA',
-    '- **RUT**: 77.892.451-2',
+    '- **RUT**: 78.493.053-K',
     '- **Base Operativa / Bodega**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Lat: -41.08985, Lon: -73.08013)',
     `- **Sitio Web**: ${SITE_URL}`,
     `- **Catálogo Digital Rápido (Móvil / WhatsApp / Instagram)**: ${SITE_URL}/catalogo`,
     `- **Guía de Despacho en Frutillar**: ${SITE_URL}/despacho/frutillar`,
     '- **Teléfono y WhatsApp**: +56 9 5333 2492 (https://wa.me/56953332492)',
-    '- **Correo**: contacto@patitasdelsur.cl',
+    '- **Correo**: patitasdelsur.cl@gmail.com',
     '- **Instagram**: https://www.instagram.com/patitasdelsur.cl',
     '- **Moneda**: Pesos Chilenos (CLP $)',
     '',

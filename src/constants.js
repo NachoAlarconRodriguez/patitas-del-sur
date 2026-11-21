@@ -2,12 +2,12 @@
  * Constantes institucionales y de configuración centralizada de Patitas del Sur
  * Fuente única de verdad (Single Source of Truth) para SEO, GEO, AEO y UI.
  *
- * Para migrar a dominio propio (ej. https://patitasdelsur.cl), basta definir
+ * Para migrar a dominio propio (ej. https://www.patitas-delsur.cl), basta definir
  * VITE_SITE_URL en Vercel y actualizar index.html / robots.txt.
  */
 export const SITE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SITE_URL) ||
-  'https://patitas-del-sur.vercel.app';
+  'https://www.patitas-delsur.cl';
 
 export const FRUTILLAR_SECTORS = [
   'Frutillar Bajo',
@@ -27,8 +27,8 @@ export const FRUTILLAR_SECTORS = [
 export const COMPANY_INFO = {
   name: 'Patitas del Sur',
   legalName: 'Comercial Kira SpA',
-  rut: '77.892.451-2',
-  taxId: '77.892.451-2',
+  rut: '78.493.053-K',
+  taxId: '78.493.053-K',
   url: SITE_URL,
   defaultOgImage: '/images/og-patitas-frutillar.jpg',
   phone: '+56 9 5333 2492',
@@ -37,10 +37,18 @@ export const COMPANY_INFO = {
   whatsappLink: 'https://wa.me/56953332492',
   whatsappUrl: 'https://wa.me/56953332492',
   whatsappDefaultMessage: 'Hola! Quisiera asesoría para elegir el alimento ideal para mi mascota en Frutillar',
-  email: 'contacto@patitasdelsur.cl',
-  supportEmail: 'postventa@patitasdelsur.cl',
-  privacyEmail: 'privacidad@patitasdelsur.cl',
-  paymentsEmail: 'pagos@patitasdelsur.cl',
+  email: 'patitasdelsur.cl@gmail.com',
+  supportEmail: 'patitasdelsur.cl@gmail.com',
+  privacyEmail: 'patitasdelsur.cl@gmail.com',
+  paymentsEmail: 'patitasdelsur.cl@gmail.com',
+  bankTransfer: {
+    bank: 'Mercado Pago',
+    accountType: 'Cuenta Vista',
+    accountNumber: '1034904137',
+    rut: '78.493.053-K',
+    holder: 'Comercial Kira SpA',
+    email: 'patitasdelsur.cl@gmail.com',
+  },
   instagramUrl: 'https://www.instagram.com/patitasdelsur.cl',
   facebookUrl: 'https://www.facebook.com/patitasdelsur.cl',
   location: 'Frutillar, Región de Los Lagos, Chile',

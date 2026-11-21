@@ -70,7 +70,7 @@ function verifyWebhookSignature(req, bodyData, secret) {
 
 /**
  * Serverless Endpoint: Recepción de Webhooks de Mercado Pago (Orders API v1)
- * URL de configuración en Mercado Pago: https://patitas-del-sur.vercel.app/api/mercadopago-webhook
+ * URL de configuración en Mercado Pago: https://www.patitas-delsur.cl/api/mercadopago-webhook
  * Documentación: https://www.mercadopago.cl/developers/es/docs/checkout-pro-orders/notifications
  */
 export default async function handler(req, res) {

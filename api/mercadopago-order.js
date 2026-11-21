@@ -160,7 +160,7 @@ export default async function handler(req, res) {
       const cleanEmail =
         payerEmail && String(payerEmail).includes('@')
           ? String(payerEmail).trim()
-          : 'cliente@patitasdelsur.cl';
+          : 'patitasdelsur.cl@gmail.com';
 
       // Separar nombre y apellido para payer.first_name y payer.last_name
       const fullNameParts = String(payerName || '').trim().split(/\s+/).filter(Boolean);
@@ -202,7 +202,7 @@ export default async function handler(req, res) {
         origin ||
         req.headers?.origin ||
         (req.headers?.referer ? new URL(req.headers.referer).origin : null) ||
-        'https://patitas-del-sur.vercel.app';
+        'https://www.patitas-delsur.cl';
       const baseUrl = String(rawOrigin).replace(/\/+$/, '');
 
       // Resolver additional_info["payer.registration_date"] en formato ISO 8601

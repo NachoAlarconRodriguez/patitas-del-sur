@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const DEFAULT_SITE_URL = 'https://patitas-del-sur.vercel.app';
+const DEFAULT_SITE_URL = 'https://www.patitas-delsur.cl';
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
   process.env.SUPABASE_URL ||

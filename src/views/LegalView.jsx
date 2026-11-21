@@ -59,7 +59,7 @@ export default function LegalView() {
             ? 'Garantía Legal y Devoluciones SERNAC'
             : 'Términos y Condiciones de Venta'
         }
-        description="Marco legal, condiciones de contratación, políticas de despacho lacustre y derechos del consumidor de Patitas del Sur (Comercial Kira SpA, RUT 77.892.451-2)."
+        description="Marco legal, condiciones de contratación, políticas de despacho lacustre y derechos del consumidor de Patitas del Sur (Comercial Kira SpA, RUT 78.493.053-K)."
         canonical={
           activeTab === 'privacidad'
             ? '/politicas-de-privacidad'
@@ -153,7 +153,7 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">1. Identificación del Vendedor</h3>
                 <p>
-                  El sitio web <strong>patitasdelsur.cl</strong> es operado y administrado por <strong>{COMPANY_INFO.legalName}</strong>, Rol Único Tributario (RUT) <strong>{COMPANY_INFO.rut}</strong>, con centro operativo en {COMPANY_INFO.hubAddress}. Todas las compras realizadas a través de la plataforma se rigen por la legislación chilena vigente.
+                  El sitio web <strong>www.patitas-delsur.cl</strong> es operado y administrado por <strong>{COMPANY_INFO.legalName}</strong>, Rol Único Tributario (RUT) <strong>{COMPANY_INFO.rut}</strong>, con centro operativo en {COMPANY_INFO.hubAddress}. Todas las compras realizadas a través de la plataforma se rigen por la legislación chilena vigente.
                 </p>
               </section>
 
@@ -178,7 +178,7 @@ export default function LegalView() {
                 </p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
                   <li><strong>Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago):</strong> Transacciones seguras con cifrado bancario de 256 bits y autenticación 3D Secure.</li>
-                  <li><strong>Transferencia Bancaria Directa:</strong> A la cuenta corriente bancaria de {COMPANY_INFO.legalName} (RUT {COMPANY_INFO.rut}), con validación rápida vía comprobante.</li>
+                  <li><strong>Transferencia Bancaria Directa:</strong> A la cuenta vista {COMPANY_INFO.bankTransfer.bank} de {COMPANY_INFO.legalName} (RUT {COMPANY_INFO.rut}), con validación rápida vía comprobante.</li>
                   <li><strong>Efectivo contra entrega:</strong> Disponible en zonas habilitadas previa coordinación por WhatsApp ({COMPANY_INFO.phoneDisplay}).</li>
                 </ul>
               </section>
@@ -226,7 +226,7 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">4. Ejercicio de Derechos ARCO</h3>
                 <p>
-                  Conforme a la Ley 19.628, el titular de los datos podrá solicitar en cualquier momento el acceso, rectificación, cancelación u oposición al tratamiento de sus datos personales enviando un correo a <strong>privacidad@patitasdelsur.cl</strong>.
+                  Conforme a la Ley 19.628, el titular de los datos podrá solicitar en cualquier momento el acceso, rectificación, cancelación u oposición al tratamiento de sus datos personales enviando un correo a <strong>{COMPANY_INFO.privacyEmail}</strong>.
                 </p>
               </section>
             </div>

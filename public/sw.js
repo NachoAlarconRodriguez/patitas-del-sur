@@ -1,5 +1,5 @@
 // Service Worker for Patitas del Sur PWA
-const CACHE_NAME = 'patitas-pwa-v4';
+const CACHE_NAME = 'patitas-pwa-v5';
 const STATIC_ASSETS = [
   '/manifest.webmanifest',
   '/favicon.svg',
