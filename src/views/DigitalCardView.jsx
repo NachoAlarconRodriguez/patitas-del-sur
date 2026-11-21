@@ -339,9 +339,9 @@ export default function DigitalCardView() {
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full py-3.5 px-5 rounded-2xl bg-[#1D1D1F] hover:bg-black text-white font-extrabold text-sm shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2.5"
+                className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-[#25D366] to-[#1EB858] hover:from-[#20BD5A] hover:to-[#18A34D] text-white font-extrabold text-sm shadow-[0_10px_24px_-10px_rgba(37,211,102,0.75)] transition-all active:scale-[0.98] flex items-center justify-center gap-2.5"
               >
-                <WhatsAppIcon className="w-4 h-4 shrink-0" colored />
+                <WhatsAppIcon className="w-5 h-5 shrink-0" colored={false} />
                 <span>Escribir por WhatsApp</span>
               </a>
             </div>
@@ -399,85 +399,89 @@ export default function DigitalCardView() {
             </div>
 
             {/* Canales Oficiales y Tienda */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400 px-1">
                 Canales Oficiales · Patitas del Sur
               </h2>
 
+              {/* Catálogo Digital — Ámbar Dorado Patitas del Sur */}
               <Link
                 to="/catalogo"
-                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#FFFBEB] hover:bg-[#FEF3C7] border border-[#F5BA13]/45 transition-all active:scale-[0.99]"
+                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7]/90 hover:from-[#FEF3C7] hover:to-[#FDE68A]/80 border border-[#F5BA13]/60 transition-all active:scale-[0.99]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-2xs">
+                  <span className="w-10 h-10 rounded-xl bg-[#F5BA13] text-[#1D1D1F] flex items-center justify-center shrink-0 shadow-xs">
                     <ShoppingBag className="w-5 h-5" />
                   </span>
                   <div className="min-w-0">
                     <div className="text-sm font-black text-[#1D1D1F] truncate">Catálogo Digital</div>
-                    <div className="text-[11px] font-semibold text-[#78350F] truncate">
-                      Stock en vivo · Despacho hoy en Frutillar
+                    <div className="text-[11px] font-bold text-[#78350F] truncate">
+                      Stock en vivo · Despacho en Frutillar
                     </div>
                   </div>
                 </div>
                 <ArrowUpRight className="w-4 h-4 text-[#B45309] shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
               </Link>
 
+              {/* Sitio Web — Carbón & Dorado Patitas del Sur */}
               <Link
                 to="/"
-                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white hover:bg-[#FAF8F4] border border-[#1D1D1F]/10 transition-all active:scale-[0.99]"
+                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#F7F4EC] hover:bg-[#EFEAE0] border border-[#1D1D1F]/16 transition-all active:scale-[0.99]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shrink-0">
+                  <span className="w-10 h-10 rounded-xl bg-[#1D1D1F] text-[#F5BA13] flex items-center justify-center shrink-0 shadow-xs">
                     <Globe className="w-5 h-5" />
                   </span>
                   <div className="min-w-0">
                     <div className="text-sm font-extrabold text-[#1D1D1F] truncate">Sitio Web</div>
-                    <div className="text-[11px] font-medium text-slate-500 truncate">
+                    <div className="text-[11px] font-semibold text-[#1D1D1F]/65 truncate">
                       patitasdelsur.cl · Tienda Online
                     </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#1D1D1F] shrink-0 transition-colors" />
+                <ArrowUpRight className="w-4 h-4 text-[#1D1D1F]/65 group-hover:text-[#1D1D1F] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 shrink-0 transition-all" />
               </Link>
 
+              {/* Instagram — Degradado oficial Instagram */}
               <a
                 href={card.instagram.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white hover:bg-[#FAF8F4] border border-[#1D1D1F]/10 transition-all active:scale-[0.99]"
+                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-r from-[#FFF4F8] to-[#FFF7F0] hover:from-[#FFE9F1] hover:to-[#FFEEDF] border border-[#E1306C]/28 transition-all active:scale-[0.99]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl bg-[#FAF8F4] text-[#1D1D1F] border border-[#1D1D1F]/10 flex items-center justify-center shrink-0">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white flex items-center justify-center shrink-0 shadow-xs">
                     <InstagramBrandIcon className="w-5 h-5" />
                   </span>
                   <div className="min-w-0">
                     <div className="text-sm font-extrabold text-[#1D1D1F] truncate">Instagram</div>
-                    <div className="text-[11px] font-medium text-slate-500 truncate">
+                    <div className="text-[11px] font-semibold text-[#9D174D] truncate">
                       {card.instagram.handle}
                     </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#1D1D1F] shrink-0 transition-colors" />
+                <ArrowUpRight className="w-4 h-4 text-[#DD2A7B] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 shrink-0 transition-transform" />
               </a>
 
+              {/* Facebook — Azul oficial Facebook */}
               <a
                 href={card.facebook.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white hover:bg-[#FAF8F4] border border-[#1D1D1F]/10 transition-all active:scale-[0.99]"
+                className="group flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#F0F6FF] hover:bg-[#E4EFFF] border border-[#1877F2]/28 transition-all active:scale-[0.99]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl bg-[#FAF8F4] text-[#1D1D1F] border border-[#1D1D1F]/10 flex items-center justify-center shrink-0">
+                  <span className="w-10 h-10 rounded-xl bg-[#1877F2] text-white flex items-center justify-center shrink-0 shadow-xs">
                     <FacebookBrandIcon className="w-5 h-5" />
                   </span>
                   <div className="min-w-0">
                     <div className="text-sm font-extrabold text-[#1D1D1F] truncate">Facebook</div>
-                    <div className="text-[11px] font-medium text-slate-500 truncate">
+                    <div className="text-[11px] font-semibold text-[#1D4ED8] truncate">
                       {card.facebook.handle}
                     </div>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-[#1D1D1F] shrink-0 transition-colors" />
+                <ArrowUpRight className="w-4 h-4 text-[#1877F2] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 shrink-0 transition-transform" />
               </a>
             </div>
           </div>
