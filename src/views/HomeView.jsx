@@ -13,7 +13,7 @@ import { getDispatchZonesFromSupabase } from '../services/dispatchService';
 
 const REVIEWS_DATA = [
   {
-    photo: 'https://media.kolpusites.com/kibory/resena-perro-1.webp',
+    photo: '/images/reviews/resena-toby.webp',
     alt: 'Toby, Puerto Varas',
     tag: 'Puerto Varas · 4 años',
     title: 'Llegó en menos de 2 horas',
@@ -22,7 +22,7 @@ const REVIEWS_DATA = [
     withPet: 'con Toby',
   },
   {
-    photo: 'https://media.kolpusites.com/kibory/resena-perro-2.webp',
+    photo: '/images/reviews/resena-nala.webp',
     alt: 'Nala, Golden, Llanquihue',
     tag: 'Llanquihue · Golden, 3 años',
     title: 'Pelaje brillante y cero alergias',
@@ -40,7 +40,7 @@ const REVIEWS_DATA = [
     withPet: 'con Milo',
   },
   {
-    photo: 'https://media.kolpusites.com/kibory/resena-perro-4.webp',
+    photo: '/images/reviews/resena-rufo.webp',
     alt: 'Rufo, Mestizo, Puerto Montt',
     tag: 'Puerto Montt · 5 años',
     title: 'Los mejores precios del sur',
@@ -49,7 +49,7 @@ const REVIEWS_DATA = [
     withPet: 'con Rufo',
   },
   {
-    photo: 'https://media.kolpusites.com/kibory/resena-perro-5.webp',
+    photo: '/images/reviews/resena-kira.webp',
     alt: 'Kira, Pastor, Puerto Varas',
     tag: 'Puerto Varas · Senior, 10 años',
     title: 'Encargo especial impecable',
@@ -58,7 +58,7 @@ const REVIEWS_DATA = [
     withPet: 'con Kira',
   },
   {
-    photo: 'https://media.kolpusites.com/kibory/resena-perro-6.webp',
+    photo: '/images/reviews/resena-pipa.webp',
     alt: 'Pipa, Cachorro, Llanquihue',
     tag: 'Llanquihue · Cachorro, 6 meses',
     title: 'Cachorro feliz y sano',
@@ -1564,25 +1564,31 @@ export default function HomeView({
                   {isFeat && (
                     <span className="rc__trio" aria-hidden="true">
                       <img
-                        src="https://media.kolpusites.com/kibory/trio-1b-clean3.webp"
+                        src="/images/trio/trio-1.webp"
                         alt=""
                         width="600"
                         height="800"
-                        style={{ '--e': 0.718 }}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ '--e': 0.8 }}
                       />
                       <img
-                        src="https://media.kolpusites.com/kibory/trio-2.webp"
+                        src="/images/trio/trio-2.webp"
                         alt=""
                         width="600"
                         height="800"
-                        style={{ '--e': 0.771 }}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ '--e': 0.88 }}
                       />
                       <img
-                        src="https://media.kolpusites.com/kibory/trio-3.webp"
+                        src="/images/trio/trio-3.webp"
                         alt=""
                         width="600"
                         height="800"
-                        style={{ '--e': 0.671 }}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ '--e': 0.82 }}
                       />
                     </span>
                   )}
