@@ -419,12 +419,12 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
   return (
     <div className="pt-28 pb-44 md:pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
       <SEOHead
-        title={product.name}
-        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${product.tagline || 'Alimento holístico y natural para mascotas.'} Despacho a domicilio en Puerto Varas, Llanquihue y Región de Los Lagos.`}
+        title={`${product.name} en Frutillar`}
+        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${product.tagline || 'Alimento natural y super premium para mascotas.'} Stock real y despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones).`}
         canonical={`/producto/${product.id}`}
         ogImage={product.image}
         ogType="product"
-        keywords={`${product.name}, ${product.brand || ''}, alimento ${isDog ? 'perros' : 'gatos'} puerto varas, comida mascotas llanquihue`}
+        keywords={`${product.name}, ${product.brand || ''}, alimento ${isDog ? 'perros' : 'gatos'} frutillar, comida mascotas frutillar, despacho frutillar`}
         jsonLd={[
           getProductSchema(product),
           getBreadcrumbSchema([

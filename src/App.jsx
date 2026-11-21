@@ -15,6 +15,8 @@ const CustomerDashboardView = lazy(() => import('./views/CustomerDashboardView')
 const AdminDashboardView = lazy(() => import('./views/AdminDashboardView'));
 const LegalView = lazy(() => import('./views/LegalView'));
 const DigitalCatalogView = lazy(() => import('./views/DigitalCatalogView'));
+const FrutillarLandingView = lazy(() => import('./views/FrutillarLandingView'));
+const DigitalCardView = lazy(() => import('./views/DigitalCardView'));
 
 // Components
 import Navbar from './components/Navbar';
@@ -503,14 +505,16 @@ export default function App() {
   const isLoginPage = location.pathname === '/login';
   const isKiboryHome = location.pathname === '/';
   const isDigitalCatalog = location.pathname === '/catalogo';
+  const isDigitalCard = location.pathname.startsWith('/tarjeta');
+  const isStandaloneExpress = isDigitalCatalog || isDigitalCard;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#F5BA13] selection:text-[#1D1D1F]">
-      {!isDigitalCatalog && <Preloader />}
+      {!isStandaloneExpress && <Preloader />}
       <ScrollToTop />
 
-      {/* Global Navigation Bar - Hidden on Login screen, Kibory Home, and Digital Catalog Express */}
-      {!isLoginPage && !isKiboryHome && !isDigitalCatalog && (
+      {/* Global Navigation Bar - Hidden on Login screen, Kibory Home, Digital Catalog Express, and NFC Cards */}
+      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && (
         <Navbar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -562,6 +566,19 @@ export default function App() {
                   />
                 }
               />
+              <Route
+                path="/despacho/frutillar"
+                element={
+                  <FrutillarLandingView
+                    cartItems={cartItems}
+                    onAddToCart={handleAddToCart}
+                    onUpdateQuantity={handleUpdateQuantity}
+                    onRemoveItem={handleRemoveItem}
+                    onSelectProduct={handleSelectProduct}
+                  />
+                }
+              />
+              <Route path="/tarjeta/:slug" element={<DigitalCardView />} />
               <Route
                 path="/perros"
                 element={
@@ -673,8 +690,8 @@ export default function App() {
         </RouteErrorBoundary>
       </main>
 
-      {/* Global Footer - Hidden on Login, Admin dashboards, Kibory Home, and Digital Catalog Express */}
-      {!isLoginPage && !isKiboryHome && !isDigitalCatalog && location.pathname !== '/admin' && <Footer />}
+      {/* Global Footer - Hidden on Login, Admin dashboards, Kibory Home, Digital Catalog Express, and NFC Cards */}
+      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && location.pathname !== '/admin' && <Footer />}
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer
@@ -707,8 +724,8 @@ export default function App() {
         onLoginSuccess={handleLoginSuccess}
       />
 
-      {/* Mobile Bottom Navigation Bar - Hidden on Login, Admin, and Digital Catalog Express */}
-      {!isLoginPage && !isDigitalCatalog && location.pathname !== '/admin' && (
+      {/* Mobile Bottom Navigation Bar - Hidden on Login, Admin, Digital Catalog Express, and NFC Cards */}
+      {!isLoginPage && !isStandaloneExpress && location.pathname !== '/admin' && (
         <BottomNavBar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -720,7 +737,7 @@ export default function App() {
       {/* Botón Flotante Oficial de WhatsApp */}
       <FloatingWhatsAppButton
         phoneNumber="56953332492"
-        hidden={isDigitalCatalog || isCartOpen || Boolean(selectedProductModal) || isAuthModalOpen}
+        hidden={isStandaloneExpress || isCartOpen || Boolean(selectedProductModal) || isAuthModalOpen}
       />
     </div>
   );

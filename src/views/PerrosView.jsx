@@ -9,14 +9,15 @@ const PERROS_CATALOG_CONFIG = {
   fallbackBrandGroup: 'Otras Recetas Patagónicas',
   fallbackBrandTagline: 'Nutrición Natural de la Patagonia',
   emptyMessage: 'No encontramos productos con los filtros seleccionados',
-  srTitle: 'Alimento y Nutrición Super Premium para Perros en Puerto Varas, Llanquihue y Frutillar',
+  srTitle: 'Alimento y Nutrición Super Premium para Perros con Despacho en Frutillar',
   seo: {
-    title: 'Alimento y Snacks Naturales para Perros en Puerto Varas',
+    title: 'Alimento y Snacks Naturales para Perros en Frutillar',
     description:
-      'Catálogo de alimento super premium 100% Grain Free, antiparasitarios y premios deshidratados para perros. Despacho express en Puerto Varas, Llanquihue y Frutillar.',
+      'Catálogo de alimento super premium, recetas Grain Free, snacks naturales y antiparasitarios para perros con stock en vivo y despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones). Envío gratis desde $25.000 CLP.',
     canonical: '/perros',
+    ogImage: '/images/og-perros-kira.jpg',
     keywords:
-      'alimento perros puerto varas, comida perros llanquihue, bravery perros los lagos, grain free perros chile',
+      'alimento perros frutillar, comida perros frutillar, bravery perros frutillar, acana frutillar, grain free perros frutillar, despacho mascotas frutillar',
     breadcrumbName: 'Perros',
     faqs: [...PERROS_FAQS, ...GENERAL_FAQS.slice(0, 2)],
   },
@@ -24,7 +25,7 @@ const PERROS_CATALOG_CONFIG = {
     eyebrowPrefix: 'Nutrición para Perros',
     heading: 'Su plato favorito, siempre en stock.',
     subheading:
-      'Marcas super premium y formatos de ahorro con despacho rápido directo a tu puerta en el Sur.',
+      'Marcas super premium y formatos de ahorro con despacho el mismo día en Frutillar (urbano y parcelaciones).',
     searchPlaceholder: 'Buscar por marca, salmón, cordero, formato...',
     searchAriaLabel: 'Buscar alimento para perros',
     mascotNote: '¡los favoritos de Kira!',
@@ -35,9 +36,9 @@ const PERROS_CATALOG_CONFIG = {
     mascotHeight: '660',
   },
   faq: {
-    title: 'Preguntas Frecuentes sobre Alimento y Salud Canina',
+    title: 'Preguntas Frecuentes sobre Alimento y Salud Canina en Frutillar',
     subtitle:
-      'Respuestas veterinarias directas y estructuradas sobre nutrición sin granos, snacks naturales y despacho en Puerto Varas.',
+      'Respuestas directas y verificadas sobre nutrición sin granos, snacks naturales, antiparasitarios y despacho a domicilio en Frutillar.',
   },
   matchWeightFallback: (weightFilter, weights) => {
     if (weightFilter === 'snacks' && weights.some((w) => w.includes('g') && !w.includes('kg'))) return true;

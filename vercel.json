@@ -1,6 +1,20 @@
 {
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
+    { "source": "/llms.txt", "destination": "/api/llms?mode=summary" },
+    { "source": "/llms-full.txt", "destination": "/api/llms?mode=full" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    {
+      "source": "/((?!api/|images/|assets/|favicon|robots\\.txt|sitemap\\.xml|llms|manifest|sw\\.js).*)",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": "^(WhatsApp/.*|.*(facebookexternalhit|Facebot|meta-externalagent|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Discordbot|Pinterest|SkypeUriPreview).*)$"
+        }
+      ],
+      "destination": "/api/og?path=/$1"
+    },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

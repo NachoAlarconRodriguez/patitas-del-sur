@@ -1,11 +1,11 @@
 /**
- * Schema.org JSON-LD Generators for SEO & Rich Snippets
+ * Schema.org JSON-LD Generators for SEO, GEO & AEO Rich Snippets
  * Compliant with Google Search Central & Schema.org specifications
  */
 
-import { COMPANY_INFO } from '../constants';
+import { COMPANY_INFO, SITE_URL } from '../constants.js';
 
-export const BASE_URL = COMPANY_INFO.url || 'https://patitasdelsur.cl';
+export const BASE_URL = String(SITE_URL || COMPANY_INFO.url || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
 
 /**
  * Global Organization Schema for Comercial Kira SpA / Patitas del Sur
@@ -20,8 +20,9 @@ export function getOrganizationSchema() {
     taxID: COMPANY_INFO.taxId,
     url: BASE_URL,
     logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
-    image: `${BASE_URL}/images/hero_dog.png`,
-    description: 'Comercializadora de alimento holístico, 100% libre de granos y snacks naturales para perros y gatos en la Cuenca del Lago Llanquihue y Sur de Chile.',
+    image: `${BASE_URL}${COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg'}`,
+    description:
+      'Tienda online de alimento super premium, fórmulas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio propio en Frutillar, Región de Los Lagos, Chile.',
     telephone: COMPANY_INFO.phone,
     email: COMPANY_INFO.email,
     address: {
@@ -50,7 +51,7 @@ export function getOrganizationSchema() {
 }
 
 /**
- * WebSite Schema with Sitelinks SearchBox Action
+ * WebSite Schema with Sitelinks SearchBox Action pointing to /catalogo
  */
 export function getWebSiteSchema() {
   return {
@@ -59,7 +60,7 @@ export function getWebSiteSchema() {
     '@id': `${BASE_URL}/#website`,
     url: BASE_URL,
     name: 'Patitas del Sur',
-    description: 'Alimento holístico y snacks naturales para mascotas en el sur de Chile',
+    description: 'Alimento para perros y gatos con despacho a domicilio en Frutillar, Región de Los Lagos, Chile.',
     publisher: {
       '@id': `${BASE_URL}/#organization`,
     },
@@ -68,7 +69,7 @@ export function getWebSiteSchema() {
       '@type': 'SearchAction',
       target: {
         '@type': 'EntryPoint',
-        urlTemplate: `${BASE_URL}/perros?q={search_term_string}`,
+        urlTemplate: `${BASE_URL}/catalogo?q={search_term_string}`,
       },
       'query-input': 'required name=search_term_string',
     },
@@ -93,7 +94,26 @@ export function getBreadcrumbSchema(items = []) {
 }
 
 /**
- * Rich Product Schema for Google Search Rich Snippets
+ * CollectionPage Schema for /catalogo, /perros, and /gatos
+ */
+export function getCollectionPageSchema({ name, description, url = '/catalogo', itemCount }) {
+  const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url.startsWith('/') ? '' : '/'}${url}`;
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    '@id': `${fullUrl}#collection`,
+    name,
+    description,
+    url: fullUrl,
+    inLanguage: 'es-CL',
+    isPartOf: { '@id': `${BASE_URL}/#website` },
+    ...(typeof itemCount === 'number' && itemCount > 0 ? { numberOfItems: itemCount } : {}),
+  };
+}
+
+/**
+ * Rich Product Schema for Google Search Rich Snippets & AI Engines
+ * Reflects real stock availability, accurate Frutillar shipping cost, and only includes AggregateRating if real reviews exist.
  * @param {Object} product
  */
 export function getProductSchema(product) {
@@ -101,14 +121,25 @@ export function getProductSchema(product) {
 
   const isDog = product.petType === 'perros';
   const categoryLabel = isDog ? 'Alimento para Perros' : 'Alimento para Gatos';
-  const productUrl = `${BASE_URL}/producto/${product.id}`;
+  const productUrl = `${BASE_URL}/producto/${encodeURIComponent(String(product.id))}`;
   const imageUrl = product.image?.startsWith('http')
     ? product.image
-    : `${BASE_URL}${product.image?.startsWith('/') ? '' : '/'}${product.image || 'images/hero_dog.png'}`;
+    : `${BASE_URL}${product.image?.startsWith('/') ? '' : '/'}${product.image || 'images/og-patitas-frutillar.jpg'}`;
 
-  const ratingVal = Number(product.rating) || 4.9;
-  const reviewsCount = Number(product.reviewsCount) || 12;
   const priceVal = Number(product.price) || 0;
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const hasStock = variants.length > 0
+    ? variants.some((v) => (typeof v.stock === 'number' ? v.stock : 10) > 0 && !v.isPaused)
+    : (typeof product.stock === 'number' ? product.stock : 10) > 0 && !product.isPaused && !product.isOutOfStock;
+
+  const shippingRateVal =
+    priceVal >= (COMPANY_INFO.freeShippingThreshold || 25000)
+      ? 0
+      : (COMPANY_INFO.baseShippingFee || 2500);
+
+  const ratingVal = Number(product.rating);
+  const reviewsCount = Number(product.reviewsCount);
+  const hasVerifiedReviews = Number.isFinite(ratingVal) && ratingVal > 0 && Number.isFinite(reviewsCount) && reviewsCount > 0;
 
   const additionalProperties = [];
   if (product.proteinValue) {
@@ -147,9 +178,9 @@ export function getProductSchema(product) {
     name: product.name,
     image: [imageUrl],
     description: product.tagline
-      ? `${product.tagline}. Alimento super premium para ${isDog ? 'perros' : 'gatos'} con despacho en Puerto Varas, Llanquihue y Región de Los Lagos.`
-      : `${product.name} disponible en Patitas del Sur con despacho a domicilio en la Cuenca del Lago Llanquihue.`,
-    sku: String(product.id),
+      ? `${product.tagline}. Alimento para ${isDog ? 'perros' : 'gatos'} con despacho a domicilio en Frutillar (urbano y parcelaciones).`
+      : `${product.name} disponible en Patitas del Sur con despacho a domicilio el mismo día en Frutillar, Región de Los Lagos.`,
+    sku: String(product.sku || product.id),
     category: categoryLabel,
     brand: {
       '@type': 'Brand',
@@ -160,7 +191,7 @@ export function getProductSchema(product) {
       priceCurrency: 'CLP',
       price: priceVal,
       priceValidUntil: '2027-12-31',
-      availability: 'https://schema.org/InStock',
+      availability: hasStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
       url: productUrl,
       itemCondition: 'https://schema.org/NewCondition',
       seller: {
@@ -172,7 +203,7 @@ export function getProductSchema(product) {
         '@type': 'OfferShippingDetails',
         shippingRate: {
           '@type': 'MonetaryAmount',
-          value: '0',
+          value: String(shippingRateVal),
           currency: 'CLP',
         },
         shippingDestination: [
@@ -180,6 +211,7 @@ export function getProductSchema(product) {
             '@type': 'DefinedRegion',
             addressCountry: 'CL',
             addressRegion: 'Región de Los Lagos',
+            postalCode: COMPANY_INFO.postalCode || '5620000',
           },
         ],
         deliveryTime: {
@@ -187,25 +219,29 @@ export function getProductSchema(product) {
           transitTime: {
             '@type': 'QuantitativeValue',
             minValue: 0,
-            maxValue: 2,
+            maxValue: 1,
             unitCode: 'DAY',
           },
         },
       },
     },
-    aggregateRating: {
-      '@type': 'AggregateRating',
-      ratingValue: ratingVal.toFixed(1),
-      reviewCount: reviewsCount,
-      bestRating: '5',
-      worstRating: '1',
-    },
+    ...(hasVerifiedReviews
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: ratingVal.toFixed(1),
+            reviewCount: reviewsCount,
+            bestRating: '5',
+            worstRating: '1',
+          },
+        }
+      : {}),
     ...(additionalProperties.length > 0 ? { additionalProperty: additionalProperties } : {}),
   };
 }
 
 /**
- * LocalBusiness / PetStore Schema for Google Maps & Local Pack SEO
+ * LocalBusiness / PetStore Schema for Google Maps, Local Pack SEO & Frutillar AI Citations
  */
 export function getLocalBusinessSchema() {
   return {
@@ -215,7 +251,7 @@ export function getLocalBusinessSchema() {
     name: COMPANY_INFO.name,
     legalName: COMPANY_INFO.legalName,
     taxID: COMPANY_INFO.taxId,
-    image: `${BASE_URL}/images/hero_dog.png`,
+    image: `${BASE_URL}${COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg'}`,
     logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
     url: BASE_URL,
     telephone: COMPANY_INFO.phone,
@@ -239,32 +275,36 @@ export function getLocalBusinessSchema() {
     openingHoursSpecification: [
       {
         '@type': 'OpeningHoursSpecification',
-        dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-        opens: '09:00',
+        dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+        opens: '10:00',
         closes: '19:30',
       },
       {
         '@type': 'OpeningHoursSpecification',
-        dayOfWeek: ['Saturday'],
+        dayOfWeek: ['Sunday'],
         opens: '10:00',
-        closes: '19:30',
+        closes: '20:00',
+        description: 'Despacho exclusivo Pedido Urgente en Frutillar ($3.500 CLP)',
       },
     ],
-    areaServed: COMPANY_INFO.communes.map((city) => ({
-      '@type': 'AdministrativeArea',
-      name: city,
-    })),
+    areaServed: [
+      { '@type': 'City', name: 'Frutillar' },
+      ...(COMPANY_INFO.sectors || []).map((sector) => ({
+        '@type': 'Place',
+        name: sector,
+      })),
+    ],
     hasOfferCatalog: {
       '@type': 'OfferCatalog',
-      name: 'Catálogo de Alimentos Holísticos y Snacks',
+      name: 'Catálogo de Alimentos, Snacks y Cuidado para Mascotas en Frutillar',
       itemListElement: [
         {
           '@type': 'OfferCatalog',
-          name: 'Alimento Super Premium Perros',
+          name: 'Alimento Super Premium Perros en Frutillar',
         },
         {
           '@type': 'OfferCatalog',
-          name: 'Alimento Super Premium Gatos',
+          name: 'Alimento Super Premium Gatos en Frutillar',
         },
         {
           '@type': 'OfferCatalog',
@@ -272,7 +312,7 @@ export function getLocalBusinessSchema() {
         },
         {
           '@type': 'OfferCatalog',
-          name: 'Snacks y Premios Deshidratados 100% Naturales',
+          name: 'Snacks Naturales y Arenas Sanitarias',
         },
       ],
     },
@@ -281,7 +321,7 @@ export function getLocalBusinessSchema() {
 
 /**
  * FAQPage Schema for Google Rich Snippets & AI Answer Engines (AEO)
- * @param {Array<{question: string, answer: string}>} faqs
+ * @param {Array<{question: string, answer?: string, shortAnswer?: string, details?: string}>} faqs
  */
 export function getFAQPageSchema(faqs = []) {
   if (!faqs || faqs.length === 0) return null;

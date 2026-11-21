@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SEOHead from '../components/SEOHead';
-import { getWebSiteSchema, getOrganizationSchema, getLocalBusinessSchema } from '../utils/schemaGenerators';
+import { getFAQPageSchema } from '../utils/schemaGenerators';
+import { FRUTILLAR_FAQS } from '../data/faqData';
 import { fetchProductsFromSupabase, getCachedProducts } from '../services/productsService';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
@@ -1047,11 +1048,11 @@ export default function HomeView({
   return (
     <div ref={pageRef} className="kibo-page">
       <SEOHead
-        title="Alimento y Snacks Naturales para Mascotas en el Sur de Chile"
-        description="Nutrición holística, libre de granos y snacks deshidratados para perros y gatos. Despacho rápido en Frutillar, Llanquihue, Puerto Varas y Puerto Montt."
+        title="Alimento para Perros y Gatos en Frutillar | Despacho a Domicilio"
+        description="Tienda de alimentos super premium, recetas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio el mismo día en todo Frutillar (urbano y parcelaciones). Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
         canonical="/"
-        keywords="alimento para perros frutillar, alimento para perros puerto varas, comida gatos llanquihue, snacks naturales mascotas chile, grain free sur de chile"
-        jsonLd={[getWebSiteSchema(), getOrganizationSchema(), getLocalBusinessSchema()]}
+        keywords="alimento para perros frutillar, alimento para gatos frutillar, tienda de mascotas frutillar, comida mascotas frutillar, despacho alimento mascotas frutillar, parcelas frutillar, lagunita frutillar, colonia la radio"
+        jsonLd={getFAQPageSchema(FRUTILLAR_FAQS)}
       />
 
       <a className="skip" href="#main-kibo">
@@ -1886,6 +1887,8 @@ export default function HomeView({
             Que nunca le falte <span>su comida preferida.</span>
           </p>
           <nav className="foot__links" aria-label="Pie">
+            <Link to="/despacho/frutillar">Despacho Frutillar</Link>
+            <Link to="/catalogo">Catálogo Digital</Link>
             <Link to="/politicas-de-privacidad">Privacidad</Link>
             <Link to="/politicas-de-despacho">Despachos</Link>
             <Link to="/terminos-y-condiciones">Términos y condiciones</Link>

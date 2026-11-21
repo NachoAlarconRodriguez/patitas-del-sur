@@ -9,14 +9,15 @@ const GATOS_CATALOG_CONFIG = {
   fallbackBrandGroup: 'Recetas Felinas Holísticas',
   fallbackBrandTagline: 'Fórmulas Holísticas Felinas de la Patagonia',
   emptyMessage: 'No encontramos productos felinos con los filtros seleccionados',
-  srTitle: 'Alimento y Nutrición Super Premium para Gatos en Puerto Varas, Llanquihue y Frutillar',
+  srTitle: 'Alimento y Nutrición Super Premium para Gatos con Despacho en Frutillar',
   seo: {
-    title: 'Alimento y Snacks Naturales para Gatos en Puerto Varas',
+    title: 'Alimento, Arena y Snacks para Gatos en Frutillar',
     description:
-      'Catálogo de alimento felino super premium 100% Grain Free, patés y antiparasitarios para gatos. Despacho express en Puerto Varas, Llanquihue y Frutillar.',
+      'Catálogo de alimento felino super premium Grain Free, alimento húmedo, arena sanitaria y antiparasitarios para gatos con despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones). Envío gratis desde $25.000 CLP.',
     canonical: '/gatos',
+    ogImage: '/images/og-gatos-jack.jpg',
     keywords:
-      'alimento gatos puerto varas, comida gatos llanquihue, bravery gatos los lagos, grain free gatos chile',
+      'alimento gatos frutillar, comida gatos frutillar, arena gatos frutillar, bravery gatos frutillar, grain free gatos frutillar, tienda mascotas frutillar',
     breadcrumbName: 'Gatos',
     faqs: [...GATOS_FAQS, ...GENERAL_FAQS.slice(0, 2)],
   },
@@ -24,7 +25,7 @@ const GATOS_CATALOG_CONFIG = {
     eyebrowPrefix: 'Nutrición para Gatos',
     heading: 'Recetas para michis exigentes.',
     subheading:
-      'Fórmulas ricas en proteína animal y humedad con despacho rápido directo a tu puerta en el Sur.',
+      'Fórmulas ricas en proteína animal y humedad con despacho el mismo día en Frutillar (urbano y parcelaciones).',
     searchPlaceholder: 'Buscar por marca, salmón, pollo, paté, formato...',
     searchAriaLabel: 'Buscar alimento para gatos',
     mascotNote: '¡aprobado por Jack!',
@@ -35,9 +36,9 @@ const GATOS_CATALOG_CONFIG = {
     mascotHeight: '773',
   },
   faq: {
-    title: 'Preguntas Frecuentes sobre Alimento y Salud Felina',
+    title: 'Preguntas Frecuentes sobre Alimento y Salud Felina en Frutillar',
     subtitle:
-      'Respuestas veterinarias directas y estructuradas sobre nutrición carnívora estricta, prevención urinaria y despacho en Los Lagos.',
+      'Respuestas directas sobre nutrición carnívora estricta, prevención urinaria, arena sanitaria y despacho a domicilio en Frutillar.',
   },
   matchWeightFallback: (weightFilter, weights) => {
     if (weightFilter === 'snacks' && weights.some((w) => w.includes('g') || w.includes('pack'))) return true;

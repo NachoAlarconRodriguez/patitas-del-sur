@@ -8,7 +8,11 @@ import { supabase } from '../lib/supabase';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 import { groupProductsForStore } from '../utils/productVariants';
 import SEOHead from '../components/SEOHead';
-import { getBreadcrumbSchema, getFAQPageSchema } from '../utils/schemaGenerators';
+import {
+  getBreadcrumbSchema,
+  getCollectionPageSchema,
+  getFAQPageSchema,
+} from '../utils/schemaGenerators';
 import LocalDeliveryZones from '../components/LocalDeliveryZones';
 import FAQSection from '../components/FAQSection';
 
@@ -212,8 +216,15 @@ export default function PetCatalogView({
         title={config.seo.title}
         description={config.seo.description}
         canonical={config.seo.canonical}
+        ogImage={config.seo.ogImage}
         keywords={config.seo.keywords}
         jsonLd={[
+          getCollectionPageSchema({
+            name: config.seo.title,
+            description: config.seo.description,
+            url: config.seo.canonical,
+            itemCount: petProducts.length,
+          }),
           getBreadcrumbSchema([
             { name: 'Inicio', url: '/' },
             { name: config.seo.breadcrumbName, url: config.seo.canonical },

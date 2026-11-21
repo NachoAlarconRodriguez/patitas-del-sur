@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { SITE_URL, COMPANY_INFO } from '../constants';
 
 /**
  * Dynamic SEO Head Manager
@@ -9,19 +10,21 @@ export default function SEOHead({
   description,
   canonical,
   ogType = 'website',
-  ogImage = '/images/hero_dog.png',
+  ogImage = COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg',
   keywords,
   jsonLd,
   noindex = false,
 }) {
   useEffect(() => {
+    const baseUrl = String(SITE_URL || 'https://patitas-del-sur.vercel.app').replace(/\/+$/, '');
+
     // 1. Update Document Title (avoid duplicating brand suffix if already present)
     const hasBrandSuffix = title && /patitas del sur/i.test(title);
     const formattedTitle = title
       ? hasBrandSuffix
         ? title
         : `${title} | Patitas del Sur`
-      : 'Patitas del Sur | Alimento y Snacks Naturales para Mascotas en el Sur de Chile';
+      : 'Patitas del Sur | Alimento para Perros y Gatos con Despacho en Frutillar';
     document.title = formattedTitle;
 
     // Helper to set or create meta tag
@@ -61,11 +64,11 @@ export default function SEOHead({
     // 6. OpenGraph Type
     setMetaTag('meta[property="og:type"]', 'content', ogType);
 
-    // 7. OpenGraph Image (always absolute URL)
-    const safeImage = ogImage || '/images/hero_dog.png';
+    // 7. OpenGraph Image (always absolute URL using active SITE_URL)
+    const safeImage = ogImage || COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg';
     const fullImageUrl = safeImage.startsWith('http')
       ? safeImage
-      : `https://patitasdelsur.cl${safeImage.startsWith('/') ? '' : '/'}${safeImage}`;
+      : `${baseUrl}${safeImage.startsWith('/') ? '' : '/'}${safeImage}`;
     setMetaTag('meta[property="og:image"]', 'content', fullImageUrl);
     setMetaTag('meta[name="twitter:image"]', 'content', fullImageUrl);
 
@@ -74,8 +77,8 @@ export default function SEOHead({
     const canonicalUrl = canonical
       ? canonical.startsWith('http')
         ? canonical
-        : `https://patitasdelsur.cl${canonical.startsWith('/') ? '' : '/'}${canonical}`
-      : `https://patitasdelsur.cl${fallbackPath.startsWith('/') ? '' : '/'}${fallbackPath}`;
+        : `${baseUrl}${canonical.startsWith('/') ? '' : '/'}${canonical}`
+      : `${baseUrl}${fallbackPath.startsWith('/') ? '' : '/'}${fallbackPath}`;
 
     setMetaTag('meta[property="og:url"]', 'content', canonicalUrl);
 
@@ -87,16 +90,21 @@ export default function SEOHead({
     }
     linkCanonical.setAttribute('href', canonicalUrl);
 
-    // 9. Inject or Update Dynamic JSON-LD Script
+    // 9. Inject or Update Dynamic JSON-LD Script (filter out null/undefined entries)
     let scriptTag = document.getElementById('seo-json-ld');
-    if (jsonLd) {
+    const cleanJsonLd = Array.isArray(jsonLd) ? jsonLd.filter(Boolean) : jsonLd;
+    const hasValidJsonLd = Array.isArray(cleanJsonLd)
+      ? cleanJsonLd.length > 0
+      : Boolean(cleanJsonLd);
+
+    if (hasValidJsonLd) {
       if (!scriptTag) {
         scriptTag = document.createElement('script');
         scriptTag.id = 'seo-json-ld';
         scriptTag.type = 'application/ld+json';
         document.head.appendChild(scriptTag);
       }
-      scriptTag.textContent = JSON.stringify(jsonLd);
+      scriptTag.textContent = JSON.stringify(cleanJsonLd);
     } else if (scriptTag) {
       scriptTag.remove();
     }

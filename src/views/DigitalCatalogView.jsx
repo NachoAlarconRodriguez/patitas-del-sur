@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import SEOHead from '../components/SEOHead';
+import { getCollectionPageSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
 import DigitalCatalogItemCard from '../components/catalog/DigitalCatalogItemCard';
 import { WhatsAppIcon } from '../components/OfficialIcons';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
@@ -402,9 +403,36 @@ export default function DigitalCatalogView({
   return (
     <div className="min-h-[100dvh] bg-[#FAF8F4] text-[#1D1D1F] flex flex-col">
       <SEOHead
-        title="Catálogo Digital | Pedido Rápido"
-        description="Compra alimento natural, snacks y arena para perros y gatos con stock en vivo y despacho a domicilio en Frutillar, Puerto Varas y Llanquihue."
-        canonicalPath="/catalogo"
+        title={
+          petFilter === 'perros'
+            ? 'Catálogo Perros en Frutillar | Pedido Rápido'
+            : petFilter === 'gatos'
+              ? 'Catálogo Gatos en Frutillar | Pedido Rápido'
+              : 'Catálogo Digital en Frutillar | Pedido Rápido con Stock en Vivo'
+        }
+        description="Compra alimento super premium, snacks naturales, arenas y antiparasitarios para perros y gatos con stock en vivo y despacho a domicilio el mismo día en todo Frutillar (urbano y parcelaciones). Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
+        canonical="/catalogo"
+        ogImage={
+          petFilter === 'perros'
+            ? '/images/og-perros-kira.jpg'
+            : petFilter === 'gatos'
+              ? '/images/og-gatos-jack.jpg'
+              : '/images/og-patitas-frutillar.jpg'
+        }
+        keywords="catálogo alimento mascotas frutillar, comprar comida perros frutillar, comprar comida gatos frutillar, despacho mascotas frutillar, pedido urgente domingo frutillar"
+        jsonLd={[
+          getCollectionPageSchema({
+            name: 'Catálogo Digital de Alimento para Mascotas en Frutillar',
+            description:
+              'Catálogo completo con stock en tiempo real para perros y gatos con despacho a domicilio en Frutillar.',
+            url: '/catalogo',
+            itemCount: visibleGroupedProducts.length,
+          }),
+          getBreadcrumbSchema([
+            { name: 'Inicio', url: '/' },
+            { name: 'Catálogo Digital', url: '/catalogo' },
+          ]),
+        ]}
       />
 
       {/* ================================================================= */}

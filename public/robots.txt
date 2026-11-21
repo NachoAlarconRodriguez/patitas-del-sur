@@ -1,4 +1,4 @@
-# robots.txt for Patitas del Sur (https://patitasdelsur.cl)
+# robots.txt for Patitas del Sur (Frutillar, Chile)
 User-agent: *
 Allow: /
 Disallow: /admin
@@ -7,39 +7,56 @@ Disallow: /mi-cuenta
 Disallow: /mi-cuenta/
 Disallow: /login
 
-# AI Search & Answer Engine Crawlers (AEO / LLMs)
+# AI Search & Answer Engine Crawlers (GEO / AEO / LLMs)
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /mi-cuenta
+Disallow: /login
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin
+Disallow: /mi-cuenta
+Disallow: /login
+
 User-agent: GPTBot
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
 User-agent: PerplexityBot
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
 User-agent: ClaudeBot
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
 User-agent: Google-Extended
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
 User-agent: anthropic-ai
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
 User-agent: Applebot-Extended
 Allow: /
 Disallow: /admin
 Disallow: /mi-cuenta
+Disallow: /login
 
-# XML Sitemap & AI Knowledge Files (LLMs.txt Standard)
-Sitemap: https://patitasdelsur.cl/sitemap.xml
-# LLMs.txt
-# https://patitasdelsur.cl/llms.txt
-# https://patitasdelsur.cl/llms-full.txt
+# Dynamic XML Sitemap & AI Knowledge Base (LLMs.txt Standard)
+Sitemap: https://patitas-del-sur.vercel.app/sitemap.xml
+# LLMs.txt: https://patitas-del-sur.vercel.app/llms.txt
+# LLMs-full.txt: https://patitas-del-sur.vercel.app/llms-full.txt

@@ -1,60 +1,40 @@
-# Patitas del Sur
+# Patitas del Sur — Alimento y Snacks Naturales para Mascotas en Frutillar
 
-> Patitas del Sur es una tienda online especializada en nutrición holística, alimentos libres de grano (Grain Free), snacks deshidratados 100% naturales y farmacia veterinaria preventiva para perros y gatos en la Región de Los Lagos, Chile (Frutillar, Llanquihue, Puerto Varas, Puerto Montt, Puerto Octay, Casma, Fresia y Totoral).
+> Patitas del Sur es una tienda online especializada en alimento super premium, fórmulas Grain Free, snacks naturales, arenas y antiparasitarios para perros y gatos con **despacho a domicilio propio en Frutillar, Región de Los Lagos, Chile**.
 
-## Información General y Empresa
+## Información Institucional Verificada
+- **Marca**: Patitas del Sur
 - **Razón Social**: Comercial Kira SpA
 - **RUT**: 77.892.451-2
-- **Ubicación Base / Centro de Distribución**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Lat: -41.08985, Lon: -73.08013)
-- **Sitio Web Oficial**: https://patitasdelsur.cl
+- **Base Operativa / Bodega**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Lat: -41.08985, Lon: -73.08013)
+- **Sitio Web**: https://patitas-del-sur.vercel.app
+- **Catálogo Digital Rápido (Móvil / Instagram / WhatsApp)**: https://patitas-del-sur.vercel.app/catalogo
+- **Guía de Despacho en Frutillar**: https://patitas-del-sur.vercel.app/despacho/frutillar
 - **Teléfono y WhatsApp**: +56 9 5333 2492 (https://wa.me/56953332492)
 - **Correo Electrónico**: contacto@patitasdelsur.cl
-- **Instagram Oficial**: https://www.instagram.com/patitasdelsur.cl
-- **Moneda de Venta**: Pesos Chilenos (CLP $)
+- **Instagram**: https://www.instagram.com/patitasdelsur.cl
+- **Moneda**: Pesos Chilenos (CLP $)
 
-## Catálogo de Productos y Líneas Principales
+## Cobertura, Horarios y Tarifas de Despacho en Frutillar
+Despachamos directo a domicilio y parcelaciones en **Frutillar**: Frutillar Bajo, Frutillar Alto, Loteo Espacio Frutillar, Punta Larga, Reserva Frutillar, Los Colonos, Quilanto, Los Bajos, Playa Maqui, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio.
 
-### Alimento y Cuidado para Perros
-- [Catálogo Canino Completo](https://patitasdelsur.cl/perros): Alimentos secos, snacks deshidratados monoproteicos, nutracéuticos articulares y antiparasitarios orales.
-  - **Bravery Pollo Adulto (Grain Free)**: Alimento super premium mono-proteico para perros adultos razas medianas/grandes. $68.990 CLP (12 kg).
-  - **Bravery Cordero Adulto (Grain Free)**: Receta hipoalergénica con cordero deshidratado para digestión sensible. $70.990 CLP (12 kg).
-  - **Bravery Salmón Adulto (Grain Free)**: Salmón salvaje rico en Omega 3/6 para piel y pelaje brillante. $69.990 CLP (12 kg).
-  - **Patagonia Holística Salmón**: Fórmulas locales enriquecidas con superalimentos patagónicos. $24.990 CLP (2 kg).
-  - **Patagonia Holística Cordero**: Receta con hierbas silvestres y alta palatabilidad. $32.990 CLP (5 kg).
-  - **Snacks Deshidratados Sur Natural**: 100% pulmón de res deshidratado a baja temperatura, sin conservantes. $7.990 CLP.
-  - **Austral Bio Elixirs Elixir Articular**: Glucosamina, condroitina y mejillón de labio verde para articulaciones caninas. $18.990 CLP.
-  - **Antiparasitarios Caninos**: NexGard Spectra ($18.990), Bravecto ($34.990), Simparica Trio ($19.990).
+- **Bloque Mañana (Estándar)**: Lunes a Sábado de 10:00 a 13:00 hrs · Tarifa $2.500 CLP · **Gratis en compras desde $25.000 CLP**.
+- **Bloque Tarde (Estándar)**: Lunes a Sábado de 15:30 a 19:30 hrs · Tarifa $2.500 CLP · **Gratis en compras desde $25.000 CLP**.
+- **Pedido Urgente (Express)**: Lunes a Sábado fuera de ventana estándar · Tarifa fija $3.500 CLP (sin envío gratis).
+- **Domingo Urgente**: Domingos de 10:00 a 20:00 hrs (exclusivo Pedido Urgente, sin ventanas estándar) · Tarifa fija $3.500 CLP.
 
-### Alimento y Cuidado para Gatos
-- [Catálogo Felino Completo](https://patitasdelsur.cl/gatos): Fórmulas carnívoras estrictas libres de grano, patés húmedos de salmón, premios con hierba gatera y antiparasitarios spot-on.
-  - **Bravery Salmón Adulto Gato (Grain Free)**: Salmón del Atlántico, taurina biodisponible y pH urinario controlado. $46.990 CLP (7 kg).
-  - **Bravery Pollo Adulto Gato (Grain Free)**: Carne magra de pollo de libre pastoreo con arándanos para salud renal. $45.990 CLP (7 kg).
-  - **Bravery Arenque Silvestre Gato**: Pescado azul rico en EPA/DHA para vitalidad felina. $47.990 CLP (7 kg).
-  - **Chiloé Sea Recipes Trucha & Catnip**: Alimento seco premium enriquecido con hierba gatera estimulante. $19.990 CLP (1.5 kg).
-  - **Chiloé Sea Recipes Paté Salmón & Mariscos**: Alimento húmedo ultra hidratante para riñones felinos. $2.490 CLP (85 g).
-  - **Bocaditos Crujientes Sur Natural**: Atún deshidratado con hojas de catnip silvestre. $5.490 CLP.
-  - **Antiparasitarios Felinos**: Bravecto Plus Pipeta ($28.990), Revolution Plus 6 en 1 ($16.990).
+## Medios de Pago
+- **Pago Anticipado Online**: Mercado Pago (Tarjetas de Crédito, Débito Redcompra y Prepago).
+- **Pago Contra Entrega en Frutillar**: Transferencia bancaria al recibir, Efectivo y Tarjeta Débito/Crédito con máquina POS móvil en tu domicilio.
 
-## Cobertura Geográfica y Logística de Despacho
-Patitas del Sur atiende con despacho propio climatizado en la cuenca del Lago Llanquihue y comunas aledañas (zonas urbanas y parcelaciones rurales):
-- **Frutillar (Bajo, Alto, Punta Larga, Reserva Frutillar, Quilanto, Los Bajos)**: Entrega el mismo día hábil (pedidos hasta las 14:00 hrs) o en 24 hrs. Tarifa base desde $2.000 CLP (Gratis sobre $25.000 CLP).
-- **Llanquihue (Urbano, Los Pellines, Totoral, Loncotoro)**: Entrega en el día o máximo 24 hrs. Tarifa desde $2.000 - $2.500 CLP (Gratis desde $25.000 CLP según zona).
-- **Puerto Varas (Urbano, Puerto Chico, Camino a Ensenada, Línea Nueva, Los Riscos)**: Entrega el mismo día hábil o en 24 hrs. Tarifa desde $2.000 CLP (Gratis desde $25.000 CLP según zona).
-- **Puerto Montt, Puerto Octay, Casma, Fresia y Totoral**: Despacho en rutas programadas semanales directo a domicilio o parcelación.
-
-## Preguntas Frecuentes y Políticas
-- **Envío Gratuito**: Disponible en compras iguales o superiores a $25.000 CLP en las zonas principales de cobertura (calculado automáticamente según tu comuna o parcelación antes de pagar).
-- **Programa Club Patitas**: Los clientes registrados acumulan 1 punto por cada $1.000 CLP de compra, canjeables por descuentos directos en futuros pedidos.
-- **Medios de Pago**: Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago), Transferencia Bancaria Directa a Comercial Kira SpA y Efectivo contra entrega previa coordinación.
-- **Garantía y Devoluciones**: 6 meses de garantía legal conforme a la Ley del Consumidor en Chile (Ley 19.496 / SERNAC). Cambios de receta con envase 100% sellado hasta en 10 días corridos, más Garantía de Palatabilidad de 5 días hábiles (conservando al menos el 80% del contenido).
-- **Asesoría Nutricional**: Canal directo de WhatsApp (+56 9 5333 2492) para elegir el alimento ideal según edad, raza, sensibilidad digestiva o alergias alimentarias.
+## Beneficios y Garantías
+- **Club Patitas**: 1 punto por cada $1.000 CLP de compra, canjeables por descuentos en próximos pedidos.
+- **Garantía y Cambios**: 10 días corridos para cambios con envase sellado, Garantía de Palatabilidad de 5 días hábiles (mínimo 80% del contenido) y 6 meses de garantía legal (Ley 19.496 / SERNAC).
 
 ## Enlaces Clave
-- [Documento de Conocimiento Extendido (llms-full.txt)](https://patitasdelsur.cl/llms-full.txt)
-- [Página de Inicio](https://patitasdelsur.cl/)
-- [Sobre Nosotros y Nuestra Misión](https://patitasdelsur.cl/nosotros)
-- [Contacto y Soporte WhatsApp](https://patitasdelsur.cl/contacto)
-- [Términos y Condiciones](https://patitasdelsur.cl/terminos-y-condiciones)
-- [Políticas de Privacidad](https://patitasdelsur.cl/politicas-de-privacidad)
-- [Políticas de Despacho](https://patitasdelsur.cl/politicas-de-despacho)
-- [Garantía y Devoluciones](https://patitasdelsur.cl/cambios-y-devoluciones)
+- [Catálogo Digital Express (Stock en Vivo)](https://patitas-del-sur.vercel.app/catalogo)
+- [Despacho en Frutillar (Sectores y Horarios)](https://patitas-del-sur.vercel.app/despacho/frutillar)
+- [Alimento para Perros en Frutillar](https://patitas-del-sur.vercel.app/perros)
+- [Alimento para Gatos en Frutillar](https://patitas-del-sur.vercel.app/gatos)
+- [Documento Extendido (llms-full.txt)](https://patitas-del-sur.vercel.app/llms-full.txt)
+- [Sitemap XML](https://patitas-del-sur.vercel.app/sitemap.xml)

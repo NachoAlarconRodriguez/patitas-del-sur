@@ -23,6 +23,8 @@ export default function Footer() {
             Que nunca le falte <span>su comida preferida.</span>
           </p>
           <nav className="foot__links" aria-label="Pie">
+            <Link to="/despacho/frutillar">Despacho Frutillar</Link>
+            <Link to="/catalogo">Catálogo Digital</Link>
             <Link to="/politicas-de-privacidad">Privacidad</Link>
             <Link to="/politicas-de-despacho">Despachos</Link>
             <Link to="/terminos-y-condiciones">Términos y condiciones</Link>
