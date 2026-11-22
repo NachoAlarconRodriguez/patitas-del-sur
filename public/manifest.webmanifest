@@ -1,13 +1,13 @@
 {
-  "name": "Patitas",
+  "name": "Patitas Admin",
   "short_name": "Patitas",
   "description": "Aplicación exclusiva de administración, pedidos y logística de despacho de Patitas del Sur",
   "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
   "background_color": "#FAF8F4",
-  "theme_color": "#F5BA13",
-  "orientation": "portrait",
+  "theme_color": "#FAF8F4",
+  "orientation": "any",
   "categories": ["business", "productivity"],
   "icons": [
     {
@@ -30,7 +30,7 @@
     },
     {
       "src": "/favicon.svg",
-      "sizes": "512x512",
+      "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
     }

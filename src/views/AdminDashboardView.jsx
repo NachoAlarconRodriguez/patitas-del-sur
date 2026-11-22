@@ -55,6 +55,8 @@ import {
   Sparkles,
   Heart,
   Bell,
+  BellRing,
+  BellOff,
   Stethoscope,
   ExternalLink,
   Receipt,
@@ -85,6 +87,11 @@ import CustomDropdown from '../components/CustomDropdown';
 import AdminDatePicker from '../components/AdminDatePicker';
 import DispatchGoogleMap from '../components/DispatchGoogleMap';
 import AdminLoginScreen from './admin/modals/AdminLoginScreen.jsx';
+import {
+  MobilePwaDashboardView,
+  MobilePwaRepartoView,
+  AdminConfirmActionModal,
+} from './admin/mobile/MobilePwaOrdersViews.jsx';
 
 const AdminConveniosManager = lazy(() => import('./admin/AdminConveniosManager'));
 const LoyaltyAdminTab = lazy(() => import('./admin/LoyaltyAdminTab.jsx'));
@@ -106,8 +113,16 @@ import {
   getLiveDispatchStatusFromSupabase,
   saveManualDispatchStatusToSupabase,
   formatOrderScheduleSummary,
+  OFFICIAL_MORNING_SLOT_LABEL,
   OFFICIAL_AFTERNOON_SLOT_LABEL,
+  URGENT_EXPRESS_SLOT_LABEL,
 } from '../services/dispatchService.js';
+import {
+  getAdminPushStatus,
+  subscribeAdminToWebPush,
+  unsubscribeAdminFromWebPush,
+  playNewOrderAlertFeedback,
+} from '../services/pushNotificationsService.js';
 import { WhatsAppIcon, GoogleMapsIcon } from '../components/OfficialIcons';
 import {
   fetchProductsFromSupabase,
@@ -199,10 +214,11 @@ import {
   getOrderPaymentStatus,
   getDynamicGreeting,
   getProductImage,
+  resolveProductImage,
+  getOrderCustomerPhoneDigits,
 } from './admin/adminUtils.js';
 import {
   renderPaymentMethodBadge,
-  renderPaymentCollectionBanner,
 } from './admin/adminPaymentUI.jsx';
 
 const INITIAL_ORDERS = [];
@@ -226,6 +242,45 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Toast alert con soporte de tipo ('success' | 'error' | 'info') y limpieza de temporizador
+  const [toastState, setToastState] = useState(null); // { message, type }
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg, type = 'success') => {
+    if (!msg) return;
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastState({ message: msg, type });
+    toastTimerRef.current = setTimeout(() => {
+      setToastState(null);
+      toastTimerRef.current = null;
+    }, type === 'error' ? 5000 : 3800);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  // Estados operativos PWA: sincronización, envío seguro, push y confirmaciones
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [isSavingManualOrder, setIsSavingManualOrder] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [deleteOrderConfirmId, setDeleteOrderConfirmId] = useState(null);
+  const [pushStatus, setPushStatus] = useState({
+    supported: false,
+    permission: 'default',
+    subscribed: false,
+    requiresIosInstall: false,
+  });
+  const [isTogglingPush, setIsTogglingPush] = useState(false);
+  const pendingDeepLinkOrderIdRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -264,6 +319,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // Order Day Filter for PWA Mobile Dispatchers ('todos' | 'hoy')
   const [orderDayFilter, setOrderDayFilter] = useState('todos');
 
+  // Filtros exclusivos de la vista móvil PWA de Reparto
+  const [mobileRepartoFilter, setMobileRepartoFilter] = useState('en_ruta'); // 'en_ruta' | 'en_preparacion' | 'en_camino' | 'por_cobrar' | 'entregados_hoy' | 'todos_hoy'
+  const [mobileOrderSearch, setMobileOrderSearch] = useState('');
+
   // Active Tab: 'dashboard' | 'pedidos' | 'clientes' | 'convenios' | 'inventario' | 'finanzas' | 'despachos'
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -272,9 +331,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Slide activo del Carrusel de Gráficos (0 a 6)
   const [currentChartSlide, setCurrentChartSlide] = useState(0);
-
-  // Estado para expandir/colapsar desglose visual de productos en la tarjeta hero de entrega en ruta
-  const [isNextOrderItemsExpanded, setIsNextOrderItemsExpanded] = useState(false);
 
   // Estado para expandir/colapsar productos en las tarjetas PWA de pedidos
   const [expandedOrderCards, setExpandedOrderCards] = useState({});
@@ -361,13 +417,20 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [investmentsSearchQuery, setInvestmentsSearchQuery] = useState('');
   const [dispatchZones, setDispatchZones] = useState(INITIAL_DISPATCH_ZONES);
 
+  // Clave de fecha Chile dinámica para recalcular rangos al cruzar medianoche o volver a la PWA
+  const [todayKey, setTodayKey] = useState(() => getChileDateString());
+
   // Rangos de fecha exactos en zona horaria de Chile (America/Santiago)
-  const chileDateRanges = useMemo(() => getChileDateRanges(), []);
+  const chileDateRanges = useMemo(() => {
+    void todayKey;
+    return getChileDateRanges();
+  }, [todayKey]);
 
   // Fecha actual formateada del sistema y pedidos estrictamente de hoy (hora Chile)
   const todayFormattedDate = useMemo(() => {
+    void todayKey;
     return getMockOrderDate(0);
-  }, []);
+  }, [todayKey]);
 
   const todayOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -389,38 +452,35 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     cardDiscountActive: false,
   });
 
-  // 1. Sincronizar Inventario & Catálogo con Supabase
-  useEffect(() => {
-    let isMounted = true;
-    const syncInventory = async () => {
-      try {
-        const dbProds = await fetchProductsFromSupabase();
-        if (!isMounted) return;
-        if (dbProds && dbProds.length > 0) {
-          const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
-          const mapped = dbProds.map((p) => {
-            const realStock = Number.isFinite(Number(p.stock)) ? Number(p.stock) : 0;
-            const realPrice = Number.isFinite(Number(p.price)) ? Number(p.price) : 0;
-            const realCostNeto = Number.isFinite(Number(p.unitCostNeto ?? p.unit_cost_neto))
-              ? Number(p.unitCostNeto ?? p.unit_cost_neto)
-              : 0;
-            const minStockVal = Number(p.minStock ?? p.min_stock) || 5;
+  // 1. Sincronizar Inventario & Catálogo con Supabase (sin fallback silencioso a datos ficticios en Admin)
+  const syncInventoryData = useCallback(async () => {
+    try {
+      const dbProds = await fetchProductsFromSupabase({ allowMockFallback: false });
+      if (dbProds && dbProds.length > 0) {
+        const carousel = JSON.parse(localStorage.getItem('patitas_carousel_products') || '[]');
+        const mapped = dbProds.map((p) => {
+          const realStock = Number.isFinite(Number(p.stock)) ? Number(p.stock) : 0;
+          const realPrice = Number.isFinite(Number(p.price)) ? Number(p.price) : 0;
+          const realCostNeto = Number.isFinite(Number(p.unitCostNeto ?? p.unit_cost_neto))
+            ? Number(p.unitCostNeto ?? p.unit_cost_neto)
+            : 0;
+          const minStockVal = Number(p.minStock ?? p.min_stock) || 5;
 
-            return {
-              ...p,
-              id: p.id,
-              name: p.name,
-              brand: p.brand || 'Patitas del Sur',
-              category: p.category || 'Alimento Seco',
-              petType: p.petType || 'perros',
-              format: p.weights?.[0] || '12 kg',
-              sku: p.sku || '',
-              stock: realStock,
-              minStock: minStockVal,
-              salePrice: realPrice,
-              unitCostNeto: realCostNeto,
-              shippingUnitCost: Number(p.shippingUnitCost ?? p.shipping_unit_cost) || 0,
-              status: realStock <= minStockVal ? 'stock_bajo' : 'disponible',
+          return {
+            ...p,
+            id: p.id,
+            name: p.name,
+            brand: p.brand || 'Patitas del Sur',
+            category: p.category || 'Alimento Seco',
+            petType: p.petType || 'perros',
+            format: p.weights?.[0] || '12 kg',
+            sku: p.sku || '',
+            stock: realStock,
+            minStock: minStockVal,
+            salePrice: realPrice,
+            unitCostNeto: realCostNeto,
+            shippingUnitCost: Number(p.shippingUnitCost ?? p.shipping_unit_cost) || 0,
+            status: realStock <= minStockVal ? 'stock_bajo' : 'disponible',
             isPaused: Boolean(p.is_paused || p.isPaused),
             isActive: p.is_active !== false,
             inCarousel:
@@ -442,174 +502,362 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             lifeStage: p.life_stage || p.lifeStage || 'adulto',
             ingredients: Array.isArray(p.ingredients) ? p.ingredients.map(cleanIngredientName).filter(Boolean) : [],
             guaranteedAnalysis: p.guaranteedAnalysis || p.guaranteed_analysis || {},
-              animalPercent: p.animalPercent ?? p.animal_percent ?? null,
-              weights: Array.isArray(p.weights) ? p.weights : [p.weights || '12 kg'],
-            };
-          });
+            animalPercent: p.animalPercent ?? p.animal_percent ?? null,
+            weights: Array.isArray(p.weights) ? p.weights : [p.weights || '12 kg'],
+          };
+        });
 
-          setInventory(mapped);
-        }
-      } catch (err) {
-        console.error('Error synchronizing inventory with Supabase:', err);
+        setInventory(mapped);
       }
-    };
-
-    syncInventory();
-    window.addEventListener('patitas_products_updated', syncInventory);
-    return () => {
-      isMounted = false;
-      window.removeEventListener('patitas_products_updated', syncInventory);
-    };
+    } catch (err) {
+      console.error('Error synchronizing inventory with Supabase:', err);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    syncInventoryData();
+    window.addEventListener('patitas_products_updated', syncInventoryData);
+    return () => {
+      window.removeEventListener('patitas_products_updated', syncInventoryData);
+    };
+  }, [isAdminAuthenticated, syncInventoryData]);
 
   // 2. Sincronizar Pedidos y Despachos con Supabase
-  useEffect(() => {
-    let isMounted = true;
-    const syncOrders = async () => {
-      try {
-        const dbOrders = await fetchOrdersFromSupabase();
-        if (!isMounted) return;
-        if (dbOrders && dbOrders.length > 0) {
-          const mapped = dbOrders.map((o) => {
-            const items = (o.order_items || []).map((it) => ({
-              id: it.id,
-              name: it.product_name || it.name,
-              weight: it.weight || it.format || '',
-              format: it.weight || it.format || '1 un.',
-              quantity: Number(it.quantity || it.qty || 1),
-              qty: Number(it.quantity || it.qty || 1),
-              unitPrice: Number(it.unit_price || it.unitPrice || it.price || 0),
-              price: Number(it.unit_price || it.unitPrice || it.price || 0),
-              subtotal: Number(it.subtotal || (Number(it.quantity || 1) * Number(it.unit_price || 0))),
-              productId: it.product_id || it.productId,
-            }));
-            const primaryItem = items[0] || { name: 'Pedido Patitas', format: '1 un.', qty: 1 };
-            const custPets = Array.isArray(o.customers?.pets) ? o.customers.pets : [];
-            const primaryPet = custPets[0] || null;
-            const petName =
-              o.pet_name ||
-              o.petName ||
-              primaryPet?.name ||
-              (String(o.customer_name || '').toLowerCase().includes('bárbara') ||
-                String(o.customer_name || '').toLowerCase().includes('barbara')
-                ? 'Keiko'
-                : '');
-            const petType = o.pet_type || o.petType || primaryPet?.type || 'perro';
-            const petBreed = o.pet_breed || o.petBreed || primaryPet?.breed || '';
+  const syncOrdersData = useCallback(async ({ showLoadingSkeleton = false } = {}) => {
+    if (showLoadingSkeleton) setIsInitialLoading(true);
+    try {
+      const dbOrders = await fetchOrdersFromSupabase({ throwOnError: true });
+      setSyncError('');
+      if (dbOrders && dbOrders.length > 0) {
+        const mapped = dbOrders.map((o) => {
+          const items = (o.order_items || []).map((it) => ({
+            id: it.id,
+            name: it.product_name || it.name,
+            weight: it.weight || it.format || '',
+            format: it.weight || it.format || '1 un.',
+            quantity: Number(it.quantity || it.qty || 1),
+            qty: Number(it.quantity || it.qty || 1),
+            unitPrice: Number(it.unit_price || it.unitPrice || it.price || 0),
+            price: Number(it.unit_price || it.unitPrice || it.price || 0),
+            subtotal: Number(it.subtotal || (Number(it.quantity || 1) * Number(it.unit_price || 0))),
+            productId: it.product_id || it.productId,
+          }));
+          const primaryItem = items[0] || { name: 'Pedido Patitas', format: '1 un.', qty: 1 };
+          const custPets = Array.isArray(o.customers?.pets) ? o.customers.pets : [];
+          const primaryPet = custPets[0] || null;
+          const petName =
+            o.pet_name ||
+            o.petName ||
+            primaryPet?.name ||
+            (String(o.customer_name || '').toLowerCase().includes('bárbara') ||
+              String(o.customer_name || '').toLowerCase().includes('barbara')
+              ? 'Keiko'
+              : '');
+          const petType = o.pet_type || o.petType || primaryPet?.type || 'perro';
+          const petBreed = o.pet_breed || o.petBreed || primaryPet?.breed || '';
 
-            const isBarbaraOrder =
-              o.id === 'PED-0001' ||
-              String(o.customer_name || '').toLowerCase().includes('bárbara') ||
-              String(o.customer_name || '').toLowerCase().includes('barbara');
+          const isBarbaraOrder =
+            o.id === 'PED-0001' ||
+            String(o.customer_name || '').toLowerCase().includes('bárbara') ||
+            String(o.customer_name || '').toLowerCase().includes('barbara');
 
-            const orderAddress = isBarbaraOrder && (!o.address || o.address.includes('Calle de Servicio'))
-              ? 'Espacio Frutillar, Parcela 115'
-              : (o.address || 'Espacio Frutillar, Parcela 115');
+          const orderAddress = isBarbaraOrder && (!o.address || o.address.includes('Calle de Servicio'))
+            ? 'Espacio Frutillar, Parcela 115'
+            : (o.address || 'Dirección por confirmar');
 
-            const orderCity = isBarbaraOrder
-              ? 'Frutillar'
-              : (o.city || 'Frutillar');
+          const orderCity = isBarbaraOrder
+            ? 'Frutillar'
+            : (o.city || 'Frutillar');
 
-            const googleMapsUrl = isBarbaraOrder
-              ? 'https://maps.app.goo.gl/LBauJYDkqTyAfrVm6'
-              : (o.google_maps_url || null);
+          const googleMapsUrl = isBarbaraOrder
+            ? 'https://maps.app.goo.gl/LBauJYDkqTyAfrVm6'
+            : (o.google_maps_url || null);
 
-            const resolvedDeliveredByName = (() => {
-              if (o.delivered_by_name || o.deliveredByName) {
-                return o.delivered_by_name || o.deliveredByName;
+          const resolvedDeliveredByName = (() => {
+            if (o.delivered_by_name || o.deliveredByName) {
+              return o.delivered_by_name || o.deliveredByName;
+            }
+            try {
+              const cached = localStorage.getItem(`patitas_order_delivery_${o.id}`);
+              if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed?.deliveredByName) return parsed.deliveredByName;
               }
-              try {
-                const cached = localStorage.getItem(`patitas_order_delivery_${o.id}`);
-                if (cached) {
-                  const parsed = JSON.parse(cached);
-                  if (parsed?.deliveredByName) return parsed.deliveredByName;
-                }
-              } catch {
-                // ignore
-              }
-              const notesStr = String(o.notes || '');
-              const matchNote = notesStr.match(/Repartidor:\s*([^|\n]+)/i);
-              if (matchNote && matchNote[1]) {
-                return matchNote[1].trim();
-              }
-              if (notesStr.toLowerCase().includes('alamiro') || o.id === 'PED-0008') {
-                return 'Alamiro Huerta';
-              }
-              return (o.status === 'entregado' || o.id === 'PED-0001') ? 'Ignacio Alarcón' : null;
-            })();
+            } catch {
+              // ignore
+            }
+            const notesStr = String(o.notes || '');
+            const matchNote = notesStr.match(/Repartidor:\s*([^|\n]+)/i);
+            if (matchNote && matchNote[1]) {
+              return matchNote[1].trim();
+            }
+            if (notesStr.toLowerCase().includes('alamiro') || o.id === 'PED-0008') {
+              return 'Alamiro Huerta';
+            }
+            return (o.status === 'entregado' || o.id === 'PED-0001') ? 'Ignacio Alarcón' : null;
+          })();
 
-            return {
-              id: o.id,
-              date: o.created_at
-                ? new Date(o.created_at).toLocaleDateString('es-CL', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                  timeZone: 'America/Santiago',
-                })
-                : 'Hoy',
-              customer: o.customer_name || 'Cliente Patitas',
-              customerPhone: o.customer_phone || '+56 9 9123 4567',
-              customerEmail: o.customer_email || '',
-              petName: petName,
-              petType: petType,
-              petBreed: petBreed,
-              product: primaryItem.name,
-              format: primaryItem.format,
-              qty: primaryItem.qty,
-              subtotal: Number(o.subtotal ?? o.total ?? 0),
-              shippingCost: Number(o.shipping_cost ?? o.shippingCost ?? 0),
-              total: Number(o.total || 0),
-              status: o.status || 'en_preparacion',
-              paymentMethod: o.payment_method || 'Tarjeta',
-              paymentStatus: o.payment_status ? String(o.payment_status).trim().toLowerCase() : 'pendiente',
-              address: orderAddress,
-              city: orderCity,
-              googleMapsUrl: googleMapsUrl,
-              mapsUrl: googleMapsUrl,
-              deliveryDate: o.delivery_date || null,
-              deliveryDayText: o.delivery_day_text || '',
-              deliverySlot: o.delivery_slot || OFFICIAL_AFTERNOON_SLOT_LABEL,
-              deliveryZone: o.delivery_zone || '',
-              deliveryType: o.delivery_type || null,
-              agreementUsed: o.agreement_used || null,
-              couponCodeUsed: o.coupon_code_used || null,
-              items: items.length > 0 ? items : undefined,
-              invoiceNumber: o.invoice_number || `BOL-2026-${o.id}`,
-              channel: o.channel || 'web',
-              customerId: o.customer_id || null,
-              pointsEarned: o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000),
-              deliveredBy: o.delivered_by || o.deliveredBy || null,
-              deliveredByName: resolvedDeliveredByName,
-              deliveredAt: o.delivered_at || o.deliveredAt || (o.status === 'entregado' ? o.created_at : null),
-              notes: o.notes || '',
-              time: o.created_at
-                ? new Date(o.created_at).toLocaleTimeString('es-CL', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  timeZone: 'America/Santiago',
-                })
-                : '',
-              created_at: o.created_at,
-            };
-          });
+          const resolvedPhone = o.customer_phone || '';
+          const parsedLat = o.delivery_lat != null ? Number(o.delivery_lat) : null;
+          const parsedLng = o.delivery_lng != null ? Number(o.delivery_lng) : null;
 
-          setOrders(mapped);
+          return {
+            id: o.id,
+            date: o.created_at
+              ? new Date(o.created_at).toLocaleDateString('es-CL', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                timeZone: 'America/Santiago',
+              })
+              : 'Hoy',
+            customer: o.customer_name || 'Cliente Patitas',
+            customerPhone: resolvedPhone,
+            phone: resolvedPhone,
+            customerEmail: o.customer_email || '',
+            petName: petName,
+            petType: petType,
+            petBreed: petBreed,
+            product: primaryItem.name,
+            format: primaryItem.format,
+            qty: primaryItem.qty,
+            subtotal: Number(o.subtotal ?? o.total ?? 0),
+            shippingCost: Number(o.shipping_cost ?? o.shippingCost ?? 0),
+            total: Number(o.total || 0),
+            status: o.status || 'en_preparacion',
+            paymentMethod: o.payment_method || 'Tarjeta',
+            paymentStatus: o.payment_status ? String(o.payment_status).trim().toLowerCase() : 'pendiente',
+            address: orderAddress,
+            city: orderCity,
+            lat: Number.isFinite(parsedLat) ? parsedLat : null,
+            lng: Number.isFinite(parsedLng) ? parsedLng : null,
+            googleMapsUrl: googleMapsUrl,
+            mapsUrl: googleMapsUrl,
+            deliveryDate: o.delivery_date || null,
+            deliveryDayText: o.delivery_day_text || '',
+            deliverySlot: o.delivery_slot || OFFICIAL_AFTERNOON_SLOT_LABEL,
+            deliveryZone: o.delivery_zone || '',
+            deliveryType: o.delivery_type || null,
+            agreementUsed: o.agreement_used || null,
+            couponCodeUsed: o.coupon_code_used || null,
+            items: items.length > 0 ? items : [],
+            invoiceNumber: o.invoice_number || `BOL-2026-${o.id}`,
+            channel: o.channel || 'web',
+            customerId: o.customer_id || null,
+            pointsEarned: o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000),
+            deliveredBy: o.delivered_by || o.deliveredBy || null,
+            deliveredByName: resolvedDeliveredByName,
+            deliveredAt: o.delivered_at || o.deliveredAt || (o.status === 'entregado' ? o.created_at : null),
+            notes: o.notes || '',
+            time: o.created_at
+              ? new Date(o.created_at).toLocaleTimeString('es-CL', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Santiago',
+              })
+              : '',
+            created_at: o.created_at,
+          };
+        });
+
+        setOrders(mapped);
+      } else {
+        setOrders([]);
+      }
+      return true;
+    } catch (err) {
+      console.error('Error synchronizing orders with Supabase:', err);
+      setSyncError('Sin conexión o error al cargar pedidos. Verifica tu señal.');
+      return false;
+    } finally {
+      setIsInitialLoading(false);
+    }
+  }, []);
+
+  const handleManualRefresh = useCallback(async ({ silent = false } = {}) => {
+    setTodayKey(getChileDateString());
+    setIsRefreshing(true);
+    try {
+      const [ordersOk] = await Promise.all([
+        syncOrdersData(),
+        syncInventoryData(),
+      ]);
+      window.dispatchEvent(new Event('patitas_customers_updated'));
+      if (!silent) {
+        if (ordersOk) {
+          showToast('Datos actualizados desde el servidor');
         } else {
-          setOrders([]);
+          showToast('No se pudieron actualizar los pedidos. Revisa tu conexión.', 'error');
         }
-      } catch (err) {
-        console.error('Error synchronizing orders with Supabase:', err);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [syncOrdersData, syncInventoryData, showToast]);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    syncOrdersData({ showLoadingSkeleton: true });
+    const handleOrdersUpdated = () => {
+      syncOrdersData();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const currentChileDay = getChileDateString();
+        setTodayKey((prev) => (prev !== currentChileDay ? currentChileDay : prev));
+        syncOrdersData();
       }
     };
-
-    syncOrders();
-    window.addEventListener('patitas_orders_updated', syncOrders);
-    return () => {
-      isMounted = false;
-      window.removeEventListener('patitas_orders_updated', syncOrders);
+    const handleOnline = () => {
+      syncOrdersData();
+      syncInventoryData();
     };
-  }, []);
+
+    window.addEventListener('patitas_orders_updated', handleOrdersUpdated);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('patitas_orders_updated', handleOrdersUpdated);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isAdminAuthenticated, syncOrdersData, syncInventoryData]);
+
+  // 2b. Supabase Realtime: alertas en vivo de nuevos pedidos web y pagos aprobados
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+
+    const channel = supabase
+      .channel('admin-orders-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'orders' },
+        (payload) => {
+          const newRow = payload?.new;
+          syncOrdersData();
+          if (newRow && newRow.channel !== 'manual') {
+            playNewOrderAlertFeedback();
+            showToast(
+              `🐾 Nuevo pedido web ${newRow.id} · ${newRow.customer_name || 'Cliente'} (${formatCLP(Number(newRow.total) || 0)})`
+            );
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'orders' },
+        (payload) => {
+          const updatedRow = payload?.new;
+          const previousRow = payload?.old;
+          syncOrdersData();
+          if (
+            updatedRow &&
+            updatedRow.channel !== 'manual' &&
+            String(updatedRow.payment_status || '').toLowerCase() === 'pagado' &&
+            String(previousRow?.payment_status || '').toLowerCase() !== 'pagado'
+          ) {
+            playNewOrderAlertFeedback();
+            showToast(
+              `💳 Pago confirmado en ${updatedRow.id} · ${updatedRow.customer_name || 'Cliente'}`
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdminAuthenticated, syncOrdersData, showToast]);
+
+  // 2c. Estado de Notificaciones Push (en segundo plano / app cerrada) y Toggle 1-tap
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    let mounted = true;
+    getAdminPushStatus()
+      .then((status) => {
+        if (mounted) setPushStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [isAdminAuthenticated]);
+
+  const handleToggleAdminPush = useCallback(async () => {
+    if (isTogglingPush) return;
+    if (pushStatus.requiresIosInstall) {
+      showToast(
+        'En iPhone, instala la app con Compartir → "Agregar a inicio" para activar notificaciones.',
+        'info'
+      );
+      return;
+    }
+    setIsTogglingPush(true);
+    try {
+      if (pushStatus.subscribed) {
+        const res = await unsubscribeAdminFromWebPush();
+        const fresh = await getAdminPushStatus();
+        setPushStatus(fresh);
+        if (res.success) {
+          showToast('Notificaciones push desactivadas en este dispositivo');
+        } else {
+          showToast(res.error || 'No se pudieron desactivar las notificaciones.', 'error');
+        }
+      } else {
+        const res = await subscribeAdminToWebPush({
+          adminUserId: user?.auth_user_id || user?.id || null,
+          adminEmail: user?.email || adminEmail || null,
+          adminName: currentAdminName,
+        });
+        const fresh = await getAdminPushStatus();
+        setPushStatus(fresh);
+        if (res.success) {
+          showToast('🔔 Alertas activadas: recibirás avisos incluso con la app cerrada');
+        } else {
+          showToast(res.error || 'No se pudieron activar las notificaciones push.', 'error');
+        }
+      }
+    } finally {
+      setIsTogglingPush(false);
+    }
+  }, [isTogglingPush, pushStatus, user, adminEmail, currentAdminName, showToast]);
+
+  // 2d. Deep-link al tocar una notificación Push (query ?tab=pedidos&order=... o mensaje del Service Worker)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      const orderParam = params.get('order');
+      if (tabParam === 'pedidos' || orderParam) {
+        setActiveTab('pedidos');
+        setMobileRepartoFilter('en_ruta');
+      }
+      if (orderParam) {
+        pendingDeepLinkOrderIdRef.current = orderParam;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
+    const handleSwMessage = (event) => {
+      if (event.data?.type === 'PATITAS_NOTIFICATION_CLICK') {
+        const targetOrderId = event.data.orderId;
+        setActiveTab('pedidos');
+        setMobileRepartoFilter('en_ruta');
+        if (targetOrderId) {
+          pendingDeepLinkOrderIdRef.current = targetOrderId;
+        }
+        syncOrdersData();
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, [syncOrdersData]);
 
   // 3. Sincronizar Clientes y Tutores con Supabase (excluyendo administradores y cruzando con historial real de pedidos)
   useEffect(() => {
@@ -890,7 +1138,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     });
   }, [orders, orderSearch, orderStatusFilter, orderPaymentFilter, orderDayFilter, chileDateRanges.todayIso]);
 
-  const handleUpdateOrderPaymentMethod = (orderId, newPaymentMethod) => {
+  const handleUpdateOrderPaymentMethod = async (orderId, newPaymentMethod) => {
+    const prevOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
+    const prevMethod = prevOrder?.paymentMethod;
+
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, paymentMethod: newPaymentMethod } : o))
     );
@@ -898,21 +1149,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       setSelectedOrderModal((prev) => ({ ...prev, paymentMethod: newPaymentMethod }));
     }
 
-    // Persistir en Supabase y notificar
-    supabase
-      .from('orders')
-      .update({ payment_method: newPaymentMethod })
-      .eq('id', orderId)
-      .then(() => {
-        window.dispatchEvent(new Event('patitas_orders_updated'));
-      })
-      .catch((err) => console.error('Error updating order payment method in Supabase:', err));
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ payment_method: newPaymentMethod })
+        .eq('id', orderId);
+      if (error) throw error;
 
-    showToast(`Tipo de pago actualizado a ${newPaymentMethod} en Pedido ${orderId}`);
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      showToast(`Tipo de pago actualizado a ${newPaymentMethod} en Pedido ${orderId}`);
+    } catch (err) {
+      console.error('Error updating order payment method in Supabase:', err);
+      if (prevMethod !== undefined) {
+        setOrders((prev) =>
+          prev.map((o) => (o.id === orderId ? { ...o, paymentMethod: prevMethod } : o))
+        );
+        if (selectedOrderModal && selectedOrderModal.id === orderId) {
+          setSelectedOrderModal((prev) => ({ ...prev, paymentMethod: prevMethod }));
+        }
+      }
+      showToast('No se pudo guardar el tipo de pago. Verifica tu conexión.', 'error');
+    }
   };
 
   const handleUpdateOrderPaymentStatus = async (orderId, newPaymentStatus) => {
-    const targetOrder = orders.find((o) => o.id === orderId);
+    const targetOrder = orders.find((o) => o.id === orderId) || (selectedOrderModal?.id === orderId ? selectedOrderModal : null);
     const prevPaymentStatus = String(targetOrder?.paymentStatus || 'pendiente').toLowerCase();
     const isNowPaid = newPaymentStatus === 'pagado';
     const wasPaid = prevPaymentStatus === 'pagado';
@@ -965,11 +1226,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
       window.dispatchEvent(new Event('patitas_orders_updated'));
       window.dispatchEvent(new Event('patitas_customers_updated'));
+      showToast(`Estado de pago actualizado a ${newPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente'} en Pedido ${orderId}`);
     } catch (err) {
       console.error('Error updating order payment status in Supabase:', err);
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, paymentStatus: prevPaymentStatus } : o))
+      );
+      if (selectedOrderModal && selectedOrderModal.id === orderId) {
+        setSelectedOrderModal((prev) => ({ ...prev, paymentStatus: prevPaymentStatus }));
+      }
+      showToast('No se pudo actualizar el estado de pago. Verifica tu conexión.', 'error');
     }
-
-    showToast(`Estado de pago actualizado a ${newPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente'} en Pedido ${orderId}`);
   };
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('todos'); // 'todos' | 'combustible' | 'packaging' | 'fijo' | 'mantenimiento' | 'servicios' | 'notaria'
   const [financesSubTab, setFinancesSubTab] = useState('resumen'); // 'resumen' | 'gastos' | 'ingresos' | 'f29'
@@ -1184,8 +1451,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   // Modals & Drawers
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
-  const [paymentDeliveryConfirmModal, setPaymentDeliveryConfirmModal] = useState(null); // { order, paymentMethod: 'Transferencia' | 'Efectivo' }
+  const [paymentDeliveryConfirmModal, setPaymentDeliveryConfirmModal] = useState(null); // { order, paymentMethod: 'Transferencia' | 'Efectivo' | 'Tarjeta' }
   const [cancelOrderConfirmModal, setCancelOrderConfirmModal] = useState(null); // order object to cancel
+
+  // Abrir automáticamente el pedido al llegar desde una notificación push
+  useEffect(() => {
+    const targetId = pendingDeepLinkOrderIdRef.current;
+    if (!targetId || !orders || orders.length === 0) return;
+    const match = orders.find((o) => o.id === targetId);
+    if (match) {
+      setSelectedOrderModal(match);
+      pendingDeepLinkOrderIdRef.current = null;
+    }
+  }, [orders]);
+
+  // Cerrar drawer de pedido con Escape
+  useEffect(() => {
+    if (!selectedOrderModal) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') setSelectedOrderModal(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedOrderModal]);
+
   const [orderBoletas, setOrderBoletas] = useState(() => {
     try {
       const stored = localStorage.getItem('patitas_order_boletas_map');
@@ -1261,15 +1550,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [manualOrderPhoneTouched, setManualOrderPhoneTouched] = useState(false);
   const [manualOrderAddressTouched, setManualOrderAddressTouched] = useState(false);
   const [showPhoneSuggestions, setShowPhoneSuggestions] = useState(false);
-  const [manualOrderCustomer, setManualOrderCustomer] = useState({
+  const createInitialManualOrderCustomer = () => ({
     name: '',
     phone: '',
     email: '',
     address: '',
     city: '',
+    lat: null,
+    lng: null,
     petName: '',
     petType: '🐶 Perro',
     notes: '',
+    deliverySlot: OFFICIAL_AFTERNOON_SLOT_LABEL,
+    isUrgent: false,
     shippingCost: 0,
     freeShippingOverride: false,
     status: 'en_preparacion',
@@ -1277,6 +1570,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     paymentStatus: 'pendiente',
     date: getChileDateString(),
   });
+  const [manualOrderCustomer, setManualOrderCustomer] = useState(createInitialManualOrderCustomer);
 
   // Asegurar que la fecha por defecto en el modal siga la zona horaria de Chile (evita desfase UTC después de las 21:00 hrs)
   useEffect(() => {
@@ -1737,6 +2031,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const handleToggleFleetOnRoute = async () => {
     const nextVal = !isFleetCurrentlyOnRoute;
+    if (!nextVal && hasActiveOrdersEnCamino) {
+      setManualFleetOnRoute(false);
+      await saveManualDispatchStatusToSupabase(false);
+      const countEnCamino = (orders || []).filter((o) => o.status === 'en_camino').length;
+      showToast(
+        `Sigues EN RUTA automáticamente porque hay ${countEnCamino} ${countEnCamino === 1 ? 'pedido' : 'pedidos'} "En camino". Al entregarlos volverás a En Bodega.`,
+        'info'
+      );
+      return;
+    }
     setManualFleetOnRoute(nextVal);
     await saveManualDispatchStatusToSupabase(nextVal);
     showToast(
@@ -2250,16 +2554,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     }
   };
 
-  // Toast alert
-  const [toastMessage, setToastMessage] = useState('');
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3500);
-  };
-
   // Login handler estricto: solo permite ingreso a usuarios autenticados en Supabase con role === 'admin'
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
+    if (isLoggingIn) return;
     setAuthError('');
     const cleanEmail = adminEmail.trim().toLowerCase();
     if (!cleanEmail || !adminPassword.trim()) {
@@ -2267,6 +2565,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       return;
     }
 
+    setIsLoggingIn(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
@@ -2310,10 +2609,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       console.error('Admin login error:', err);
       setIsAdminAuthenticated(false);
       setAuthError('Error al verificar credenciales de administrador. Intenta nuevamente.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   const handleLogout = () => {
+    setIsLogoutConfirmOpen(false);
     setIsAdminAuthenticated(false);
     if (onLogout) {
       onLogout();
@@ -2342,7 +2644,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       const isPaid = String(targetOrder?.paymentStatus || '').toLowerCase() === 'pagado';
       if (!isPaid && targetOrder) {
         const currentMethod = String(targetOrder.paymentMethod || '').toLowerCase();
-        const defaultMethod = currentMethod.includes('efectivo') ? 'Efectivo' : 'Transferencia';
+        const defaultMethod = currentMethod.includes('efectivo')
+          ? 'Efectivo'
+          : currentMethod.includes('tarjeta') || currentMethod.includes('pos')
+            ? 'Tarjeta'
+            : 'Transferencia';
         setPaymentDeliveryConfirmModal({
           order: targetOrder,
           paymentMethod: defaultMethod,
@@ -2544,21 +2850,35 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       .from('orders')
       .update(payload)
       .eq('id', orderId)
-      .then(({ error }) => {
+      .then(async ({ error }) => {
         if (error && (error.code === '42703' || error.message?.includes('column'))) {
-          return supabase
+          const fallbackRes = await supabase
             .from('orders')
             .update({
               status: newStatus,
               ...(isDelivery ? { notes: notesWithDriver } : {}),
             })
             .eq('id', orderId);
+          if (fallbackRes.error) throw fallbackRes.error;
+          return;
         }
+        if (error) throw error;
       })
       .then(() => {
         window.dispatchEvent(new Event('patitas_orders_updated'));
       })
-      .catch((err) => console.error('Error updating order status in Supabase:', err));
+      .catch((err) => {
+        console.error('Error updating order status in Supabase:', err);
+        if (prevStatus) {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, status: prevStatus } : o))
+          );
+          if (selectedOrderModal && selectedOrderModal.id === orderId) {
+            setSelectedOrderModal((prev) => ({ ...prev, status: prevStatus }));
+          }
+        }
+        showToast(`No se pudo guardar el estado de ${orderId}. Verifica tu conexión.`, 'error');
+      });
   };
 
   const handleDeleteOrder = async (orderId) => {
@@ -2660,7 +2980,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
   const handleConfirmPaymentAndDelivery = async () => {
-    if (!paymentDeliveryConfirmModal?.order) return;
+    if (!paymentDeliveryConfirmModal?.order || isSubmittingPayment) return;
     const { order, paymentMethod, paymentMode = 'pagado' } = paymentDeliveryConfirmModal;
     const isLeavingPending = paymentMode === 'pendiente';
     const wasAlreadyPaid = getOrderPaymentStatus(order).isPaid;
@@ -2670,6 +2990,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const deliveryTimestamp = new Date().toISOString();
     const adminName = currentAdminName;
 
+    setIsSubmittingPayment(true);
     try {
       try {
         localStorage.setItem(`patitas_order_delivery_${orderId}`, JSON.stringify({
@@ -2774,6 +3095,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     } catch (err) {
       console.error('Error al confirmar pago y entrega del pedido:', err);
       showToast('Ocurrió un error al confirmar la entrega del pedido.', 'error');
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -2953,20 +3276,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     });
   };
 
-  const handleSaveManualOrder = (e) => {
+  const handleSaveManualOrder = async (e) => {
     e.preventDefault();
+    if (isSavingManualOrder) return;
     if (!manualOrderCustomer.name.trim()) {
-      showToast('Por favor ingresa el nombre del cliente');
+      showToast('Por favor ingresa el nombre del cliente', 'error');
       return;
     }
     const cleanPhoneDigits = (manualOrderCustomer.phone || '').replace(/\D/g, '');
     if (cleanPhoneDigits.length !== 9) {
       setManualOrderPhoneTouched(true);
-      showToast('⚠️ El teléfono debe tener exactamente 9 dígitos');
+      showToast('⚠️ El teléfono debe tener exactamente 9 dígitos', 'error');
       return;
     }
     if (manualOrderItems.length === 0) {
-      showToast('Debes agregar al menos un producto al pedido');
+      showToast('Debes agregar al menos un producto al pedido', 'error');
       return;
     }
     const cleanAddress = (manualOrderCustomer.address || mapsSearchQuery || '').trim();
@@ -2978,7 +3302,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     ) {
       setManualOrderAddressTouched(true);
       setManualOrderStep(3);
-      showToast('⚠️ La dirección de entrega es obligatoria para crear el pedido');
+      showToast('⚠️ La dirección de entrega es obligatoria para crear el pedido', 'error');
       return;
     }
 
@@ -3017,133 +3341,162 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const invoiceNum = `BOL-${ordY}-${seqStr}`;
 
     const formattedPhone = `+56 ${cleanPhoneDigits.slice(0, 1)} ${cleanPhoneDigits.slice(1, 5)} ${cleanPhoneDigits.slice(5, 9)}`;
+    const cleanEmail = (manualOrderCustomer.email || '').trim().toLowerCase() || null;
+    const resolvedDeliverySlot = manualOrderCustomer.isUrgent
+      ? URGENT_EXPRESS_SLOT_LABEL
+      : (manualOrderCustomer.deliverySlot || OFFICIAL_AFTERNOON_SLOT_LABEL);
+    const resolvedDeliveryType = manualOrderCustomer.isUrgent ? 'urgente' : 'normal';
 
     const resolvedManualPaymentStatus =
       manualOrderCustomer.paymentStatus === 'pagado' ? 'pagado' : 'pendiente';
 
-    const newOrder = {
-      id: newId,
-      channel: 'manual',
-      paymentMethod: manualOrderCustomer.paymentMethod || 'Transferencia Bancaria / Efectivo',
-      paymentStatus: resolvedManualPaymentStatus,
-      customer: manualOrderCustomer.name,
-      email: manualOrderCustomer.email || `${manualOrderCustomer.name.toLowerCase().replace(/\s+/g, '.')}@gmail.com`,
-      phone: formattedPhone,
-      petName: manualOrderCustomer.petName || 'Mascota',
-      petType: manualOrderCustomer.petType || '🐶 Perro',
-      petBreed: 'Mascota regalona',
-      items: manualOrderItems.map((it) => ({
-        id: it.productId,
-        productId: it.productId,
-        name: it.name,
-        weight: it.weight || '',
-        format: it.weight || it.format || '',
-        quantity: it.quantity,
-        qty: it.quantity,
-        price: it.price,
-        unitPrice: it.price,
-        subtotal: it.price * it.quantity,
-        unitCostNeto: Number(it.unitCostNeto) || 0,
-        shippingUnitCost: Number(it.shippingUnitCost) || 0,
-        code: `SKU-${String(it.productId || '').toUpperCase().slice(0, 8) || 'PROD'}`,
-      })),
-      subtotal,
-      shippingCost: shipping,
-      discount: 0,
-      total,
-      date: dateFormatted,
-      time: timeFormatted,
-      created_at: orderIso,
-      status: manualOrderCustomer.status || 'en_preparacion',
-      tracking: `CHI-${Math.floor(8000000 + Math.random() * 1000000)}`,
-      invoiceNumber: invoiceNum,
-      address: cleanAddress,
-      city: resolvedManualCity,
-      lat: manualOrderCustomer.lat || null,
-      lng: manualOrderCustomer.lng || null,
-      deliveryZone: `Entrega ${resolvedManualCity}`,
-      deliveredByName: currentAdminName,
-      notes: `${manualOrderCustomer.notes || 'Pedido creado manualmente en el panel'} | Repartidor: ${currentAdminName}${isFreeShippingManual ? ' | DespachoGratis: Si' : ''}`,
-    };
+    const mappedItems = manualOrderItems.map((it) => ({
+      id: it.productId,
+      productId: it.productId,
+      name: it.name,
+      weight: it.weight || '',
+      format: it.weight || it.format || '',
+      quantity: it.quantity,
+      qty: it.quantity,
+      price: it.price,
+      unitPrice: it.price,
+      subtotal: it.price * it.quantity,
+      unitCostNeto: Number(it.unitCostNeto) || 0,
+      shippingUnitCost: Number(it.shippingUnitCost) || 0,
+      code: `SKU-${String(it.productId || '').toUpperCase().slice(0, 8) || 'PROD'}`,
+    }));
 
-    setOrders([newOrder, ...orders]);
-    setInventory((prevInv) =>
-      prevInv.map((p) => {
-        const matchingItems = (newOrder.items || []).filter((it) => {
-          const targetId = it.id || it.productId;
-          if (targetId) return targetId === p.id;
-          return String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase();
-        });
-        if (matchingItems.length > 0) {
-          const qty = matchingItems.reduce((sum, it) => sum + Number(it.quantity || 1), 0);
-          const newStock = Math.max(0, (Number(p.stock) || 0) - qty);
-          return {
-            ...p,
-            stock: newStock,
-            status: newStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
-          };
-        }
-        return p;
-      })
-    );
-    setIsAddOrderModalOpen(false);
-    setManualOrderStep(1);
-    showToast(`✅ ¡Pedido ${newId} (${formatPeriodLabel(getYearMonthFromDate(orderDateStr))}) registrado (${resolvedManualPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente de pago'})!`);
+    const orderNotes = `${(manualOrderCustomer.notes || '').trim() || 'Pedido creado manualmente en el panel'} | Repartidor: ${currentAdminName}${isFreeShippingManual ? ' | DespachoGratis: Si' : ''}`;
 
-    // Sincronizar pedido manual a Supabase con la fecha contable exacta
-    createOrderInSupabase({
-      id: newId,
-      customerName: newOrder.customer,
-      customerEmail: newOrder.email,
-      customerPhone: newOrder.phone,
-      channel: 'manual',
-      paymentMethod: newOrder.paymentMethod,
-      paymentStatus: resolvedManualPaymentStatus,
-      status: newOrder.status,
-      subtotal: newOrder.subtotal,
-      shippingCost: newOrder.shippingCost,
-      discount: 0,
-      total: newOrder.total,
-      address: newOrder.address,
-      city: newOrder.city,
-      deliveryZone: newOrder.deliveryZone,
-      notes: newOrder.notes,
-      invoiceNumber: newOrder.invoiceNumber,
-      created_at: orderIso,
-      delivery_date: orderDateStr,
-      delivery_day_text: dateFormatted,
-    }, newOrder.items).then(({ success }) => {
-      if (success) {
-        window.dispatchEvent(new CustomEvent('patitas_orders_updated'));
+    setIsSavingManualOrder(true);
+    try {
+      const dbResult = await createOrderInSupabase(
+        {
+          id: newId,
+          customerName: manualOrderCustomer.name.trim(),
+          customerEmail: cleanEmail,
+          customerPhone: formattedPhone,
+          petName: (manualOrderCustomer.petName || '').trim() || null,
+          petType: manualOrderCustomer.petType || '🐶 Perro',
+          channel: 'manual',
+          paymentMethod: manualOrderCustomer.paymentMethod || 'Transferencia',
+          paymentStatus: resolvedManualPaymentStatus,
+          status: manualOrderCustomer.status || 'en_preparacion',
+          subtotal,
+          shippingCost: shipping,
+          discount: 0,
+          total,
+          address: cleanAddress,
+          city: resolvedManualCity,
+          deliveryLat: manualOrderCustomer.lat ?? null,
+          deliveryLng: manualOrderCustomer.lng ?? null,
+          deliveryZone: `Entrega ${resolvedManualCity}`,
+          deliverySlot: resolvedDeliverySlot,
+          deliveryType: resolvedDeliveryType,
+          notes: orderNotes,
+          invoiceNumber: invoiceNum,
+          created_at: orderIso,
+          delivery_date: orderDateStr,
+          delivery_day_text: dateFormatted,
+        },
+        mappedItems
+      );
+
+      if (!dbResult?.success) {
+        showToast(
+          'No se pudo guardar el pedido en el servidor. Revisa tu conexión e intenta nuevamente.',
+          'error'
+        );
+        return;
       }
-    });
 
-    // Reset form
-    setManualOrderCustomer({
-      name: '',
-      phone: '',
-      email: '',
-      address: '',
-      city: '',
-      petName: '',
-      petType: '🐶 Perro',
-      notes: '',
-      shippingCost: 0,
-      freeShippingOverride: false,
-      status: 'en_preparacion',
-      paymentMethod: 'Transferencia',
-      paymentStatus: 'pendiente',
-      date: getChileDateString(),
-    });
-    setManualOrderItems([]);
-    setQuantityToAdd(1);
-    setManualOrderStep(1);
-    setManualOrderPhoneTouched(false);
-    setManualOrderAddressTouched(false);
-    setMapsSearchQuery('');
-    setMapsSearchResults([]);
-    setShowMapsDropdown(false);
-    setSelectedFromMaps(false);
+      const persistedId = dbResult.id || newId;
+      const newOrder = {
+        id: persistedId,
+        channel: 'manual',
+        paymentMethod: manualOrderCustomer.paymentMethod || 'Transferencia',
+        paymentStatus: resolvedManualPaymentStatus,
+        customer: manualOrderCustomer.name.trim(),
+        email: cleanEmail || '',
+        customerEmail: cleanEmail || '',
+        phone: formattedPhone,
+        customerPhone: formattedPhone,
+        petName: (manualOrderCustomer.petName || '').trim() || 'Mascota',
+        petType: manualOrderCustomer.petType || '🐶 Perro',
+        petBreed: '',
+        items: mappedItems,
+        subtotal,
+        shippingCost: shipping,
+        discount: 0,
+        total,
+        date: dateFormatted,
+        time: timeFormatted,
+        created_at: orderIso,
+        status: manualOrderCustomer.status || 'en_preparacion',
+        tracking: `CHI-${Math.floor(8000000 + Math.random() * 1000000)}`,
+        invoiceNumber: invoiceNum,
+        address: cleanAddress,
+        city: resolvedManualCity,
+        lat: manualOrderCustomer.lat ?? null,
+        lng: manualOrderCustomer.lng ?? null,
+        deliveryDate: orderDateStr,
+        deliveryDayText: dateFormatted,
+        deliverySlot: resolvedDeliverySlot,
+        deliveryType: resolvedDeliveryType,
+        deliveryZone: `Entrega ${resolvedManualCity}`,
+        deliveredByName: currentAdminName,
+        notes: orderNotes,
+      };
+
+      setOrders((prev) => [newOrder, ...prev.filter((o) => o.id !== persistedId)]);
+      setInventory((prevInv) =>
+        prevInv.map((p) => {
+          const matchingItems = (newOrder.items || []).filter((it) => {
+            const targetId = it.id || it.productId;
+            if (targetId) return targetId === p.id;
+            return String(it.name || '').toLowerCase() === String(p.name || '').toLowerCase();
+          });
+          if (matchingItems.length > 0) {
+            const qty = matchingItems.reduce((sum, it) => sum + Number(it.quantity || 1), 0);
+            const newStock = Math.max(0, (Number(p.stock) || 0) - qty);
+            return {
+              ...p,
+              stock: newStock,
+              status: newStock <= (p.minStock || 5) ? 'stock_bajo' : 'disponible',
+            };
+          }
+          return p;
+        })
+      );
+
+      setIsAddOrderModalOpen(false);
+      setManualOrderStep(1);
+      setManualOrderCustomer(createInitialManualOrderCustomer());
+      setManualOrderItems([]);
+      setQuantityToAdd(1);
+      setManualOrderPhoneTouched(false);
+      setManualOrderAddressTouched(false);
+      setMapsSearchQuery('');
+      setMapsSearchResults([]);
+      setShowMapsDropdown(false);
+      setSelectedFromMaps(false);
+      setOrderPetTypeFilter(null);
+      setOrderProductSearch('');
+      setOrderBrandFilter('todas');
+      setSelectedMultiProductIds([]);
+      setOrderProductCardConfigs({});
+
+      window.dispatchEvent(new CustomEvent('patitas_orders_updated'));
+      window.dispatchEvent(new CustomEvent('patitas_products_updated'));
+      showToast(
+        `✅ ¡Pedido ${persistedId} (${formatPeriodLabel(getYearMonthFromDate(orderDateStr))}) registrado (${resolvedManualPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente de pago'})!`
+      );
+    } catch (err) {
+      console.error('Error guardando pedido manual:', err);
+      showToast('Error de conexión al guardar el pedido. Tus datos se mantuvieron intactos.', 'error');
+    } finally {
+      setIsSavingManualOrder(false);
+    }
   };
 
   // Toggle Convenio Active
@@ -6289,6 +6642,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         adminPassword={adminPassword}
         setAdminPassword={setAdminPassword}
         authError={authError}
+        isSubmitting={isLoggingIn}
         onSubmit={handleLoginSubmit}
       />
     );
@@ -6300,24 +6654,47 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const pendingOrdersCount = orders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length;
 
   return (
-    <div className="finset-admin h-screen bg-[#F8FAFC] text-[#111827] flex font-sans antialiased overflow-hidden">
+    <div className="finset-admin h-dvh bg-[#F8FAFC] text-[#111827] flex font-sans antialiased overflow-hidden">
       <SEOHead
         title="Panel de Administración"
         canonical="/admin"
         noindex={true}
       />
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-white border border-[#FDE68A] text-[#111827] px-5 py-3 rounded-full shadow-xl flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-bottom-3 duration-300">
-          <CheckCircle2 className="w-4 h-4 text-[#D97706] shrink-0" />
-          <span>{toastMessage}</span>
+      {/* Toast Notification (elevado sobre la barra inferior móvil) */}
+      {toastState?.message && (
+        <div
+          role={toastState.type === 'error' ? 'alert' : 'status'}
+          className={`fixed bottom-24 left-4 right-4 sm:left-auto sm:right-6 md:bottom-6 z-[70] px-4 sm:px-5 py-3 rounded-2xl sm:rounded-full shadow-xl flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-bottom-3 duration-200 border ${
+            toastState.type === 'error'
+              ? 'bg-rose-50 border-rose-300 text-rose-900'
+              : toastState.type === 'info'
+                ? 'bg-slate-900 border-slate-700 text-white'
+                : 'bg-white border-[#FDE68A] text-[#111827]'
+          }`}
+        >
+          {toastState.type === 'error' ? (
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          ) : toastState.type === 'info' ? (
+            <Bell className="w-4 h-4 text-[#F5BA13] shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-[#D97706] shrink-0" />
+          )}
+          <span className="leading-snug flex-1">{toastState.message}</span>
+          <button
+            type="button"
+            onClick={() => setToastState(null)}
+            className="p-0.5 rounded-full opacity-60 hover:opacity-100 cursor-pointer shrink-0"
+            aria-label="Cerrar aviso"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {/* ======================================================= */}
       {/* LEFT SIDEBAR NAVIGATION MENU (FinSet Bento Style)       */}
       {/* ======================================================= */}
-      <aside className="hidden md:flex w-60 lg:w-64 bg-white border-r border-[#EAECEF] flex-col justify-between shrink-0 sticky top-0 h-screen select-none z-40 relative">
+      <aside className="hidden md:flex w-60 lg:w-64 bg-white border-r border-[#EAECEF] flex-col justify-between shrink-0 sticky top-0 h-dvh select-none z-40 relative">
         {/* Top Brand Header + Navigation Pills */}
         <div>
           <div className="px-6 pt-6 pb-5 flex items-center justify-between">
@@ -6540,7 +6917,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* ======================================================= */}
       {/* RIGHT COLUMN: FINSET TOP HEADER + SCROLLABLE TABS       */}
       {/* ======================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-[#F5F4F0] md:bg-[#F8FAFC]">
+      <div className="flex-1 flex flex-col min-w-0 h-dvh overflow-hidden bg-[#F5F4F0] md:bg-[#F8FAFC]">
         {/* FIXED UNIFIED TOP NAVBAR (iOS 18 Large Title Translucent Chrome on Mobile / FinSet on Desktop) */}
         <header className="ios-nav-bar sticky top-0 z-30 shrink-0 md:bg-[#F8FAFC]/95 md:backdrop-blur-md md:border-b md:border-[#EAECEF] px-4 sm:px-6 md:px-8 lg:px-10 pb-3 pt-3 sm:py-4 flex flex-row items-center justify-between gap-2.5 min-h-[68px] sm:min-h-[78px]">
           {/* Dynamic Left: iOS Large Title Hierarchy on Mobile & Sentence-Case Title on Desktop */}
@@ -6647,12 +7024,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           </div>
 
           {/* Dynamic Right: Contextual iOS Capsule Controls + User Profile Pill */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Interruptor rápido 1-clic: Estado de Reparto en Vivo para Ventanas Web (10-13 y 15:30-19:30) */}
             <button
               type="button"
               onClick={handleToggleFleetOnRoute}
-              className={`ios-pressable h-9 px-3 sm:px-3.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${isFleetCurrentlyOnRoute
+              className={`ios-pressable h-9 px-2.5 sm:px-3.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${isFleetCurrentlyOnRoute
                   ? 'bg-[#D97706] hover:bg-[#B45309] text-white border-[#D97706] shadow-xs'
                   : 'bg-white/90 hover:bg-white text-[#1C1C1E] border-[#3C3C43]/12 shadow-[0_1px_4px_rgba(0,0,0,0.03)]'
                 }`}
@@ -6673,21 +7050,60 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </span>
             </button>
 
-            {activeTab === 'dashboard' && (
+            {/* Botón de Notificaciones Push (app cerrada / segundo plano) */}
+            <button
+              type="button"
+              onClick={handleToggleAdminPush}
+              disabled={isTogglingPush}
+              className={`ios-pressable relative w-9 h-9 sm:w-10 sm:h-10 rounded-full border shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-60 ${
+                pushStatus.subscribed
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : pushStatus.permission === 'denied'
+                    ? 'bg-rose-50 border-rose-200 text-rose-500'
+                    : 'bg-white/90 hover:bg-white text-[#1C1C1E] border-[#3C3C43]/12'
+              }`}
+              title={
+                pushStatus.subscribed
+                  ? 'Alertas push activadas (clic para desactivar)'
+                  : pushStatus.permission === 'denied'
+                    ? 'Permiso de notificaciones bloqueado en el navegador'
+                    : 'Activar alertas push de nuevos pedidos web'
+              }
+              aria-label={pushStatus.subscribed ? 'Desactivar alertas push' : 'Activar alertas push'}
+            >
+              {isTogglingPush ? (
+                <Loader2 className="w-4 h-4 animate-spin text-[#D97706]" />
+              ) : pushStatus.subscribed ? (
+                <BellRing className="w-4 h-4 text-emerald-700" />
+              ) : pushStatus.permission === 'denied' ? (
+                <BellOff className="w-4 h-4 text-rose-500" />
+              ) : (
+                <Bell className="w-4 h-4 text-[#D97706]" />
+              )}
+              {pushStatus.subscribed && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+              )}
+            </button>
+
+            {(activeTab === 'dashboard' || activeTab === 'pedidos') && (
               <button
-                onClick={() => showToast('Métricas actualizadas en tiempo real')}
-                className="ios-pressable w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-white text-[#1C1C1E] border border-[#3C3C43]/12 shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center"
-                title="Actualizar datos"
+                type="button"
+                onClick={() => handleManualRefresh()}
+                disabled={isRefreshing}
+                className="ios-pressable w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-white text-[#1C1C1E] border border-[#3C3C43]/12 shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-60"
+                title="Actualizar pedidos e inventario ahora"
+                aria-label="Actualizar pedidos e inventario"
               >
-                <RefreshCw className="w-4 h-4 text-[#D97706]" />
+                <RefreshCw className={`w-4 h-4 text-[#D97706] ${isRefreshing ? 'animate-spin' : ''}`} />
               </button>
             )}
 
             <button
               type="button"
-              onClick={handleLogout}
-              className="ios-pressable md:hidden w-9 h-9 rounded-full bg-white/90 hover:bg-rose-50 text-[#8E8E93] hover:text-rose-600 border border-[#3C3C43]/12 shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center"
+              onClick={() => setIsLogoutConfirmOpen(true)}
+              className="ios-pressable md:hidden w-9 h-9 rounded-full bg-white/90 hover:bg-rose-50 text-[#6E6E73] hover:text-rose-600 border border-[#3C3C43]/12 shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center"
               title="Cerrar sesión"
+              aria-label="Cerrar sesión"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -7062,317 +7478,42 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               {/* ========================================================= */}
               {/* VISTA MÓVIL PWA EXCLUSIVA — ESTILO NATIVO iOS 18          */}
               {/* ========================================================= */}
-              <div className="block md:hidden space-y-5">
-                {/* 1. Widgets Compactos iOS de Estado del Reparto */}
-                <div className="grid grid-cols-3 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOrderDayFilter('todos');
-                      setOrderStatusFilter('en_preparacion');
-                      setActiveTab('pedidos');
-                    }}
-                    className="ios-grouped-card ios-pressable p-3.5 text-left cursor-pointer flex flex-col justify-between min-h-[88px]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="w-7 h-7 rounded-[10px] bg-[#FF9500]/15 text-[#FF9500] flex items-center justify-center">
-                        <Clock className="w-4 h-4 stroke-[2.25]" />
-                      </span>
-                      <span className="text-[22px] font-bold tracking-[-0.025em] tabular-nums text-[#1C1C1E] leading-none">
-                        {orders.filter((o) => o.status === 'en_preparacion').length}
-                      </span>
-                    </div>
-                    <div className="text-[12px] font-semibold text-[#8E8E93] tracking-[-0.01em] mt-2 truncate">
-                      En prep.
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOrderDayFilter('todos');
-                      setOrderStatusFilter('en_camino');
-                      setActiveTab('pedidos');
-                    }}
-                    className="ios-grouped-card ios-pressable p-3.5 text-left cursor-pointer flex flex-col justify-between min-h-[88px]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="w-7 h-7 rounded-[10px] bg-[#D97706]/15 text-[#D97706] flex items-center justify-center">
-                        <Truck className="w-4 h-4 stroke-[2.25]" />
-                      </span>
-                      <span className="text-[22px] font-bold tracking-[-0.025em] tabular-nums text-[#1C1C1E] leading-none">
-                        {orders.filter((o) => o.status === 'en_camino').length}
-                      </span>
-                    </div>
-                    <div className="text-[12px] font-semibold text-[#8E8E93] tracking-[-0.01em] mt-2 truncate">
-                      En camino
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOrderDayFilter('hoy');
-                      setOrderStatusFilter('entregado');
-                      setActiveTab('pedidos');
-                    }}
-                    className="ios-grouped-card ios-pressable p-3.5 text-left cursor-pointer flex flex-col justify-between min-h-[88px]"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="w-7 h-7 rounded-[10px] bg-[#34C759]/15 text-[#34C759] flex items-center justify-center">
-                        <CheckCircle2 className="w-4 h-4 stroke-[2.25]" />
-                      </span>
-                      <span className="text-[22px] font-bold tracking-[-0.025em] tabular-nums text-[#1C1C1E] leading-none">
-                        {todayOrders.filter((o) => o.status === 'entregado').length}
-                      </span>
-                    </div>
-                    <div className="text-[12px] font-semibold text-[#8E8E93] tracking-[-0.01em] mt-2 truncate">
-                      Entregados
-                    </div>
-                  </button>
-                </div>
-
-                {/* 2. Tarjetas iOS Inset Grouped de Métricas del Día */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="ios-grouped-card p-4 flex flex-col justify-between space-y-2">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-[13px] font-semibold text-[#8E8E93] tracking-[-0.01em]">
-                        Ventas hoy
-                      </span>
-                      <span className="text-[10px] font-semibold text-[#248A3D] bg-[#34C759]/15 px-2 py-0.5 rounded-full">
-                        {salesPeriodData.dia.growth}
-                      </span>
-                    </div>
-                    <div className="text-[22px] font-bold text-[#1C1C1E] tracking-[-0.025em] tabular-nums leading-tight">
-                      {formatCLP(salesPeriodData.dia.amount)}
-                    </div>
-                    <span className="text-[12px] text-[#8E8E93] font-medium">
-                      {salesPeriodData.dia.detail}
-                    </span>
-                  </div>
-
-                  <div className="ios-grouped-card p-4 flex flex-col justify-between space-y-2">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-[13px] font-semibold text-[#8E8E93] tracking-[-0.01em]">
-                        Pedidos hoy
-                      </span>
-                      <div className="w-7 h-7 rounded-[10px] bg-[#D97706]/15 text-[#D97706] flex items-center justify-center">
-                        <ShoppingBag className="w-4 h-4 stroke-[2.25]" />
-                      </div>
-                    </div>
-                    <div className="text-[22px] font-bold text-[#1C1C1E] tracking-[-0.025em] tabular-nums leading-tight">
-                      {todayOrders.length} {todayOrders.length === 1 ? 'pedido' : 'pedidos'}
-                    </div>
-                    <span className="text-[12px] text-[#8E8E93] font-medium">
-                      {todayOrders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length} pendientes
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3. Sección iOS Inset Grouped: "Siguiente por despachar" (Ordenada por Ruta Óptima Vecino Más Cercano) */}
-                {(() => {
-                  const rawPendingOrders = orders.filter(
-                    (o) => o.status === 'en_camino' || o.status === 'en_preparacion'
-                  );
-                  const routeOptimization = optimizeDeliveryRoute(rawPendingOrders, activeRouteOrigin);
-                  const pendingDispatchOrders = routeOptimization.optimizedOrders || [];
-
-                  return (
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8E8E93]">
-                          Siguiente por despachar (Ruta óptima)
-                        </span>
-                        {pendingDispatchOrders.length > 0 && (
-                          <span className="text-[11px] font-semibold text-[#D97706] bg-[#D97706]/12 px-2.5 py-0.5 rounded-full tabular-nums">
-                            {pendingDispatchOrders.length}{' '}
-                            {pendingDispatchOrders.length === 1 ? 'parada' : 'paradas'} · {routeOptimization.totalDistanceKm} km
-                          </span>
-                        )}
-                      </div>
-
-                      {pendingDispatchOrders.length === 0 ? (
-                        <div className="ios-grouped-card p-6 text-center space-y-2">
-                          <div className="w-11 h-11 rounded-[14px] bg-[#34C759]/15 text-[#34C759] flex items-center justify-center mx-auto">
-                            <CheckCircle2 className="w-6 h-6 stroke-[2.25]" />
-                          </div>
-                          <div className="text-[15px] font-bold text-[#1C1C1E] tracking-[-0.015em]">
-                            Sin pedidos pendientes por despachar
-                          </div>
-                          <p className="text-[13px] text-[#8E8E93] font-normal leading-relaxed max-w-[260px] mx-auto">
-                            Todos los pedidos registrados ya han sido despachados y entregados.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {pendingDispatchOrders.map((nextOrder, orderIdx) => (
-                            <div
-                              key={nextOrder.id}
-                              className="ios-grouped-card p-4 space-y-3.5"
-                            >
-                              {/* Encabezado de tarjeta iOS con Número de Parada & Cercanía */}
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-[#D97706] text-white text-[11px] font-bold tabular-nums shrink-0">
-                                    Parada #{nextOrder.stopNumber || orderIdx + 1}
-                                  </span>
-                                  <span className="text-[12px] font-semibold text-[#8E8E93] tabular-nums truncate">
-                                    {nextOrder.legDistanceKm} km {nextOrder.previousStopLabel || 'desde Bodega'}
-                                  </span>
-                                </div>
-                                <span className="text-[12px] font-semibold tabular-nums text-[#1C1C1E] bg-[#F2F2F7] px-2.5 py-1 rounded-full shrink-0">
-                                  {nextOrder.id}
-                                </span>
-                              </div>
-
-                              <div className="space-y-2.5">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="text-[17px] font-bold text-[#1C1C1E] tracking-[-0.02em] truncate">
-                                      {nextOrder.customer}
-                                    </div>
-                                    <div className="text-[13px] text-[#8E8E93] font-medium flex items-center gap-1.5 mt-0.5">
-                                      <MapPin className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-                                      <span className="truncate">
-                                        {nextOrder.address}, {nextOrder.city}
-                                      </span>
-                                    </div>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <span className="text-[17px] font-bold text-[#1C1C1E] tabular-nums tracking-[-0.02em] block">
-                                      {formatCLP(nextOrder.total)}
-                                    </span>
-                                    <span
-                                      className={`inline-block text-[11px] font-semibold px-2.5 py-0.5 rounded-full border mt-1 ${getOrderPaymentStatus(nextOrder).badgeColor}`}
-                                    >
-                                      {getOrderPaymentStatus(nextOrder).statusText}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {renderPaymentCollectionBanner(nextOrder, true)}
-
-                                {/* Contenedor iOS Inset de Productos */}
-                                <div className="pt-2.5 border-t border-[#3C3C43]/10 space-y-2">
-                                  <div className="flex items-center justify-between text-[12px] font-semibold text-[#8E8E93]">
-                                    <span className="flex items-center gap-1.5">
-                                      <Package className="w-3.5 h-3.5 text-[#D97706]" />
-                                      <span>
-                                        Carga a entregar (
-                                        {nextOrder.items?.reduce((acc, it) => acc + (it.quantity || 1), 0) || 0} un.)
-                                      </span>
-                                    </span>
-                                    {nextOrder.items && nextOrder.items.length > 2 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => setIsNextOrderItemsExpanded(!isNextOrderItemsExpanded)}
-                                        className="text-[12px] font-semibold text-[#D97706] active:opacity-70 transition-opacity cursor-pointer"
-                                      >
-                                        {isNextOrderItemsExpanded
-                                          ? 'Ocultar'
-                                          : `Ver ${nextOrder.items.length - 2} más`}
-                                      </button>
-                                    )}
-                                  </div>
-
-                                  <div className="rounded-[16px] bg-[#F2F2F7]/75 p-1.5 space-y-1.5">
-                                    {(isNextOrderItemsExpanded
-                                      ? nextOrder.items || []
-                                      : (nextOrder.items || []).slice(0, 2)
-                                    ).map((item, idx) => {
-                                      const imgSrc = getProductImage(item.name);
-                                      return (
-                                        <div
-                                          key={idx}
-                                          onClick={() =>
-                                            setSelectedProductPreview({
-                                              ...item,
-                                              orderId: nextOrder.id,
-                                              customer: nextOrder.customer,
-                                              petName: nextOrder.petName,
-                                              petType: nextOrder.petType,
-                                              tracking: nextOrder.tracking,
-                                            })
-                                          }
-                                          className="ios-pressable flex items-center gap-3 p-2 rounded-[12px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] cursor-pointer"
-                                          title="Toca para ver foto ampliada"
-                                        >
-                                          <div className="relative shrink-0 w-11 h-11 rounded-[10px] bg-[#F8FAFC] border border-[#3C3C43]/10 p-0.5 flex items-center justify-center">
-                                            <img
-                                              src={imgSrc}
-                                              alt={item.name}
-                                              className="w-full h-full object-contain rounded-lg"
-                                            />
-                                            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#D97706] text-white text-[10px] font-bold tabular-nums flex items-center justify-center border border-white leading-none">
-                                              x{item.quantity || 1}
-                                            </span>
-                                          </div>
-
-                                          <div className="flex-1 min-w-0">
-                                            <div className="text-[13px] font-semibold text-[#1C1C1E] tracking-[-0.01em] truncate">
-                                              {item.name}
-                                            </div>
-                                            <div className="flex items-center gap-1.5 mt-0.5">
-                                              {item.weight && (
-                                                <span className="text-[11px] font-medium text-[#8E8E93] bg-[#F2F2F7] px-2 py-0.5 rounded-md">
-                                                  {item.weight}
-                                                </span>
-                                              )}
-                                              {item.code && (
-                                                <span className="text-[11px] font-mono text-[#8E8E93]">
-                                                  {item.code}
-                                                </span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Botonera iOS 42pt (iOS Tinted & Prominent Filled Buttons) */}
-                              <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-[#3C3C43]/10">
-                                <a
-                                  href={getSingleOrderNavigationUrl(nextOrder)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#F2F2F7] active:bg-[#E5E5EA] text-[#1C1C1E] text-[13px] font-semibold flex items-center justify-center gap-1.5"
-                                  title="Abrir ruta en Google Maps"
-                                >
-                                  <GoogleMapsIcon className="w-4 h-4 shrink-0" />
-                                  <span className="truncate">Maps</span>
-                                </a>
-
-                                <a
-                                  href={`https://wa.me/${(nextOrder.phone || '+56953332492').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${nextOrder.customer}! Te contactamos de Patitas del Sur respecto a tu pedido ${nextOrder.id}. Voy en camino a tu domicilio 🐾`)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#34C759]/14 active:bg-[#34C759]/22 text-[#248A3D] text-[13px] font-semibold flex items-center justify-center gap-1.5"
-                                  title="Avisar por WhatsApp"
-                                >
-                                  <WhatsAppIcon className="w-4 h-4 shrink-0" />
-                                  <span className="truncate">WhatsApp</span>
-                                </a>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateOrderStatus(nextOrder.id, 'entregado')}
-                                  className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#D97706] active:bg-[#B45309] text-white text-[13px] font-semibold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                                >
-                                  <Check className="w-4 h-4 stroke-[2.5] shrink-0" />
-                                  <span className="truncate">Entregado</span>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
+              <MobilePwaDashboardView
+                orders={orders}
+                todayOrders={todayOrders}
+                inventory={inventory}
+                salesPeriodData={salesPeriodData}
+                activeRouteOrigin={activeRouteOrigin}
+                driverGpsOrigin={driverGpsOrigin}
+                isLocatingDriverGps={isLocatingDriverGps}
+                isInitialLoading={isInitialLoading}
+                isRefreshing={isRefreshing}
+                syncError={syncError}
+                pushStatus={pushStatus}
+                isTogglingPush={isTogglingPush}
+                onTogglePush={handleToggleAdminPush}
+                onRetrySync={() => handleManualRefresh()}
+                onToggleDriverGpsOrigin={handleToggleDriverGpsOrigin}
+                onOpenRouteOptimizer={handleOpenRouteOptimizer}
+                onNavigateToRepartoWithFilter={(filterId) => {
+                  setMobileRepartoFilter(filterId);
+                  setMobileOrderSearch('');
+                  if (filterId === 'en_preparacion' || filterId === 'en_camino') {
+                    setOrderDayFilter('todos');
+                    setOrderStatusFilter(filterId);
+                  } else if (filterId === 'entregados_hoy') {
+                    setOrderDayFilter('hoy');
+                    setOrderStatusFilter('entregado');
+                  } else {
+                    setOrderDayFilter('todos');
+                    setOrderStatusFilter('todos');
+                  }
+                  setActiveTab('pedidos');
+                }}
+                onUpdateOrderStatus={handleUpdateOrderStatus}
+                onSelectOrderModal={setSelectedOrderModal}
+                onSelectProductPreview={setSelectedProductPreview}
+              />
 
               {/* ========================================================= */}
               {/* VISTA ESCRITORIO FINSET BENTO UI (hidden md:block)        */}
@@ -8657,495 +8798,33 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               {/* ========================================================================= */}
               {/* PWA / MÓVIL: Pedidos del Día y Pendientes (Ordenados por Ruta Óptima)     */}
               {/* ========================================================================= */}
-              <div className="block md:hidden space-y-3">
-                {(() => {
-                  const todayIds = new Set((todayOrders || []).map((o) => o.id));
-                  const pendingToOptimize = (orders || []).filter(
-                    (o) => o.status === 'en_camino' || o.status === 'en_preparacion'
-                  );
-                  const deliveredTodayList = (orders || []).filter(
-                    (o) =>
-                      o.status === 'entregado' &&
-                      (todayIds.has(o.id) || o.date === todayFormattedDate || o.date === 'Hoy')
-                  );
-
-                  const routeOptimization = optimizeDeliveryRoute(pendingToOptimize, activeRouteOrigin);
-                  const optimizedPendingOrders = routeOptimization.optimizedOrders || [];
-                  const pwaOrdersList = [...optimizedPendingOrders, ...deliveredTodayList];
-
-                  return (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
-                        <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-[#8E8E93] tabular-nums">
-                          {optimizedPendingOrders.length > 0
-                            ? `${optimizedPendingOrders.length} en ruta óptima (${routeOptimization.totalDistanceKm} km)`
-                            : `${pwaOrdersList.length} ${pwaOrdersList.length === 1 ? 'pedido hoy' : 'pedidos hoy'}`}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={handleToggleDriverGpsOrigin}
-                            disabled={isLocatingDriverGps}
-                            className={`ios-pressable inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-full cursor-pointer border transition-colors ${driverGpsOrigin
-                                ? 'bg-[#1C1C1E] text-white border-[#1C1C1E]'
-                                : 'bg-white text-[#1C1C1E] border-[#3C3C43]/12 shadow-[0_1px_2px_rgba(0,0,0,0.03)]'
-                              }`}
-                            title="Alternar punto de partida de la ruta óptima: Bodega Central o tu ubicación GPS actual ($0 costo)"
-                          >
-                            <MapPin className={`w-3 h-3 shrink-0 ${driverGpsOrigin ? 'text-[#F5BA13]' : 'text-[#D97706]'}`} />
-                            <span>
-                              {isLocatingDriverGps
-                                ? 'GPS...'
-                                : driverGpsOrigin
-                                  ? 'Desde mi GPS'
-                                  : 'Desde Bodega'}
-                            </span>
-                          </button>
-
-                          {optimizedPendingOrders.length > 0 && routeOptimization.googleMapsUrl && (
-                            <a
-                              href={routeOptimization.googleMapsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="ios-pressable inline-flex items-center gap-1 text-[11px] font-semibold text-[#1C1C1E] bg-white px-2.5 py-1.5 rounded-full border border-[#3C3C43]/12 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
-                              title="Abrir ruta multiparada encadenada en Google Maps (100% gratis)"
-                            >
-                              <GoogleMapsIcon className="w-3.5 h-3.5 shrink-0" />
-                              <span>Ruta Maps</span>
-                            </a>
-                          )}
-
-                          {pwaOrdersList.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const allExpanded = pwaOrdersList.every((o) => expandedOrders[o.id]);
-                                if (allExpanded) {
-                                  setExpandedOrders({});
-                                } else {
-                                  const nextState = {};
-                                  pwaOrdersList.forEach((o) => {
-                                    nextState[o.id] = true;
-                                  });
-                                  setExpandedOrders(nextState);
-                                }
-                              }}
-                              className="ios-pressable inline-flex items-center gap-1 text-[11px] font-semibold text-[#D97706] bg-[#D97706]/12 px-2.5 py-1.5 rounded-full cursor-pointer"
-                            >
-                              {pwaOrdersList.every((o) => expandedOrders[o.id]) ? (
-                                <>
-                                  <ChevronDown className="w-3.5 h-3.5 rotate-180 text-[#D97706]" />
-                                  <span>Contraer</span>
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronDown className="w-3.5 h-3.5 text-[#D97706]" />
-                                  <span>Expandir</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {pwaOrdersList.length === 0 ? (
-                        <div className="ios-grouped-card p-8 text-center space-y-2.5">
-                          <div className="w-12 h-12 rounded-[14px] bg-[#34C759]/15 text-[#34C759] flex items-center justify-center mx-auto">
-                            <CheckCircle2 className="w-6 h-6 stroke-[2.25]" />
-                          </div>
-                          <div className="font-bold text-[#1C1C1E] text-[16px] tracking-[-0.015em]">
-                            Sin pedidos pendientes ni entregas hoy
-                          </div>
-                          <p className="text-[13px] text-[#8E8E93] max-w-[260px] mx-auto leading-relaxed">
-                            No hay pedidos registrados en la jornada de hoy ni pedidos pendientes por entregar.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col space-y-3">
-                          {pwaOrdersList.map((order) => {
-                            const itemsCount = order.items.reduce((acc, it) => acc + (it.quantity || 1), 0);
-                            const isCat = order.petType?.toLowerCase().includes('gato') || order.petType?.includes('🐱');
-                            const isExpanded = Boolean(expandedOrders[order.id]);
-                            const isCollapsed = !isExpanded;
-                            const isPendingRouteStop =
-                              (order.status === 'en_camino' || order.status === 'en_preparacion') &&
-                              order.stopNumber;
-
-                            return (
-                              <div
-                                key={order.id}
-                                onClick={() => {
-                                  if (isCollapsed) {
-                                    setExpandedOrders((prev) => ({
-                                      ...prev,
-                                      [order.id]: true,
-                                    }));
-                                  } else {
-                                    setSelectedOrderModal(order);
-                                  }
-                                }}
-                                className={`ios-grouped-card transition-all p-4 space-y-3.5 cursor-pointer select-none ${selectedOrderModal?.id === order.id
-                                    ? 'ring-2 ring-[#D97706]/30'
-                                    : ''
-                                  }`}
-                              >
-                                {/* Cabecera iOS: Parada Óptima #N, ID, Fecha, Estado y Chevron Circle */}
-                                <div
-                                  className="flex items-center justify-between gap-2"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setExpandedOrders((prev) => ({
-                                      ...prev,
-                                      [order.id]: !prev[order.id],
-                                    }));
-                                  }}
-                                >
-                                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-                                    {isPendingRouteStop && (
-                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#D97706] text-white text-[11px] font-bold tabular-nums shrink-0">
-                                        <span>Parada #{order.stopNumber}</span>
-                                        <span className="opacity-85 font-medium">
-                                          · {order.legDistanceKm} km {order.previousStopLabel}
-                                        </span>
-                                      </span>
-                                    )}
-                                    <span className="font-semibold text-[12px] tabular-nums text-[#D97706] bg-[#D97706]/12 px-2.5 py-1 rounded-full shrink-0">
-                                      {order.id}
-                                    </span>
-                                    {!isPendingRouteStop && (
-                                      <span className="text-[12px] font-medium text-[#8E8E93] tabular-nums truncate">
-                                        {order.date}{order.time ? ` · ${order.time}` : ''}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <div className="flex flex-col items-end">
-                                      <span
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize shrink-0 ${order.status === 'cancelado'
-                                            ? 'bg-[#FF3B30]/12 text-[#D70015]'
-                                            : order.status === 'entregado'
-                                              ? 'bg-[#34C759]/14 text-[#248A3D]'
-                                              : order.status === 'en_camino'
-                                                ? 'bg-[#D97706]/15 text-[#D97706]'
-                                                : 'bg-[#FF9500]/15 text-[#C93400]'
-                                          }`}
-                                      >
-                                        {order.status === 'cancelado' && <X className="w-3 h-3 stroke-[2.5]" />}
-                                        {order.status === 'entregado' && <CheckCircle2 className="w-3 h-3 stroke-[2.5]" />}
-                                        {order.status === 'en_camino' && <Truck className="w-3 h-3 stroke-[2.5]" />}
-                                        {order.status === 'en_preparacion' && <Clock className="w-3 h-3 stroke-[2.5]" />}
-                                        <span>{order.status.replace('_', ' ')}</span>
-                                      </span>
-                                      {order.status === 'entregado' && (
-                                        <span className="text-[10px] text-[#8E8E93] font-medium mt-0.5">
-                                          Repartidor: {order.deliveredByName || order.delivered_by_name || 'Ignacio Alarcón'}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setExpandedOrders((prev) => ({
-                                          ...prev,
-                                          [order.id]: !prev[order.id],
-                                        }));
-                                      }}
-                                      className={`ios-pressable w-8 h-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer ${isCollapsed
-                                          ? 'bg-[#F2F2F7] text-[#8E8E93]'
-                                          : 'bg-[#D97706]/15 text-[#D97706]'
-                                        }`}
-                                      title={isCollapsed ? 'Expandir pedido' : 'Contraer pedido'}
-                                      aria-label={isCollapsed ? 'Expandir pedido' : 'Contraer pedido'}
-                                    >
-                                      <ChevronDown
-                                        className={`w-4 h-4 transition-transform duration-200 ${isCollapsed ? 'rotate-0' : 'rotate-180'
-                                          }`}
-                                      />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Cliente y Total con Estado de Cobro */}
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-[#1C1C1E] text-[17px] tracking-[-0.02em] truncate">
-                                      {order.customer}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-[13px] text-[#8E8E93] font-medium mt-0.5">
-                                      <span className="text-xs">{isCat ? '🐱' : '🐶'}</span>
-                                      <span className="truncate">{order.petName}</span>
-                                      {order.petBreed && (
-                                        <span className="text-[12px] text-[#8E8E93] font-normal truncate">
-                                          · {order.petBreed}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <div className="font-bold text-[#1C1C1E] text-[17px] tabular-nums tracking-[-0.02em]">
-                                      {formatCLP(order.total)}
-                                    </div>
-                                    {(() => {
-                                      const payStatus = getOrderPaymentStatus(order);
-                                      return (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUpdateOrderPaymentStatus(order.id, payStatus.isPaid ? 'pendiente' : 'pagado');
-                                          }}
-                                          title={payStatus.isPaid ? 'Toca para cambiar a Pendiente de pago' : 'Toca para marcar como Pagado'}
-                                          className={`ios-pressable text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 cursor-pointer ${payStatus.isPaid
-                                              ? 'bg-[#34C759]/14 text-[#248A3D]'
-                                              : 'bg-[#FF9500]/16 text-[#C93400]'
-                                            }`}
-                                        >
-                                          {payStatus.isPaid ? (
-                                            <>
-                                              <CheckCircle2 className="w-3 h-3 shrink-0" />
-                                              <span>Pagado</span>
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Clock className="w-3 h-3 shrink-0" />
-                                              <span>Por cobrar</span>
-                                            </>
-                                          )}
-                                        </button>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-
-                                {/* Agenda de Despacho (Día + Ventana Horaria + Alerta Urgente) */}
-                                {(() => {
-                                  const sched = formatOrderScheduleSummary(order);
-                                  return (
-                                    <div
-                                      className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold border ${
-                                        sched.isUrgent
-                                          ? 'bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FDE68A]/50 border-[#D97706]/45 text-[#78350F]'
-                                          : 'bg-[#FAF8F4] border-[#1D1D1F]/10 text-[#1D1D1F]'
-                                      }`}
-                                    >
-                                      <span className="flex items-center gap-1.5 min-w-0 truncate">
-                                        {sched.isUrgent ? (
-                                          <Zap className="w-3.5 h-3.5 text-[#D97706] shrink-0 fill-current" />
-                                        ) : (
-                                          <Calendar className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-                                        )}
-                                        <span className="truncate">{sched.dateShort}</span>
-                                      </span>
-                                      <span
-                                        className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
-                                          sched.isUrgent
-                                            ? 'bg-[#78350F] text-[#FDE68A]'
-                                            : 'bg-white text-[#B45309] border border-[#F5BA13]/45'
-                                        }`}
-                                      >
-                                        {sched.shortSlot}
-                                      </span>
-                                    </div>
-                                  );
-                                })()}
-
-                                {/* Vista según estado de contracción: Contraída vs Expandida */}
-                                {isCollapsed ? (
-                                  <div className="flex items-center justify-between text-[13px] text-[#8E8E93] pt-2.5 border-t border-[#3C3C43]/10">
-                                    <div className="flex items-center gap-1.5 truncate max-w-[66%]">
-                                      <MapPin className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-                                      <span className="font-medium text-[#1C1C1E] truncate">{order.address}</span>
-                                      <span className="text-[#C7C7CC] shrink-0">·</span>
-                                      <span className="text-[12px] text-[#8E8E93] shrink-0">{order.city}</span>
-                                    </div>
-                                    <span className="text-[12px] font-semibold text-[#D97706] shrink-0 bg-[#D97706]/12 px-2.5 py-1 rounded-full tabular-nums">
-                                      {itemsCount} {itemsCount === 1 ? 'prod.' : 'prods.'}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    {/* Banner de Cobro / No Cobro para el Repartidor */}
-                                    {renderPaymentCollectionBanner(order)}
-
-                                    {/* Ubicación / Dirección en Celda iOS */}
-                                    <div className="flex items-center justify-between gap-2 text-[13px] text-[#1C1C1E] bg-[#F2F2F7]/80 px-3.5 py-2.5 rounded-[14px]">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <MapPin className="w-4 h-4 text-[#D97706] shrink-0" />
-                                        <span className="font-semibold truncate">{order.address}</span>
-                                        <span className="text-[#8E8E93] shrink-0">· {order.city}</span>
-                                      </div>
-                                      {renderPaymentMethodBadge(order.paymentMethod)}
-                                    </div>
-
-                                    {/* Desglose Visual de Productos iOS Inset Grouped */}
-                                    <div className="pt-2.5 border-t border-[#3C3C43]/10 space-y-2">
-                                      <div className="flex items-center justify-between text-[12px] font-semibold text-[#8E8E93]">
-                                        <span className="flex items-center gap-1.5">
-                                          <Package className="w-3.5 h-3.5 text-[#D97706]" />
-                                          <span>Productos a entregar ({itemsCount} un.)</span>
-                                        </span>
-                                        {order.items && order.items.length > 2 && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setExpandedOrderCards((prev) => ({
-                                                ...prev,
-                                                [order.id]: !prev[order.id],
-                                              }));
-                                            }}
-                                            className="text-[12px] font-semibold text-[#D97706] active:opacity-70 cursor-pointer"
-                                          >
-                                            {expandedOrderCards[order.id] ? 'Ocultar' : `Ver ${order.items.length - 2} más`}
-                                          </button>
-                                        )}
-                                      </div>
-
-                                      <div className="rounded-[16px] bg-[#F2F2F7]/75 p-1.5 space-y-1.5">
-                                        {(expandedOrderCards[order.id]
-                                          ? order.items || []
-                                          : (order.items || []).slice(0, 2)
-                                        ).map((it, idx) => {
-                                          const imgSrc = getProductImage(it.name);
-                                          return (
-                                            <div
-                                              key={idx}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedProductPreview({
-                                                  ...it,
-                                                  orderId: order.id,
-                                                  customer: order.customer,
-                                                  petName: order.petName,
-                                                  petType: order.petType,
-                                                  tracking: order.tracking,
-                                                });
-                                              }}
-                                              className="ios-pressable flex items-center gap-3 p-2 pr-3 rounded-[12px] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] cursor-pointer"
-                                              title="Toca para ver foto ampliada"
-                                            >
-                                              <div className="relative shrink-0 w-11 h-11 rounded-[10px] bg-[#F8FAFC] border border-[#3C3C43]/10 p-0.5 flex items-center justify-center">
-                                                <img
-                                                  src={imgSrc}
-                                                  alt={it.name}
-                                                  className="w-full h-full object-contain rounded-lg"
-                                                />
-                                                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#D97706] text-white text-[10px] font-bold tabular-nums flex items-center justify-center border border-white leading-none">
-                                                  x{it.quantity || 1}
-                                                </span>
-                                              </div>
-
-                                              <div className="flex-1 min-w-0">
-                                                <div className="text-[13px] font-semibold text-[#1C1C1E] tracking-[-0.01em] truncate">
-                                                  {it.name}
-                                                </div>
-                                                <div className="flex items-center justify-between gap-1.5 mt-0.5">
-                                                  <div className="flex items-center gap-1.5">
-                                                    {it.weight && (
-                                                      <span className="text-[11px] font-medium text-[#8E8E93] bg-[#F2F2F7] px-2 py-0.5 rounded-md">
-                                                        {it.weight}
-                                                      </span>
-                                                    )}
-                                                    {it.code && (
-                                                      <span className="text-[11px] font-mono text-[#8E8E93]">
-                                                        {it.code}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                  {it.price && (
-                                                    <span className="text-[12px] font-semibold tabular-nums text-[#1C1C1E] shrink-0">
-                                                      {formatCLP(it.price * (it.quantity || 1))}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-
-                                    {/* Botonera iOS 42pt (Maps, WhatsApp y Acción Principal) */}
-                                    <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-[#3C3C43]/10">
-                                      <a
-                                        href={getSingleOrderNavigationUrl(order)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#F2F2F7] active:bg-[#E5E5EA] text-[#1C1C1E] text-[13px] font-semibold flex items-center justify-center gap-1.5"
-                                        title="Abrir ruta en Google Maps"
-                                      >
-                                        <GoogleMapsIcon className="w-4 h-4 shrink-0" />
-                                        <span className="truncate">Maps</span>
-                                      </a>
-
-                                      <a
-                                        href={`https://wa.me/${(order.phone || '+56953332492').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${order.customer}! Te contactamos de Patitas del Sur sobre tu pedido ${order.id}. 🐾`)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#34C759]/14 active:bg-[#34C759]/22 text-[#248A3D] text-[13px] font-semibold flex items-center justify-center gap-1.5"
-                                        title="Avisar por WhatsApp"
-                                      >
-                                        <WhatsAppIcon className="w-4 h-4 shrink-0" />
-                                        <span className="truncate">WhatsApp</span>
-                                      </a>
-
-                                      {order.status === 'en_preparacion' && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUpdateOrderStatus(order.id, 'en_camino');
-                                          }}
-                                          className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#D97706] active:bg-[#B45309] text-white font-semibold text-[13px] cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-                                          title="Marcar En Camino"
-                                        >
-                                          <Truck className="w-4 h-4 stroke-[2.25] shrink-0" />
-                                          <span className="truncate">Despachar</span>
-                                        </button>
-                                      )}
-                                      {order.status === 'en_camino' && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleUpdateOrderStatus(order.id, 'entregado');
-                                          }}
-                                          className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#34C759] active:bg-[#248A3D] text-white font-semibold text-[13px] cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-                                          title="Marcar Entregado"
-                                        >
-                                          <CheckCircle2 className="w-4 h-4 stroke-[2.25] shrink-0" />
-                                          <span className="truncate">Entregar</span>
-                                        </button>
-                                      )}
-                                      {order.status === 'entregado' && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedOrderModal(order);
-                                          }}
-                                          className="ios-pressable min-h-[42px] px-3 rounded-[14px] bg-[#D97706]/12 active:bg-[#D97706]/20 text-[#D97706] font-semibold text-[13px] cursor-pointer flex items-center justify-center gap-1.5"
-                                        >
-                                          <Eye className="w-4 h-4 shrink-0" />
-                                          <span className="truncate">Detalle</span>
-                                        </button>
-                                      )}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
+              <MobilePwaRepartoView
+                orders={orders}
+                todayOrders={todayOrders}
+                todayFormattedDate={todayFormattedDate}
+                inventory={inventory}
+                activeRouteOrigin={activeRouteOrigin}
+                driverGpsOrigin={driverGpsOrigin}
+                isLocatingDriverGps={isLocatingDriverGps}
+                isInitialLoading={isInitialLoading}
+                isRefreshing={isRefreshing}
+                syncError={syncError}
+                mobileRepartoFilter={mobileRepartoFilter}
+                setMobileRepartoFilter={setMobileRepartoFilter}
+                mobileOrderSearch={mobileOrderSearch}
+                setMobileOrderSearch={setMobileOrderSearch}
+                expandedOrders={expandedOrders}
+                setExpandedOrders={setExpandedOrders}
+                expandedOrderCards={expandedOrderCards}
+                setExpandedOrderCards={setExpandedOrderCards}
+                selectedOrderModal={selectedOrderModal}
+                onRetrySync={() => handleManualRefresh()}
+                onToggleDriverGpsOrigin={handleToggleDriverGpsOrigin}
+                onOpenRouteOptimizer={handleOpenRouteOptimizer}
+                onUpdateOrderStatus={handleUpdateOrderStatus}
+                onSelectOrderModal={setSelectedOrderModal}
+                onSelectProductPreview={setSelectedProductPreview}
+              />
 
               {/* ========================================================================= */}
               {/* ESCRITORIO: Tabla FinSet Bento para Pantallas Grandes (>= md)             */}
@@ -14274,6 +13953,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* ========================================================================= */}
       {selectedOrderModal && (
         <div
+          data-drawer="true"
           className="fixed inset-0 z-50 overflow-hidden bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-200 flex justify-end"
           onClick={() => setSelectedOrderModal(null)}
         >
@@ -14282,13 +13962,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header Drawer */}
-            <div className="p-5 sm:px-6 py-4 bg-white border-b border-[#EAECEF] flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3.5">
+            <div
+              className="px-5 sm:px-6 pb-4 bg-white border-b border-[#EAECEF] flex items-center justify-between shrink-0"
+              style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+            >
+              <div className="flex items-center gap-3.5 min-w-0">
                 <div className="w-10 h-10 rounded-2xl bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/60 flex items-center justify-center shrink-0">
                   <ShoppingBag className="w-5 h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-base sm:text-lg font-bold tracking-tight text-[#111827]">
                       Pedido {selectedOrderModal.id}
                     </h3>
@@ -14318,8 +14001,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               <button
                 type="button"
                 onClick={() => setSelectedOrderModal(null)}
-                className="w-9 h-9 rounded-full bg-[#F8FAFC] hover:bg-slate-100 border border-[#EAECEF] text-slate-400 hover:text-[#111827] flex items-center justify-center transition-colors cursor-pointer"
+                className="w-10 h-10 rounded-full bg-[#F8FAFC] hover:bg-slate-100 border border-[#EAECEF] text-slate-500 hover:text-[#111827] flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 title="Cerrar panel"
+                aria-label="Cerrar panel"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -14331,7 +14015,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               {selectedOrderModal.status === 'cancelado' && (
                 <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/90 flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-xs">
+                    <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
                       ✕
                     </div>
                     <div>
@@ -14348,16 +14032,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
               {/* Badge de Entrega & Repartidor Responsable */}
               {selectedOrderModal.status === 'entregado' && (
-                <div className="p-3.5 rounded-2xl bg-[#FEF3C7]/80 border border-[#FDE68A] flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-[#D97706] text-white flex items-center justify-center font-bold text-xs">
+                <div className="p-3.5 rounded-2xl bg-[#FEF3C7]/80 border border-[#FDE68A] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-[#D97706] text-white flex items-center justify-center font-bold text-xs shrink-0">
                       ✓
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <span className="text-[11px] text-[#D97706] font-bold block">
                         Pedido entregado con éxito
                       </span>
-                      <div className="text-xs font-semibold text-[#111827] flex items-center gap-1.5">
+                      <div className="text-xs font-semibold text-[#111827] flex items-center gap-1.5 flex-wrap">
                         <span className="text-slate-500">Repartido por:</span>
                         <span className="text-[#111827] font-bold">
                           {selectedOrderModal.deliveredByName || selectedOrderModal.delivered_by_name || 'Ignacio Alarcón'}
@@ -14365,7 +14049,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </div>
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono font-bold text-[#D97706] bg-white px-2.5 py-1 rounded-full border border-[#FDE68A]">
+                  <span className="text-[10px] font-mono font-bold text-[#D97706] bg-white px-2.5 py-1 rounded-full border border-[#FDE68A] shrink-0">
                     {selectedOrderModal.deliveredAt
                       ? new Date(selectedOrderModal.deliveredAt).toLocaleDateString('es-CL', { day: 'numeric', month: 'short' }) + ' ' + new Date(selectedOrderModal.deliveredAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
                       : 'Completado'}
@@ -14380,12 +14064,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </span>
                 <div className="bg-white rounded-3xl border border-[#EAECEF] p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-11 h-11 rounded-2xl bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/60 font-bold text-sm flex items-center justify-center shrink-0">
-                        {selectedOrderModal.customer.split(' ').map((n) => n[0]).slice(0, 2).join('')}
+                        {(selectedOrderModal.customer || 'C').split(' ').map((n) => n[0]).slice(0, 2).join('')}
                       </div>
-                      <div>
-                        <div className="font-bold text-[#111827] text-sm">{selectedOrderModal.customer}</div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-[#111827] text-sm break-words">{selectedOrderModal.customer}</div>
+                        {(selectedOrderModal.customerPhone || selectedOrderModal.phone) && (
+                          <div className="text-xs font-mono text-slate-500 mt-0.5 flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-[#D97706]" />
+                            <span>{selectedOrderModal.customerPhone || selectedOrderModal.phone}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -14399,7 +14089,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                         <div className="font-bold text-[#111827] flex items-center gap-1.5">
                           <span>{selectedOrderModal.petType?.toLowerCase().includes('gato') || selectedOrderModal.petType?.includes('🐱') ? '🐱' : '🐶'}</span>
-                          <span>{selectedOrderModal.petName}</span>
+                          <span>{selectedOrderModal.petName || 'Mascota'}</span>
                         </div>
                         <div className="text-[10px] text-slate-500 truncate">{selectedOrderModal.petBreed || 'Mascota regalona'}</div>
                       </div>
@@ -14532,8 +14222,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <div className="bg-white rounded-3xl border border-[#EAECEF] p-4 space-y-3 text-xs">
                   <div className="flex items-start gap-2.5">
                     <MapPin className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
-                    <div>
-                      <div className="font-bold text-[#111827]">{selectedOrderModal.address}</div>
+                    <div className="min-w-0">
+                      <div className="font-bold text-[#111827] break-words">{selectedOrderModal.address}</div>
                       <div className="text-slate-500 text-[11px]">
                         {selectedOrderModal.city}
                         {selectedOrderModal.deliveryZone ? ` · ${selectedOrderModal.deliveryZone}` : ''}
@@ -14593,35 +14283,56 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   })()}
 
                   {selectedOrderModal.notes && (
-                    <div className="p-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-amber-900 text-[11px]">
+                    <div className="p-2.5 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-amber-900 text-[11px] break-words">
                       <strong>Nota de entrega:</strong> "{selectedOrderModal.notes}"
                     </div>
                   )}
 
                   {/* 1-Tap Fast Dispatch Actions */}
-                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
-                    <a
-                      href={getSingleOrderNavigationUrl(selectedOrderModal)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-2 px-3 rounded-full bg-[#F8FAFC] hover:bg-[#FEF3C7] text-[#111827] hover:text-[#D97706] border border-[#EAECEF] font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all"
-                      title={`Calcular ruta, tiempo y navegación en Google Maps desde Bodega (${CENTRAL_HUB.city}) hasta ${selectedOrderModal.address}`}
-                    >
-                      <GoogleMapsIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span>Ruta Google Maps</span>
-                    </a>
+                  {(() => {
+                    const modalPhoneDigits = getOrderCustomerPhoneDigits(selectedOrderModal);
+                    return (
+                      <div className="pt-2 border-t border-slate-100 grid grid-cols-3 gap-2">
+                        <a
+                          href={getSingleOrderNavigationUrl(selectedOrderModal, activeRouteOrigin)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-h-[40px] py-2 px-2.5 rounded-full bg-[#F8FAFC] hover:bg-[#FEF3C7] text-[#111827] hover:text-[#D97706] border border-[#EAECEF] font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all"
+                          title={`Navegar en Google Maps hasta ${selectedOrderModal.address}`}
+                        >
+                          <GoogleMapsIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>Maps</span>
+                        </a>
 
-                    <a
-                      href={`https://wa.me/${(selectedOrderModal.phone || '+56953332492').replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`¡Hola ${selectedOrderModal.customer}! Te contactamos de Patitas del Sur respecto a tu pedido ${selectedOrderModal.id}. 🐾`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="py-2 px-3 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all"
-                      title="Avisar por WhatsApp"
-                    >
-                      <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span>WhatsApp</span>
-                    </a>
-                  </div>
+                        {modalPhoneDigits ? (
+                          <>
+                            <a
+                              href={`tel:+${modalPhoneDigits}`}
+                              className="min-h-[40px] py-2 px-2.5 rounded-full bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all"
+                              title={`Llamar a ${selectedOrderModal.customer}`}
+                            >
+                              <Phone className="w-3.5 h-3.5 shrink-0" />
+                              <span>Llamar</span>
+                            </a>
+                            <a
+                              href={`https://wa.me/${modalPhoneDigits}?text=${encodeURIComponent(`¡Hola ${selectedOrderModal.customer}! Te contactamos de Patitas del Sur respecto a tu pedido ${selectedOrderModal.id}. 🐾`)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="min-h-[40px] py-2 px-2.5 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-all"
+                              title="Avisar por WhatsApp"
+                            >
+                              <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
+                              <span>WhatsApp</span>
+                            </a>
+                          </>
+                        ) : (
+                          <div className="col-span-2 min-h-[40px] py-2 px-3 rounded-full bg-slate-100 text-slate-400 font-semibold text-[11px] flex items-center justify-center">
+                            Sin teléfono registrado
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -14629,54 +14340,58 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               <div>
                 <div className="px-1 mb-1.5 flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-500">
-                    Productos del pedido ({selectedOrderModal.items.length})
+                    Productos del pedido ({(selectedOrderModal.items || []).length})
                   </span>
-                  <span className="text-[10px] text-slate-400">Clic para ampliar foto</span>
+                  <span className="text-[10px] text-slate-400">Toca para ampliar foto</span>
                 </div>
                 <div className="bg-white rounded-3xl border border-[#EAECEF] divide-y divide-slate-100 overflow-hidden text-xs">
-                  {selectedOrderModal.items.map((item, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() =>
-                        setSelectedProductPreview({
-                          ...item,
-                          orderId: selectedOrderModal.id,
-                          customer: selectedOrderModal.customer,
-                          petName: selectedOrderModal.petName,
-                          petType: selectedOrderModal.petType,
-                          tracking: selectedOrderModal.tracking,
-                        })
-                      }
-                      className="p-3.5 hover:bg-[#F8FAFC] flex items-center justify-between gap-3 transition-colors cursor-pointer group"
-                      title="Clic para ver foto ampliada"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] p-1 flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition-transform">
-                          <img
-                            src={getProductImage(item.name)}
-                            alt={item.name}
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-bold text-[#111827] truncate group-hover:text-[#D97706] transition-colors">
-                            {item.name}
+                  {(selectedOrderModal.items || []).map((item, idx) => {
+                    const imgSrc = resolveProductImage(item, inventory);
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() =>
+                          setSelectedProductPreview({
+                            ...item,
+                            image: imgSrc,
+                            orderId: selectedOrderModal.id,
+                            customer: selectedOrderModal.customer,
+                            petName: selectedOrderModal.petName,
+                            petType: selectedOrderModal.petType,
+                            tracking: selectedOrderModal.tracking,
+                          })
+                        }
+                        className="p-3.5 hover:bg-[#F8FAFC] flex items-center justify-between gap-3 transition-colors cursor-pointer group"
+                        title="Clic para ver foto ampliada"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-11 h-11 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] p-1 flex items-center justify-center shrink-0 overflow-hidden group-hover:scale-105 transition-transform">
+                            <img
+                              src={imgSrc}
+                              alt={item.name}
+                              className="w-full h-full object-contain"
+                            />
                           </div>
-                          <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2 mt-0.5">
-                            <span className="bg-[#F8FAFC] border border-[#EAECEF] px-2 py-0.5 rounded-full text-slate-700 font-semibold text-[10px]">
-                              {item.weight}
-                            </span>
-                            <span className="text-[10px]">SKU: {item.code}</span>
+                          <div className="min-w-0">
+                            <div className="font-bold text-[#111827] truncate group-hover:text-[#D97706] transition-colors">
+                              {item.name}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2 mt-0.5">
+                              <span className="bg-[#F8FAFC] border border-[#EAECEF] px-2 py-0.5 rounded-full text-slate-700 font-semibold text-[10px]">
+                                {item.weight || item.format || 'Estándar'}
+                              </span>
+                              {item.code && <span className="text-[10px]">SKU: {item.code}</span>}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="font-bold text-[#111827] tabular-nums">{formatCLP(item.price * item.quantity)}</div>
-                        <div className="text-[10px] text-slate-400 tabular-nums">{item.quantity} x {formatCLP(item.price)}</div>
+                        <div className="text-right shrink-0">
+                          <div className="font-bold text-[#111827] tabular-nums">{formatCLP((item.price || 0) * (item.quantity || 1))}</div>
+                          <div className="text-[10px] text-slate-400 tabular-nums">{item.quantity || 1} x {formatCLP(item.price || 0)}</div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -14979,7 +14694,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 {selectedOrderModal.status === 'cancelado' && (
                   <button
                     type="button"
-                    onClick={() => handleDeleteOrder(selectedOrderModal.id)}
+                    onClick={() => setDeleteOrderConfirmId(selectedOrderModal.id)}
                     className="mt-2 w-full py-2.5 px-4 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -14990,7 +14705,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             </div>
 
             {/* Footer Actions */}
-            <div className="p-4 sm:px-6 bg-white border-t border-[#EAECEF] flex items-center justify-between gap-3 shrink-0">
+            <div
+              className="px-4 sm:px-6 pt-4 bg-white border-t border-[#EAECEF] flex items-center justify-between gap-3 shrink-0"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               <button
                 type="button"
                 onClick={() => setSelectedOrderModal(null)}
@@ -14999,21 +14717,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 Cerrar
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const currentBoleta = orderBoletas[selectedOrderModal.id] || selectedOrderModal.invoiceFile;
-                  if (currentBoleta?.dataUrl) {
-                    window.open(currentBoleta.dataUrl, '_blank');
-                  } else {
-                    showToast(`Imprimiendo Guía & Boleta ${selectedOrderModal.invoiceNumber}...`);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-full bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer"
-              >
-                <Receipt className="w-4 h-4" />
-                <span>Imprimir boleta</span>
-              </button>
+              {(() => {
+                const currentBoleta = orderBoletas[selectedOrderModal.id] || selectedOrderModal.invoiceFile;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (currentBoleta?.dataUrl) {
+                        window.open(currentBoleta.dataUrl, '_blank', 'noopener,noreferrer');
+                      } else {
+                        window.print();
+                      }
+                    }}
+                    className="px-5 py-2.5 rounded-full bg-[#D97706] hover:bg-[#B45309] text-white text-xs font-semibold transition-colors flex items-center gap-2 cursor-pointer"
+                  >
+                    <Receipt className="w-4 h-4" />
+                    <span>{currentBoleta?.dataUrl ? 'Ver boleta subida' : 'Imprimir resumen'}</span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -15214,8 +14936,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         };
 
         const handleCloseModal = () => {
+          if (isSavingManualOrder) return;
           setIsAddOrderModalOpen(false);
           setManualOrderStep(1);
+          setManualOrderCustomer(createInitialManualOrderCustomer());
+          setManualOrderItems([]);
+          setQuantityToAdd(1);
           setManualOrderPhoneTouched(false);
           setManualOrderAddressTouched(false);
           setShowPhoneSuggestions(false);
@@ -15482,7 +15208,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         >
                           {isPassed ? <Check className="w-3 h-3 stroke-[3]" /> : st.id}
                         </div>
-                        <span className="hidden xs:inline sm:inline truncate">{st.label}</span>
+                        <span className="inline text-[11px] sm:text-xs truncate">{st.label}</span>
                       </button>
                     );
                   })}
@@ -15490,7 +15216,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </div>
 
               {/* Step Forms */}
-              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 bg-[#F8FAFC]/50">
+              <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-5 bg-[#F8FAFC]/50">
                 {/* ---------------- STEP 1: CLIENTE ---------------- */}
                 {manualOrderStep === 1 && (
                   <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
@@ -15508,7 +15234,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         {/* 1. Teléfono (Primero, con lista desplegable inteligente de clientes registrados) */}
                         <div className="flex flex-col px-4 py-3 bg-white">
                           <div className="flex items-center">
-                            <label className="w-28 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
+                            <label className="w-24 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
                               <Phone className="w-3.5 h-3.5 text-[#D97706]" />
                               <span>Teléfono <span className="text-[#D97706]">*</span></span>
                             </label>
@@ -15523,7 +15249,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 inputMode="numeric"
                                 maxLength={11}
                                 required
-                                autoFocus
                                 placeholder="9 5333 2492"
                                 value={formattedPhoneInput}
                                 onChange={(e) => {
@@ -15550,7 +15275,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   }
                                 }}
                                 onBlur={() => {
-                                  setTimeout(() => setShowPhoneSuggestions(false), 150);
+                                  setTimeout(() => setShowPhoneSuggestions(false), 260);
                                   if (phoneDigits.length > 0) setManualOrderPhoneTouched(true);
                                 }}
                                 className="w-full text-xs text-[#111827] font-mono font-semibold tracking-wide placeholder-slate-400 bg-transparent focus:outline-none"
@@ -15585,7 +15310,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <div className="mt-2.5 rounded-2xl border border-[#EAECEF] bg-white shadow-sm divide-y divide-[#EAECEF] max-h-48 overflow-y-auto animate-in fade-in duration-150">
                               <div className="px-3.5 py-2 bg-[#F8FAFC] text-[10px] font-bold text-slate-600 flex items-center justify-between">
                                 <span>Clientes registrados ({matchingPhoneCustomers.length})</span>
-                                <span className="font-semibold text-[#D97706]">Clic para autocompletar</span>
+                                <span className="font-semibold text-[#D97706]">Toca para autocompletar</span>
                               </div>
                               {matchingPhoneCustomers.map((cust) => {
                                 const custPhoneDigits = extractChilePhone9(cust.phone);
@@ -15594,13 +15319,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   : `+56 ${custPhoneDigits}`;
 
                                 return (
-                                  <div
+                                  <button
                                     key={cust.id}
-                                    onMouseDown={(e) => {
-                                      e.preventDefault();
-                                      applyKnownCustomerToForm(cust);
-                                    }}
-                                    className="px-3.5 py-2.5 hover:bg-[#F8FAFC] active:bg-[#FEF3C7]/50 transition-colors cursor-pointer select-none flex items-center justify-between gap-2"
+                                    type="button"
+                                    onClick={() => applyKnownCustomerToForm(cust)}
+                                    className="w-full text-left px-3.5 py-2.5 hover:bg-[#F8FAFC] active:bg-[#FEF3C7]/50 transition-colors cursor-pointer select-none flex items-center justify-between gap-2"
                                   >
                                     <div className="flex items-center gap-2 min-w-0">
                                       <span className="text-xs font-bold text-[#111827] truncate">
@@ -15613,7 +15336,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                     <span className="text-[10px] font-bold text-[#D97706] bg-[#FEF3C7] px-2.5 py-0.5 rounded-full shrink-0">
                                       Elegir
                                     </span>
-                                  </div>
+                                  </button>
                                 );
                               })}
                             </div>
@@ -15622,7 +15345,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
                         {/* 2. Nombre (Segundo) */}
                         <div className="flex items-center px-4 py-3 bg-white">
-                          <label className="w-28 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
+                          <label className="w-24 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
                             <Users className="w-3.5 h-3.5 text-[#D97706]" />
                             <span>Nombre <span className="text-[#D97706]">*</span></span>
                           </label>
@@ -15636,19 +15359,61 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           />
                         </div>
 
-                        {/* 3. Email (Tercero) */}
+                        {/* 3. Email (Opcional) */}
                         <div className="flex items-center px-4 py-3 bg-white">
-                          <label className="w-28 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
+                          <label className="w-24 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
                             <Mail className="w-3.5 h-3.5 text-[#D97706]/80" />
                             <span>Email</span>
                           </label>
                           <input
                             type="email"
-                            placeholder="cliente@gmail.com"
+                            placeholder="Opcional (cliente@gmail.com)"
                             value={manualOrderCustomer.email}
                             onChange={(e) => setManualOrderCustomer({ ...manualOrderCustomer, email: e.target.value })}
                             className="w-full text-xs text-[#111827] font-medium placeholder-slate-400 bg-transparent focus:outline-none"
                           />
+                        </div>
+
+                        {/* 4. Mascota (Opcional — autocompleta especie en Paso 2) */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-3 bg-white">
+                          <label className="w-24 sm:w-36 text-xs font-semibold text-[#111827] shrink-0 flex items-center gap-1.5">
+                            <Heart className="w-3.5 h-3.5 text-rose-500" />
+                            <span>Mascota</span>
+                          </label>
+                          <div className="flex-1 flex items-center gap-2 min-w-0">
+                            <input
+                              type="text"
+                              placeholder="Nombre (opcional, ej: Luna)"
+                              value={manualOrderCustomer.petName}
+                              onChange={(e) => setManualOrderCustomer({ ...manualOrderCustomer, petName: e.target.value })}
+                              className="flex-1 min-w-0 text-xs text-[#111827] font-medium placeholder-slate-400 bg-transparent focus:outline-none"
+                            />
+                            <div className="inline-flex rounded-full bg-[#F8FAFC] border border-[#EAECEF] p-0.5 shrink-0">
+                              {[
+                                { value: '🐶 Perro', label: '🐶 Perro', filter: 'perros' },
+                                { value: '🐱 Gato', label: '🐱 Gato', filter: 'gatos' },
+                              ].map((opt) => {
+                                const isSel = (manualOrderCustomer.petType || '🐶 Perro').toLowerCase().includes(opt.filter.slice(0, 4));
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setManualOrderCustomer((prev) => ({ ...prev, petType: opt.value }));
+                                      setOrderPetTypeFilter(opt.filter);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors cursor-pointer ${
+                                      isSel
+                                        ? 'bg-[#D97706] text-white'
+                                        : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -16062,7 +15827,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   </div>
                                 )}
 
-                                <div className="max-h-72 sm:max-h-80 overflow-y-auto space-y-2 pr-1 rounded-2xl">
+                                <div className="md:max-h-80 md:overflow-y-auto space-y-2 md:pr-1 rounded-2xl">
                                   {filteredOrderProducts.map((p) => {
                                     const stock = getProductStock(p);
                                     const inStock = stock > 0;
@@ -16562,6 +16327,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               }
                             }}
                             onBlur={() => {
+                              setTimeout(() => setShowMapsDropdown(false), 240);
                               if (!(manualOrderCustomer.address || mapsSearchQuery || '').trim()) {
                                 setManualOrderAddressTouched(true);
                               }
@@ -16868,26 +16634,90 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </div>
                       </div>
                     </div>
+
+                    {/* Franja Horaria de Entrega / Prioridad Urgente */}
+                    <div>
+                      <span className="block text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider px-1 mb-1.5">
+                        Franja de Entrega / Prioridad
+                      </span>
+                      <div className="bg-white rounded-2xl border border-amber-200/80 p-1.5 shadow-xs grid grid-cols-3 gap-1.5">
+                        {[
+                          { id: 'manana', label: 'Mañana', sub: '10:00 - 13:00', slot: OFFICIAL_MORNING_SLOT_LABEL, urgent: false },
+                          { id: 'tarde', label: 'Tarde', sub: '15:30 - 19:30', slot: OFFICIAL_AFTERNOON_SLOT_LABEL, urgent: false },
+                          { id: 'urgente', label: '⚡ Urgente', sub: 'Prioridad #1', slot: URGENT_EXPRESS_SLOT_LABEL, urgent: true },
+                        ].map((opt) => {
+                          const isSelected = opt.urgent
+                            ? Boolean(manualOrderCustomer.isUrgent)
+                            : !manualOrderCustomer.isUrgent && (manualOrderCustomer.deliverySlot || OFFICIAL_AFTERNOON_SLOT_LABEL) === opt.slot;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() =>
+                                setManualOrderCustomer((prev) => ({
+                                  ...prev,
+                                  deliverySlot: opt.slot,
+                                  isUrgent: opt.urgent,
+                                }))
+                              }
+                              className={`py-2 px-2 rounded-xl text-center border transition-all cursor-pointer ${
+                                isSelected
+                                  ? opt.urgent
+                                    ? 'bg-[#78350F] border-[#78350F] text-[#FDE68A] shadow-xs'
+                                    : 'bg-[#F5BA13] border-[#D97706] text-[#1D1D1F] shadow-xs'
+                                  : 'bg-amber-50/40 border-amber-200/60 text-slate-600 hover:bg-amber-50'
+                              }`}
+                            >
+                              <div className="text-[11px] font-extrabold leading-tight">{opt.label}</div>
+                              <div className={`text-[9.5px] font-semibold mt-0.5 ${isSelected && opt.urgent ? 'text-[#FDE68A]/85' : 'opacity-75'}`}>
+                                {opt.sub}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Notas e Indicaciones de Entrega */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#92400E]/80 uppercase tracking-wider px-1 mb-1.5">
+                        Notas de entrega (opcional)
+                      </label>
+                      <textarea
+                        rows={2}
+                        placeholder="Ej: Casa reja negra, llamar al llegar, dejar en conserjería..."
+                        value={manualOrderCustomer.notes}
+                        onChange={(e) =>
+                          setManualOrderCustomer((prev) => ({ ...prev, notes: e.target.value }))
+                        }
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-white border border-amber-200/80 text-xs font-medium text-[#1D1D1F] placeholder:text-slate-400 focus:outline-none focus:border-[#F5BA13] focus:ring-2 focus:ring-[#F5BA13]/20 resize-none"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Apple Sheet Action Bar / Footer */}
-              <div className="px-6 py-4 bg-white/85 backdrop-blur-md border-t border-amber-200/60 flex items-center justify-between">
+              <div
+                className="px-5 sm:px-6 pt-3.5 bg-white/95 backdrop-blur-md border-t border-amber-200/60 flex items-center justify-between shrink-0"
+                style={{ paddingBottom: 'max(0.875rem, env(safe-area-inset-bottom))' }}
+              >
                 <div>
                   {manualOrderStep === 1 ? (
                     <button
                       type="button"
+                      disabled={isSavingManualOrder}
                       onClick={handleCloseModal}
-                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-slate-600 text-xs font-semibold hover:bg-amber-50 hover:text-[#78350F] transition-colors cursor-pointer"
+                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-slate-600 text-xs font-semibold hover:bg-amber-50 hover:text-[#78350F] transition-colors cursor-pointer disabled:opacity-50"
                     >
                       Cancelar
                     </button>
                   ) : (
                     <button
                       type="button"
+                      disabled={isSavingManualOrder}
                       onClick={goToPrevStep}
-                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-[#78350F] text-xs font-semibold hover:bg-amber-50 transition-colors cursor-pointer flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl border border-amber-200/80 text-[#78350F] text-xs font-semibold hover:bg-amber-50 transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Atrás</span>
@@ -16918,11 +16748,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   ) : (
                     <button
                       type="button"
+                      disabled={isSavingManualOrder}
                       onClick={handleSaveManualOrder}
-                      className="px-6 py-2.5 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-[#F5BA13]/25 hover:shadow active:scale-95"
+                      className="px-6 py-2.5 rounded-xl bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white text-xs font-black transition-all flex items-center gap-2 cursor-pointer shadow-sm shadow-[#F5BA13]/25 hover:shadow active:scale-95 disabled:opacity-65 disabled:cursor-not-allowed"
                     >
-                      <Check className="w-4 h-4 stroke-[3]" />
-                      <span>Confirmar Pedido ✓</span>
+                      {isSavingManualOrder ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Guardando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 stroke-[3]" />
+                          <span>Confirmar Pedido ✓</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -20890,10 +20730,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       {/* POP-UP: VISTA PREVIA DEL PRODUCTO CON FOTO REAL         */}
       {/* ======================================================= */}
       {selectedProductPreview && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        <div
+          onClick={() => setSelectedProductPreview(null)}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+          >
             {/* Pop-up Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-[#D97706]/10 text-[#D97706] border border-[#D97706]/20">
                   <Package className="w-5 h-5" />
@@ -20907,25 +20753,26 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 type="button"
                 onClick={() => setSelectedProductPreview(null)}
                 className="p-2 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                aria-label="Cerrar vista previa"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Pop-up Content */}
-            <div className="p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
               {/* Product Image Container */}
               <div className="w-full h-56 rounded-2xl bg-gradient-to-b from-slate-50 to-slate-100/80 border border-slate-200 p-4 flex items-center justify-center relative group overflow-hidden">
                 <img
-                  src={getProductImage(selectedProductPreview.name)}
+                  src={resolveProductImage(selectedProductPreview, inventory)}
                   alt={selectedProductPreview.name}
                   className="max-h-full max-w-full object-contain drop-shadow-md group-hover:scale-105 transition-transform duration-300"
                 />
                 <span className="absolute top-3 right-3 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/90 backdrop-blur-xs text-[#D97706] border border-slate-200 shadow-xs">
-                  {selectedProductPreview.weight || 'Formato Original'}
+                  {selectedProductPreview.weight || selectedProductPreview.format || 'Formato Original'}
                 </span>
                 <span className="absolute bottom-3 left-3 px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-900/80 text-white backdrop-blur-xs">
-                  {selectedProductPreview.quantity} unidad(es) en pedido
+                  {selectedProductPreview.quantity || 1} unidad(es) en pedido
                 </span>
               </div>
 
@@ -20933,7 +20780,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               <div className="space-y-3 text-xs">
                 <div>
                   <span className="text-[10px] font-extrabold uppercase text-[#D97706] tracking-wider block">
-                    {selectedProductPreview.name.toLowerCase().includes('bravery') ? 'Línea Bravery Super Premium 100% Grain Free' : 'Patitas del Sur Selección Premium'}
+                    {String(selectedProductPreview.name || '').toLowerCase().includes('bravery') ? 'Línea Bravery Super Premium 100% Grain Free' : 'Patitas del Sur Selección Premium'}
                   </span>
                   <h4 className="text-lg font-black text-slate-900 leading-snug">
                     {selectedProductPreview.name}
@@ -20943,7 +20790,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 <div className="grid grid-cols-2 gap-2.5 pt-1">
                   <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-0.5">
                     <span className="text-[10px] text-slate-400 font-bold uppercase block">Precio Unitario</span>
-                    <span className="text-sm font-black text-slate-900">{formatCLP(selectedProductPreview.price)}</span>
+                    <span className="text-sm font-black text-slate-900">{formatCLP(selectedProductPreview.price || 0)}</span>
                   </div>
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-100 space-y-0.5">
                     <span className="text-[10px] text-emerald-700 font-bold uppercase block">Total Ítem</span>
@@ -20961,7 +20808,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <span className="font-mono">{selectedProductPreview.tracking || ''}</span>
                     </div>
                     <div className="text-slate-600 text-[11px]">
-                      Tutor: <strong>{selectedProductPreview.customer}</strong> • Mascota: <strong>{selectedProductPreview.petName}</strong>
+                      Tutor: <strong>{selectedProductPreview.customer}</strong>{selectedProductPreview.petName ? <> • Mascota: <strong>{selectedProductPreview.petName}</strong></> : null}
                     </div>
                   </div>
                 )}
@@ -20969,7 +20816,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             </div>
 
             {/* Pop-up Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+            <div
+              className="px-4 pt-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               <button
                 type="button"
                 onClick={() => setSelectedProductPreview(null)}
@@ -23672,12 +23522,43 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             setPaymentDeliveryConfirmModal={setPaymentDeliveryConfirmModal}
             currentAdminName={currentAdminName}
             onConfirmPaymentAndDelivery={handleConfirmPaymentAndDelivery}
+            isSubmittingPayment={isSubmittingPayment}
             cancelOrderConfirmModal={cancelOrderConfirmModal}
             setCancelOrderConfirmModal={setCancelOrderConfirmModal}
             onConfirmCancelOrder={(orderId) => applyOrderStatusUpdate(orderId, 'cancelado')}
           />
         </Suspense>
       )}
+
+      {/* Modal de confirmación de cierre de sesión */}
+      <AdminConfirmActionModal
+        isOpen={isLogoutConfirmOpen}
+        title="¿Cerrar sesión de administrador?"
+        description="Deberás volver a ingresar tu correo y contraseña para acceder al panel y a las rutas de reparto."
+        confirmLabel="Sí, cerrar sesión"
+        cancelLabel="Seguir aquí"
+        tone="danger"
+        icon="logout"
+        onConfirm={handleLogout}
+        onCancel={() => setIsLogoutConfirmOpen(false)}
+      />
+
+      {/* Modal de confirmación para eliminar pedido cancelado */}
+      <AdminConfirmActionModal
+        isOpen={Boolean(deleteOrderConfirmId)}
+        title={`¿Eliminar pedido ${deleteOrderConfirmId || ''}?`}
+        description="Esta acción borrará permanentemente el pedido cancelado del historial y no se puede deshacer."
+        confirmLabel="Eliminar permanentemente"
+        cancelLabel="Cancelar"
+        tone="danger"
+        icon="delete"
+        onConfirm={() => {
+          const idToDelete = deleteOrderConfirmId;
+          setDeleteOrderConfirmId(null);
+          if (idToDelete) handleDeleteOrder(idToDelete);
+        }}
+        onCancel={() => setDeleteOrderConfirmId(null)}
+      />
 
       {/* ======================================================= */}
       {/* iOS 18 NATIVE TRANSLUCENT BOTTOM TAB BAR                 */}

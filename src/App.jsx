@@ -506,15 +506,23 @@ export default function App() {
   const isKiboryHome = location.pathname === '/';
   const isDigitalCatalog = location.pathname === '/catalogo';
   const isDigitalCard = location.pathname.startsWith('/tarjeta');
+  const isAdminRoute = location.pathname.startsWith('/admin');
   const isStandaloneExpress = isDigitalCatalog || isDigitalCard;
+
+  useEffect(() => {
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute('content', isAdminRoute ? '#FAF8F4' : '#F5BA13');
+    }
+  }, [isAdminRoute]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#F5BA13] selection:text-[#1D1D1F]">
-      {!isStandaloneExpress && <Preloader />}
+      {!isStandaloneExpress && !isAdminRoute && <Preloader />}
       <ScrollToTop />
 
       {/* Global Navigation Bar - Hidden on Login screen, Kibory Home, Digital Catalog Express, and NFC Cards */}
-      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && (
+      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && !isAdminRoute && (
         <Navbar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}
@@ -691,7 +699,7 @@ export default function App() {
       </main>
 
       {/* Global Footer - Hidden on Login, Admin dashboards, Kibory Home, Digital Catalog Express, and NFC Cards */}
-      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && location.pathname !== '/admin' && <Footer />}
+      {!isLoginPage && !isKiboryHome && !isStandaloneExpress && !isAdminRoute && <Footer />}
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer
@@ -725,7 +733,7 @@ export default function App() {
       />
 
       {/* Mobile Bottom Navigation Bar - Hidden on Login, Admin, Digital Catalog Express, and NFC Cards */}
-      {!isLoginPage && !isStandaloneExpress && location.pathname !== '/admin' && (
+      {!isLoginPage && !isStandaloneExpress && !isAdminRoute && (
         <BottomNavBar
           cartCount={totalCartCount}
           onOpenCart={() => setIsCartOpen(true)}

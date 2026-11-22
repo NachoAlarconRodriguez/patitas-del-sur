@@ -79,7 +79,7 @@ export const TOWN_COORDINATES = {
   'Frutillar': { lat: -41.1278, lng: -73.0456 },
   'Casma': { lat: -41.0500, lng: -73.1833 },
   'Fresia': { lat: -41.1500, lng: -73.4167 },
-  'Totoral': { lat: -41.2800, lng: -72.8800 },
+  'Totoral': { lat: -41.218, lng: -73.012 },
   'Puerto Octay': { lat: -40.9739, lng: -72.8856 },
   'Alerce': { lat: -41.3965, lng: -72.9102 },
 };
@@ -180,6 +180,8 @@ export function loadGoogleMapsScript() {
 
     script.onerror = (err) => {
       console.warn('Error loading Google Maps API script:', err);
+      googleMapsScriptPromise = null;
+      script.remove();
       reject(err);
     };
 
@@ -860,35 +862,52 @@ export async function getPlaceDetails(placeId) {
 }
 
 /**
- * Genera la URL universal de navegación para un solo pedido (100% Gratis)
- * Abre la app de Google Maps en móviles o la web en PC en modo indicaciones/conducción
+ * Formatea una dirección completa evitando duplicar la comuna si ya está incluida
  */
-export function getSingleOrderNavigationUrl(order) {
+function buildOrderGeocodableQuery(order) {
+  const exactLat = Number(order?.lat ?? order?.delivery_lat ?? order?.deliveryLat ?? order?.latitude);
+  const exactLng = Number(order?.lng ?? order?.delivery_lng ?? order?.deliveryLng ?? order?.longitude);
+  if (Number.isFinite(exactLat) && Number.isFinite(exactLng) && exactLat !== 0 && exactLng !== 0) {
+    return `${exactLat},${exactLng}`;
+  }
+  if (order?.id === 'PED-0001' || String(order?.address || '').toLowerCase().includes('espacio frutillar')) {
+    return encodeURIComponent('Espacio Frutillar, Frutillar, Región de Los Lagos, Chile');
+  }
+  const rawAddress = String(order?.address || '').trim();
+  const city = String(order?.city || CENTRAL_HUB.city || 'Frutillar').trim();
+  if (!rawAddress) {
+    return encodeURIComponent(`${city}, Región de Los Lagos, Chile`);
+  }
+  const hasCity = city && rawAddress.toLowerCase().includes(city.toLowerCase());
+  const fullAddress = hasCity
+    ? `${rawAddress}, Región de Los Lagos, Chile`
+    : `${rawAddress}, ${city}, Región de Los Lagos, Chile`;
+  return encodeURIComponent(fullAddress);
+}
+
+/**
+ * Genera la URL universal de navegación para un solo pedido (100% Gratis)
+ * Abre la app de Google Maps en móviles o la web en PC en modo indicaciones/conducción.
+ * Si originHub.isLiveGps es true (o originHub === 'gps'), omite &origin para que Google Maps móvil
+ * inicie navegación turn-by-turn directo desde el GPS real del conductor.
+ */
+export function getSingleOrderNavigationUrl(order, originHub = null) {
   if (!order) return 'https://www.google.com/maps';
 
-  // Origen: Bodega Central Patitas del Sur (Loteo Espacio Frutillar)
-  // Usamos coordenadas exactas para que Google Maps trace la ruta sin errores de geocodificación
-  const origin = CENTRAL_HUB.lat && CENTRAL_HUB.lng
-    ? `${CENTRAL_HUB.lat},${CENTRAL_HUB.lng}`
-    : encodeURIComponent(CENTRAL_HUB.address || 'Loteo Espacio Frutillar, Frutillar, Chile');
+  const destination = buildOrderGeocodableQuery(order);
 
-  // Destino: Dirección o coordenadas del cliente
-  let destination = '';
-  if (order.lat && order.lng) {
-    destination = `${order.lat},${order.lng}`;
-  } else if (order.id === 'PED-0001' || String(order.address || '').toLowerCase().includes('espacio frutillar')) {
-    destination = encodeURIComponent('Espacio Frutillar, Frutillar, Región de Los Lagos, Chile');
-  } else {
-    const rawAddress = String(order.address || '').trim();
-    const city = String(order.city || CENTRAL_HUB.city || 'Frutillar').trim();
-
-    const hasCity = rawAddress.toLowerCase().includes(city.toLowerCase());
-    const fullAddress = hasCity
-      ? `${rawAddress}, Región de Los Lagos, Chile`
-      : `${rawAddress}, ${city}, Región de Los Lagos, Chile`;
-
-    destination = encodeURIComponent(fullAddress);
+  if (originHub === 'gps' || originHub?.isLiveGps) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
   }
+
+  const hub = originHub && Number.isFinite(Number(originHub.lat)) && Number.isFinite(Number(originHub.lng))
+    ? originHub
+    : CENTRAL_HUB;
+
+  const origin =
+    hub.lat && hub.lng
+      ? `${hub.lat},${hub.lng}`
+      : encodeURIComponent(hub.address || 'Loteo Espacio Frutillar, Frutillar, Chile');
 
   return `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
 }
@@ -912,15 +931,16 @@ export function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
 
 /**
  * Catálogo geográfico local gratuito ($0 llamadas a API) de sectores, barrios y calles
- * de la Cuenca del Lago Llanquihue para precisión calle a calle en el algoritmo Vecino Más Cercano
+ * de la Cuenca del Lago Llanquihue, etiquetado por comuna para evitar colisiones entre pueblos.
  */
 const LOCAL_SECTOR_COORDINATES = [
   // Frutillar — Loteo Espacio Frutillar & Sector Norte / Pantanosa
-  { match: ['espacio frutillar', 'parcela 115'], lat: -41.08985, lng: -73.08013 },
-  { match: ['pantanosa', 'tegualda', 'v-155'], lat: -41.1045, lng: -73.0715 },
-  { match: ['quilanto', 'los bajos'], lat: -41.052, lng: -72.978 },
+  { commune: 'Frutillar', match: ['espacio frutillar', 'parcela 115'], lat: -41.08985, lng: -73.08013 },
+  { commune: 'Frutillar', match: ['pantanosa', 'tegualda', 'v-155'], lat: -41.1045, lng: -73.0715 },
+  { commune: 'Frutillar', match: ['quilanto', 'los bajos'], lat: -41.052, lng: -72.978 },
   // Frutillar Alto (Eje Comercial y Residencial)
   {
+    commune: 'Frutillar',
     match: [
       'carlos richter',
       'arturo alessandri',
@@ -937,44 +957,49 @@ const LOCAL_SECTOR_COORDINATES = [
   },
   // Frutillar Bajo & Costanera
   {
+    commune: 'Frutillar',
     match: ['bernardo philippi', 'costanera', 'punta larga', 'teatro del lago', 'frutillar bajo'],
     lat: -41.1388,
     lng: -73.0265,
   },
   // Casma
-  { match: ['casma', 'los laureles'], lat: -41.05, lng: -73.1833 },
+  { commune: 'Casma', match: ['casma', 'los laureles'], lat: -41.05, lng: -73.1833 },
   // Fresia
-  { match: ['fresia', 'trautmann', 'san carlos'], lat: -41.15, lng: -73.4167 },
+  { commune: 'Fresia', match: ['fresia', 'trautmann', 'san carlos'], lat: -41.15, lng: -73.4167 },
   // Totoral
-  { match: ['totoral'], lat: -41.218, lng: -73.012 },
+  { commune: 'Totoral', match: ['totoral', 'costanera totoral'], lat: -41.218, lng: -73.012 },
   // Llanquihue
   {
+    commune: 'Llanquihue',
     match: ['baquedano', 'los volcanes', 'errazuriz', 'errázuriz', 'llanquihue'],
     lat: -41.2547,
     lng: -73.0075,
   },
   // Puerto Varas — Acceso Norte / Gramado / Santa Rosa
   {
+    commune: 'Puerto Varas',
     match: ['gramado', 'santa rosa', 'los colonos', 'parque doña ema', 'dona ema'],
     lat: -41.3125,
     lng: -72.987,
   },
   // Puerto Varas — Centro
   {
+    commune: 'Puerto Varas',
     match: ['san francisco', 'del salvador', 'walker martinez', 'walker martínez', 'san pedro', 'imperial'],
     lat: -41.3195,
     lng: -72.9854,
   },
   // Puerto Varas — Puerto Chico / Costanera Sur / Ensenada
   {
-    match: ['perez rosales', 'pérez rosales', 'puerto chico', 'ensenada', 'decher', 'mirador'],
+    commune: 'Puerto Varas',
+    match: ['perez rosales', 'pérez rosales', 'puerto chico', 'ensenada', 'decher', 'mirador', 'costanera'],
     lat: -41.3265,
     lng: -72.964,
   },
   // Puerto Octay
-  { match: ['puerto octay', 'centinela', 'pedro montt', 'independencia'], lat: -40.9739, lng: -72.8856 },
+  { commune: 'Puerto Octay', match: ['puerto octay', 'centinela', 'pedro montt', 'independencia'], lat: -40.9739, lng: -72.8856 },
   // Alerce / Puerto Montt
-  { match: ['alerce', 'puerto montt'], lat: -41.3965, lng: -72.9102 },
+  { commune: 'Alerce', match: ['alerce', 'puerto montt'], lat: -41.3965, lng: -72.9102 },
 ];
 
 /**
@@ -983,15 +1008,16 @@ const LOCAL_SECTOR_COORDINATES = [
 export function resolveOrderCoordinates(order) {
   if (!order) return TOWN_COORDINATES['Frutillar'];
 
-  const exactLat = Number(order.lat ?? order.delivery_lat ?? order.latitude);
-  const exactLng = Number(order.lng ?? order.delivery_lng ?? order.longitude);
+  const exactLat = Number(order.lat ?? order.delivery_lat ?? order.deliveryLat ?? order.latitude);
+  const exactLng = Number(order.lng ?? order.delivery_lng ?? order.deliveryLng ?? order.longitude);
   if (Number.isFinite(exactLat) && Number.isFinite(exactLng) && exactLat !== 0 && exactLng !== 0) {
     return { lat: exactLat, lng: exactLng };
   }
 
   const rawAddress = String(order.address || '').toLowerCase().trim();
-  const rawCity = String(order.city || 'Frutillar').toLowerCase().trim();
-  const combined = `${rawAddress} ${rawCity}`;
+  const rawCity = String(order.city || '').toLowerCase().trim();
+  const combined = `${rawAddress} ${rawCity}`.trim();
+  const normalizedCity = rawCity ? normalizeCommune(order.city) : detectCommuneFromAddress(rawAddress) || 'Frutillar';
 
   // Extraer numeración de calle para micro-ordenar secuencialmente pedidos dentro de la misma calle/sector
   const numMatch = rawAddress.match(/\b(\d{1,5})\b/);
@@ -999,6 +1025,29 @@ export function resolveOrderCoordinates(order) {
   const microOffsetLat = ((streetNum % 500) - 250) * 0.000012;
   const microOffsetLng = ((streetNum % 300) - 150) * 0.000012;
 
+  // 1. Priorizar sectores de la misma comuna del pedido (evita que "Costanera Totoral" caiga en Frutillar Bajo)
+  const sameCommuneSectors = LOCAL_SECTOR_COORDINATES.filter(
+    (s) => s.commune.toLowerCase() === normalizedCity.toLowerCase()
+  );
+  for (const sector of sameCommuneSectors) {
+    if (sector.match.some((kw) => combined.includes(kw))) {
+      return {
+        lat: sector.lat + microOffsetLat,
+        lng: sector.lng + microOffsetLng,
+      };
+    }
+  }
+
+  // 2. Fallback por centroide de la comuna conocida
+  if (TOWN_COORDINATES[normalizedCity]) {
+    const baseCoords = TOWN_COORDINATES[normalizedCity];
+    return {
+      lat: baseCoords.lat + microOffsetLat,
+      lng: baseCoords.lng + microOffsetLng,
+    };
+  }
+
+  // 3. Último fallback buscando en cualquier sector
   for (const sector of LOCAL_SECTOR_COORDINATES) {
     if (sector.match.some((kw) => combined.includes(kw))) {
       return {
@@ -1008,8 +1057,7 @@ export function resolveOrderCoordinates(order) {
     }
   }
 
-  const city = normalizeCommune(order.city || 'Frutillar');
-  const baseCoords = TOWN_COORDINATES[city] || TOWN_COORDINATES['Frutillar'];
+  const baseCoords = TOWN_COORDINATES['Frutillar'];
   return {
     lat: baseCoords.lat + microOffsetLat,
     lng: baseCoords.lng + microOffsetLng,
@@ -1017,18 +1065,56 @@ export function resolveOrderCoordinates(order) {
 }
 
 /**
- * Optimizador inteligente de rutas multiparada para despachos (Algoritmo Vecino Más Cercano / TSP)
- * Ordena las entregas encadenando: Origen -> Parada #1 (más cercana al origen) -> Parada #2 (más cercana a la #1) -> etc.
- * 100% Gratuito ($0 costo de API: cálculo geométrico local + URL universal gratuita de Google Maps).
+ * Determina el bloque de prioridad operativa de un pedido para la secuencia de reparto:
+ * 0 = Urgente / Domingo expreso, 1 = Ventana Mañana (10-13h), 2 = Ventana Tarde / Otros
  */
-export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB) {
-  if (!orders || orders.length === 0) {
-    return {
-      optimizedOrders: [],
-      googleMapsUrl: '',
-      totalDistanceKm: 0,
-    };
+function getOrderRoutePriorityBucket(order) {
+  const slot = String(order?.deliverySlot || order?.delivery_slot || '').toLowerCase();
+  const dayText = String(order?.deliveryDayText || order?.delivery_day_text || '').toLowerCase();
+  if (slot.includes('urgente') || slot.includes('domingo') || dayText.includes('urgente')) {
+    return 0;
   }
+  if (slot.includes('mañana') || slot.includes('manana') || slot.includes('10:00')) {
+    return 1;
+  }
+  return 2;
+}
+
+/**
+ * Construye una URL de Google Maps Directions para un tramo de hasta 10 paradas (máx. 9 waypoints en móvil)
+ */
+function buildGoogleMapsLegUrl(legOrders, originParam, useLiveGpsOrigin = false) {
+  if (!legOrders || legOrders.length === 0) return '';
+  if (legOrders.length === 1) {
+    const dest = buildOrderGeocodableQuery(legOrders[0]);
+    if (useLiveGpsOrigin) {
+      return `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`;
+    }
+    return `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${dest}&travelmode=driving`;
+  }
+
+  const lastOrder = legOrders[legOrders.length - 1];
+  const destination = buildOrderGeocodableQuery(lastOrder);
+  const intermediateOrders = legOrders.slice(0, legOrders.length - 1);
+  // Codificar separador como %7C para preservar enlaces al compartir por WhatsApp
+  const waypoints = intermediateOrders.map((o) => buildOrderGeocodableQuery(o)).join('%7C');
+
+  const originPart = useLiveGpsOrigin ? '' : `&origin=${originParam}`;
+  let url = `https://www.google.com/maps/dir/?api=1${originPart}&destination=${destination}&travelmode=driving`;
+  if (waypoints) {
+    url += `&waypoints=${waypoints}`;
+  }
+  return url;
+}
+
+/**
+ * Optimizador inteligente de rutas multiparada para despachos (Prioridad Urgente/Ventana + Vecino Más Cercano)
+ * Ordena las entregas encadenando: Origen -> Parada #1 -> Parada #2 -> ...
+ * Divide automáticamente en tramos de máx. 10 paradas (límite de 9 waypoints en Google Maps móvil).
+ * 100% Gratuito ($0 costo de API).
+ */
+export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB, options = {}) {
+  const { prioritizeUrgent = true } = options || {};
 
   const startHub =
     hub && Number.isFinite(Number(hub.lat)) && Number.isFinite(Number(hub.lng))
@@ -1036,98 +1122,133 @@ export function optimizeDeliveryRoute(orders = [], hub = CENTRAL_HUB) {
       : CENTRAL_HUB;
   const originLabel = startHub.isLiveGps ? 'tu GPS' : 'Bodega';
 
+  if (!orders || orders.length === 0) {
+    return {
+      optimizedOrders: [],
+      googleMapsUrl: '',
+      routeLegs: [],
+      totalDistanceKm: 0,
+      origin: startHub,
+    };
+  }
+
   // Si hay una sola orden
   if (orders.length === 1) {
     const single = orders[0];
     const coords = resolveOrderCoordinates(single);
     const dist = Math.max(0.1, calculateHaversineDistance(startHub.lat, startHub.lng, coords.lat, coords.lng));
     const roundedDist = Number(dist.toFixed(1));
+    const singleUrl = getSingleOrderNavigationUrl(single, startHub);
+    const singleOptimized = {
+      ...single,
+      stopNumber: 1,
+      legDistanceKm: roundedDist,
+      cumulativeDistanceKm: roundedDist,
+      previousStopLabel: `desde ${originLabel}`,
+    };
     return {
-      optimizedOrders: [
+      optimizedOrders: [singleOptimized],
+      googleMapsUrl: singleUrl,
+      routeLegs: [
         {
-          ...single,
-          stopNumber: 1,
-          legDistanceKm: roundedDist,
-          cumulativeDistanceKm: roundedDist,
-          previousStopLabel: `desde ${originLabel}`,
+          legIndex: 1,
+          fromStop: 1,
+          toStop: 1,
+          stops: [singleOptimized],
+          googleMapsUrl: singleUrl,
+          distanceKm: roundedDist,
         },
       ],
-      googleMapsUrl: getSingleOrderNavigationUrl(single),
       totalDistanceKm: roundedDist,
+      origin: startHub,
     };
   }
 
-  // Algoritmo Greedy Nearest Neighbor encadenado parada a parada
-  const unvisited = [...orders];
+  // Agrupar por fecha/prioridad (Urgentes -> Mañana -> Tarde) y encadenar Nearest Neighbor dentro de cada bloque
+  const buckets = prioritizeUrgent
+    ? [
+        orders.filter((o) => getOrderRoutePriorityBucket(o) === 0),
+        orders.filter((o) => getOrderRoutePriorityBucket(o) === 1),
+        orders.filter((o) => getOrderRoutePriorityBucket(o) === 2),
+      ].filter((b) => b.length > 0)
+    : [[...orders]];
+
   const optimized = [];
   let currentLocation = { lat: Number(startHub.lat), lng: Number(startHub.lng) };
   let totalKm = 0;
   let stopCounter = 1;
 
-  while (unvisited.length > 0) {
-    let nearestIndex = 0;
-    let shortestDist = Infinity;
+  for (const bucket of buckets) {
+    const unvisited = [...bucket];
+    while (unvisited.length > 0) {
+      let nearestIndex = 0;
+      let shortestDist = Infinity;
 
-    for (let i = 0; i < unvisited.length; i++) {
-      const orderCoords = resolveOrderCoordinates(unvisited[i]);
-      const dist = calculateHaversineDistance(
-        currentLocation.lat,
-        currentLocation.lng,
-        orderCoords.lat,
-        orderCoords.lng
-      );
-      if (dist < shortestDist) {
-        shortestDist = dist;
-        nearestIndex = i;
+      for (let i = 0; i < unvisited.length; i++) {
+        const orderCoords = resolveOrderCoordinates(unvisited[i]);
+        const dist = calculateHaversineDistance(
+          currentLocation.lat,
+          currentLocation.lng,
+          orderCoords.lat,
+          orderCoords.lng
+        );
+        if (dist < shortestDist) {
+          shortestDist = dist;
+          nearestIndex = i;
+        }
       }
+
+      const [nearestOrder] = unvisited.splice(nearestIndex, 1);
+      const nextCoords = resolveOrderCoordinates(nearestOrder);
+      const legKm = Math.max(0.1, Number(shortestDist.toFixed(1)));
+      totalKm += legKm;
+      const currentStopNum = stopCounter++;
+
+      optimized.push({
+        ...nearestOrder,
+        stopNumber: currentStopNum,
+        legDistanceKm: legKm,
+        cumulativeDistanceKm: Number(totalKm.toFixed(1)),
+        previousStopLabel:
+          currentStopNum === 1 ? `desde ${originLabel}` : `desde Parada #${currentStopNum - 1}`,
+      });
+
+      currentLocation = nextCoords;
     }
-
-    const [nearestOrder] = unvisited.splice(nearestIndex, 1);
-    const nextCoords = resolveOrderCoordinates(nearestOrder);
-    const legKm = Math.max(0.1, Number(shortestDist.toFixed(1)));
-    totalKm += legKm;
-    const currentStopNum = stopCounter++;
-
-    optimized.push({
-      ...nearestOrder,
-      stopNumber: currentStopNum,
-      legDistanceKm: legKm,
-      cumulativeDistanceKm: Number(totalKm.toFixed(1)),
-      previousStopLabel:
-        currentStopNum === 1 ? `desde ${originLabel}` : `desde Parada #${currentStopNum - 1}`,
-    });
-
-    currentLocation = nextCoords;
   }
 
-  // Construir la URL universal gratuita de Google Maps con todas las paradas encadenadas
+  // Construir tramos de máx. 10 paradas (9 waypoints + 1 destino, límite oficial de Google Maps móvil)
+  const MAX_STOPS_PER_LEG = 10;
   const originParam =
     startHub.lat && startHub.lng
       ? `${startHub.lat},${startHub.lng}`
       : encodeURIComponent(startHub.address || CENTRAL_HUB.address);
-  const lastOrder = optimized[optimized.length - 1];
-  const destination =
-    lastOrder.lat && lastOrder.lng
-      ? `${lastOrder.lat},${lastOrder.lng}`
-      : encodeURIComponent(`${lastOrder.address || ''}, ${lastOrder.city || 'Frutillar'}, Región de Los Lagos, Chile`);
 
-  const intermediateOrders = optimized.slice(0, optimized.length - 1);
-  const waypoints = intermediateOrders
-    .map((o) =>
-      o.lat && o.lng
-        ? `${o.lat},${o.lng}`
-        : encodeURIComponent(`${o.address || ''}, ${o.city || 'Frutillar'}, Región de Los Lagos, Chile`)
-    )
-    .join('|');
+  const routeLegs = [];
+  for (let offset = 0; offset < optimized.length; offset += MAX_STOPS_PER_LEG) {
+    const slice = optimized.slice(offset, offset + MAX_STOPS_PER_LEG);
+    const isFirstLeg = offset === 0;
+    const prevStop = isFirstLeg ? null : optimized[offset - 1];
+    const legOriginParam = isFirstLeg ? originParam : buildOrderGeocodableQuery(prevStop);
+    const legDistanceKm = Number(
+      slice.reduce((acc, o) => acc + (Number(o.legDistanceKm) || 0), 0).toFixed(1)
+    );
 
-  let googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originParam}&destination=${destination}&travelmode=driving`;
-  if (waypoints) {
-    googleMapsUrl += `&waypoints=${waypoints}`;
+    routeLegs.push({
+      legIndex: routeLegs.length + 1,
+      fromStop: slice[0].stopNumber,
+      toStop: slice[slice.length - 1].stopNumber,
+      stops: slice,
+      googleMapsUrl: buildGoogleMapsLegUrl(slice, legOriginParam, isFirstLeg && Boolean(startHub.isLiveGps)),
+      distanceKm: legDistanceKm,
+    });
   }
 
   return {
     optimizedOrders: optimized,
-    googleMapsUrl,
+    googleMapsUrl: routeLegs[0]?.googleMapsUrl || '',
+    routeLegs,
     totalDistanceKm: Number(totalKm.toFixed(1)),
+    origin: startHub,
   };
 }

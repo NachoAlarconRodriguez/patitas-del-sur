@@ -1609,6 +1609,8 @@ export default function CartDrawer({
       deliverySlot: deliverySlot,
       address: fullAddress,
       city: effectiveCity,
+      deliveryLat: customerCoords?.lat ?? null,
+      deliveryLng: customerCoords?.lng ?? null,
       deliveryZone: matchedDispatchZone ? `Zona ${matchedDispatchZone.name}` : `Zona Despacho: ${effectiveCity}`,
       agreementUsed: appliedCoupon ? `${appliedCoupon.convenioName} (${appliedCoupon.code})` : null,
       couponCodeUsed: appliedCoupon ? appliedCoupon.code : null,

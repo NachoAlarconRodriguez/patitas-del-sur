@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { MercadoPagoConfig, Order } from 'mercadopago';
+import { sendAdminOrderPushNotification } from './admin-push-notify.js';
 
 const SUPABASE_URL =
   process.env.VITE_SUPABASE_URL ||
@@ -232,7 +233,7 @@ export default async function handler(req, res) {
 
     // 2. Buscar el pedido correspondiente en Supabase (por id = external_reference o por mercadopago_preference_id = mpOrderId)
     const orderSelectCols =
-      'id, status, total, customer_id, points_earned, payment_status, mercadopago_preference_id';
+      'id, status, total, customer_id, customer_name, city, delivery_slot, payment_method, points_earned, payment_status, mercadopago_preference_id';
     let matchedOrder = null;
     if (externalReference) {
       const { data } = await supabase
@@ -326,6 +327,21 @@ export default async function handler(req, res) {
             })
             .eq('id', cust.id);
         }
+      }
+
+      // Notificar vía Web Push a dispositivos Admin cuando se confirma un pago web
+      if (!wasAlreadyPaid && isPaid) {
+        await sendAdminOrderPushNotification({
+          orderId: matchedOrder.id,
+          customerName: matchedOrder.customer_name,
+          total: matchedOrder.total,
+          city: matchedOrder.city,
+          deliverySlot: matchedOrder.delivery_slot,
+          paymentMethod: matchedOrder.payment_method || 'Mercado Pago',
+          event: 'payment_approved',
+        }).catch((pushErr) => {
+          console.warn('Error enviando push de pago aprobado:', pushErr);
+        });
       }
     }
 

@@ -1,15 +1,16 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import mpOrderHandler from './api/mercadopago-order.js';
-import mpWebhookHandler from './api/mercadopago-webhook.js';
 
-// Plugin local para emular los endpoints serverless de Mercado Pago durante `npm run dev`
+// Plugin local para emular los endpoints serverless durante `npm run dev`
 function mercadoPagoLocalApiPlugin() {
-  const wrapServerless = (handler) => async (req, res) => {
+  const wrapServerless = (loader) => async (req, res) => {
     const env = loadEnv('development', process.cwd(), '');
     process.env.MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || env.MP_ACCESS_TOKEN;
     process.env.MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET || env.MP_WEBHOOK_SECRET;
+    process.env.VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || env.VAPID_PUBLIC_KEY;
+    process.env.VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || env.VAPID_PRIVATE_KEY;
+    process.env.VAPID_SUBJECT = process.env.VAPID_SUBJECT || env.VAPID_SUBJECT;
 
     const urlObj = new URL(req.url || '', 'http://localhost');
     req.query = Object.fromEntries(urlObj.searchParams.entries());
@@ -37,14 +38,17 @@ function mercadoPagoLocalApiPlugin() {
       return res;
     };
 
+    const mod = await loader();
+    const handler = mod.default || mod;
     await handler(req, res);
   };
 
   return {
     name: 'mercadopago-local-api',
     configureServer(server) {
-      server.middlewares.use('/api/mercadopago-order', wrapServerless(mpOrderHandler));
-      server.middlewares.use('/api/mercadopago-webhook', wrapServerless(mpWebhookHandler));
+      server.middlewares.use('/api/mercadopago-order', wrapServerless(() => import('./api/mercadopago-order.js')));
+      server.middlewares.use('/api/mercadopago-webhook', wrapServerless(() => import('./api/mercadopago-webhook.js')));
+      server.middlewares.use('/api/admin-push-notify', wrapServerless(() => import('./api/admin-push-notify.js')));
     },
   };
 }
@@ -62,14 +66,14 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-              return 'vendor-react';
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
             }
             if (id.includes('@supabase')) {
               return 'vendor-supabase';
             }
-            if (id.includes('lucide-react')) {
-              return 'vendor-icons';
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+              return 'vendor-react';
             }
           }
         },

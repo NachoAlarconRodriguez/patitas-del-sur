@@ -30,16 +30,25 @@ export default function CustomDropdown({
   const updatePosition = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
+    const vpWidth = window.visualViewport?.width || window.innerWidth;
+    const vpHeight = window.visualViewport?.height || window.innerHeight;
+    const spaceBelow = vpHeight - rect.bottom;
     const spaceAbove = rect.top;
     const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
 
+    const menuWidth = Math.min(Math.max(rect.width, minMenuWidth || 0), vpWidth - 24);
+    const preferredLeft = align === 'right' ? rect.right - menuWidth : rect.left;
+    const clampedLeft = Math.min(
+      Math.max(12, preferredLeft),
+      Math.max(12, vpWidth - menuWidth - 12)
+    );
+
     setPortalCoords({
       top: openUp ? rect.top - 6 : rect.bottom + 6,
-      left: align === 'right' ? rect.right : rect.left,
+      left: clampedLeft,
       openUp,
-      align,
-      width: Math.max(rect.width, minMenuWidth || 0),
+      width: menuWidth,
+      maxWidth: vpWidth - 24,
     });
   }, [align, minMenuWidth]);
 
@@ -54,36 +63,81 @@ export default function CustomDropdown({
       };
       window.addEventListener('resize', updatePosition);
       window.addEventListener('scroll', handleScroll, true);
+      const vv = window.visualViewport;
+      if (vv) {
+        vv.addEventListener('resize', updatePosition);
+        vv.addEventListener('scroll', updatePosition);
+      }
       return () => {
         window.removeEventListener('resize', updatePosition);
         window.removeEventListener('scroll', handleScroll, true);
+        if (vv) {
+          vv.removeEventListener('resize', updatePosition);
+          vv.removeEventListener('scroll', updatePosition);
+        }
       };
     }
   }, [isOpen, usePortal, updatePosition]);
 
-  // Close when clicking outside
+  // Close when clicking or tapping outside (attached only while open; ignores touch scroll)
   useEffect(() => {
-    function handleClickOutside(event) {
-      const inTrigger = triggerRef.current && triggerRef.current.contains(event.target);
-      const inMenu = menuRef.current && menuRef.current.contains(event.target);
-      const inDropdown = dropdownRef.current && dropdownRef.current.contains(event.target);
+    if (!isOpen) return;
 
-      if (!inTrigger && !inMenu && !inDropdown) {
+    let touchStartPos = null;
+    let touchMoved = false;
+
+    const isInside = (target) => {
+      const inTrigger = triggerRef.current && triggerRef.current.contains(target);
+      const inMenu = menuRef.current && menuRef.current.contains(target);
+      const inDropdown = dropdownRef.current && dropdownRef.current.contains(target);
+      return inTrigger || inMenu || inDropdown;
+    };
+
+    const handleMouseDown = (event) => {
+      if (!isInside(event.target)) {
         setIsOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('touchstart', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, []);
+
+    const handleTouchStart = (event) => {
+      const touch = event.touches?.[0];
+      touchStartPos = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      touchMoved = false;
+    };
+
+    const handleTouchMove = (event) => {
+      if (!touchStartPos) return;
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      if (Math.abs(touch.clientX - touchStartPos.x) > 8 || Math.abs(touch.clientY - touchStartPos.y) > 8) {
+        touchMoved = true;
+      }
+    };
+
+    const handleTouchEnd = (event) => {
+      if (!touchMoved && !isInside(event.target)) {
+        setIsOpen(false);
+      }
+      touchStartPos = null;
+      touchMoved = false;
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isOpen]);
 
   // Handle keyboard interaction
   useEffect(() => {
+    if (!isOpen) return;
     function handleKeyDown(event) {
-      if (!isOpen) return;
       if (event.key === 'Escape') {
         setIsOpen(false);
       }
@@ -111,9 +165,9 @@ export default function CustomDropdown({
               position: 'fixed',
               top: portalCoords.openUp ? undefined : `${portalCoords.top}px`,
               bottom: portalCoords.openUp ? `${window.innerHeight - portalCoords.top}px` : undefined,
-              left: portalCoords.align === 'right' ? undefined : `${portalCoords.left}px`,
-              right: portalCoords.align === 'right' ? `${window.innerWidth - portalCoords.left}px` : undefined,
+              left: `${portalCoords.left}px`,
               minWidth: portalCoords.width ? `${portalCoords.width}px` : undefined,
+              maxWidth: portalCoords.maxWidth ? `${portalCoords.maxWidth}px` : undefined,
               zIndex: 99999,
             }
           : undefined
@@ -138,7 +192,7 @@ export default function CustomDropdown({
               if (onChange) onChange(optVal, option);
               setIsOpen(false);
             }}
-            className={`group flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all cursor-pointer ${
+            className={`group flex items-center justify-between px-3 py-2.5 sm:py-2 rounded-xl text-xs transition-all cursor-pointer ${
               isSelected
                 ? 'bg-[#F5BA13]/15 text-amber-950 font-black'
                 : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-semibold'

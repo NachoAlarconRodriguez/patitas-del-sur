@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase.js';
 import { resolveInventoryVariant } from '../utils/productVariants.js';
+import { triggerAdminNewOrderPush } from './pushNotificationsService.js';
 
 /**
  * Servicio de Órdenes y Checkout con Supabase
@@ -7,6 +8,13 @@ import { resolveInventoryVariant } from '../utils/productVariants.js';
 
 export async function getNextOrderId() {
   try {
+    // 1. Intentar secuencia atómica en Supabase (RPC) si la migración ya está aplicada
+    const { data: rpcId, error: rpcError } = await supabase.rpc('get_next_order_id');
+    if (!rpcError && typeof rpcId === 'string' && /^PED-\d+$/i.test(rpcId.trim())) {
+      return rpcId.trim().toUpperCase();
+    }
+
+    // 2. Fallback consultando el máximo correlativo actual en la tabla orders
     const { data, error } = await supabase
       .from('orders')
       .select('id');
@@ -29,13 +37,14 @@ export async function getNextOrderId() {
     return `PED-${String(nextNum).padStart(4, '0')}`;
   } catch (err) {
     console.error('Error generating next order ID:', err);
-    return 'PED-0001';
+    // Evitar colisión segura con PED-0001 usando sufijo temporal único
+    return `PED-${String(Date.now()).slice(-6)}`;
   }
 }
 
 export async function createOrderInSupabase(orderData, items = []) {
   try {
-    const finalOrderId = orderData.id || (await getNextOrderId());
+    let finalOrderId = orderData.id || (await getNextOrderId());
     const seqMatch = String(finalOrderId).match(/PED-(\d+)/i);
     const seqNum = seqMatch ? seqMatch[1] : '0001';
     const orderTotalNum = Number(orderData.total || 0);
@@ -109,7 +118,11 @@ export async function createOrderInSupabase(orderData, items = []) {
       console.warn('Error sincronizando cliente en CRM al crear pedido:', crmSyncErr);
     }
 
-    const orderPayload = {
+    const latVal = Number(orderData.deliveryLat ?? orderData.delivery_lat ?? orderData.lat);
+    const lngVal = Number(orderData.deliveryLng ?? orderData.delivery_lng ?? orderData.lng);
+    const hasCoords = Number.isFinite(latVal) && Number.isFinite(lngVal) && latVal !== 0 && lngVal !== 0;
+
+    const baseOrderPayload = {
       id: finalOrderId,
       customer_id: resolvedCustomerId,
       customer_name: orderData.customerName || 'Cliente Web',
@@ -126,7 +139,7 @@ export async function createOrderInSupabase(orderData, items = []) {
       discount: orderData.discount || 0,
       total: orderTotalNum,
       points_earned: earnedPts,
-      delivery_day_text: orderData.deliveryDayText || 'Hoy Mismo',
+      delivery_day_text: orderData.deliveryDayText || orderData.delivery_day_text || 'Hoy Mismo',
       delivery_date:
         orderData.deliveryDate ||
         orderData.delivery_date ||
@@ -136,10 +149,10 @@ export async function createOrderInSupabase(orderData, items = []) {
           month: '2-digit',
           day: '2-digit',
         }).format(new Date()),
-      delivery_slot: orderData.deliverySlot || 'Tarde (15:30 - 19:30 hrs)',
+      delivery_slot: orderData.deliverySlot || orderData.delivery_slot || 'Tarde (15:30 - 19:30 hrs)',
       address: orderData.address || '',
-      city: orderData.city || 'Puerto Varas',
-      delivery_zone: orderData.deliveryZone || 'Zona 1: Radio Urbano Puerto Varas',
+      city: orderData.city || 'Frutillar',
+      delivery_zone: orderData.deliveryZone || `Zona Despacho: ${orderData.city || 'Frutillar'}`,
       agreement_used: orderData.agreementUsed || null,
       coupon_code_used: orderData.couponCodeUsed || null,
       notes: orderData.notes || '',
@@ -147,15 +160,56 @@ export async function createOrderInSupabase(orderData, items = []) {
       created_at: orderData.created_at || orderData.createdAt || new Date().toISOString(),
     };
 
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert(orderPayload)
-      .select()
-      .single();
+    const extendedOrderPayload = {
+      ...baseOrderPayload,
+      ...(hasCoords ? { delivery_lat: latVal, delivery_lng: lngVal } : {}),
+      ...(orderData.petName || orderData.pet_name ? { pet_name: orderData.petName || orderData.pet_name } : {}),
+      ...(orderData.petType || orderData.pet_type ? { pet_type: orderData.petType || orderData.pet_type } : {}),
+    };
+
+    const attemptInsertOrder = async (payloadToInsert) => {
+      let res = await supabase
+        .from('orders')
+        .insert(payloadToInsert)
+        .select()
+        .single();
+
+      // Si faltan columnas opcionales (delivery_lat/delivery_lng/pet_name/pet_type) porque aún no se corrió la migración SQL
+      if (res.error && (res.error.code === '42703' || String(res.error.message || '').includes('column'))) {
+        const cleanFallback = { ...baseOrderPayload, id: payloadToInsert.id, invoice_number: payloadToInsert.invoice_number };
+        res = await supabase
+          .from('orders')
+          .insert(cleanFallback)
+          .select()
+          .single();
+      }
+      return res;
+    };
+
+    let { data: order, error: orderError } = await attemptInsertOrder(extendedOrderPayload);
+
+    // Reintentar una vez con nuevo ID atómico si hubo colisión PK (23505) entre pedido web y manual simultáneos
+    if (orderError && orderError.code === '23505') {
+      finalOrderId = await getNextOrderId();
+      const retrySeqMatch = String(finalOrderId).match(/PED-(\d+)/i);
+      const retrySeq = retrySeqMatch ? retrySeqMatch[1] : seqNum;
+      const retryYear = String(baseOrderPayload.delivery_date || '').slice(0, 4) || '2026';
+      extendedOrderPayload.id = finalOrderId;
+      extendedOrderPayload.invoice_number = `BOL-${retryYear}-${retrySeq}`;
+      baseOrderPayload.id = finalOrderId;
+      baseOrderPayload.invoice_number = `BOL-${retryYear}-${retrySeq}`;
+
+      const retryRes = await attemptInsertOrder(extendedOrderPayload);
+      order = retryRes.data;
+      orderError = retryRes.error;
+    }
 
     if (orderError) throw orderError;
 
+    const orderPayload = { ...extendedOrderPayload, id: finalOrderId };
+
     // Insertar ítems del pedido
+    let itemsInsertError = null;
     if (items && items.length > 0) {
       // Cargar catálogo de productos para garantizar resolución exacta de variante (ID + formato)
       const { data: allDbProducts } = await supabase
@@ -184,10 +238,11 @@ export async function createOrderInSupabase(orderData, items = []) {
         .insert(itemsPayload);
 
       if (itemsError) {
-        console.warn('Error inserting order items into Supabase:', itemsError.message);
+        itemsInsertError = itemsError;
+        console.error('Error inserting order items into Supabase:', itemsError.message);
       }
 
-      // Descontar stock en Supabase de forma centralizada y atómica agrupando por variante exacta
+      // Descontar stock en Supabase de forma centralizada agrupando por variante exacta
       const deductionsByProdId = new Map();
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
@@ -210,22 +265,31 @@ export async function createOrderInSupabase(orderData, items = []) {
 
       for (const [targetProductId, totalQtyToDeduct] of deductionsByProdId.entries()) {
         try {
-          const { data: prodData } = await supabase
+          const { data: prodData, error: prodFetchErr } = await supabase
             .from('products')
             .select('id, stock')
             .eq('id', targetProductId)
             .maybeSingle();
 
+          if (prodFetchErr) {
+            console.warn('Error leyendo stock para descuento:', targetProductId, prodFetchErr.message);
+            continue;
+          }
+
           if (prodData) {
             const currentStock = Number(prodData.stock) || 0;
             const newStock = Math.max(0, currentStock - totalQtyToDeduct);
-            await supabase
+            const { error: stockUpdErr } = await supabase
               .from('products')
               .update({
                 stock: newStock,
                 updated_at: new Date().toISOString(),
               })
               .eq('id', targetProductId);
+
+            if (stockUpdErr) {
+              console.warn('Error persistiendo descuento de stock en Supabase:', targetProductId, stockUpdErr.message);
+            }
           }
         } catch (stockDeductErr) {
           console.warn('Error descontando stock en Supabase para producto:', targetProductId, stockDeductErr);
@@ -237,14 +301,23 @@ export async function createOrderInSupabase(orderData, items = []) {
       }
     }
 
-    return { success: true, order: order || orderPayload };
+    // Si es un pedido proveniente de la tienda web, disparar notificación Web Push a dispositivos Admin (best-effort)
+    if (String(orderPayload.channel || 'web').toLowerCase() !== 'manual') {
+      triggerAdminNewOrderPush(orderPayload.id, 'new_web_order');
+    }
+
+    return {
+      success: true,
+      order: order || orderPayload,
+      itemsError: itemsInsertError || null,
+    };
   } catch (err) {
     console.error('Error creating order in Supabase:', err);
     return { success: false, error: err };
   }
 }
 
-export async function fetchOrdersFromSupabase() {
+export async function fetchOrdersFromSupabase({ throwOnError = false } = {}) {
   try {
     const { data, error } = await supabase
       .from('orders')
@@ -262,6 +335,7 @@ export async function fetchOrdersFromSupabase() {
     return data || [];
   } catch (err) {
     console.error('Error fetching orders from Supabase:', err);
+    if (throwOnError) throw err;
     return [];
   }
 }

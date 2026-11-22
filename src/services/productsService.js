@@ -43,7 +43,7 @@ export function getCachedProducts() {
   return null;
 }
 
-export async function fetchProductsFromSupabase() {
+export async function fetchProductsFromSupabase({ allowMockFallback = true } = {}) {
   try {
     const { data, error } = await supabase
       .from('products')
@@ -51,7 +51,10 @@ export async function fetchProductsFromSupabase() {
       .order('name', { ascending: true });
 
     if (error) {
-      console.warn('Supabase products fetch failed, using local mock data:', error.message);
+      console.warn('Supabase products fetch failed:', error.message);
+      if (!allowMockFallback) {
+        return getCachedProducts() || [];
+      }
       return memoryCachedProducts || PRODUCTS;
     }
 
@@ -130,9 +133,15 @@ export async function fetchProductsFromSupabase() {
       return normalized;
     }
 
+    if (!allowMockFallback) {
+      return [];
+    }
     return memoryCachedProducts || PRODUCTS;
   } catch (err) {
     console.error('Error fetching products from Supabase:', err);
+    if (!allowMockFallback) {
+      return getCachedProducts() || [];
+    }
     return memoryCachedProducts || PRODUCTS;
   }
 }

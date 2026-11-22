@@ -4652,7 +4652,7 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
   --finset-text-subtle: #94A3B8;
   background-color: var(--finset-bg) !important;
   color: var(--finset-text-main);
-  font-family: 'Plus Jakarta Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Manrope', 'Bricolage Grotesque', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* FinSet Bento Card Base */
@@ -4807,7 +4807,7 @@ dialog::backdrop {
 
 /* iOS Translucent Top Navigation Chrome */
 .ios-nav-bar {
-  background: rgba(250, 248, 244, 0.78);
+  background: rgba(250, 248, 244, 0.82);
   backdrop-filter: blur(24px) saturate(190%);
   -webkit-backdrop-filter: blur(24px) saturate(190%);
   border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
@@ -4816,7 +4816,7 @@ dialog::backdrop {
 
 /* iOS Translucent Bottom Tab Bar Chrome */
 .ios-tab-bar {
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(28px) saturate(190%);
   -webkit-backdrop-filter: blur(28px) saturate(190%);
   border-top: 0.5px solid rgba(60, 60, 67, 0.16);
@@ -4849,6 +4849,13 @@ dialog::backdrop {
     overscroll-behavior-y: none;
   }
 
+  /* Evitar auto-zoom de Safari / iOS PWA al enfocar cualquier campo de texto */
+  .finset-admin input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .finset-admin select,
+  .finset-admin textarea {
+    font-size: 16px !important;
+  }
+
   .finset-admin h1,
   .finset-admin h2,
   .finset-admin h3,
@@ -4864,30 +4871,32 @@ dialog::backdrop {
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.035), 0 0 1px rgba(0, 0, 0, 0.04) !important;
   }
 
-  /* Native iOS Bottom Sheet Presentation for Modals on Mobile */
-  .finset-admin .fixed.inset-0 {
+  /* Native iOS Bottom Sheet Presentation for Dialog Modals on Mobile (excluye drawers laterales) */
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) {
     align-items: flex-end !important;
     padding: 0 !important;
   }
 
-  .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"],
-  .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"],
-  .finset-admin .fixed.inset-0 > div[class*="rounded-["] {
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-2xl"],
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-3xl"],
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-["] {
     width: 100% !important;
     max-width: 100% !important;
     max-height: 92dvh !important;
+    display: flex !important;
+    flex-direction: column !important;
     border-radius: 28px 28px 0 0 !important;
     border-bottom: 0 !important;
     padding-bottom: env(safe-area-inset-bottom);
     box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.18) !important;
     position: relative;
-    animation: iosSheetPresent 320ms cubic-bezier(0.32, 0.72, 0, 1) both !important;
+    animation: iosSheetPresent 280ms cubic-bezier(0.32, 0.72, 0, 1) both !important;
   }
 
   /* Native iOS Sheet Grabber Pill (36x5pt) */
-  .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"]::before,
-  .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"]::before,
-  .finset-admin .fixed.inset-0 > div[class*="rounded-["]::before {
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-2xl"]::before,
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-3xl"]::before,
+  .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-["]::before {
     content: "";
     display: block;
     width: 36px;
@@ -4915,9 +4924,9 @@ dialog::backdrop {
     transform: none !important;
   }
   @media (max-width: 767px) {
-    .finset-admin .fixed.inset-0 > div[class*="rounded-2xl"],
-    .finset-admin .fixed.inset-0 > div[class*="rounded-3xl"],
-    .finset-admin .fixed.inset-0 > div[class*="rounded-["] {
+    .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-2xl"],
+    .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-3xl"],
+    .finset-admin .fixed.inset-0:not([data-drawer="true"]) > div[class*="rounded-["] {
       animation: none !important;
     }
   }

@@ -849,9 +849,9 @@ export const getDynamicGreeting = (user, adminEmail) => {
   return `¡Buenas noches, ${name}! 🌙`;
 };
 
-// Resolver packshots de productos por nombre
+// Resolver packshots de productos por nombre (fallback)
 export const getProductImage = (itemName = '') => {
-  const lower = itemName.toLowerCase();
+  const lower = String(itemName || '').toLowerCase();
   if (lower.includes('pollo') || lower.includes('chicken')) return '/images/bravery_chicken.jpg';
   if (lower.includes('cordero') || lower.includes('lamb')) return '/images/bravery_lamb.jpg';
   if (lower.includes('salmón') || lower.includes('salmon') || lower.includes('bravery')) return '/images/bravery_salmon.jpg';
@@ -860,5 +860,49 @@ export const getProductImage = (itemName = '') => {
   if (lower.includes('ciervo') || lower.includes('deshidratado')) return '/images/dog_food_ingredients.png';
   if (lower.includes('hueso') || lower.includes('recreativo')) return '/images/dog_kibble_detail.png';
   if (lower.includes('omega') || lower.includes('suplemento')) return '/images/dog_food_salmon.png';
-  return '/images/bravery_salmon.jpg';
+  return '/images/product-placeholder.webp';
 };
+
+// Resolver imagen real priorizando la foto cargada en el producto/inventario de Supabase
+export const resolveProductImage = (itemOrName, inventoryList = []) => {
+  if (!itemOrName) return '/images/product-placeholder.webp';
+  if (typeof itemOrName === 'string') {
+    const cleanName = itemOrName.trim().toLowerCase();
+    const matched = (inventoryList || []).find(
+      (p) => p && String(p.name || '').trim().toLowerCase() === cleanName
+    );
+    if (matched?.image) return matched.image;
+    if (Array.isArray(matched?.images) && matched.images[0]) return matched.images[0];
+    return getProductImage(itemOrName);
+  }
+
+  if (itemOrName.image) return itemOrName.image;
+  if (Array.isArray(itemOrName.images) && itemOrName.images[0]) return itemOrName.images[0];
+
+  const targetId = itemOrName.productId || itemOrName.product_id || itemOrName.id;
+  if (targetId && Array.isArray(inventoryList)) {
+    const byId = inventoryList.find((p) => p && p.id === targetId);
+    if (byId?.image) return byId.image;
+    if (Array.isArray(byId?.images) && byId.images[0]) return byId.images[0];
+  }
+
+  const targetName = String(itemOrName.name || itemOrName.product_name || '').trim().toLowerCase();
+  if (targetName && Array.isArray(inventoryList)) {
+    const byName = inventoryList.find((p) => p && String(p.name || '').trim().toLowerCase() === targetName);
+    if (byName?.image) return byName.image;
+    if (Array.isArray(byName?.images) && byName.images[0]) return byName.images[0];
+  }
+
+  return getProductImage(itemOrName.name || itemOrName.product_name || '');
+};
+
+// Normaliza teléfono chileno de un pedido (customerPhone || phone) para enlaces wa.me y tel:
+export const getOrderCustomerPhoneDigits = (order) => {
+  const raw = String(order?.customerPhone || order?.customer_phone || order?.phone || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('56') && digits.length >= 11) return digits;
+  if (digits.length === 9) return `56${digits}`;
+  return digits;
+};
+
