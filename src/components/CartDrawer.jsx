@@ -24,7 +24,6 @@ import {
   ChevronUp,
   Calendar,
 } from 'lucide-react';
-import { MercadoPagoIcon } from './OfficialIcons';
 import { verifyCouponInSupabase, redeemCouponInSupabase } from '../services/conveniosService';
 import {
   createOrderInSupabase,
@@ -2787,26 +2786,18 @@ Asunto: Pedido ${completedOrder?.id}`;
                         Formato: <strong className="text-slate-600">x xxxx xxxx</strong> (9 dígitos obligatorios). Tu teléfono es tu ID de cliente.
                       </p>
 
-                      {/* Notificación de Beneficio Club Patitas y Datos Auto-completados */}
+                      {/* Notificación minimalista de cliente reconocido */}
                       {autofillCustomer && (
-                        <div className="mt-2 p-2.5 bg-gradient-to-r from-emerald-50 via-teal-50/60 to-emerald-50 border border-emerald-200/90 rounded-2xl text-[11px] text-emerald-900 flex items-start gap-2.5 shadow-2xs animate-in fade-in slide-in-from-top-1">
-                          <div className="w-6 h-6 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center shrink-0 mt-0.5">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
+                        <div className="mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200/90 rounded-xl flex items-center justify-between gap-2 animate-in fade-in slide-in-from-top-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                            <span className="font-extrabold text-emerald-950 text-xs truncate">
+                              ¡Hola, {(autofillCustomer.full_name || autofillCustomer.name || 'Tutor').trim().split(' ')[0]}!
+                            </span>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                              <p className="font-extrabold text-emerald-950 text-xs flex items-center gap-1.5">
-                                <span>¡Hola, {(autofillCustomer.full_name || autofillCustomer.name || 'Tutor').trim().split(' ')[0]}!</span>
-                                <span className="text-[10.5px] text-emerald-700 font-bold">Sumas puntos con esta compra ✨</span>
-                              </p>
-                              <span className="text-[9px] px-2 py-0.5 bg-emerald-600 text-white rounded-full font-black uppercase tracking-wider shadow-2xs">
-                                Club Patitas
-                              </span>
-                            </div>
-                            <p className="text-emerald-800/90 text-[10.5px] mt-0.5 font-medium leading-relaxed">
-                              Tus datos se rellenaron automáticamente. Cada compra acumula puntos canjeables por descuentos en tus próximos pedidos.
-                            </p>
-                          </div>
+                          <span className="text-[9px] px-2 py-0.5 bg-emerald-600 text-white rounded-full font-black uppercase tracking-wider shrink-0">
+                            Club Patitas
+                          </span>
                         </div>
                       )}
                     </div>
@@ -3291,28 +3282,6 @@ Asunto: Pedido ${completedOrder?.id}`;
                       </button>
                     </div>
                   </div>
-
-                  {/* Detalle de Mercado Pago (solo cuando se elige Paga Ahora; en Paga al Recibir no se muestran sub-opciones) */}
-                  {paymentType === 'anticipado' && (
-                    <div className="pt-1 animate-in fade-in duration-150">
-                      <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-white border-[#009EE3]/45 shadow-xs ring-1 ring-[#009EE3]/20">
-                        <MercadoPagoIcon className="w-9 h-6 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-black text-[#002E6E] flex items-center gap-1.5">
-                              <span>Tarjeta Débito / Crédito</span>
-                            </span>
-                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-[#009EE3]/12 text-[#007EB5] shrink-0">
-                              Mercado Pago
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                            Pago seguro con tarjeta de crédito o débito a través de la pasarela oficial de Mercado Pago.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* Resumen Total y Confirmación */}
@@ -3424,7 +3393,6 @@ Asunto: Pedido ${completedOrder?.id}`;
                       </>
                     ) : paymentType === 'anticipado' ? (
                       <>
-                        <MercadoPagoIcon className="w-8 h-5.5 shrink-0 drop-shadow-2xs" />
                         <span>PAGAR CON MERCADO PAGO</span>
                         <ArrowRight className="w-4 h-4 shrink-0" />
                       </>
