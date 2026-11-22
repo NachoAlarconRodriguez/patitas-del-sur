@@ -37,12 +37,7 @@ const parseSlotDisplay = (slot) => {
     return {
       kind: 'urgent',
       title: slot?.isSundayOnly ? 'Pedido Urgente · Domingo' : 'Pedido Urgente',
-      timeRange: slot?.isSundayOnly
-        ? '10:00 a 20:00 hrs · Sin reparto estándar'
-        : 'Fuera de ventana horaria',
-      subtitle:
-        slot?.desc ||
-        'Entrega prioritaria coordinada (se cobra despacho aunque supere el mínimo).',
+      timeRange: slot?.isSundayOnly ? '10:00 a 20:00 hrs' : 'Fuera de ventana horaria',
     };
   }
   if (/10:00|13:00|ma[ñn]ana/i.test(rawValue)) {
@@ -51,7 +46,6 @@ const parseSlotDisplay = (slot) => {
       kind: 'morning',
       title: isDirectToday ? 'Hoy · Bloque Mañana' : 'Bloque Mañana',
       timeRange: isDirectToday ? 'Antes de las 13:00 hrs' : '10:00 a 13:00 hrs',
-      subtitle: slot?.desc || '1ª ventana de reparto del día',
     };
   }
   if (/15:30|19:30|tarde/i.test(rawValue)) {
@@ -60,14 +54,12 @@ const parseSlotDisplay = (slot) => {
       kind: 'afternoon',
       title: isDirectToday ? 'Hoy · Bloque Tarde' : 'Bloque Tarde',
       timeRange: isDirectToday ? 'Antes de las 19:30 hrs' : '15:30 a 19:30 hrs',
-      subtitle: slot?.desc || '2ª ventana de reparto del día',
     };
   }
   return {
     kind: 'standard',
     title: slot?.label || rawValue,
     timeRange: '',
-    subtitle: slot?.desc || '',
   };
 };
 
@@ -86,7 +78,6 @@ export default function CartScheduleStep({
   availableSlots,
   deliverySlot,
   selectedSlotData,
-  recommendedSlotValue,
   onSelectSlot,
   smartScheduleEval,
   isSpecialDeliveryDay,
@@ -380,10 +371,10 @@ export default function CartScheduleStep({
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-slate-500 line-through leading-snug">
-                    Bloque Mañana · 10:00 a 13:00 hrs
+                    Bloque Mañana
                   </p>
-                  <p className="text-[10.5px] text-slate-400 font-medium">
-                    Ventana cerrada por hoy — disponible desde mañana
+                  <p className="text-xs font-bold text-slate-400 line-through mt-0.5">
+                    10:00 a 13:00 hrs
                   </p>
                 </div>
               </div>
@@ -395,7 +386,6 @@ export default function CartScheduleStep({
 
           {availableSlots.map((slot) => {
             const isSelected = deliverySlot === slot.value;
-            const isRecommended = !slot.isUrgent && slot.value === recommendedSlotValue;
             const info = parseSlotDisplay(slot);
             const costInfo = getSlotCostInfo(slot);
 
@@ -416,7 +406,7 @@ export default function CartScheduleStep({
                 type="button"
                 onClick={() => onSelectSlot(slot.value)}
                 aria-pressed={isSelected}
-                className={`w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer active:scale-[0.99] flex items-start gap-3 ${
+                className={`w-full text-left p-3.5 rounded-2xl border transition-all cursor-pointer active:scale-[0.99] flex items-center gap-3 ${
                   slot.isUrgent
                     ? isSelected
                       ? 'bg-gradient-to-br from-[#FEF3C7] via-[#FDE68A]/75 to-[#FFFBEB] border-2 border-[#D97706] ring-2 ring-[#F5BA13]/45 shadow-md'
@@ -432,7 +422,7 @@ export default function CartScheduleStep({
               >
                 {/* Ícono del bloque */}
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
                     slot.isUrgent
                       ? isSelected
                         ? 'bg-[#D97706] text-white shadow-xs'
@@ -449,99 +439,65 @@ export default function CartScheduleStep({
                   <SlotIcon className="w-4 h-4" />
                 </div>
 
-                {/* Contenido principal sin recortes */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span
-                          className={`text-xs sm:text-[13px] font-black leading-snug ${
-                            slot.isUrgent
-                              ? 'text-[#78350F]'
-                              : isFreeSlot
-                                ? 'text-emerald-950'
-                                : 'text-[#1D1D1F]'
-                          }`}
-                        >
-                          {info.title}
-                        </span>
-                        {slot.isUrgent && (
-                          <span className="text-[9.5px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#78350F] text-[#FDE68A]">
-                            Express
-                          </span>
-                        )}
-                        {isRecommended && (
-                          <span
-                            className={`text-[9.5px] font-black px-2 py-0.5 rounded-full border ${
-                              isFreeSlot
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300/80'
-                                : 'bg-[#FEF3C7] text-[#92400E] border-[#F5BA13]/50'
-                            }`}
-                          >
-                            Más rápido
-                          </span>
-                        )}
-                      </div>
-                      {info.timeRange && (
-                        <p
-                          className={`text-xs font-extrabold mt-0.5 ${
-                            isFreeSlot ? 'text-emerald-700' : 'text-[#B45309]'
-                          }`}
-                        >
-                          {info.timeRange}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Precio o Gratis + indicador de selección */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      {costInfo.isFree ? (
-                        <span className="text-[10.5px] font-black px-2.5 py-0.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
-                          GRATIS
-                        </span>
-                      ) : slot.isUrgent ? (
-                        <span className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-[#1D1D1F] text-[#F5BA13] border border-[#1D1D1F] shadow-2xs">
-                          {formatCLP(costInfo.cost)}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-black px-2 py-0.5 rounded-lg bg-[#FEF3C7]/80 text-[#78350F] border border-[#F5BA13]/40">
-                          {formatCLP(costInfo.cost)}
-                        </span>
-                      )}
-
-                      <span
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? slot.isUrgent
-                              ? 'bg-[#D97706] border-[#D97706] text-white'
-                              : isFreeSlot
-                                ? 'bg-emerald-600 border-emerald-600 text-white'
-                                : 'bg-[#1D1D1F] border-[#1D1D1F] text-[#F5BA13]'
-                            : slot.isUrgent
-                              ? 'bg-white/90 border-[#D97706]/50'
-                              : isFreeSlot
-                                ? 'bg-white border-emerald-300'
-                                : 'bg-white border-slate-300'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3 h-3 stroke-[3.5]" />}
-                      </span>
-                    </div>
-                  </div>
-
-                  {info.subtitle && (
-                    <p
-                      className={`text-[11px] font-medium leading-relaxed mt-1 ${
+                {/* Contenido principal: nombre del bloque, horario y precio/gratis */}
+                <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span
+                      className={`block text-xs sm:text-[13px] font-black leading-snug ${
                         slot.isUrgent
-                          ? 'text-[#78350F]/85'
+                          ? 'text-[#78350F]'
                           : isFreeSlot
-                            ? 'text-emerald-900/75'
-                            : 'text-slate-500'
+                            ? 'text-emerald-950'
+                            : 'text-[#1D1D1F]'
                       }`}
                     >
-                      {info.subtitle}
-                    </p>
-                  )}
+                      {info.title}
+                    </span>
+                    {info.timeRange && (
+                      <p
+                        className={`text-xs font-extrabold mt-0.5 ${
+                          isFreeSlot ? 'text-emerald-700' : 'text-[#B45309]'
+                        }`}
+                      >
+                        {info.timeRange}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Precio o Gratis + indicador de selección */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {costInfo.isFree ? (
+                      <span className="text-[10.5px] font-black px-2.5 py-0.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
+                        GRATIS
+                      </span>
+                    ) : slot.isUrgent ? (
+                      <span className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-[#1D1D1F] text-[#F5BA13] border border-[#1D1D1F] shadow-2xs">
+                        {formatCLP(costInfo.cost)}
+                      </span>
+                    ) : (
+                      <span className="text-[11px] font-black px-2 py-0.5 rounded-lg bg-[#FEF3C7]/80 text-[#78350F] border border-[#F5BA13]/40">
+                        {formatCLP(costInfo.cost)}
+                      </span>
+                    )}
+
+                    <span
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                        isSelected
+                          ? slot.isUrgent
+                            ? 'bg-[#D97706] border-[#D97706] text-white'
+                            : isFreeSlot
+                              ? 'bg-emerald-600 border-emerald-600 text-white'
+                              : 'bg-[#1D1D1F] border-[#1D1D1F] text-[#F5BA13]'
+                          : slot.isUrgent
+                            ? 'bg-white/90 border-[#D97706]/50'
+                            : isFreeSlot
+                              ? 'bg-white border-emerald-300'
+                              : 'bg-white border-slate-300'
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3 h-3 stroke-[3.5]" />}
+                    </span>
+                  </div>
                 </div>
               </button>
             );

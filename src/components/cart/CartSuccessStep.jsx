@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Clock,
   CheckCircle2,
+  Truck,
 } from 'lucide-react';
 import { COMPANY_INFO } from '../../constants';
 import { formatCLP } from '../../utils/formatters';
@@ -185,6 +186,26 @@ export default function CartSuccessStep({
               <MessageSquare className="w-4 h-4" />
               <span>Enviar Comprobante por WhatsApp</span>
             </a>
+          </div>
+        ) : paymentMethodLower.includes('al recibir') || paymentMethodLower.includes('contra entrega') ? (
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-3 text-emerald-950 animate-in fade-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-emerald-950">
+                  Pago al Recibir
+                </h4>
+                <p className="text-[11px] text-emerald-700 font-medium">
+                  Pagarás directamente al momento de recibir tu pedido en tu domicilio.
+                </p>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl bg-white border border-emerald-200/80 text-xs flex justify-between font-extrabold text-slate-800">
+              <span>Total a pagar al recibir:</span>
+              <span className="text-emerald-700 font-black text-sm">{formatCLP(completedOrder.total)}</span>
+            </div>
           </div>
         ) : completedOrder.paymentStatus === 'pendiente' ? (
           <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-950 space-y-1.5 animate-in fade-in">

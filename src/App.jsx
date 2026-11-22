@@ -701,7 +701,7 @@ export default function App() {
       {/* Global Footer - Hidden on Login, Admin dashboards, Kibory Home, Digital Catalog Express, and NFC Cards */}
       {!isLoginPage && !isKiboryHome && !isStandaloneExpress && !isAdminRoute && <Footer />}
 
-      {/* Slide-over Cart Drawer */}
+      {/* Slide-over Cart Drawer (full-screen solid view on /catalogo) */}
       <CartDrawer
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
@@ -712,6 +712,7 @@ export default function App() {
         onClearCart={() => setCartItems([])}
         onAddToCart={handleAddToCart}
         orderSourceLabel={orderSourceLabel}
+        fullScreen={isDigitalCatalog}
       />
 
       {/* Quick View Product Modal */}

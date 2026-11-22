@@ -17,6 +17,7 @@ import {
 import SEOHead from '../components/SEOHead';
 import { getCollectionPageSchema, getBreadcrumbSchema } from '../utils/schemaGenerators';
 import DigitalCatalogItemCard from '../components/catalog/DigitalCatalogItemCard';
+import CustomDropdown from '../components/CustomDropdown';
 import { WhatsAppIcon } from '../components/OfficialIcons';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase, getCachedProducts } from '../services/productsService';
@@ -81,7 +82,7 @@ export default function DigitalCatalogView({
   // Filtros sincronizados con URL (?pet=perros|gatos, ?cat=..., ?marca=..., ?q=...)
   const [petFilter, setPetFilter] = useState(() => {
     const p = (searchParams.get('pet') || '').toLowerCase();
-    return p === 'perros' || p === 'gatos' ? p : 'todos';
+    return p === 'perros' || p === 'gatos' ? p : '';
   });
   const [categoryFilter, setCategoryFilter] = useState(() => searchParams.get('cat') || 'Todas');
   const [brandFilter, setBrandFilter] = useState(() => searchParams.get('marca') || 'Todas');
@@ -90,7 +91,7 @@ export default function DigitalCatalogView({
   // Sincronizar si cambian los query params externamente
   useEffect(() => {
     const p = (searchParams.get('pet') || '').toLowerCase();
-    if (p === 'perros' || p === 'gatos') setPetFilter(p);
+    setPetFilter(p === 'perros' || p === 'gatos' ? p : '');
     const cat = searchParams.get('cat');
     if (cat) setCategoryFilter(cat);
     const marca = searchParams.get('marca');
@@ -225,11 +226,15 @@ export default function DigitalCatalogView({
     return groupProductsForStore(active);
   }, [allProducts, hiddenProducts]);
 
+  const needsPetSelection = !petFilter && !searchQuery.trim();
+
   // Productos filtrados por tipo de mascota (para derivar categorías y marcas reales)
   const petScopedProducts = useMemo(() => {
-    if (petFilter === 'todos') return visibleGroupedProducts;
+    if (!petFilter) {
+      return searchQuery.trim() ? visibleGroupedProducts : [];
+    }
     return visibleGroupedProducts.filter((p) => p.petType === petFilter);
-  }, [visibleGroupedProducts, petFilter]);
+  }, [visibleGroupedProducts, petFilter, searchQuery]);
 
   // Categorías dinámicas disponibles
   const availableCategories = useMemo(() => {
@@ -245,19 +250,38 @@ export default function DigitalCatalogView({
     return ['Todas', ...Array.from(map.values())];
   }, [petScopedProducts]);
 
-  // Marcas dinámicas disponibles (ordenadas por cantidad de productos)
-  const availableBrands = useMemo(() => {
-    const counts = new Map();
+  // Opciones dinámicas de marcas para el desplegable (orden alfabético con contador)
+  const brandDropdownOptions = useMemo(() => {
+    const byKey = new Map();
     petScopedProducts.forEach((p) => {
       const b = String(p.brand || '').trim();
       if (!b) return;
-      counts.set(b, (counts.get(b) || 0) + 1);
+      const key = normalizeText(b);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        byKey.set(key, { name: b, count: 1 });
+      }
     });
-    const sorted = Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([name]) => name);
-    return ['Todas', ...sorted];
+
+    const sorted = Array.from(byKey.values())
+      .sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }))
+      .map(({ name, count }) => ({
+        value: name,
+        label: `${name} (${count})`,
+      }));
+
+    return [{ value: 'Todas', label: 'Todas las marcas' }, ...sorted];
   }, [petScopedProducts]);
+
+  // Resolver valor seleccionado tolerando mayúsculas/minúsculas desde ?marca=
+  const resolvedBrandValue = useMemo(() => {
+    if (brandFilter === 'Todas') return 'Todas';
+    const target = normalizeText(brandFilter);
+    const match = brandDropdownOptions.find((opt) => normalizeText(opt.value) === target);
+    return match ? match.value : brandFilter;
+  }, [brandFilter, brandDropdownOptions]);
 
   // Filtrado maestro + separación de disponibles vs agotados al final
   const { inStockProducts, outOfStockProducts } = useMemo(() => {
@@ -309,7 +333,6 @@ export default function DigitalCatalogView({
 
   const totalMatches = inStockProducts.length + outOfStockProducts.length;
   const hasActiveFilters =
-    petFilter !== 'todos' ||
     categoryFilter !== 'Todas' ||
     brandFilter !== 'Todas' ||
     searchQuery.trim().length > 0;
@@ -318,7 +341,7 @@ export default function DigitalCatalogView({
   const syncUrlParams = (updates) => {
     const next = new URLSearchParams(searchParams);
     Object.entries(updates).forEach(([key, val]) => {
-      if (!val || val === 'todos' || val === 'Todas') {
+      if (!val || val === 'Todas') {
         next.delete(key);
       } else {
         next.set(key, val);
@@ -350,11 +373,10 @@ export default function DigitalCatalogView({
   };
 
   const handleResetFilters = () => {
-    setPetFilter('todos');
     setCategoryFilter('Todas');
     setBrandFilter('Todas');
     setSearchQuery('');
-    syncUrlParams({ pet: '', cat: '', marca: '', q: '' });
+    syncUrlParams({ cat: '', marca: '', q: '' });
   };
 
   // Compartir enlace del catálogo (con filtros activos si existen)
@@ -510,35 +532,9 @@ export default function DigitalCatalogView({
             </div>
           )}
 
-          {/* Fila 2: Buscador Instantáneo (16px para evitar auto-zoom en iOS WebViews) */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="search"
-              inputMode="search"
-              enterKeyHint="search"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar marca, alimento, snack o proteína..."
-              className="w-full pl-10 pr-9 py-2.5 rounded-2xl bg-white border border-[#1D1D1F]/12 focus:border-[#F5BA13] focus:ring-2 focus:ring-[#F5BA13]/25 text-[16px] sm:text-sm font-medium text-[#1D1D1F] placeholder:text-slate-400 outline-none shadow-2xs transition-all"
-              aria-label="Buscar productos en el catálogo digital"
-            />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => handleSearchChange('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
-                aria-label="Limpiar búsqueda"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Fila 3: Switch Rápido de Mascota (Todos / Perros / Gatos) */}
-          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#1D1D1F]/6">
+          {/* Fila 2: Selector Fijo de Mascota (Perros / Gatos en bloques cuadrados con bordes redondeados) */}
+          <div className="flex items-center justify-center gap-3 pt-0.5" role="group" aria-label="Seleccionar mascota">
             {[
-              { id: 'todos', label: 'Todos', emoji: '🐾' },
               { id: 'perros', label: 'Perros', emoji: '🐶' },
               { id: 'gatos', label: 'Gatos', emoji: '🐱' },
             ].map((tab) => {
@@ -547,22 +543,62 @@ export default function DigitalCatalogView({
                 <button
                   key={tab.id}
                   type="button"
+                  aria-pressed={isActive}
                   onClick={() => handlePetChange(tab.id)}
-                  className={`py-2 px-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                  className={`w-[86px] h-[86px] sm:w-[94px] sm:h-[94px] rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
                     isActive
-                      ? 'bg-[#1D1D1F] text-[#F5BA13] shadow-xs'
-                      : 'text-[#1D1D1F]/70 hover:text-[#1D1D1F]'
+                      ? 'bg-[#1D1D1F] text-[#F5BA13] border-2 border-[#1D1D1F] shadow-md shadow-[#1D1D1F]/15'
+                      : !petFilter
+                        ? 'bg-white text-[#1D1D1F] border-2 border-[#F5BA13]/75 hover:border-[#F5BA13] hover:bg-[#FEF3C7]/45 shadow-sm'
+                        : 'bg-white text-[#1D1D1F]/70 border border-[#1D1D1F]/12 hover:border-[#F5BA13] hover:text-[#1D1D1F] shadow-2xs'
                   }`}
                 >
-                  <span aria-hidden="true">{tab.emoji}</span>
-                  <span>{tab.label}</span>
+                  <span className="text-[28px] sm:text-[32px] leading-none" aria-hidden="true">
+                    {tab.emoji}
+                  </span>
+                  <span className="text-xs sm:text-[13px] font-black tracking-tight leading-none">
+                    {tab.label}
+                  </span>
                 </button>
               );
             })}
           </div>
 
+          {/* Fila 3: Buscador Instantáneo (visible una vez elegida la mascota o con búsqueda activa) */}
+          {!needsPetSelection && (
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="search"
+                inputMode="search"
+                enterKeyHint="search"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder={
+                  petFilter === 'perros'
+                    ? 'Buscar marca, alimento o snack para perros...'
+                    : petFilter === 'gatos'
+                      ? 'Buscar marca, alimento, arena o snack para gatos...'
+                      : 'Buscar marca, alimento, snack o proteína...'
+                }
+                className="w-full pl-10 pr-9 py-2.5 rounded-2xl bg-white border border-[#1D1D1F]/12 focus:border-[#F5BA13] focus:ring-2 focus:ring-[#F5BA13]/25 text-[16px] sm:text-sm font-medium text-[#1D1D1F] placeholder:text-slate-400 outline-none shadow-2xs transition-all"
+                aria-label="Buscar productos en el catálogo digital"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => handleSearchChange('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center cursor-pointer"
+                  aria-label="Limpiar búsqueda"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Fila 4: Chips deslizables de Categorías */}
-          {availableCategories.length > 2 && (
+          {!needsPetSelection && availableCategories.length > 2 && (
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
               {availableCategories.map((cat) => {
                 const isActive = categoryFilter === cat;
@@ -594,155 +630,198 @@ export default function DigitalCatalogView({
           totalCartCount > 0 ? 'pb-40' : 'pb-12'
         }`}
       >
-        {/* Fila compacta de marcas + contador de resultados */}
-        {availableBrands.length > 2 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
-            <span className="text-[10.5px] font-extrabold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1 mr-0.5">
-              <SlidersHorizontal className="w-3 h-3 text-[#D97706]" />
-              <span>Marca:</span>
-            </span>
-            {availableBrands.map((brand) => {
-              const isActive = brandFilter === brand;
-              return (
-                <button
-                  key={brand}
-                  type="button"
-                  onClick={() => handleBrandChange(brand)}
-                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold border whitespace-nowrap shrink-0 transition-all cursor-pointer active:scale-95 ${
-                    isActive
-                      ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F]'
-                      : 'bg-white/80 text-slate-600 border-[#1D1D1F]/10 hover:border-[#F5BA13]'
-                  }`}
-                >
-                  {brand}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Resumen de resultados + link limpiar filtros */}
-        <div className="flex items-center justify-between gap-2 text-[11.5px] px-0.5">
-          <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
-            <Sparkles className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-            <span>
-              <strong className="text-[#1D1D1F] font-extrabold">{inStockProducts.length}</strong>{' '}
-              {inStockProducts.length === 1 ? 'producto disponible' : 'productos disponibles'}
-              {outOfStockProducts.length > 0 && (
-                <span className="text-slate-400"> · {outOfStockProducts.length} agotados</span>
-              )}
-            </span>
-          </div>
-
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="text-[11px] font-extrabold text-[#B45309] hover:text-[#1D1D1F] underline cursor-pointer shrink-0"
-            >
-              Limpiar filtros
-            </button>
-          )}
-        </div>
-
-        {/* Estado de carga skeleton liviano */}
-        {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
-            {Array.from({ length: 6 }).map((_, idx) => (
-              <div
-                key={idx}
-                className="rounded-2xl bg-white border border-[#1D1D1F]/8 p-3 flex items-center gap-3 animate-pulse"
-              >
-                <div className="w-24 h-24 rounded-xl bg-slate-200/70 shrink-0" />
-                <div className="flex-1 space-y-2.5">
-                  <div className="h-3 w-20 bg-slate-200/70 rounded" />
-                  <div className="h-4 w-3/4 bg-slate-200/70 rounded" />
-                  <div className="h-6 w-28 bg-slate-200/70 rounded-full" />
-                  <div className="flex justify-between items-center pt-1">
-                    <div className="h-5 w-16 bg-slate-200/70 rounded" />
-                    <div className="h-9 w-24 bg-slate-200/70 rounded-xl" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : totalMatches === 0 ? (
-          /* Estado vacío amigable */
-          <div className="bg-white rounded-3xl border border-[#1D1D1F]/10 p-8 text-center space-y-3 shadow-xs">
-            <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] text-[#D97706] mx-auto flex items-center justify-center">
-              <Search className="w-6 h-6" />
+        {needsPetSelection ? (
+          /* Estado inicial: el cliente elige primero entre Perros o Gatos */
+          <section className="bg-white rounded-3xl border border-[#1D1D1F]/10 px-6 py-8 sm:py-10 text-center space-y-4 shadow-xs">
+            <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] text-[#D97706] mx-auto flex items-center justify-center text-2xl">
+              🐾
             </div>
-            <h2 className="text-base font-black text-[#1D1D1F]">
-              No encontramos productos con esos filtros
-            </h2>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-              Prueba buscando otro término o pregúntanos directo por WhatsApp si necesitas un alimento específico.
-            </p>
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="px-4 py-2.5 rounded-xl bg-[#1D1D1F] text-[#F5BA13] text-xs font-black cursor-pointer active:scale-95 transition-transform"
-              >
-                Ver todo el catálogo
-              </button>
-              <a
-                href={whatsappHelpUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#25D366] text-white text-xs font-black active:scale-95 transition-transform"
-              >
-                <WhatsAppIcon className="w-3.5 h-3.5" />
-                <span>Consultar por WhatsApp</span>
-              </a>
+            <div className="space-y-1.5">
+              <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] tracking-tight">
+                ¿Para quién buscas hoy?
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
+                Selecciona <strong className="text-[#1D1D1F]">Perros</strong> o{' '}
+                <strong className="text-[#1D1D1F]">Gatos</strong> arriba para ver el catálogo con
+                stock en vivo y despacho a domicilio.
+              </p>
             </div>
-          </div>
+            <div className="pt-1 flex flex-wrap items-center justify-center gap-2 text-[11px] font-bold text-[#78350F]">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FEF3C7]/70 border border-[#F5BA13]/40">
+                <Truck className="w-3.5 h-3.5 text-[#D97706]" />
+                <span>Envío gratis desde {formatCLP(freeShippingThreshold)}</span>
+              </span>
+            </div>
+          </section>
         ) : (
-          <div className="space-y-5">
-            {/* Lista de Productos Disponibles (1 columna en móvil, 2 en desktop) */}
-            {inStockProducts.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
-                {inStockProducts.map((product) => (
-                  <DigitalCatalogItemCard
-                    key={product.id}
-                    product={product}
-                    cartItems={cartItems}
-                    onAddToCart={onAddToCart}
-                    onUpdateQuantity={onUpdateQuantity}
-                    onRemoveItem={onRemoveItem}
-                    onSelectProduct={onSelectProduct}
+          <>
+            {/* Selector desplegable de marca */}
+            {brandDropdownOptions.length > 2 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-[#D97706]" />
+                  <span>Marca:</span>
+                </span>
+
+                <div className="flex-1 sm:flex-none sm:w-64 min-w-0">
+                  <CustomDropdown
+                    id="digital-catalog-brand-filter"
+                    value={resolvedBrandValue}
+                    options={brandDropdownOptions}
+                    onChange={(val) => handleBrandChange(val)}
+                    placeholder={brandFilter !== 'Todas' ? brandFilter : 'Todas las marcas'}
+                    usePortal
+                    buttonClassName={`w-full px-3.5 py-2 rounded-xl border text-xs font-bold transition-all ${
+                      resolvedBrandValue !== 'Todas'
+                        ? 'bg-[#FEF3C7]/70 border-[#F5BA13] shadow-2xs'
+                        : 'bg-white border-[#1D1D1F]/12 hover:border-[#F5BA13]'
+                    }`}
+                    popoverClassName="max-h-72"
                   />
+                </div>
+
+                {resolvedBrandValue !== 'Todas' && (
+                  <button
+                    type="button"
+                    onClick={() => handleBrandChange('Todas')}
+                    className="w-8 h-8 rounded-xl bg-white hover:bg-slate-100 border border-[#1D1D1F]/12 text-slate-500 hover:text-[#1D1D1F] flex items-center justify-center shrink-0 transition-colors cursor-pointer active:scale-95"
+                    title="Quitar filtro de marca"
+                    aria-label="Quitar filtro de marca"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Resumen de resultados + link limpiar filtros */}
+            <div className="flex items-center justify-between gap-2 text-[11.5px] px-0.5">
+              <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
+                <Sparkles className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                <span>
+                  <strong className="text-[#1D1D1F] font-extrabold">{inStockProducts.length}</strong>{' '}
+                  {inStockProducts.length === 1 ? 'producto disponible' : 'productos disponibles'}
+                  {outOfStockProducts.length > 0 && (
+                    <span className="text-slate-400"> · {outOfStockProducts.length} agotados</span>
+                  )}
+                </span>
+              </div>
+
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-[11px] font-extrabold text-[#B45309] hover:text-[#1D1D1F] underline cursor-pointer shrink-0"
+                >
+                  Limpiar filtros
+                </button>
+              )}
+            </div>
+
+            {/* Estado de carga skeleton liviano */}
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-2xl bg-white border border-[#1D1D1F]/8 p-3 flex items-center gap-3 animate-pulse"
+                  >
+                    <div className="w-24 h-24 rounded-xl bg-slate-200/70 shrink-0" />
+                    <div className="flex-1 space-y-2.5">
+                      <div className="h-3 w-20 bg-slate-200/70 rounded" />
+                      <div className="h-4 w-3/4 bg-slate-200/70 rounded" />
+                      <div className="h-6 w-28 bg-slate-200/70 rounded-full" />
+                      <div className="flex justify-between items-center pt-1">
+                        <div className="h-5 w-16 bg-slate-200/70 rounded" />
+                        <div className="h-9 w-24 bg-slate-200/70 rounded-xl" />
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
-            )}
-
-            {/* Productos Agotados al final con etiqueta clara */}
-            {outOfStockProducts.length > 0 && (
-              <section className="space-y-2.5 pt-1">
-                <div className="flex items-center gap-2">
-                  <div className="h-px flex-1 bg-[#1D1D1F]/10" />
-                  <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-400">
-                    Temporalmente agotados ({outOfStockProducts.length})
-                  </span>
-                  <div className="h-px flex-1 bg-[#1D1D1F]/10" />
+            ) : totalMatches === 0 ? (
+              /* Estado vacío amigable */
+              <div className="bg-white rounded-3xl border border-[#1D1D1F]/10 p-8 text-center space-y-3 shadow-xs">
+                <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] text-[#D97706] mx-auto flex items-center justify-center">
+                  <Search className="w-6 h-6" />
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
-                  {outOfStockProducts.map((product) => (
-                    <DigitalCatalogItemCard
-                      key={product.id}
-                      product={product}
-                      cartItems={cartItems}
-                      onAddToCart={onAddToCart}
-                      onUpdateQuantity={onUpdateQuantity}
-                      onRemoveItem={onRemoveItem}
-                      onSelectProduct={onSelectProduct}
-                    />
-                  ))}
+                <h2 className="text-base font-black text-[#1D1D1F]">
+                  No encontramos productos con esos filtros
+                </h2>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+                  Prueba buscando otro término o pregúntanos directo por WhatsApp si necesitas un alimento específico.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="px-4 py-2.5 rounded-xl bg-[#1D1D1F] text-[#F5BA13] text-xs font-black cursor-pointer active:scale-95 transition-transform"
+                  >
+                    {petFilter === 'perros'
+                      ? 'Ver todo para Perros'
+                      : petFilter === 'gatos'
+                        ? 'Ver todo para Gatos'
+                        : 'Limpiar filtros'}
+                  </button>
+                  <a
+                    href={whatsappHelpUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#25D366] text-white text-xs font-black active:scale-95 transition-transform"
+                  >
+                    <WhatsAppIcon className="w-3.5 h-3.5" />
+                    <span>Consultar por WhatsApp</span>
+                  </a>
                 </div>
-              </section>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* Lista de Productos Disponibles (1 columna en móvil, 2 en desktop) */}
+                {inStockProducts.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
+                    {inStockProducts.map((product) => (
+                      <DigitalCatalogItemCard
+                        key={product.id}
+                        product={product}
+                        cartItems={cartItems}
+                        onAddToCart={onAddToCart}
+                        onUpdateQuantity={onUpdateQuantity}
+                        onRemoveItem={onRemoveItem}
+                        onSelectProduct={onSelectProduct}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {/* Productos Agotados al final con etiqueta clara */}
+                {outOfStockProducts.length > 0 && (
+                  <section className="space-y-2.5 pt-1">
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-[#1D1D1F]/10" />
+                      <span className="text-[10.5px] font-black uppercase tracking-wider text-slate-400">
+                        Temporalmente agotados ({outOfStockProducts.length})
+                      </span>
+                      <div className="h-px flex-1 bg-[#1D1D1F]/10" />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
+                      {outOfStockProducts.map((product) => (
+                        <DigitalCatalogItemCard
+                          key={product.id}
+                          product={product}
+                          cartItems={cartItems}
+                          onAddToCart={onAddToCart}
+                          onUpdateQuantity={onUpdateQuantity}
+                          onRemoveItem={onRemoveItem}
+                          onSelectProduct={onSelectProduct}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
             )}
-          </div>
+          </>
         )}
 
         {/* Pie discreto con info de pago y acceso a la web completa */}

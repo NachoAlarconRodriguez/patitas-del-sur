@@ -15,17 +15,16 @@ import {
   Sparkles,
   Loader2,
   CreditCard,
-  Landmark,
   MapPin,
   MessageSquare,
   CheckCircle2,
-  Banknote,
   Globe,
   Home,
   ChevronDown,
   ChevronUp,
   Calendar,
 } from 'lucide-react';
+import { MercadoPagoIcon } from './OfficialIcons';
 import { verifyCouponInSupabase, redeemCouponInSupabase } from '../services/conveniosService';
 import {
   createOrderInSupabase,
@@ -133,18 +132,113 @@ export default function CartDrawer({
   onClearCart,
   onAddToCart,
   orderSourceLabel = '',
+  fullScreen = false,
 }) {
   const navigate = useNavigate();
 
   // Navigation step inside drawer: 'cart' | 'shipping' | 'schedule' | 'payment' | 'success'
   const [step, setStep] = useState('cart');
   const drawerScrollRef = useRef(null);
+  const stepRef = useRef(step);
+  const onCloseRef = useRef(onClose);
+  const handleCloseAndFinishRef = useRef(null);
+  const wasOpenRef = useRef(false);
+  const closedByPopStateRef = useRef(false);
+
+  stepRef.current = step;
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (drawerScrollRef.current) {
       drawerScrollRef.current.scrollTop = 0;
     }
   }, [step]);
+
+  // Bloquear scroll del fondo mientras el carrito está abierto (evita que se mueva el catálogo detrás)
+  useEffect(() => {
+    if (!isOpen || typeof document === 'undefined') return;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [isOpen]);
+
+  // Sincronizar con History API para que el botón "Atrás" del celular retroceda de paso
+  // o cierre el carrito sin sacar al usuario del catálogo hacia Instagram/WhatsApp
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (isOpen) {
+      wasOpenRef.current = true;
+      closedByPopStateRef.current = false;
+
+      if (!window.history.state?.__patitasCartOverlay) {
+        window.history.pushState(
+          { ...(window.history.state || {}), __patitasCartOverlay: true },
+          '',
+          window.location.href
+        );
+      }
+
+      const handlePopState = () => {
+        const currentStep = stepRef.current;
+        if (currentStep === 'payment') {
+          setFormError(null);
+          setStep('schedule');
+          window.history.pushState(
+            { ...(window.history.state || {}), __patitasCartOverlay: true },
+            '',
+            window.location.href
+          );
+          return;
+        }
+        if (currentStep === 'schedule') {
+          setFormError(null);
+          setStep('shipping');
+          window.history.pushState(
+            { ...(window.history.state || {}), __patitasCartOverlay: true },
+            '',
+            window.location.href
+          );
+          return;
+        }
+        if (currentStep === 'shipping') {
+          setFormError(null);
+          setStep('cart');
+          window.history.pushState(
+            { ...(window.history.state || {}), __patitasCartOverlay: true },
+            '',
+            window.location.href
+          );
+          return;
+        }
+
+        closedByPopStateRef.current = true;
+        if (currentStep === 'success' && handleCloseAndFinishRef.current) {
+          handleCloseAndFinishRef.current();
+        } else if (onCloseRef.current) {
+          onCloseRef.current();
+        }
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      if (!closedByPopStateRef.current && window.history.state?.__patitasCartOverlay) {
+        window.history.back();
+      }
+      closedByPopStateRef.current = false;
+    }
+  }, [isOpen]);
 
   // Live stock sync for cart items
   const [liveStockMap, setLiveStockMap] = useState({});
@@ -516,9 +610,8 @@ export default function CartDrawer({
     }
   }, [isOpen, step]);
   // Modalidad y Método de Pago
-  const [paymentType, setPaymentType] = useState('anticipado'); // 'anticipado' (Mercado Pago) | 'contra_entrega' (Al recibir)
-  const [paymentMethod, setPaymentMethod] = useState('tarjeta'); // 'tarjeta' (Mercado Pago) | 'transferencia_entrega' | 'efectivo' | 'pos'
-  const [cashChangeNote, setCashChangeNote] = useState(''); // Opcional: con cuánto paga en efectivo
+  const [paymentType, setPaymentType] = useState('anticipado'); // 'anticipado' (Paga Ahora · Mercado Pago) | 'contra_entrega' (Paga al Recibir)
+  const [paymentMethod, setPaymentMethod] = useState('tarjeta'); // 'tarjeta' (Mercado Pago) | 'contra_entrega' (Pago al Recibir)
   const [formError, setFormError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
 
@@ -537,9 +630,7 @@ export default function CartDrawer({
     if (type === 'anticipado') {
       setPaymentMethod('tarjeta');
     } else {
-      if (paymentMethod === 'tarjeta' || paymentMethod === 'transferencia') {
-        setPaymentMethod('transferencia_entrega');
-      }
+      setPaymentMethod('contra_entrega');
     }
   };
 
@@ -739,7 +830,7 @@ export default function CartDrawer({
     window.dispatchEvent(new Event('patitas_open_cart'));
 
     // Limpiar los parámetros de la URL para evitar reprocesamiento al recargar
-    window.history.replaceState({}, '', window.location.pathname);
+    window.history.replaceState(window.history.state || {}, '', window.location.pathname);
 
     if (isRejectedOrCanceled) {
       if (savedPendingOrder) {
@@ -1563,18 +1654,10 @@ export default function CartDrawer({
     const pointsEarned = Math.floor(total / 1000); // 1 Punto por cada $1.000 CLP gastados
     const fullAddress = depto.trim() ? `${address.trim()}, Depto/Casa ${depto.trim()}` : address.trim();
 
-    let finalPaymentMethodLabel = 'Tarjeta Débito / Crédito (Mercado Pago)';
-    if (paymentType === 'contra_entrega') {
-      if (paymentMethod === 'efectivo') {
-        finalPaymentMethodLabel = 'Efectivo (Contra Entrega)';
-      } else if (paymentMethod === 'pos') {
-        finalPaymentMethodLabel = 'Tarjeta al Recibir (POS Móvil)';
-      } else {
-        finalPaymentMethodLabel = 'Transferencia Bancaria al Recibir';
-      }
-    } else {
-      finalPaymentMethodLabel = 'Tarjeta Débito / Crédito (Mercado Pago)';
-    }
+    const finalPaymentMethodLabel =
+      paymentType === 'contra_entrega'
+        ? 'Pago al Recibir'
+        : 'Tarjeta Débito / Crédito (Mercado Pago)';
 
     let notesText = deliveryReference.trim()
       ? `Referencia: ${deliveryReference.trim()}`
@@ -1583,9 +1666,6 @@ export default function CartDrawer({
         : 'Pedido desde la web';
     if (deliveryReference.trim() && orderSourceLabel) {
       notesText += ` · Origen: ${orderSourceLabel}`;
-    }
-    if (paymentType === 'contra_entrega' && paymentMethod === 'efectivo' && cashChangeNote.trim()) {
-      notesText += ` · Pago Efectivo: ${cashChangeNote.trim()}`;
     }
 
     // El estado inicial siempre es 'pendiente'; al aprobarse en Mercado Pago pasa a 'pagado'
@@ -1850,7 +1930,6 @@ export default function CartDrawer({
         specificMethod: paymentMethod,
         paymentStatus: 'pendiente',
         mpOrderId: mpOrderResult?.mpOrderId || null,
-        cashChangeNote: cashChangeNote.trim(),
         itemsCount: cartItems.length,
         items: orderedItems,
         hasFoodItem,
@@ -1940,27 +2019,60 @@ Asunto: Pedido ${completedOrder?.id}`;
     handleResetForm();
     onClose();
   };
+  handleCloseAndFinishRef.current = handleCloseAndFinish;
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] overflow-hidden bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
+    <div
+      className={
+        fullScreen
+          ? 'fixed inset-0 z-[80] overflow-hidden bg-[#FAF8F4] animate-in fade-in duration-200'
+          : 'fixed inset-0 z-[80] overflow-hidden bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300'
+      }
+    >
+      {!fullScreen && (
+        <div
+          className="absolute inset-0"
+          onClick={step === 'success' ? handleCloseAndFinish : onClose}
+          aria-hidden="true"
+        />
+      )}
       <div
-        className="absolute inset-0"
-        onClick={step === 'success' ? handleCloseAndFinish : onClose}
-        aria-hidden="true"
-      />
-      <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10 w-full justify-end pointer-events-none">
+        className={
+          fullScreen
+            ? 'w-full h-full flex justify-center'
+            : 'absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10 w-full justify-end pointer-events-none'
+        }
+      >
         
-        {/* Drawer Panel */}
-        <div className="pointer-events-auto w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col justify-between border-l border-slate-100 h-[100dvh] max-h-[100dvh]">
+        {/* Drawer / Full-Screen Panel */}
+        <div
+          className={
+            fullScreen
+              ? 'w-full max-w-2xl bg-white sm:shadow-xl sm:border-x sm:border-[#1D1D1F]/8 flex flex-col h-full max-h-full overflow-hidden'
+              : 'pointer-events-auto w-full sm:w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-100 h-full max-h-full overflow-hidden'
+          }
+        >
           
           {/* ========================================================= */}
           {/* HEADER: Dinámico según el paso                            */}
           {/* ========================================================= */}
-          <div className="border-b border-[#1D1D1F]/8 bg-[#FAF8F4]">
+          <div className="shrink-0 border-b border-[#1D1D1F]/8 bg-[#FAF8F4]">
             <div className="p-4 sm:p-5 flex items-center justify-between">
               <div className="flex items-center gap-2">
+                {(fullScreen && step === 'cart') && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="p-1.5 rounded-xl hover:bg-[#FEF3C7] text-[#1D1D1F] transition-colors mr-1 cursor-pointer"
+                    title="Volver al catálogo"
+                    aria-label="Volver al catálogo"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                  </button>
+                )}
+
                 {(step === 'shipping' || step === 'schedule' || step === 'payment') && (
                   <button
                     type="button"
@@ -2076,26 +2188,55 @@ Asunto: Pedido ${completedOrder?.id}`;
           {step === 'cart' && (
             <>
               {/* Free Shipping Progress Bar */}
-              <div className="bg-[#F5BA13]/10 px-5 sm:px-6 py-3 border-b border-[#F5BA13]/10">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1">
-                  <span className="flex items-center gap-1">
-                    <Truck className="w-3.5 h-3.5 text-[#D97706]" />
-                    {subtotal >= freeShippingThreshold
-                      ? '¡Envío Gratis desbloqueado!'
-                      : `Te faltan ${formatCLP(freeShippingThreshold - subtotal)} para Envío Gratis`}
-                  </span>
-                  <span>{Math.round(progressToFreeShipping)}%</span>
-                </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
+              {(() => {
+                const isFreeShippingUnlocked = subtotal > 0 && subtotal >= freeShippingThreshold;
+                return (
                   <div
-                    className="h-full bg-gradient-to-r from-[#F5BA13] to-[#D97706] transition-all duration-500"
-                    style={{ width: `${progressToFreeShipping}%` }}
-                  />
-                </div>
-              </div>
+                    className={`shrink-0 px-5 sm:px-6 py-3 border-b transition-colors duration-300 ${
+                      isFreeShippingUnlocked
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-[#F5BA13]/10 border-[#F5BA13]/15'
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center justify-between text-xs font-bold mb-1.5 transition-colors duration-300 ${
+                        isFreeShippingUnlocked ? 'text-emerald-800' : 'text-slate-700'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {isFreeShippingUnlocked ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 stroke-[3] shrink-0" />
+                        ) : (
+                          <Truck className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                        )}
+                        {isFreeShippingUnlocked
+                          ? '¡Envío Gratis desbloqueado!'
+                          : `Te faltan ${formatCLP(freeShippingThreshold - subtotal)} para Envío Gratis`}
+                      </span>
+                      <span className={isFreeShippingUnlocked ? 'text-emerald-700 font-extrabold' : ''}>
+                        {Math.round(progressToFreeShipping)}%
+                      </span>
+                    </div>
+                    <div
+                      className={`w-full h-2 rounded-full overflow-hidden transition-colors duration-300 ${
+                        isFreeShippingUnlocked ? 'bg-emerald-200/70' : 'bg-slate-200'
+                      }`}
+                    >
+                      <div
+                        className={`h-full transition-all duration-500 ${
+                          isFreeShippingUnlocked
+                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-600'
+                            : 'bg-gradient-to-r from-[#F5BA13] to-[#D97706]'
+                        }`}
+                        style={{ width: `${progressToFreeShipping}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Items List */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 space-y-3">
                 {cartItems.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 space-y-3 py-12">
                     <div className="p-4 rounded-full bg-slate-100">
@@ -2375,9 +2516,9 @@ Asunto: Pedido ${completedOrder?.id}`;
                 )}
               </div>
 
-              {/* Footer Cart Summary & Next Step */}
+              {/* Footer Cart Summary & Next Step (siempre fijo abajo) */}
               {cartItems.length > 0 && (
-                <div className="p-3.5 sm:p-4 border-t border-slate-100 bg-slate-50 space-y-2.5 pb-safe">
+                <div className="shrink-0 relative z-10 p-3.5 sm:p-4 border-t border-slate-200/80 bg-slate-50 shadow-[0_-8px_20px_-12px_rgba(29,29,31,0.16)] space-y-2.5 pb-safe">
                   {/* Collapsible Coupon Section */}
                   <div className="rounded-xl border border-slate-200/90 bg-white shadow-2xs overflow-hidden transition-all duration-200">
                     {!isCouponExpanded && !appliedCoupon ? (
@@ -2570,7 +2711,7 @@ Asunto: Pedido ${completedOrder?.id}`;
           {/* PASO 1 DEL CHECKOUT: DATOS PERSONALES Y DIRECCIÓN         */}
           {/* ========================================================= */}
           {step === 'shipping' && (
-            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+            <div ref={drawerScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 flex flex-col justify-between">
               <form onSubmit={handleProceedToSchedule} className="space-y-4">
                 
                 {/* Error Banner */}
@@ -2978,7 +3119,7 @@ Asunto: Pedido ${completedOrder?.id}`;
           {/* PASO 2 DEL CHECKOUT: AGENDA DE DESPACHO (DÍA Y HORARIO)   */}
           {/* ========================================================= */}
           {step === 'schedule' && (
-            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+            <div ref={drawerScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 flex flex-col justify-between">
               <CartScheduleStep
                 address={address}
                 depto={depto}
@@ -3025,7 +3166,7 @@ Asunto: Pedido ${completedOrder?.id}`;
           {/* PASO 3 DEL CHECKOUT: MÉTODO DE PAGO Y CONFIRMACIÓN        */}
           {/* ========================================================= */}
           {step === 'payment' && (
-            <div ref={drawerScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5 flex flex-col justify-between">
+            <div ref={drawerScrollRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-5 flex flex-col justify-between">
               <form onSubmit={handleConfirmOrder} className="space-y-4 animate-in fade-in duration-200">
                 {/* Resumen compacto de entrega y agenda confirmada */}
                 <div className="p-3.5 rounded-2xl bg-[#FAF8F4] border border-[#1D1D1F]/10 space-y-2.5">
@@ -3090,31 +3231,37 @@ Asunto: Pedido ${completedOrder?.id}`;
                       <CreditCard className="w-3.5 h-3.5 text-[#D97706]" />
                       <span>3. Método de Pago</span>
                     </h3>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-[#FEF3C7] text-[#78350F] border border-[#F5BA13]/40">
-                      {paymentType === 'anticipado' ? '💳 Mercado Pago' : '🚚 Contra Entrega'}
+                    <span
+                      className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                        paymentType === 'anticipado'
+                          ? 'bg-[#009EE3]/10 text-[#007EB5] border-[#009EE3]/30'
+                          : 'bg-[#FEF3C7] text-[#78350F] border-[#F5BA13]/40'
+                      }`}
+                    >
+                      {paymentType === 'anticipado' ? '💳 Mercado Pago' : '🚚 Paga al Recibir'}
                     </span>
                   </div>
 
-                  {/* Selector previo: Modalidad de Pago (Pago Anticipado vs Pago Contra Entrega) */}
+                  {/* Selector previo: Modalidad de Pago (Paga Ahora vs Paga al Recibir) */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-600 mb-1.5">
                       ¿Cuándo y cómo deseas pagar? *
                     </label>
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Opción A: Pago Anticipado por la Web */}
+                      {/* Opción A: Paga Ahora (Mercado Pago) */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentType('anticipado')}
                         className={`p-2.5 sm:p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                           paymentType === 'anticipado'
-                            ? 'bg-white border-[#F5BA13] shadow-xs ring-2 ring-[#F5BA13]/20'
+                            ? 'bg-white border-[#009EE3] shadow-xs ring-2 ring-[#009EE3]/20'
                             : 'bg-white/60 border-slate-200 hover:bg-white text-slate-600'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <Globe className={`w-3.5 h-3.5 ${paymentType === 'anticipado' ? 'text-[#D97706]' : 'text-slate-400'}`} />
-                          <span className={`text-xs font-black ${paymentType === 'anticipado' ? 'text-slate-900' : 'text-slate-700'}`}>
-                            Pago Anticipado
+                          <Globe className={`w-3.5 h-3.5 ${paymentType === 'anticipado' ? 'text-[#009EE3]' : 'text-slate-400'}`} />
+                          <span className={`text-xs font-black ${paymentType === 'anticipado' ? 'text-[#002E6E]' : 'text-slate-700'}`}>
+                            Paga Ahora
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-medium leading-tight">
@@ -3122,7 +3269,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                         </p>
                       </button>
 
-                      {/* Opción B: Pago Contra Entrega */}
+                      {/* Opción B: Paga al Recibir */}
                       <button
                         type="button"
                         onClick={() => handleSelectPaymentType('contra_entrega')}
@@ -3135,7 +3282,7 @@ Asunto: Pedido ${completedOrder?.id}`;
                         <div className="flex items-center gap-1.5 mb-0.5">
                           <Truck className={`w-3.5 h-3.5 ${paymentType === 'contra_entrega' ? 'text-[#D97706]' : 'text-slate-400'}`} />
                           <span className={`text-xs font-black ${paymentType === 'contra_entrega' ? 'text-slate-900' : 'text-slate-700'}`}>
-                            Contra Entrega
+                            Paga al Recibir
                           </span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-medium leading-tight">
@@ -3145,182 +3292,27 @@ Asunto: Pedido ${completedOrder?.id}`;
                     </div>
                   </div>
 
-                  {/* Medios de pago disponibles según la modalidad */}
-                  <div className="space-y-2 pt-1">
-                    <label className="block text-[11px] font-bold text-slate-600">
-                      Selecciona medio de pago:
-                    </label>
-
-                    {paymentType === 'anticipado' ? (
-                      /* Opción Única Anticipada: Botón de Pago Mercado Pago (Tarjeta Débito/Crédito) */
-                      <label
-                        onClick={() => setPaymentMethod('tarjeta')}
-                        className="flex items-start gap-3 p-3.5 rounded-xl border bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13] transition-all cursor-pointer"
-                      >
-                        <input
-                          type="radio"
-                          name="payment"
-                          checked={paymentMethod === 'tarjeta'}
-                          onChange={() => setPaymentMethod('tarjeta')}
-                          className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
-                        />
+                  {/* Detalle de Mercado Pago (solo cuando se elige Paga Ahora; en Paga al Recibir no se muestran sub-opciones) */}
+                  {paymentType === 'anticipado' && (
+                    <div className="pt-1 animate-in fade-in duration-150">
+                      <div className="flex items-start gap-3 p-3.5 rounded-xl border bg-white border-[#009EE3]/45 shadow-xs ring-1 ring-[#009EE3]/20">
+                        <MercadoPagoIcon className="w-9 h-6 shrink-0 mt-0.5" />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                              <CreditCard className="w-3.5 h-3.5 text-[#D97706]" />
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-[#002E6E] flex items-center gap-1.5">
                               <span>Tarjeta Débito / Crédito</span>
                             </span>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-[#009EE3]/12 text-[#007EB5] shrink-0">
                               Mercado Pago
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-500 font-medium mt-1 leading-relaxed">
-                            Pago seguro con tarjeta de crédito o débito a través del botón oficial de Mercado Pago.
+                            Pago seguro con tarjeta de crédito o débito a través de la pasarela oficial de Mercado Pago.
                           </p>
                         </div>
-                      </label>
-                    ) : (
-                      <>
-                        {/* Opción Contra Entrega 1: Transferencia al Recibir */}
-                        <label
-                          onClick={() => setPaymentMethod('transferencia_entrega')}
-                          className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                            paymentMethod === 'transferencia_entrega'
-                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
-                              : 'bg-white/60 border-slate-200 hover:bg-white'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="payment"
-                            checked={paymentMethod === 'transferencia_entrega'}
-                            onChange={() => setPaymentMethod('transferencia_entrega')}
-                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                                <Landmark className="w-3.5 h-3.5 text-teal-600" />
-                                <span>Transferencia Bancaria al Recibir</span>
-                              </span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-800">
-                                Al Recibir
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                              Transfieres desde tu app bancaria al momento exacto en que te entregamos tu pedido.
-                            </p>
-                          </div>
-                        </label>
-
-                        {/* Opción Contra Entrega 2: Efectivo al Recibir */}
-                        <label
-                          onClick={() => setPaymentMethod('efectivo')}
-                          className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                            paymentMethod === 'efectivo'
-                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
-                              : 'bg-white/60 border-slate-200 hover:bg-white'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="payment"
-                            checked={paymentMethod === 'efectivo'}
-                            onChange={() => setPaymentMethod('efectivo')}
-                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                                <Banknote className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Efectivo al Recibir</span>
-                              </span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                                Efectivo
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                              Pagas en efectivo directamente al repartidor cuando llegue a tu domicilio.
-                            </p>
-
-                            {/* Campo opcional interactivo de vuelto */}
-                            {paymentMethod === 'efectivo' && (
-                              <div
-                                className="mt-2.5 pt-2.5 border-t border-slate-100 animate-in fade-in"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                                  ¿Con cuánto vas a pagar? (Opcional, para llevarte vuelto):
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="Ej: Pago con $20.000 / Pago exacto"
-                                  value={cashChangeNote}
-                                  onChange={(e) => setCashChangeNote(e.target.value)}
-                                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-[#F5BA13]"
-                                />
-                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setCashChangeNote('Pago con monto exacto')}
-                                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
-                                  >
-                                    Monto exacto
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setCashChangeNote('Pago con $20.000')}
-                                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
-                                  >
-                                    Con $20.000
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setCashChangeNote('Pago con $50.000')}
-                                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer"
-                                  >
-                                    Con $50.000
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </label>
-
-                        {/* Opción Contra Entrega 3: Tarjeta Débito / Crédito al Recibir (POS Móvil) */}
-                        <label
-                          onClick={() => setPaymentMethod('pos')}
-                          className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                            paymentMethod === 'pos'
-                              ? 'bg-white border-[#F5BA13] shadow-xs ring-1 ring-[#F5BA13]'
-                              : 'bg-white/60 border-slate-200 hover:bg-white'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="payment"
-                            checked={paymentMethod === 'pos'}
-                            onChange={() => setPaymentMethod('pos')}
-                            className="mt-0.5 text-[#D97706] focus:ring-[#F5BA13]"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                                <CreditCard className="w-3.5 h-3.5 text-purple-600" />
-                                <span>Tarjeta Débito / Crédito al Recibir</span>
-                              </span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
-                                Máquina POS
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                              El repartidor lleva la máquina para cobrarte con tarjeta de débito o crédito en tu puerta.
-                            </p>
-                          </div>
-                        </label>
-                      </>
-                    )}
-                  </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Resumen Total y Confirmación */}
@@ -3408,10 +3400,12 @@ Asunto: Pedido ${completedOrder?.id}`;
                   <button
                     type="submit"
                     disabled={isSubmitting || hasOutOfStockItems}
-                    className={`w-full py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-transform ${
+                    className={`w-full py-4 px-4 rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition-all ${
                       hasOutOfStockItems
                         ? 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed shadow-none opacity-90'
-                        : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 font-black active:scale-95 cursor-pointer disabled:opacity-50'
+                        : paymentType === 'anticipado'
+                          ? 'bg-[#009EE3] hover:bg-[#008AD0] text-white shadow-xl shadow-[#009EE3]/30 active:scale-95 cursor-pointer disabled:opacity-50'
+                          : 'bg-[#F5BA13] hover:bg-[#D97706] text-[#1D1D1F] hover:text-white shadow-xl shadow-[#F5BA13]/30 active:scale-95 cursor-pointer disabled:opacity-50'
                     }`}
                   >
                     {isSubmitting ? (
@@ -3430,13 +3424,14 @@ Asunto: Pedido ${completedOrder?.id}`;
                       </>
                     ) : paymentType === 'anticipado' ? (
                       <>
+                        <MercadoPagoIcon className="w-8 h-5.5 shrink-0 drop-shadow-2xs" />
                         <span>PAGAR CON MERCADO PAGO</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 shrink-0" />
                       </>
                     ) : (
                       <>
                         <span>CONFIRMAR Y FINALIZAR PEDIDO</span>
-                        <ArrowRight className="w-4 h-4" />
+                        <ArrowRight className="w-4 h-4 shrink-0" />
                       </>
                     )}
                   </button>

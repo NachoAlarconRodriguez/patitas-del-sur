@@ -79,3 +79,38 @@ export function FacebookIcon({ className = 'w-4 h-4' }) {
   );
 }
 
+/**
+ * Official Mercado Pago Handshake Emblem Icon (#009EE3 & #002E6E)
+ */
+export function MercadoPagoIcon({ className = 'w-7 h-5' }) {
+  return (
+    <svg viewBox="0 0 56 38" className={className} fill="none" aria-hidden="true">
+      {/* Óvalo oficial de Mercado Pago */}
+      <ellipse cx="28" cy="19" rx="26.5" ry="17.5" fill="#FFFFFF" stroke="#009EE3" strokeWidth="2.4" />
+      {/* Apretón de manos estilizado oficial en azul marino y celeste */}
+      <path
+        d="M11.5 19.2c2.8-2.6 6.2-5.4 10.1-6.1 2.5-.4 4.7.5 6.4 1.6 1.8-1.1 3.9-2 6.4-1.6 3.9.7 7.3 3.5 10.1 6.1"
+        stroke="#002E6E"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15.8 22.3l6.1 4.4c1.2.9 2.9.6 3.8-.5l1.2-1.4m13.3-2.5l-6.1 4.4c-1.2.9-2.9.6-3.8-.5l-4.5-4.3c-1.1-1-2.8-1.1-4-.2"
+        stroke="#009EE3"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M21.4 18.1c1.8-1.5 4.4-1.6 6.6-.3l3.9 2.5c1 .6 2.3.4 3-.5"
+        stroke="#002E6E"
+        strokeWidth="2.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+
