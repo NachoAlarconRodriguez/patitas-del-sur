@@ -111,7 +111,7 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
   // Puntos Club Patitas (1 punto por cada $1.000 CLP)
   const clubPoints = Math.max(1, Math.floor((totalPrice || 0) / 1000));
 
-  // Ingredientes destacados para las píldoras flotantes (máx. 3)
+  // Primer ingrediente destacado para la píldora flotante (solo 1 etiqueta)
   const topIngredients = React.useMemo(() => {
     const variantIngredients =
       isFlavorFamily && Array.isArray(displayVariant?.ingredients) && displayVariant.ingredients.length > 0
@@ -119,16 +119,16 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
         : null;
     const sourceIngredients = variantIngredients || product.ingredients;
     if (Array.isArray(sourceIngredients) && sourceIngredients.length > 0) {
-      return sourceIngredients
-        .slice(0, 3)
+      const firstIngredient = sourceIngredients
         .map((ing) => String(ing).replace(/\s*\(.*?\)\s*/g, '').trim())
-        .filter(Boolean);
+        .find(Boolean);
+      if (firstIngredient) return [firstIngredient];
     }
     const resolvedMainProtein = (isFlavorFamily && displayVariant?.mainProtein) || product.mainProtein;
     if (resolvedMainProtein) {
-      return [resolvedMainProtein, isGrainFree ? '100% Grain Free' : 'Receta Natural'];
+      return [resolvedMainProtein];
     }
-    return isGrainFree ? ['Proteína Animal', 'Libre de Granos'] : ['Nutrición Completa'];
+    return [isGrainFree ? 'Proteína Animal' : 'Nutrición Completa'];
   }, [isFlavorFamily, displayVariant?.ingredients, displayVariant?.mainProtein, product.ingredients, product.mainProtein, isGrainFree]);
 
   // 3D Physical Perspective Tilt (60fps via CSS variables)
