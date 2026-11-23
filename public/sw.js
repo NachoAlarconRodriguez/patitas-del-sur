@@ -1,5 +1,5 @@
 // Service Worker for Patitas del Sur Admin PWA
-const CACHE_NAME = 'patitas-pwa-v9';
+const CACHE_NAME = 'patitas-pwa-v10';
 const STATIC_ASSETS = [
   '/index.html',
   '/manifest.webmanifest',
@@ -78,9 +78,9 @@ self.addEventListener('fetch', (event) => {
             !url.pathname.startsWith('/api')
           ) {
             const contentType = networkResponse.headers.get('content-type') || '';
-            // Evitar envenenar caché guardando HTML bajo una URL de chunk JS/CSS
-            const isJsOrCssPath = /\.(js|mjs|css)(\?|$)/i.test(url.pathname);
-            if (!(isJsOrCssPath && contentType.includes('text/html'))) {
+            // Evitar envenenar caché guardando HTML bajo una URL de chunk JS/CSS o imagen/fuente
+            const isStaticAssetPath = /\.(js|mjs|css|webp|png|jpe?g|svg|gif|ico|woff2?)(\?|$)/i.test(url.pathname);
+            if (!(isStaticAssetPath && contentType.includes('text/html'))) {
               const responseToCache = networkResponse.clone();
               caches.open(CACHE_NAME).then((cache) => {
                 cache.put(event.request, responseToCache);
