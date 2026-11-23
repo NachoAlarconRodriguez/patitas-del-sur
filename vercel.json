@@ -45,6 +45,6 @@
       ],
       "destination": "/api/og?path=/$1"
     },
-    { "source": "/((?!api/|assets/).*)", "destination": "/_spa.html" }
+    { "source": "/((?!api/|assets/).*)", "destination": "/_spa" }
   ]
 }
