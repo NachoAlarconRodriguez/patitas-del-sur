@@ -1086,84 +1086,157 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                 <ProductIngredientsBowl product={displayProduct} embedded={true} />
 
                 {/* 2. Análisis Nutricional Garantizado + Lista Completa de Ingredientes */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <div
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch text-[#1D1D1F]"
+                  style={{ fontFamily: 'var(--font-ui)' }}
+                >
                   {/* Left/Top: Guaranteed Analysis Table */}
-                  <div className="lg:col-span-6 space-y-3 p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                        Análisis Nutricional Garantizado:
-                      </h3>
+                  <div className="lg:col-span-6 flex flex-col gap-4 p-5 sm:p-6 rounded-[24px] bg-[#FAF8F4] border border-[#1D1D1F]/[0.08] shadow-[0_16px_40px_-24px_rgba(29,29,31,0.08)]">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-white border border-[#1D1D1F]/[0.1] shadow-[0_6px_16px_-10px_rgba(29,29,31,0.22)] text-[12px] font-semibold text-[#1D1D1F] whitespace-nowrap shrink-0">
+                          <span className="w-2 h-2 rounded-full bg-[#F5BA13] shrink-0" />
+                          Análisis nutricional
+                        </span>
+                        <h3
+                          className="text-[17px] sm:text-[19px] font-bold tracking-[-0.025em] text-[#1D1D1F] leading-tight"
+                          style={{ fontFamily: 'var(--font-display)' }}
+                        >
+                          Valores garantizados
+                        </h3>
+                      </div>
                     </div>
 
                     {/* 4 Métricas Principales destacadas */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {primaryGuaranteed.map((item) => (
-                        <div
-                          key={item.label}
-                          className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-center shadow-2xs"
-                        >
-                          <div className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-tight">
-                            {item.value}
+                      {primaryGuaranteed.map((item, idx) => {
+                        const rawVal = String(item.value ?? '').trim();
+                        const parsed = rawVal.match(/^(\d+(?:[.,]\d+)?\s*%)\s*(.+)$/);
+                        const mainVal = parsed ? parsed[1].replace(/\s+%/, '%') : rawVal;
+                        const qualifier = parsed ? parsed[2].trim() : '';
+                        const isLead = idx === 0;
+
+                        return (
+                          <div
+                            key={item.label}
+                            className={`flex flex-col items-center justify-center px-2.5 py-3 rounded-2xl bg-white border text-center transition-colors ${
+                              isLead
+                                ? 'border-[#D97706]/30 shadow-[0_10px_24px_-16px_rgba(217,119,6,0.35)]'
+                                : 'border-[#1D1D1F]/[0.08] shadow-[0_8px_20px_-16px_rgba(29,29,31,0.18)]'
+                            }`}
+                          >
+                            <div className="flex items-baseline justify-center gap-1 max-w-full flex-wrap">
+                              <span
+                                className={`text-[21px] xl:text-[25px] font-bold tracking-[-0.03em] leading-none ${
+                                  isLead ? 'text-[#B45309]' : 'text-[#1D1D1F]'
+                                }`}
+                                style={{ fontFamily: 'var(--font-display)' }}
+                              >
+                                {mainVal}
+                              </span>
+                              {qualifier && (
+                                <span className="text-[11px] font-semibold text-[#1D1D1F]/55 leading-none">
+                                  {qualifier}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`mt-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10.5px] xl:text-[11px] font-semibold leading-tight max-w-full ${
+                                isLead
+                                  ? 'bg-[#D97706] text-white'
+                                  : 'bg-[#1D1D1F]/[0.055] text-[#1D1D1F]/75'
+                              }`}
+                            >
+                              {item.label}
+                            </span>
                           </div>
-                          <div className="text-[10px] sm:text-[11px] font-black text-slate-700 uppercase tracking-wider mt-1">
-                            {item.label}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
-                    {/* Otros Componentes / Micronutrientes en formato más pequeño */}
-                    {secondaryGuaranteed.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-slate-200/70">
-                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Otros Componentes Garantizados:
+                    {/* Otros Componentes / Micronutrientes sin cortes ni desbordes */}
+                    {secondaryGuaranteed.length > 0 && (() => {
+                      const compactItems = secondaryGuaranteed.filter(
+                        (it) => String(it.value ?? '').trim().length <= 16
+                      );
+                      const wideItems = secondaryGuaranteed.filter(
+                        (it) => String(it.value ?? '').trim().length > 16
+                      );
+                      const orderedSecondary = [...compactItems, ...wideItems];
+
+                      return (
+                        <div className="space-y-2.5 pt-3 border-t border-[#1D1D1F]/[0.08]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[12px] font-semibold text-[#1D1D1F]/65">
+                              Otros componentes garantizados
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {orderedSecondary.map((item) => {
+                              const valStr = String(item.value ?? '').trim();
+                              const isWide = valStr.length > 16;
+
+                              return (
+                                <div
+                                  key={item.label}
+                                  className={`flex items-center justify-between gap-2.5 px-3.5 py-2.5 rounded-2xl bg-white/90 border border-[#1D1D1F]/[0.08] hover:border-[#D97706]/25 hover:bg-white transition-colors ${
+                                    isWide ? 'sm:col-span-2 flex-wrap gap-y-1' : ''
+                                  }`}
+                                >
+                                  <span className="text-[12px] font-medium text-[#1D1D1F]/70 leading-snug min-w-0 break-words">
+                                    {item.label}
+                                  </span>
+                                  <span
+                                    className="px-2.5 py-0.5 rounded-full bg-[#FAF8F4] border border-[#1D1D1F]/[0.07] text-[12.5px] font-bold text-[#1D1D1F] tracking-[-0.015em] shrink-0 max-w-full break-words text-right"
+                                    style={{ fontFamily: 'var(--font-display)' }}
+                                  >
+                                    {valStr}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-                          {secondaryGuaranteed.map((item) => (
-                            <div
-                              key={item.label}
-                              className="p-2 rounded-xl bg-white border border-slate-200/70 text-center hover:bg-slate-100/60 transition-colors"
-                            >
-                              <div className="text-xs sm:text-sm font-black text-slate-800 font-mono">
-                                {item.value}
-                              </div>
-                              <div
-                                className="text-[9px] font-bold text-slate-500 uppercase tracking-tight truncate mt-0.5"
-                                title={item.label}
-                              >
-                                {item.label}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
 
                   {/* Right/Bottom: Ingredientes en texto fluido continuo con Top 5 destacados */}
-                  <div className="lg:col-span-6 space-y-2.5 p-5 rounded-2xl bg-slate-50/70 border border-slate-200/80">
+                  <div className="lg:col-span-6 flex flex-col gap-4 p-5 sm:p-6 rounded-[24px] bg-[#FAF8F4] border border-[#1D1D1F]/[0.08] shadow-[0_16px_40px_-24px_rgba(29,29,31,0.08)]">
                     <div className="flex items-center justify-between flex-wrap gap-2">
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
-                        Composición Completa de la Receta:
-                      </h3>
+                      <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                        <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-white border border-[#1D1D1F]/[0.1] shadow-[0_6px_16px_-10px_rgba(29,29,31,0.22)] text-[12px] font-semibold text-[#1D1D1F] whitespace-nowrap shrink-0">
+                          <span className="w-2 h-2 rounded-full bg-[#D97706] shrink-0" />
+                          Etiqueta completa
+                        </span>
+                        <h3
+                          className="text-[17px] sm:text-[19px] font-bold tracking-[-0.025em] text-[#1D1D1F] leading-tight"
+                          style={{ fontFamily: 'var(--font-display)' }}
+                        >
+                          Composición de la receta
+                        </h3>
+                      </div>
                       {ingredientList.length > 5 && (
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                          <span className="inline-block w-2 h-2 rounded-full bg-[#D97706] mr-1 align-middle"></span>
+                        <span className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-[#D97706]/10 text-[#B45309] text-[11px] font-bold whitespace-nowrap">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#D97706]" />
                           Primeros 5 destacados
                         </span>
                       )}
                     </div>
 
                     {ingredientList.length > 0 ? (
-                      <div className="p-3.5 sm:p-4 rounded-xl bg-white border border-slate-200/80 text-xs sm:text-[13px] leading-relaxed">
-                        <p className="text-slate-600">
+                      <div className="flex-1 flex flex-col justify-between p-4 sm:p-5 rounded-2xl bg-white border border-[#1D1D1F]/[0.08] shadow-[0_8px_20px_-16px_rgba(29,29,31,0.16)] text-[13px] leading-[1.65]">
+                        <p className="text-[#1D1D1F]/70 break-words">
                           {ingredientList.map((name, idx) => {
                             const isTop5 = idx < 5;
                             const isLast = idx === ingredientList.length - 1;
                             return (
                               <React.Fragment key={idx}>
                                 {isTop5 ? (
-                                  <strong className="font-extrabold text-slate-900">
+                                  <strong
+                                    className="font-bold text-[#1D1D1F]"
+                                    style={{ fontFamily: 'var(--font-display)' }}
+                                  >
                                     {name}
                                   </strong>
                                 ) : (
@@ -1175,8 +1248,8 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                           })}
                         </p>
                         {ingredientList.length >= 5 && (
-                          <div className="mt-2.5 pt-2 border-t border-slate-200/60 text-[10px] sm:text-[11px] text-slate-400 italic flex items-center gap-1.5">
-                            <Sparkles className="w-3 h-3 text-[#D97706] shrink-0" />
+                          <div className="mt-3.5 pt-3 border-t border-[#1D1D1F]/[0.08] text-[11.5px] text-[#1D1D1F]/55 flex items-center gap-2">
+                            <Sparkles className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
                             <span>
                               Los primeros 5 ingredientes en negrita constituyen la base principal de mayor concentración del alimento.
                             </span>
@@ -1184,7 +1257,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                         )}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-400 italic">
+                      <p className="text-[12.5px] text-[#1D1D1F]/55 italic">
                         Ingredientes 100% naturales. Información nutricional detallada en proceso de actualización en ficha técnica.
                       </p>
                     )}
