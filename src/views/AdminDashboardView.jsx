@@ -8951,7 +8951,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <MapPin className="w-3 h-3 text-[#D97706] shrink-0" />
                                 <span>{order.city}</span>
                               </div>
-                              {(() => {
+                              {order.status !== 'entregado' && order.status !== 'cancelado' && (() => {
                                 const sched = formatOrderScheduleSummary(order);
                                 return (
                                   <div

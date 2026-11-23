@@ -1021,7 +1021,8 @@ export function MobilePwaRepartoView({
               (order.status === 'en_camino' || order.status === 'en_preparacion') &&
               order.stopNumber;
             const payStatus = getOrderPaymentStatus(order);
-            const sched = formatOrderScheduleSummary(order);
+            const showDeliverySchedule = order.status !== 'entregado' && order.status !== 'cancelado';
+            const sched = showDeliverySchedule ? formatOrderScheduleSummary(order) : null;
             const phoneDigits = getOrderCustomerPhoneDigits(order);
             const deliveryNote = getDisplayDeliveryNote(order.notes);
 
@@ -1162,32 +1163,34 @@ export function MobilePwaRepartoView({
                     </div>
                   </div>
 
-                  {/* Agenda de Despacho */}
-                  <div
-                    className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold border ${
-                      sched.isUrgent
-                        ? 'bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FDE68A]/50 border-[#D97706]/45 text-[#78350F]'
-                        : 'bg-[#FAF8F4] border-[#1D1D1F]/10 text-[#1D1D1F]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0 truncate">
-                      {sched.isUrgent ? (
-                        <Zap className="w-3.5 h-3.5 text-[#D97706] shrink-0 fill-current" />
-                      ) : (
-                        <Calendar className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-                      )}
-                      <span className="truncate">{sched.dateShort}</span>
-                    </span>
-                    <span
-                      className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                  {/* Agenda de Despacho (oculta en pedidos entregados o cancelados) */}
+                  {showDeliverySchedule && sched && (
+                    <div
+                      className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold border ${
                         sched.isUrgent
-                          ? 'bg-[#78350F] text-[#FDE68A]'
-                          : 'bg-white text-[#B45309] border border-[#F5BA13]/45'
+                          ? 'bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FDE68A]/50 border-[#D97706]/45 text-[#78350F]'
+                          : 'bg-[#FAF8F4] border-[#1D1D1F]/10 text-[#1D1D1F]'
                       }`}
                     >
-                      {sched.shortSlot}
-                    </span>
-                  </div>
+                      <span className="flex items-center gap-1.5 min-w-0 truncate">
+                        {sched.isUrgent ? (
+                          <Zap className="w-3.5 h-3.5 text-[#D97706] shrink-0 fill-current" />
+                        ) : (
+                          <Calendar className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
+                        )}
+                        <span className="truncate">{sched.dateShort}</span>
+                      </span>
+                      <span
+                        className={`text-[10.5px] font-extrabold px-2 py-0.5 rounded-full shrink-0 ${
+                          sched.isUrgent
+                            ? 'bg-[#78350F] text-[#FDE68A]'
+                            : 'bg-white text-[#B45309] border border-[#F5BA13]/45'
+                        }`}
+                      >
+                        {sched.shortSlot}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Resumen compacto cuando está contraída */}
                   {isCollapsed && (
