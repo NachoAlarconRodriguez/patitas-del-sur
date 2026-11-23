@@ -302,6 +302,21 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
         }));
       }
 
+      if (customFeedingGuide.type === 'cat_all_stages') {
+        const stageRows =
+          selectedLifeStage === 'cachorro' && Array.isArray(customFeedingGuide.kittenRows)
+            ? customFeedingGuide.kittenRows
+            : Array.isArray(customFeedingGuide.adultRows)
+            ? customFeedingGuide.adultRows
+            : customFeedingGuide.rows;
+        return stageRows.map((row, idx) => ({
+          ...row,
+          id: row.id || `custom-stage-${idx + 1}`,
+          maint: row.maint || '—',
+          hasDirectConditionValue: true,
+        }));
+      }
+
       const conditionKey =
         selectedLifeStage && ['intact', 'neutered', 'overweight'].includes(selectedLifeStage)
           ? selectedLifeStage
