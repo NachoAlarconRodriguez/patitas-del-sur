@@ -8,12 +8,14 @@ import {
 import { updateCustomerPoints } from './customersService.js';
 import { resolveInventoryVariant } from '../utils/productVariants.js';
 import {
+  formatCLP,
   getProductUnitCostWithIva,
   getOrderPaymentBreakdown,
   calculateOrderPaymentFeeBreakdown,
   getChileIsoDateFromRecord,
   getYearMonthFromDate,
 } from '../views/admin/adminUtils.js';
+import { createAdminNotification } from './adminNotificationsService.js';
 
 /**
  * Servicio completo del Terminal POS (Punto de Venta Físico)
@@ -262,6 +264,17 @@ export async function openPosCashRegister({ openingCash = 0, partner, notes = ''
         const localShift = { ...shiftPayload, id: `SHIFT-${Date.now()}`, created_at: nowIso };
         writeLocalList(LS_REGISTERS_KEY, [localReg, ...readLocalList(LS_REGISTERS_KEY)]);
         writeLocalList(LS_SHIFTS_KEY, [localShift, ...readLocalList(LS_SHIFTS_KEY)]);
+        createAdminNotification({
+          category: 'pos',
+          severity: 'info',
+          title: 'Caja POS diaria abierta',
+          message: `${resolvedPartner.name} abrió la caja ${registerId} con fondo inicial de ${formatCLP(registerPayload.opening_cash)}.`,
+          entityType: 'pos_register',
+          entityId: registerId,
+          actorName: resolvedPartner.name,
+          actorEmail: resolvedPartner.email,
+          metadata: { registerId, openingCash: registerPayload.opening_cash },
+        }).catch(() => {});
         return { success: true, register: localReg, shift: localShift, migrationPending: true };
       }
       throw regErr;
@@ -274,6 +287,18 @@ export async function openPosCashRegister({ openingCash = 0, partner, notes = ''
       .single();
 
     if (shiftErr) throw shiftErr;
+
+    createAdminNotification({
+      category: 'pos',
+      severity: 'info',
+      title: 'Caja POS diaria abierta',
+      message: `${resolvedPartner.name} abrió la caja ${registerId} con fondo inicial de ${formatCLP(registerPayload.opening_cash)}.`,
+      entityType: 'pos_register',
+      entityId: registerId,
+      actorName: resolvedPartner.name,
+      actorEmail: resolvedPartner.email,
+      metadata: { registerId, openingCash: registerPayload.opening_cash },
+    }).catch(() => {});
 
     return { success: true, register: regData, shift: shiftData, migrationPending: false };
   } catch (err) {
@@ -465,11 +490,33 @@ export async function closePosCashRegister({
       .select()
       .single();
 
+    const diffText =
+      cashDifference === 0
+        ? 'Caja cuadrada ($0 diferencia).'
+        : cashDifference > 0
+        ? `Sobrante de efectivo: +${formatCLP(cashDifference)}.`
+        : `Faltante de efectivo: -${formatCLP(Math.abs(cashDifference))}.`;
+
+    const notifyClose = () => {
+      createAdminNotification({
+        category: 'pos',
+        severity: cashDifference !== 0 ? 'warning' : 'success',
+        title: `Cierre de caja ${register.id}`,
+        message: `${partner.name} cerró la caja (${rec.salesCount} ventas · ${formatCLP(rec.totalSales)}). ${diffText}`,
+        entityType: 'pos_register',
+        entityId: register.id,
+        actorName: partner.name,
+        actorEmail: partner.email,
+        metadata: { registerId: register.id, totalSales: rec.totalSales, cashDifference },
+      }).catch(() => {});
+    };
+
     if (error) {
       if (isTableMissingError(error)) {
         const list = readLocalList(LS_REGISTERS_KEY);
         const updated = list.map((r) => (r.id === register.id ? { ...r, ...updatePayload } : r));
         writeLocalList(LS_REGISTERS_KEY, updated);
+        notifyClose();
         return {
           success: true,
           register: { ...register, ...updatePayload },
@@ -480,6 +527,7 @@ export async function closePosCashRegister({
       throw error;
     }
 
+    notifyClose();
     return { success: true, register: data, reconciliation: rec, migrationPending: false };
   } catch (err) {
     console.error('Error closing POS cash register:', err);
@@ -560,15 +608,33 @@ export async function switchPosWorkShift({ registerId, currentShift, nextPartner
       .select()
       .single();
 
+    const notifyShift = () => {
+      createAdminNotification({
+        category: 'pos',
+        severity: 'info',
+        title: `Relevo de turno POS: ${nextPartner.shortName}`,
+        message: currentShift
+          ? `${currentShift.partner_name} entregó el turno a ${nextPartner.name}.`
+          : `${nextPartner.name} inició turno en el Terminal POS.`,
+        entityType: 'pos_register',
+        entityId: registerId || 'pos',
+        actorName: nextPartner.name,
+        actorEmail: nextPartner.email,
+        metadata: { registerId, fromPartner: currentShift?.partner_name || null, toPartner: nextPartner.name },
+      }).catch(() => {});
+    };
+
     if (error) {
       if (isTableMissingError(error)) {
         const localShift = { ...newShiftPayload, id: `SHIFT-${Date.now()}`, created_at: nowIso };
         writeLocalList(LS_SHIFTS_KEY, [localShift, ...readLocalList(LS_SHIFTS_KEY)]);
+        notifyShift();
         return { success: true, shift: localShift, migrationPending: true };
       }
       throw error;
     }
 
+    notifyShift();
     return { success: true, shift: data, migrationPending: false };
   } catch (err) {
     console.error('Error switching POS work shift:', err);
@@ -842,13 +908,32 @@ export async function completePosSale({
 
   const previousPoints = Number(customer?.points || 0);
   const newCustomerPoints = customer?.id ? Math.max(0, previousPoints - pointsSpentNow + earnedPoints) : 0;
+  const saleOrderId = orderRes.order?.id;
+  const saleCustomerName = customer?.full_name || customer?.name || 'Cliente de Paso (POS)';
+
+  createAdminNotification({
+    category: 'order',
+    severity: 'success',
+    title: `Nueva venta POS ${saleOrderId || ''}`.trim(),
+    message: `${saleCustomerName} · ${formatCLP(finalTotal)} (${paymentMethodLabel}) · Atendió ${partner.shortName}.`,
+    entityType: 'order',
+    entityId: saleOrderId || null,
+    actorName: partner.name,
+    actorEmail: partner.email,
+    metadata: {
+      orderId: saleOrderId,
+      total: finalTotal,
+      paymentMethod: paymentMethodLabel,
+      channel: 'pos',
+    },
+  }).catch(() => {});
 
   return {
     success: true,
     order: {
       ...orderRes.order,
-      id: orderRes.order?.id,
-      invoiceNumber: orderRes.order?.invoice_number || orderRes.order?.id,
+      id: saleOrderId,
+      invoiceNumber: orderRes.order?.invoice_number || saleOrderId,
       subtotal,
       discount: totalDiscount,
       total: finalTotal,
@@ -858,7 +943,7 @@ export async function completePosSale({
       cashChange,
       soldByName: partner.name,
       soldByEmail: partner.email,
-      customerName: customer?.full_name || customer?.name || 'Cliente de Paso (POS)',
+      customerName: saleCustomerName,
       customerPhone: customer?.phone || '',
       pointsEarned: earnedPoints,
       pointsSpent: pointsSpentNow,

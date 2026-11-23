@@ -125,6 +125,15 @@ import {
   unsubscribeAdminFromWebPush,
   playNewOrderAlertFeedback,
 } from '../services/pushNotificationsService.js';
+import AdminNotificationCenter from './admin/components/AdminNotificationCenter.jsx';
+import {
+  fetchAdminNotifications,
+  createAdminNotification,
+  markAdminNotificationRead,
+  markAllAdminNotificationsRead,
+  buildLiveSystemAlerts,
+  getReadLiveAlertKeys,
+} from '../services/adminNotificationsService.js';
 import { WhatsAppIcon, GoogleMapsIcon } from '../components/OfficialIcons';
 import {
   fetchProductsFromSupabase,
@@ -248,6 +257,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     return Boolean(user && user.role === 'admin' && user.auth_user_id);
   });
   const [adminEmail, setAdminEmail] = useState('');
+  const currentAdminEmail =
+    user?.email ||
+    adminEmail ||
+    (currentAdminName.toLowerCase().includes('alamiro')
+      ? 'alamirohuertac@hotmail.com'
+      : 'ialarconr.684@gmail.com');
   const [adminPassword, setAdminPassword] = useState('');
   const [authError, setAuthError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -800,6 +815,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           showToast(
             `🐾 Nuevo pedido web ${newRow.id} · ${newRow.customer_name || 'Cliente'} (${formatCLP(Number(newRow.total) || 0)})`
           );
+          createAdminNotification({
+            category: 'order',
+            severity: 'info',
+            title: `Nuevo pedido web ${newRow.id}`,
+            message: `${newRow.customer_name || 'Cliente'} · ${formatCLP(Number(newRow.total) || 0)} (${newRow.payment_method || 'Web'}).`,
+            entityType: 'order',
+            entityId: newRow.id,
+            actorName: 'Tienda Web',
+            metadata: {
+              orderId: newRow.id,
+              total: Number(newRow.total) || 0,
+              paymentMethod: newRow.payment_method || 'Web',
+              channel: 'web',
+            },
+          }).catch(() => {});
         }
       )
       .on(
@@ -811,10 +841,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           syncOrdersData();
           if (!updatedRow || updatedRow.channel === 'manual' || updatedRow.channel === 'pos') return;
 
-          const isNowPaid = String(updatedRow.payment_status || '').toLowerCase() === 'pagado';
+          const nextPayStatus = String(updatedRow.payment_status || '').toLowerCase();
+          const prevPayStatus = String(previousRow?.payment_status || '').toLowerCase();
+          const isNowPaid = nextPayStatus === 'pagado';
           const wasKnownPaid =
-            paidOrderIdsRef.current.has(updatedRow.id) ||
-            String(previousRow?.payment_status || '').toLowerCase() === 'pagado';
+            paidOrderIdsRef.current.has(updatedRow.id) || prevPayStatus === 'pagado';
 
           if (isNowPaid && !wasKnownPaid) {
             paidOrderIdsRef.current.add(updatedRow.id);
@@ -822,6 +853,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             showToast(
               `✅ Pago confirmado en ${updatedRow.id} · ${updatedRow.customer_name || 'Cliente'} (${formatCLP(Number(updatedRow.total) || 0)})`
             );
+            createAdminNotification({
+              category: 'payment',
+              severity: 'success',
+              title: `Pago confirmado en ${updatedRow.id}`,
+              message: `${updatedRow.customer_name || 'Cliente'} · ${formatCLP(Number(updatedRow.total) || 0)} aprobado (${updatedRow.payment_method || 'Web'}).`,
+              entityType: 'order',
+              entityId: updatedRow.id,
+              actorName: 'Mercado Pago / Web',
+              metadata: { orderId: updatedRow.id, total: Number(updatedRow.total) || 0 },
+            }).catch(() => {});
+          } else if (
+            ['rechazado', 'rejected', 'failed'].includes(nextPayStatus) &&
+            !['rechazado', 'rejected', 'failed'].includes(prevPayStatus)
+          ) {
+            createAdminNotification({
+              category: 'payment',
+              severity: 'critical',
+              title: `Pago rechazado en ${updatedRow.id}`,
+              message: `${updatedRow.customer_name || 'Cliente'} · ${formatCLP(Number(updatedRow.total) || 0)} fue rechazado en el checkout.`,
+              entityType: 'order',
+              entityId: updatedRow.id,
+              actorName: 'Mercado Pago / Web',
+              metadata: { orderId: updatedRow.id, total: Number(updatedRow.total) || 0 },
+            }).catch(() => {});
           }
         }
       )
@@ -1295,6 +1350,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       window.dispatchEvent(new Event('patitas_orders_updated'));
       window.dispatchEvent(new Event('patitas_customers_updated'));
       showToast(`Estado de pago actualizado a ${newPaymentStatus === 'pagado' ? 'Pagado' : 'Pendiente'} en Pedido ${orderId}`);
+
+      createAdminNotification({
+        category: 'payment',
+        severity: isNowPaid ? 'success' : 'warning',
+        title: isNowPaid ? `Pago registrado en ${orderId}` : `Pago revertido a pendiente en ${orderId}`,
+        message: `${targetOrder?.customer || 'Cliente'} · ${formatCLP(Number(targetOrder?.total) || 0)} (${targetOrder?.paymentMethod || 'Manual'}) actualizado por ${currentAdminName}.`,
+        entityType: 'order',
+        entityId: orderId,
+        actorName: currentAdminName,
+        metadata: { orderId, paymentStatus: newPaymentStatus },
+      }).catch(() => {});
     } catch (err) {
       console.error('Error updating order payment status in Supabase:', err);
       setOrders((prev) =>
@@ -1543,6 +1609,159 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [selectedOrderModal]);
+
+  // =========================================================================
+  // CENTRO DE NOTIFICACIONES EN VIVO (PERSISTENTE + ALERTAS DINÁMICAS)
+  // =========================================================================
+  const [adminNotifications, setAdminNotifications] = useState([]);
+  const [notificationsMigrationPending, setNotificationsMigrationPending] = useState(false);
+  const [readLiveAlertKeys, setReadLiveAlertKeys] = useState(() =>
+    getReadLiveAlertKeys(currentAdminEmail)
+  );
+
+  useEffect(() => {
+    setReadLiveAlertKeys(getReadLiveAlertKeys(currentAdminEmail));
+  }, [currentAdminEmail]);
+
+  const syncAdminNotifications = useCallback(async () => {
+    const res = await fetchAdminNotifications(60);
+    setAdminNotifications(res.notifications || []);
+    setNotificationsMigrationPending(Boolean(res.migrationPending));
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminAuthenticated) return;
+    syncAdminNotifications();
+
+    const handleLocalUpdate = () => {
+      syncAdminNotifications();
+    };
+    window.addEventListener('patitas_admin_notifications_updated', handleLocalUpdate);
+
+    const notifChannel = supabase
+      .channel('admin-notifications-realtime')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'admin_notifications' },
+        (payload) => {
+          const row = payload?.new;
+          if (!row?.id) return;
+          setAdminNotifications((prev) => [row, ...prev.filter((n) => n.id !== row.id)].slice(0, 60));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'admin_notifications' },
+        (payload) => {
+          const row = payload?.new;
+          if (!row?.id) return;
+          setAdminNotifications((prev) => prev.map((n) => (n.id === row.id ? row : n)));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('patitas_admin_notifications_updated', handleLocalUpdate);
+      supabase.removeChannel(notifChannel);
+    };
+  }, [isAdminAuthenticated, syncAdminNotifications]);
+
+  const liveSystemAlerts = useMemo(
+    () => buildLiveSystemAlerts({ inventory, orders, posRegisters }),
+    [inventory, orders, posRegisters]
+  );
+
+  const handleMarkOneNotificationRead = useCallback(
+    async (item) => {
+      if (!item) return;
+      const emailKey = String(currentAdminEmail || 'admin@patitasdelsur.cl').trim().toLowerCase();
+      if (item.isLiveAlert) {
+        const key = item.liveKey || item.id;
+        setReadLiveAlertKeys((prev) => {
+          const next = new Set(prev);
+          next.add(key);
+          return next;
+        });
+      } else {
+        setAdminNotifications((prev) =>
+          prev.map((n) => {
+            if (n.id !== item.id) return n;
+            const existing = Array.isArray(n.read_by_emails) ? n.read_by_emails : [];
+            if (existing.some((e) => String(e).toLowerCase() === emailKey)) return n;
+            return { ...n, read_by_emails: [...existing, emailKey] };
+          })
+        );
+      }
+      await markAdminNotificationRead(item, currentAdminEmail);
+    },
+    [currentAdminEmail]
+  );
+
+  const handleMarkAllNotificationsRead = useCallback(async () => {
+    const emailKey = String(currentAdminEmail || 'admin@patitasdelsur.cl').trim().toLowerCase();
+    if (liveSystemAlerts.length > 0) {
+      setReadLiveAlertKeys((prev) => {
+        const next = new Set(prev);
+        liveSystemAlerts.forEach((a) => next.add(a.liveKey || a.id));
+        return next;
+      });
+    }
+    setAdminNotifications((prev) =>
+      prev.map((n) => {
+        const existing = Array.isArray(n.read_by_emails) ? n.read_by_emails : [];
+        if (existing.some((e) => String(e).toLowerCase() === emailKey)) return n;
+        return { ...n, read_by_emails: [...existing, emailKey] };
+      })
+    );
+    await markAllAdminNotificationsRead({
+      persistedNotifications: adminNotifications,
+      liveAlerts: liveSystemAlerts,
+      adminEmail: currentAdminEmail,
+    });
+    showToast('Todas las notificaciones fueron marcadas como leídas', 'info');
+  }, [adminNotifications, liveSystemAlerts, currentAdminEmail, showToast]);
+
+  const handleSelectNotification = useCallback(
+    (item) => {
+      if (!item) return;
+      if (item.entity_type === 'order') {
+        setActiveTab('pedidos');
+        setOrderStatusFilter('todos');
+        setOrderPaymentFilter('todos');
+        const matched = orders.find((o) => String(o.id) === String(item.entity_id));
+        if (matched) {
+          setOrderSearch('');
+          setSelectedOrderModal(matched);
+        } else if (item.entity_id) {
+          setOrderSearch(String(item.entity_id));
+        }
+        return;
+      }
+      if (item.entity_type === 'orders_unpaid_filter') {
+        setActiveTab('pedidos');
+        setOrderStatusFilter('todos');
+        setOrderPaymentFilter('entregado_pendiente');
+        setOrderSearch('');
+        return;
+      }
+      if (item.entity_type === 'product') {
+        setActiveTab('inventario');
+        setInventoryStockFilter('todos');
+        const matched = inventory.find((p) => String(p.id) === String(item.entity_id));
+        if (matched) {
+          setInventorySearch(matched.name || '');
+          setEditingProduct(matched);
+        } else if (item.metadata?.productName) {
+          setInventorySearch(String(item.metadata.productName));
+        }
+        return;
+      }
+      if (item.entity_type === 'pos_register') {
+        setActiveTab('pos');
+      }
+    },
+    [orders, inventory]
+  );
 
   const [orderBoletas, setOrderBoletas] = useState(() => {
     try {
@@ -2935,6 +3154,25 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       })
       .then(() => {
         window.dispatchEvent(new Event('patitas_orders_updated'));
+        if (prevStatus !== newStatus) {
+          const statusLabels = {
+            en_preparacion: 'En preparación',
+            en_camino: 'En camino',
+            entregado: 'Entregado',
+            cancelado: 'Cancelado',
+          };
+          const nextLabel = statusLabels[newStatus] || newStatus;
+          createAdminNotification({
+            category: 'status',
+            severity: isCancelling ? 'warning' : isDelivery ? 'success' : 'info',
+            title: `Pedido ${orderId} pasó a ${nextLabel}`,
+            message: `${targetOrder?.customer || 'Cliente'} · ${formatCLP(Number(targetOrder?.total) || 0)} actualizado por ${adminName}.`,
+            entityType: 'order',
+            entityId: orderId,
+            actorName: adminName,
+            metadata: { orderId, fromStatus: prevStatus || null, toStatus: newStatus },
+          }).catch(() => {});
+        }
       })
       .catch((err) => {
         console.error('Error updating order status in Supabase:', err);
@@ -3157,8 +3395,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
       if (isLeavingPending) {
         showToast(`⏳ Pedido ${orderId} marcado como Entregado con Pago Pendiente (Transferencia por cobrar).`);
+        createAdminNotification({
+          category: 'status',
+          severity: 'warning',
+          title: `Entregado con pago pendiente: ${orderId}`,
+          message: `${order.customer || 'Cliente'} · ${formatCLP(Number(order.total) || 0)} quedó por cobrar (entregado por ${adminName}).`,
+          entityType: 'order',
+          entityId: orderId,
+          actorName: adminName,
+          metadata: { orderId, paymentStatus: 'pendiente' },
+        }).catch(() => {});
       } else {
         showToast(`¡Pedido ${orderId} registrado como Pagado (${finalPaymentMethod}) y Entregado ✓ por ${adminName}!`);
+        createAdminNotification({
+          category: 'status',
+          severity: 'success',
+          title: `Pedido ${orderId} pagado y entregado`,
+          message: `${order.customer || 'Cliente'} · ${formatCLP(Number(order.total) || 0)} (${finalPaymentMethod}) confirmado por ${adminName}.`,
+          entityType: 'order',
+          entityId: orderId,
+          actorName: adminName,
+          metadata: { orderId, paymentStatus: 'pagado', paymentMethod: finalPaymentMethod },
+        }).catch(() => {});
       }
       setPaymentDeliveryConfirmModal(null);
     } catch (err) {
@@ -3539,6 +3797,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       );
 
       setIsAddOrderModalOpen(false);
+      createAdminNotification({
+        category: 'order',
+        severity: 'info',
+        title: `Nuevo pedido manual ${persistedId}`,
+        message: `${newOrder.customer} · ${formatCLP(total)} (${newOrder.paymentMethod}) registrado por ${currentAdminName}.`,
+        entityType: 'order',
+        entityId: persistedId,
+        actorName: currentAdminName,
+        metadata: { orderId: persistedId, total, channel: 'manual' },
+      }).catch(() => {});
       setManualOrderStep(1);
       setManualOrderCustomer(createInitialManualOrderCustomer());
       setManualOrderItems([]);
@@ -7173,12 +7441,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </span>
             </button>
 
-            {/* Botón de Notificaciones Push (app cerrada / segundo plano) */}
+            {/* Botón de Notificaciones Push (solo móvil/tablet; en escritorio vive dentro del Centro de Notificaciones) */}
             <button
               type="button"
               onClick={handleToggleAdminPush}
               disabled={isTogglingPush}
-              className={`ios-pressable relative w-9 h-9 sm:w-10 sm:h-10 rounded-full border shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-60 ${
+              className={`lg:hidden ios-pressable relative w-9 h-9 sm:w-10 sm:h-10 rounded-full border shadow-[0_1px_4px_rgba(0,0,0,0.03)] transition-colors cursor-pointer flex items-center justify-center disabled:opacity-60 ${
                 pushStatus.subscribed
                   ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
                   : pushStatus.permission === 'denied'
@@ -7554,21 +7822,31 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               </div>
             )}
 
-            {/* FinSet Signature Right Controls: Bell Circle + User Profile Pill */}
+            {/* FinSet Signature Right Controls: Centro de Notificaciones Unificado + User Profile Pill */}
             <div className="hidden lg:flex items-center gap-2.5 pl-2 border-l border-[#EAECEF]">
-              <button
-                type="button"
-                onClick={() => setActiveTab('pedidos')}
-                className="relative w-10 h-10 rounded-full bg-white hover:bg-[#FAF8F4] border border-[#EAECEF] flex items-center justify-center text-slate-600 transition-colors cursor-pointer"
-                title={pendingOrdersCount > 0 ? `${pendingOrdersCount} pedidos activos` : 'Sin pedidos pendientes'}
-              >
-                <Bell className="w-4 h-4" />
-                {pendingOrdersCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-extrabold flex items-center justify-center border border-white">
-                    {pendingOrdersCount}
-                  </span>
-                )}
-              </button>
+              <AdminNotificationCenter
+                persistedNotifications={adminNotifications}
+                liveAlerts={liveSystemAlerts}
+                readLiveKeys={readLiveAlertKeys}
+                adminEmail={currentAdminEmail}
+                migrationPending={notificationsMigrationPending}
+                pushStatus={pushStatus}
+                isTogglingPush={isTogglingPush}
+                onTogglePush={handleToggleAdminPush}
+                onMarkOneRead={handleMarkOneNotificationRead}
+                onMarkAllRead={handleMarkAllNotificationsRead}
+                onSelectNotification={handleSelectNotification}
+                onGoToOrders={() => {
+                  setActiveTab('pedidos');
+                  setOrderStatusFilter('todos');
+                  setOrderPaymentFilter('todos');
+                }}
+                onGoToLowStock={() => {
+                  setActiveTab('inventario');
+                  setInventoryStockFilter('bajo');
+                  setInventorySearch('');
+                }}
+              />
 
               <div className="flex items-center gap-2.5 pl-1.5 pr-4 py-1 rounded-full bg-white border border-[#EAECEF]">
                 <div className="w-8 h-8 rounded-full bg-[#FEF3C7] border border-[#FDE68A] flex items-center justify-center text-[#D97706] font-extrabold text-xs shrink-0">
