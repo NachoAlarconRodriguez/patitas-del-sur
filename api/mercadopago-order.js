@@ -14,9 +14,12 @@ const SUPABASE_KEY =
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+const STORE_EMAILS = new Set(['patitasdelsur.cl@gmail.com']);
+const DUMMY_RUTS = new Set(['11111111-1', '111111111', '11.111.111-1']);
+
 async function resolveAccessToken() {
-  if (process.env.MP_ACCESS_TOKEN) {
-    return process.env.MP_ACCESS_TOKEN;
+  if (process.env.MP_ACCESS_TOKEN?.trim()) {
+    return process.env.MP_ACCESS_TOKEN.trim();
   }
   try {
     const { data } = await supabase
@@ -24,8 +27,8 @@ async function resolveAccessToken() {
       .select('value')
       .eq('key', 'mercadopago')
       .maybeSingle();
-    if (data?.value?.accessToken) {
-      return data.value.accessToken;
+    if (data?.value?.accessToken?.trim()) {
+      return data.value.accessToken.trim();
     }
   } catch (err) {
     console.warn('No se pudo leer accessToken desde store_settings:', err);
@@ -157,32 +160,40 @@ export default async function handler(req, res) {
         ];
       }
 
-      const cleanEmail =
-        payerEmail && String(payerEmail).includes('@')
-          ? String(payerEmail).trim()
-          : 'patitasdelsur.cl@gmail.com';
+      // En producción, nunca enviar el correo de la tienda como payer.email (Mercado Pago rechaza auto-pagos).
+      // En Orders API (Checkout Pro), el objeto payer es opcional; si se incluye, payer.email es obligatorio.
+      const candidateEmail =
+        payerEmail && String(payerEmail).includes('@') ? String(payerEmail).trim() : '';
+      const validBuyerEmail =
+        candidateEmail && !STORE_EMAILS.has(candidateEmail.toLowerCase()) ? candidateEmail : '';
 
       // Separar nombre y apellido para payer.first_name y payer.last_name
       const fullNameParts = String(payerName || '').trim().split(/\s+/).filter(Boolean);
       const resolvedFirstName = String(
-        payerFirstName || fullNameParts[0] || 'Cliente'
+        payerFirstName || fullNameParts[0] || ''
       ).trim();
       const resolvedLastName = String(
         payerLastName ||
-          (fullNameParts.length > 1 ? fullNameParts.slice(1).join(' ') : 'Patitas del Sur')
+          (fullNameParts.length > 1 ? fullNameParts.slice(1).join(' ') : '')
       ).trim();
 
-      const resolvedIdentification = {
-        type: String(payerIdentification?.type || 'RUT').trim(),
-        number: String(payerIdentification?.number || '11111111-1').trim(),
-      };
+      // Solo enviar identificación si existe un RUT real (evitar RUT ficticio 11111111-1 que afecta el antifraude)
+      const rawIdNumber = String(payerIdentification?.number || '').trim();
+      const hasRealIdentification =
+        Boolean(rawIdNumber) && !DUMMY_RUTS.has(rawIdNumber.toLowerCase());
+      const resolvedIdentification = hasRealIdentification
+        ? {
+            type: String(payerIdentification?.type || 'RUT').trim(),
+            number: rawIdNumber,
+          }
+        : null;
 
-      // Resolver payer.phone ({ area_code, number })
+      // Resolver payer.phone ({ area_code, number }) solo si el comprador ingresó teléfono real
       let resolvedAreaCode = '56';
-      let resolvedPhoneNumber = '953332492';
+      let resolvedPhoneNumber = '';
       if (payerPhone && typeof payerPhone === 'object') {
         resolvedAreaCode = String(payerPhone.area_code || '56').replace(/\D/g, '') || '56';
-        resolvedPhoneNumber = String(payerPhone.number || '').replace(/\D/g, '') || '953332492';
+        resolvedPhoneNumber = String(payerPhone.number || '').replace(/\D/g, '');
       } else if (payerPhone) {
         const digits = String(payerPhone).replace(/\D/g, '');
         if (digits.startsWith('56') && digits.length > 9) {
@@ -192,16 +203,37 @@ export default async function handler(req, res) {
           resolvedPhoneNumber = digits;
         }
       }
-      const resolvedPhone = {
-        area_code: resolvedAreaCode,
-        number: resolvedPhoneNumber,
-      };
+      const resolvedPhone = resolvedPhoneNumber
+        ? {
+            area_code: resolvedAreaCode,
+            number: resolvedPhoneNumber,
+          }
+        : null;
+
+      let resolvedPayer = null;
+      if (validBuyerEmail) {
+        resolvedPayer = {
+          email: validBuyerEmail,
+          ...(resolvedFirstName ? { first_name: resolvedFirstName } : {}),
+          ...(resolvedLastName ? { last_name: resolvedLastName } : {}),
+          ...(resolvedIdentification ? { identification: resolvedIdentification } : {}),
+          ...(resolvedPhone ? { phone: resolvedPhone } : {}),
+        };
+      }
 
       // Determinar URL base para las URLs de retorno (config.online)
+      let refererOrigin = null;
+      if (req.headers?.referer) {
+        try {
+          refererOrigin = new URL(req.headers.referer).origin;
+        } catch {
+          refererOrigin = null;
+        }
+      }
       const rawOrigin =
         origin ||
         req.headers?.origin ||
-        (req.headers?.referer ? new URL(req.headers.referer).origin : null) ||
+        refererOrigin ||
         'https://www.patitas-delsur.cl';
       const baseUrl = String(rawOrigin).replace(/\/+$/, '');
 
@@ -253,13 +285,7 @@ export default async function handler(req, res) {
         total_amount: String(numericTotal),
         external_reference: String(externalReference || `PED-${Date.now()}`),
         description: String(description || `Pedido Patitas del Sur #${externalReference || ''}`).slice(0, 120),
-        payer: {
-          email: cleanEmail,
-          first_name: resolvedFirstName,
-          last_name: resolvedLastName,
-          identification: resolvedIdentification,
-          phone: resolvedPhone,
-        },
+        ...(resolvedPayer ? { payer: resolvedPayer } : {}),
         additional_info: flatAdditionalInfo,
         items: normalizedItems,
         config: {

@@ -88,6 +88,11 @@ export default async function handler(req, res) {
       status: 'ok',
       endpoint: '/api/mercadopago-webhook',
       message: 'Webhook de Mercado Pago activo para Patitas del Sur',
+      configured: {
+        accessToken: Boolean(process.env.MP_ACCESS_TOKEN?.trim()),
+        webhookSecret: Boolean(process.env.MP_WEBHOOK_SECRET?.trim()),
+        supabaseServiceRole: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()),
+      },
     });
   }
 
@@ -97,8 +102,8 @@ export default async function handler(req, res) {
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    let webhookSecret = process.env.MP_WEBHOOK_SECRET;
-    let accessToken = process.env.MP_ACCESS_TOKEN;
+    let webhookSecret = process.env.MP_WEBHOOK_SECRET?.trim() || null;
+    let accessToken = process.env.MP_ACCESS_TOKEN?.trim() || null;
 
     if (!webhookSecret || !accessToken) {
       try {
@@ -108,8 +113,8 @@ export default async function handler(req, res) {
           .eq('key', 'mercadopago')
           .maybeSingle();
         if (mpSettings?.value) {
-          webhookSecret = webhookSecret || mpSettings.value.webhookSecret || null;
-          accessToken = accessToken || mpSettings.value.accessToken || null;
+          webhookSecret = webhookSecret || mpSettings.value.webhookSecret?.trim() || null;
+          accessToken = accessToken || mpSettings.value.accessToken?.trim() || null;
         }
       } catch (settingsErr) {
         console.warn('Error leyendo store_settings mercadopago en webhook:', settingsErr);
@@ -167,7 +172,8 @@ export default async function handler(req, res) {
       mpStatus === 'canceled' ||
       mpStatus === 'failed' ||
       mpStatus === 'rejected' ||
-      mpStatus === 'expired';
+      mpStatus === 'expired' ||
+      mpStatusDetail === 'expired';
 
     const newPaymentStatus = isPaid ? 'pagado' : isCanceledOrFailed ? 'rechazado' : 'pendiente';
 

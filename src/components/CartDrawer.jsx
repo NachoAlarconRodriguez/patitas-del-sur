@@ -1706,10 +1706,12 @@ export default function CartDrawer({
         const payerFirstName = nameParts[0] || 'Cliente';
         const payerLastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : 'Patitas del Sur';
 
+        const buyerRut = autofillCustomer?.rut || user?.rut || null;
+
         mpOrderResult = await createMercadoPagoOrder({
           externalReference: orderId,
           totalAmount: total,
-          payerEmail: email.trim() || user?.email || COMPANY_INFO.email,
+          payerEmail: email.trim() || user?.email || undefined,
           payerFirstName,
           payerLastName,
           payerName: recipientName.trim() || user?.name || 'Cliente Patitas del Sur',
@@ -1717,10 +1719,14 @@ export default function CartDrawer({
             area_code: String(countryCode || '+56').replace(/\D/g, '') || '56',
             number: cleanDigits,
           },
-          payerIdentification: {
-            type: 'RUT',
-            number: autofillCustomer?.rut || user?.rut || '11111111-1',
-          },
+          ...(buyerRut
+            ? {
+                payerIdentification: {
+                  type: 'RUT',
+                  number: buyerRut,
+                },
+              }
+            : {}),
           payerRegistrationDate:
             autofillCustomer?.created_at ||
             user?.created_at ||
