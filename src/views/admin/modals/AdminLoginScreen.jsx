@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
 import { ArrowLeft, Shield, AlertTriangle, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import SEOHead from '../../../components/SEOHead';
 import { isStandalonePwaMode } from '../../../services/pushNotificationsService';
@@ -27,22 +26,18 @@ export default function AdminLoginScreen({
       <div className="absolute bottom-1/4 -right-24 w-96 h-96 rounded-full bg-[#D97706]/10 blur-[110px] pointer-events-none" />
 
       <div className="max-w-md w-full relative z-10">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex items-center justify-start">
           {!isStandalone ? (
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-[#D97706] transition-colors bg-white border border-[#EAECEF] px-4 py-2 rounded-full shadow-2xs"
+            <a
+              href="/"
+              className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-[#D97706] transition-colors bg-white border border-[#EAECEF] px-4 py-2 rounded-full shadow-2xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D97706]/35"
             >
               <ArrowLeft className="w-3.5 h-3.5 text-[#D97706]" />
               <span>Volver a la tienda</span>
-            </Link>
+            </a>
           ) : (
             <span className="text-xs font-bold text-slate-500">Patitas Admin PWA</span>
           )}
-
-          <span className="text-[11px] font-bold text-[#D97706] bg-[#FEF3C7] border border-[#FDE68A] px-3 py-1 rounded-full">
-            Acceso restringido
-          </span>
         </div>
 
         <div className="finset-card bg-white border border-[#EAECEF] rounded-3xl p-7 sm:p-10 space-y-6">
