@@ -129,7 +129,7 @@ export default function PaymentAndCancelOrderModals({
                     ¿Cómo se recibió el pago?
                   </span>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {/* Opción 1: Transferencia */}
                     <button
                       type="button"
@@ -141,88 +141,137 @@ export default function PaymentAndCancelOrderModals({
                           paymentMode: 'pagado',
                         }))
                       }
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex sm:flex-col items-center sm:items-stretch justify-between gap-2.5 ${
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
                         !isPendingDelivery && paymentMethod === 'Transferencia'
                           ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
                           : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                            !isPendingDelivery && paymentMethod === 'Transferencia'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          <Landmark className="w-4 h-4" />
-                        </div>
-                        {!isPendingDelivery && paymentMethod === 'Transferencia' && (
-                          <span className="hidden sm:flex w-4 h-4 rounded-full bg-emerald-600 text-white items-center justify-center text-[10px]">
-                            ✓
-                          </span>
-                        )}
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          !isPendingDelivery && paymentMethod === 'Transferencia'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        <Landmark className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-black text-xs text-slate-900">Transferencia</div>
                         <div className="text-[10px] text-slate-500 font-medium leading-tight">
-                          Verificada en cuenta
+                          Sin comisión (0%)
                         </div>
                       </div>
                       {!isPendingDelivery && paymentMethod === 'Transferencia' && (
-                        <span className="sm:hidden w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
+                        <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
                           ✓
                         </span>
                       )}
                     </button>
 
-                    {/* Opción 2: Tarjeta POS móvil */}
+                    {/* Opción 2: Tarjeta Débito / Dinero MP (POS móvil) */}
                     <button
                       type="button"
                       disabled={isSubmittingPayment}
                       onClick={() =>
                         setPaymentDeliveryConfirmModal((prev) => ({
                           ...prev,
-                          paymentMethod: 'Tarjeta POS (Contra Entrega)',
+                          paymentMethod: 'Tarjeta Débito POS (Contra Entrega)',
                           paymentMode: 'pagado',
                         }))
                       }
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex sm:flex-col items-center sm:items-stretch justify-between gap-2.5 ${
-                        !isPendingDelivery && String(paymentMethod || '').toLowerCase().includes('tarjeta')
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                        !isPendingDelivery &&
+                        (String(paymentMethod || '').toLowerCase().includes('débito') ||
+                          String(paymentMethod || '').toLowerCase().includes('debito') ||
+                          String(paymentMethod || '').toLowerCase().includes('dinero'))
                           ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
                           : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                            !isPendingDelivery && String(paymentMethod || '').toLowerCase().includes('tarjeta')
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          <CreditCard className="w-4 h-4" />
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          !isPendingDelivery &&
+                          (String(paymentMethod || '').toLowerCase().includes('débito') ||
+                            String(paymentMethod || '').toLowerCase().includes('debito') ||
+                            String(paymentMethod || '').toLowerCase().includes('dinero'))
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-black text-xs text-slate-900">Débito / Dinero MP</div>
+                        <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                          POS móvil · 2,19% + IVA
                         </div>
-                        {!isPendingDelivery && String(paymentMethod || '').toLowerCase().includes('tarjeta') && (
-                          <span className="hidden sm:flex w-4 h-4 rounded-full bg-emerald-600 text-white items-center justify-center text-[10px]">
+                      </div>
+                      {!isPendingDelivery &&
+                        (String(paymentMethod || '').toLowerCase().includes('débito') ||
+                          String(paymentMethod || '').toLowerCase().includes('debito') ||
+                          String(paymentMethod || '').toLowerCase().includes('dinero')) && (
+                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
                             ✓
                           </span>
                         )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-black text-xs text-slate-900">Tarjeta (POS)</div>
-                        <div className="text-[10px] text-slate-500 font-medium leading-tight">
-                          Máquina móvil
-                        </div>
-                      </div>
-                      {!isPendingDelivery && String(paymentMethod || '').toLowerCase().includes('tarjeta') && (
-                        <span className="sm:hidden w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
-                          ✓
-                        </span>
-                      )}
                     </button>
 
-                    {/* Opción 3: Efectivo */}
+                    {/* Opción 3: Tarjeta Crédito (POS móvil) */}
+                    <button
+                      type="button"
+                      disabled={isSubmittingPayment}
+                      onClick={() =>
+                        setPaymentDeliveryConfirmModal((prev) => ({
+                          ...prev,
+                          paymentMethod: 'Tarjeta Crédito POS (Contra Entrega)',
+                          paymentMode: 'pagado',
+                        }))
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                        !isPendingDelivery &&
+                        (String(paymentMethod || '').toLowerCase().includes('crédito') ||
+                          String(paymentMethod || '').toLowerCase().includes('credito') ||
+                          (String(paymentMethod || '').toLowerCase().includes('tarjeta') &&
+                            !String(paymentMethod || '').toLowerCase().includes('débito') &&
+                            !String(paymentMethod || '').toLowerCase().includes('debito')))
+                          ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          !isPendingDelivery &&
+                          (String(paymentMethod || '').toLowerCase().includes('crédito') ||
+                            String(paymentMethod || '').toLowerCase().includes('credito') ||
+                            (String(paymentMethod || '').toLowerCase().includes('tarjeta') &&
+                              !String(paymentMethod || '').toLowerCase().includes('débito') &&
+                              !String(paymentMethod || '').toLowerCase().includes('debito')))
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-black text-xs text-slate-900">Tarjeta Crédito</div>
+                        <div className="text-[10px] text-slate-500 font-medium leading-tight">
+                          POS móvil · 2,69% + IVA
+                        </div>
+                      </div>
+                      {!isPendingDelivery &&
+                        (String(paymentMethod || '').toLowerCase().includes('crédito') ||
+                          String(paymentMethod || '').toLowerCase().includes('credito') ||
+                          (String(paymentMethod || '').toLowerCase().includes('tarjeta') &&
+                            !String(paymentMethod || '').toLowerCase().includes('débito') &&
+                            !String(paymentMethod || '').toLowerCase().includes('debito'))) && (
+                          <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
+                            ✓
+                          </span>
+                        )}
+                    </button>
+
+                    {/* Opción 4: Efectivo */}
                     <button
                       type="button"
                       disabled={isSubmittingPayment}
@@ -233,36 +282,29 @@ export default function PaymentAndCancelOrderModals({
                           paymentMode: 'pagado',
                         }))
                       }
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex sm:flex-col items-center sm:items-stretch justify-between gap-2.5 ${
+                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
                         !isPendingDelivery && paymentMethod === 'Efectivo'
                           ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
                           : 'bg-white border-slate-200 hover:bg-slate-50'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <div
-                          className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                            !isPendingDelivery && paymentMethod === 'Efectivo'
-                              ? 'bg-emerald-600 text-white'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          <Banknote className="w-4 h-4" />
-                        </div>
-                        {!isPendingDelivery && paymentMethod === 'Efectivo' && (
-                          <span className="hidden sm:flex w-4 h-4 rounded-full bg-emerald-600 text-white items-center justify-center text-[10px]">
-                            ✓
-                          </span>
-                        )}
+                      <div
+                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                          !isPendingDelivery && paymentMethod === 'Efectivo'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        <Banknote className="w-4 h-4" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-black text-xs text-slate-900">Efectivo</div>
                         <div className="text-[10px] text-slate-500 font-medium leading-tight">
-                          Recibido en mano
+                          Sin comisión (0%)
                         </div>
                       </div>
                       {!isPendingDelivery && paymentMethod === 'Efectivo' && (
-                        <span className="sm:hidden w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
+                        <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[11px] shrink-0">
                           ✓
                         </span>
                       )}

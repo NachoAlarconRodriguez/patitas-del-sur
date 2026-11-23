@@ -56,66 +56,72 @@ export async function createOrderInSupabase(orderData, items = []) {
     const initialPaymentStatus = String(orderData.paymentStatus || 'pendiente').trim().toLowerCase();
     const isInitiallyPaid = initialPaymentStatus === 'pagado';
 
+    const isPosWalkIn =
+      Boolean(orderData.skipCustomerCreation) ||
+      (String(orderData.channel || '').toLowerCase() === 'pos' && !orderData.customerId);
+
     // 1. Vincular o registrar automáticamente al cliente en la tabla customers (CRM)
     let resolvedCustomerId = orderData.customerId || null;
-    try {
-      const phone9 = String(orderData.customerPhone || '').replace(/\D/g, '').slice(-9);
-      const cleanEmail = String(orderData.customerEmail || '').trim().toLowerCase();
-      const cleanName = String(orderData.customerName || 'Cliente Patitas').trim();
+    if (!isPosWalkIn) {
+      try {
+        const phone9 = String(orderData.customerPhone || '').replace(/\D/g, '').slice(-9);
+        const cleanEmail = String(orderData.customerEmail || '').trim().toLowerCase();
+        const cleanName = String(orderData.customerName || 'Cliente Patitas').trim();
 
-      const { data: allCusts } = await supabase
-        .from('customers')
-        .select('id, full_name, email, phone, role, points, total_spent, address, city');
-
-      let matchedCust = (allCusts || []).find((c) => {
-        if (resolvedCustomerId && c.id === resolvedCustomerId) return true;
-        const cPhone9 = String(c.phone || '').replace(/\D/g, '').slice(-9);
-        if (phone9 && phone9.length === 9 && cPhone9 === phone9) return true;
-        if (cleanEmail && c.email && c.email.toLowerCase() === cleanEmail) return true;
-        return false;
-      });
-
-      if (matchedCust && String(matchedCust.role || 'cliente').toLowerCase() !== 'admin') {
-        resolvedCustomerId = matchedCust.id;
-        const customerUpdatePayload = {
-          address: orderData.address || matchedCust.address || '',
-          city: orderData.city || matchedCust.city || 'Frutillar',
-        };
-        if (isInitiallyPaid) {
-          customerUpdatePayload.total_spent = (Number(matchedCust.total_spent) || 0) + orderTotalNum;
-          customerUpdatePayload.points = (Number(matchedCust.points) || 0) + earnedPts;
-        }
-        await supabase
+        const { data: allCusts } = await supabase
           .from('customers')
-          .update(customerUpdatePayload)
-          .eq('id', matchedCust.id);
-      } else if (!matchedCust && (phone9 || cleanName)) {
-        const { data: createdCust } = await supabase
-          .from('customers')
-          .insert({
-            full_name: cleanName,
-            email: cleanEmail || null,
-            phone: orderData.customerPhone || '',
-            city: orderData.city || 'Frutillar',
-            address: orderData.address || '',
-            role: 'cliente',
-            points: isInitiallyPaid ? earnedPts : 0,
-            total_spent: isInitiallyPaid ? orderTotalNum : 0,
-            whatsapp_notifications: true,
-          })
-          .select('id')
-          .single();
+          .select('id, full_name, email, phone, role, points, total_spent, address, city');
 
-        if (createdCust?.id) {
-          resolvedCustomerId = createdCust.id;
+        let matchedCust = (allCusts || []).find((c) => {
+          if (resolvedCustomerId && c.id === resolvedCustomerId) return true;
+          const cPhone9 = String(c.phone || '').replace(/\D/g, '').slice(-9);
+          if (phone9 && phone9.length === 9 && cPhone9 === phone9) return true;
+          if (cleanEmail && c.email && c.email.toLowerCase() === cleanEmail) return true;
+          return false;
+        });
+
+        if (matchedCust && String(matchedCust.role || 'cliente').toLowerCase() !== 'admin') {
+          resolvedCustomerId = matchedCust.id;
+          const customerUpdatePayload = {
+            address: orderData.address || matchedCust.address || '',
+            city: orderData.city || matchedCust.city || 'Frutillar',
+          };
+          if (isInitiallyPaid) {
+            customerUpdatePayload.total_spent = (Number(matchedCust.total_spent) || 0) + orderTotalNum;
+            customerUpdatePayload.points = (Number(matchedCust.points) || 0) + earnedPts;
+          }
+          await supabase
+            .from('customers')
+            .update(customerUpdatePayload)
+            .eq('id', matchedCust.id);
+        } else if (!matchedCust && (phone9 || cleanName)) {
+          const { data: createdCust } = await supabase
+            .from('customers')
+            .insert({
+              full_name: cleanName,
+              email: cleanEmail || null,
+              phone: orderData.customerPhone || '',
+              city: orderData.city || 'Frutillar',
+              address: orderData.address || '',
+              role: 'cliente',
+              points: isInitiallyPaid ? earnedPts : 0,
+              total_spent: isInitiallyPaid ? orderTotalNum : 0,
+              whatsapp_notifications: true,
+            })
+            .select('id')
+            .single();
+
+          if (createdCust?.id) {
+            resolvedCustomerId = createdCust.id;
+          }
         }
-      }
 
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new Event('patitas_customers_updated'));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('patitas_customers_updated'));
+        }
+      } catch (crmSyncErr) {
+        console.warn('Error sincronizando cliente en CRM al crear pedido:', crmSyncErr);
       }
-    } catch (crmSyncErr) {
-      console.warn('Error sincronizando cliente en CRM al crear pedido:', crmSyncErr);
     }
 
     const latVal = Number(orderData.deliveryLat ?? orderData.delivery_lat ?? orderData.lat);
@@ -138,7 +144,7 @@ export async function createOrderInSupabase(orderData, items = []) {
       shipping_cost: orderData.shippingCost || 0,
       discount: orderData.discount || 0,
       total: orderTotalNum,
-      points_earned: earnedPts,
+      points_earned: isPosWalkIn ? 0 : earnedPts,
       delivery_day_text: orderData.deliveryDayText || orderData.delivery_day_text || 'Hoy Mismo',
       delivery_date:
         orderData.deliveryDate ||
@@ -160,11 +166,39 @@ export async function createOrderInSupabase(orderData, items = []) {
       created_at: orderData.created_at || orderData.createdAt || new Date().toISOString(),
     };
 
+    const paymentBreakdownVal = orderData.paymentBreakdown ?? orderData.payment_breakdown ?? null;
     const extendedOrderPayload = {
       ...baseOrderPayload,
       ...(hasCoords ? { delivery_lat: latVal, delivery_lng: lngVal } : {}),
       ...(orderData.petName || orderData.pet_name ? { pet_name: orderData.petName || orderData.pet_name } : {}),
       ...(orderData.petType || orderData.pet_type ? { pet_type: orderData.petType || orderData.pet_type } : {}),
+      ...(orderData.posRegisterId || orderData.pos_register_id
+        ? { pos_register_id: orderData.posRegisterId || orderData.pos_register_id }
+        : {}),
+      ...(orderData.posShiftId || orderData.pos_shift_id
+        ? { pos_shift_id: orderData.posShiftId || orderData.pos_shift_id }
+        : {}),
+      ...(orderData.soldByEmail || orderData.sold_by_email
+        ? { sold_by_email: orderData.soldByEmail || orderData.sold_by_email }
+        : {}),
+      ...(orderData.soldByName || orderData.sold_by_name
+        ? { sold_by_name: orderData.soldByName || orderData.sold_by_name }
+        : {}),
+      ...(Array.isArray(paymentBreakdownVal) && paymentBreakdownVal.length > 0
+        ? { payment_breakdown: paymentBreakdownVal }
+        : {}),
+      ...(orderData.cashTendered !== undefined || orderData.cash_tendered !== undefined
+        ? { cash_tendered: Number(orderData.cashTendered ?? orderData.cash_tendered) || 0 }
+        : {}),
+      ...(orderData.cashChange !== undefined || orderData.cash_change !== undefined
+        ? { cash_change: Number(orderData.cashChange ?? orderData.cash_change) || 0 }
+        : {}),
+      ...(orderData.deliveredByName || orderData.delivered_by_name
+        ? { delivered_by_name: orderData.deliveredByName || orderData.delivered_by_name }
+        : {}),
+      ...(orderData.deliveredAt || orderData.delivered_at
+        ? { delivered_at: orderData.deliveredAt || orderData.delivered_at }
+        : {}),
     };
 
     const attemptInsertOrder = async (payloadToInsert) => {
@@ -174,7 +208,7 @@ export async function createOrderInSupabase(orderData, items = []) {
         .select()
         .single();
 
-      // Si faltan columnas opcionales (delivery_lat/delivery_lng/pet_name/pet_type) porque aún no se corrió la migración SQL
+      // Si faltan columnas opcionales (delivery_lat/pos_register_id/payment_breakdown/etc.) porque aún no se corrió la migración SQL
       if (res.error && (res.error.code === '42703' || String(res.error.message || '').includes('column'))) {
         const cleanFallback = { ...baseOrderPayload, id: payloadToInsert.id, invoice_number: payloadToInsert.invoice_number };
         res = await supabase
@@ -308,8 +342,10 @@ export async function createOrderInSupabase(orderData, items = []) {
       /mercado\s*pago/i.test(String(orderPayload.payment_method || ''));
     const isPaidOrder = String(orderPayload.payment_status || '').toLowerCase() === 'pagado';
 
+    const normalizedChannel = String(orderPayload.channel || 'web').toLowerCase();
     if (
-      String(orderPayload.channel || 'web').toLowerCase() !== 'manual' &&
+      normalizedChannel !== 'manual' &&
+      normalizedChannel !== 'pos' &&
       !(isMercadoPagoOrder && !isPaidOrder)
     ) {
       triggerAdminNewOrderPush(orderPayload.id, 'new_web_order');

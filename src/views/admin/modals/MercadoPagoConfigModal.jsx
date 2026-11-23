@@ -23,14 +23,17 @@ export default function MercadoPagoConfigModal({
   if (!isOpen) return null;
 
   const activeCfg = draftConfig || mercadoPagoConfig || {};
-  const cRate = Number(activeCfg.cardRatePercent ?? 2.55);
   const wRate = Number(activeCfg.webRatePercent ?? activeCfg.commissionRatePercent ?? 3.19);
+  const creditRate = Number(activeCfg.creditCardRatePercent ?? activeCfg.cardRatePercent ?? 2.69);
+  const debitRate = Number(activeCfg.debitCardRatePercent ?? 2.19);
   const fixed = Number(activeCfg.fixedFeeCLP || 0);
-  const mult = activeCfg.addIvaToCommission
-    ? 1 + Number(activeCfg.ivaPercent || 19) / 100
-    : 1;
-  const sampleCardFee = Math.round((10000 * (cRate / 100) + fixed) * mult);
-  const sampleWebFee = Math.round((10000 * (wRate / 100) + fixed) * mult);
+  const addIva = activeCfg.addIvaToCommission !== false;
+  const mult = addIva ? 1 + Number(activeCfg.ivaPercent || 19) / 100 : 1;
+
+  const sampleAmount = 20000;
+  const sampleWebFee = Math.round((sampleAmount * (wRate / 100) + fixed) * mult);
+  const sampleCreditFee = Math.round((sampleAmount * (creditRate / 100) + fixed) * mult);
+  const sampleDebitFee = Math.round((sampleAmount * (debitRate / 100) + fixed) * mult);
 
   return (
     <div
@@ -39,7 +42,7 @@ export default function MercadoPagoConfigModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-3xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
       >
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-blue-50/80">
@@ -49,10 +52,10 @@ export default function MercadoPagoConfigModal({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900">
-                Comisiones de Tarjeta &amp; Botón de Pago
+                Comisiones Mercado Pago (Web, POS y Despacho)
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                Porcentajes descontados antes de repartir la ganancia 50/50 entre socios
+                Tasas descontadas automáticamente antes de calcular utilidad neta y reparto de socios
               </p>
             </div>
           </div>
@@ -69,42 +72,23 @@ export default function MercadoPagoConfigModal({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            onSave?.(activeCfg);
+            onSave?.({
+              ...activeCfg,
+              webRatePercent: wRate,
+              commissionRatePercent: wRate,
+              creditCardRatePercent: creditRate,
+              debitCardRatePercent: debitRate,
+              cardRatePercent: creditRate,
+              addIvaToCommission: addIva,
+            });
             onClose();
           }}
           className="p-6 space-y-4 text-xs"
         >
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div>
               <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                💳 Máquina / Tarjeta (%)
-              </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="15"
-                  value={activeCfg.cardRatePercent ?? 2.55}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0;
-                    setDraftConfig((prev) => ({
-                      ...prev,
-                      cardRatePercent: val,
-                    }));
-                  }}
-                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                Tasa fija única (cubre Débito/Crédito: 2,55%)
-              </span>
-            </div>
-
-            <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                🌐 Botón de Pago Web (%)
+                Checkout Pro Web (%)
               </label>
               <div className="relative">
                 <input
@@ -126,18 +110,73 @@ export default function MercadoPagoConfigModal({
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
               </div>
               <span className="text-[10px] text-slate-400 mt-1 block">
-                Sobre el monto total c/IVA (3,19%)
+                Botón web online (3,19%)
+              </span>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                Crédito Físico (%)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="15"
+                  value={activeCfg.creditCardRatePercent ?? activeCfg.cardRatePercent ?? 2.69}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setDraftConfig((prev) => ({
+                      ...prev,
+                      creditCardRatePercent: val,
+                      cardRatePercent: val,
+                    }));
+                  }}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                POS + contra entrega (2,69%)
+              </span>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                Débito / Dinero MP (%)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="15"
+                  value={activeCfg.debitCardRatePercent ?? 2.19}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setDraftConfig((prev) => ({
+                      ...prev,
+                      debitCardRatePercent: val,
+                    }));
+                  }}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Débito o QR MP físico (2,19%)
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                Modo de Cálculo (IVA)
+                IVA sobre Comisión (19%)
               </label>
               <select
-                value={activeCfg.addIvaToCommission ? 'add_iva' : 'direct'}
+                value={addIva ? 'add_iva' : 'direct'}
                 onChange={(e) =>
                   setDraftConfig((prev) => ({
                     ...prev,
@@ -146,10 +185,12 @@ export default function MercadoPagoConfigModal({
                 }
                 className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none cursor-pointer"
               >
-                <option value="direct">Opción A: % directo final (IVA incl.)</option>
-                <option value="add_iva">Opción B: Sumar +19% IVA a comisión</option>
+                <option value="add_iva">Sumar +19% IVA a la comisión (Real Mercado Pago)</option>
+                <option value="direct">% directo final (IVA incluido)</option>
               </select>
-              <span className="text-[10px] text-slate-400 mt-1 block">Opción A activa por defecto</span>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Mercado Pago descuenta comisión + 19% IVA al instante
+              </span>
             </div>
 
             <div>
@@ -179,18 +220,23 @@ export default function MercadoPagoConfigModal({
           {/* Simulation Box */}
           <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-100 space-y-2">
             <div className="text-[11px] font-bold text-blue-900">
-              Simulación sobre una venta de $10.000 CLP (ej. PED-0006):
+              Simulación en vivo sobre una venta de $20.000 CLP ({addIva ? '+ 19% IVA sobre comisión' : 'tasa directa'}):
             </div>
-            <div className="grid grid-cols-2 gap-2.5 text-[10px]">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
               <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
-                <div className="font-black text-slate-800">💳 Con Tarjeta ({cRate}%)</div>
-                <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleCardFee)}</div>
-                <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleCardFee)}</div>
+                <div className="font-black text-slate-800">Checkout Pro ({wRate}%)</div>
+                <div className="text-rose-600 font-mono font-bold">Desc.: -{formatCLP(sampleWebFee)}</div>
+                <div className="text-emerald-700 font-mono font-bold">Recibes: {formatCLP(sampleAmount - sampleWebFee)}</div>
               </div>
               <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
-                <div className="font-black text-slate-800">🌐 Botón Web ({wRate}%)</div>
-                <div className="text-rose-600 font-mono font-bold">Comisión: -{formatCLP(sampleWebFee)}</div>
-                <div className="text-emerald-700 font-mono font-bold">Líquido: {formatCLP(10000 - sampleWebFee)}</div>
+                <div className="font-black text-slate-800">Crédito Físico ({creditRate}%)</div>
+                <div className="text-rose-600 font-mono font-bold">Desc.: -{formatCLP(sampleCreditFee)}</div>
+                <div className="text-emerald-700 font-mono font-bold">Recibes: {formatCLP(sampleAmount - sampleCreditFee)}</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-white border border-blue-200/70 space-y-0.5">
+                <div className="font-black text-slate-800">Débito / MP ({debitRate}%)</div>
+                <div className="text-rose-600 font-mono font-bold">Desc.: -{formatCLP(sampleDebitFee)}</div>
+                <div className="text-emerald-700 font-mono font-bold">Recibes: {formatCLP(sampleAmount - sampleDebitFee)}</div>
               </div>
             </div>
           </div>

@@ -6,8 +6,21 @@ export function renderPaymentMethodBadge(pm) {
   const norm = normalizePaymentMethod(pm);
   const pmLower = String(pm || '').toLowerCase();
   const isPos = pmLower.includes('pos') || pmLower.includes('contra entrega') || pmLower.includes('al recibir');
+  const isCredit = pmLower.includes('crédito') || pmLower.includes('credito');
+  const isDebit = pmLower.includes('débito') || pmLower.includes('debito');
+  const isMpQr = pmLower.includes('dinero') || pmLower.includes('qr');
 
   switch (norm) {
+    case 'Mixto':
+      return (
+        <span
+          title={pm || 'Pago dividido'}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+        >
+          <CreditCard className="w-3 h-3 text-indigo-600 shrink-0" />
+          <span>Pago Mixto</span>
+        </span>
+      );
     case 'Web':
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
@@ -15,13 +28,18 @@ export function renderPaymentMethodBadge(pm) {
           <span>Botón Web</span>
         </span>
       );
-    case 'Tarjeta':
+    case 'Tarjeta': {
+      let label = isPos ? 'Tarjeta POS' : 'Tarjeta / POS';
+      if (isCredit) label = 'Crédito POS';
+      else if (isDebit) label = 'Débito POS';
+      else if (isMpQr) label = 'Dinero MP / QR';
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FAF8F4] text-[#78350F] border border-[#EAECEF]">
           <CreditCard className="w-3 h-3 text-[#D97706] shrink-0" />
-          <span>{isPos ? 'Tarjeta POS' : 'Tarjeta / POS'}</span>
+          <span>{label}</span>
         </span>
       );
+    }
     case 'Efectivo':
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">

@@ -121,6 +121,7 @@ export async function fetchProductsFromSupabase({ allowMockFallback = true } = {
           lifeStage: item.life_stage || item.lifeStage || 'adulto',
           unitCostNeto: item.unit_cost_neto ?? item.unitCostNeto ?? 0,
           minStock: item.min_stock ?? item.minStock ?? 5,
+          barcode: item.barcode ? String(item.barcode).trim() : '',
         };
       });
 
@@ -186,6 +187,8 @@ export async function updateProductInSupabase(productId, updates) {
         payload.category = value;
       } else if (key === 'sku') {
         payload.sku = value && String(value).trim() ? String(value).trim() : null;
+      } else if (key === 'barcode') {
+        payload.barcode = value && String(value).trim() ? String(value).trim() : null;
       } else if (key === 'tagline' || key === 'description') {
         payload.tagline = value || null;
       } else if (key === 'badge') {
@@ -338,11 +341,27 @@ export async function updateProductInSupabase(productId, updates) {
       .eq('id', productId)
       .select();
 
+    // Fallback defensivo si la columna barcode aún no fue migrada en Supabase
+    let barcodeMigrationMissing = false;
+    if (error && (error.code === '42703' || String(error.message || '').includes('barcode')) && 'barcode' in payload) {
+      barcodeMigrationMissing = true;
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.barcode;
+      const retryNoBarcode = await supabase
+        .from('products')
+        .update(fallbackPayload)
+        .eq('id', productId)
+        .select();
+      data = retryNoBarcode.data;
+      error = retryNoBarcode.error;
+    }
+
     // 2. Si no encontró por id (o el id cambió), intentar por sku
     if ((!data || data.length === 0) && updates.sku) {
+      const skuPayload = barcodeMigrationMissing ? (() => { const c = { ...payload }; delete c.barcode; return c; })() : payload;
       const retryBySku = await supabase
         .from('products')
-        .update(payload)
+        .update(skuPayload)
         .eq('sku', updates.sku)
         .select();
 
@@ -365,6 +384,7 @@ export async function updateProductInSupabase(productId, updates) {
         stock: payload.stock || 0,
         min_stock: payload.min_stock || 5,
         sku: payload.sku || null,
+        ...(barcodeMigrationMissing ? {} : { barcode: payload.barcode ?? null }),
         weights: payload.weights || ['10 kg'],
         is_paused: payload.is_paused || false,
         is_active: payload.is_active !== false,
@@ -385,6 +405,7 @@ export async function updateProductInSupabase(productId, updates) {
         life_stage: payload.life_stage || 'adulto',
         ...payload,
       };
+      if (barcodeMigrationMissing) delete insertPayload.barcode;
 
       const upsertRes = await supabase
         .from('products')
@@ -399,7 +420,7 @@ export async function updateProductInSupabase(productId, updates) {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('patitas_products_updated'));
     }
-    return { success: true, data };
+    return { success: true, data, barcodeMigrationMissing };
   } catch (err) {
     console.error('Error updating product in Supabase backend:', err);
     return { success: false, error: err };
@@ -420,6 +441,7 @@ export async function createProductInSupabase(productData) {
       stock: productData.stock ?? 10,
       min_stock: productData.minStock || productData.min_stock || 5,
       sku: productData.sku && String(productData.sku).trim() ? String(productData.sku).trim() : null,
+      barcode: productData.barcode && String(productData.barcode).trim() ? String(productData.barcode).trim() : null,
       weights: Array.isArray(productData.weights) ? productData.weights : [productData.format || '12 kg'],
       is_paused: productData.isPaused ?? false,
       is_active: productData.isActive ?? true,
@@ -462,6 +484,13 @@ export async function createProductInSupabase(productData) {
       .insert(payload)
       .select()
       .single();
+
+    if (error && (error.code === '42703' || String(error.message || '').includes('barcode'))) {
+      delete payload.barcode;
+      const retryNoBarcode = await supabase.from('products').insert(payload).select().single();
+      data = retryNoBarcode.data;
+      error = retryNoBarcode.error;
+    }
 
     // Si ocurre un conflicto de ID duplicado (código 23505), buscar el ID máximo real y reintentar
     if (error && (error.code === '23505' || String(error.message || '').includes('duplicate key'))) {

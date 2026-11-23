@@ -81,6 +81,7 @@ import {
   Fish,
   Star,
   Save,
+  ScanBarcode,
 } from 'lucide-react';
 import { PRODUCTS } from '../data/mockData';
 import CustomDropdown from '../components/CustomDropdown';
@@ -95,6 +96,7 @@ import {
 
 const AdminConveniosManager = lazy(() => import('./admin/AdminConveniosManager'));
 const LoyaltyAdminTab = lazy(() => import('./admin/LoyaltyAdminTab.jsx'));
+const PosTerminalTab = lazy(() => import('./admin/pos/PosTerminalTab.jsx'));
 const RouteOptimizerModal = lazy(() => import('./admin/modals/RouteOptimizerModal.jsx'));
 const ProductSalesHistoryModal = lazy(() => import('./admin/modals/ProductSalesHistoryModal.jsx'));
 const InvoiceDetailModal = lazy(() => import('./admin/modals/InvoiceDetailModal.jsx'));
@@ -211,6 +213,8 @@ import {
   isExpenseWithIvaCredit,
   calculateF29WithCarryover,
   normalizePaymentMethod,
+  getOrderPaymentBreakdown,
+  calculateOrderPaymentFeeBreakdown,
   getOrderPaymentStatus,
   getDynamicGreeting,
   getProductImage,
@@ -220,6 +224,10 @@ import {
 import {
   renderPaymentMethodBadge,
 } from './admin/adminPaymentUI.jsx';
+import {
+  fetchPosRegistersAndShifts,
+  calculatePosPartnerHoursSplit,
+} from '../services/posService.js';
 
 const INITIAL_ORDERS = [];
 const INITIAL_CUSTOMERS = [];
@@ -440,17 +448,33 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     });
   }, [orders, chileDateRanges.todayIso]);
 
-  // Mercado Pago & Máquina de Pago Configuration State (Opción A: descuento directo sobre el total c/IVA)
+  // Mercado Pago & Máquina de Pago Configuration State (Tasas reales + 19% IVA descontado al instante)
   const [mercadoPagoConfig, setMercadoPagoConfig] = useState({
-    cardRatePercent: 2.55, // 2.55% fijo Tarjeta / Máquina POS (cubre débito/crédito)
-    webRatePercent: 3.19, // 3.19% fijo Botón de Pago Web sobre el monto total c/IVA
+    webRatePercent: 3.19, // 3.19% + IVA Checkout Pro Web
     commissionRatePercent: 3.19, // alias retrocompatible
+    creditCardRatePercent: 2.69, // 2.69% + IVA Tarjeta Crédito física (POS + contra entrega)
+    debitCardRatePercent: 2.19, // 2.19% + IVA Tarjeta Débito / Dinero MP físico (POS + contra entrega)
+    cardRatePercent: 2.69, // alias retrocompatible para tarjetas sin desglose histórico
     fixedFeeCLP: 0, // $0 CLP cargo fijo por defecto
-    addIvaToCommission: false, // false = Opción A (descuento directo), true = Opción B (+19% IVA adicional)
+    addIvaToCommission: true, // true = suma +19% IVA a la comisión (real Mercado Pago Chile)
     ivaPercent: 19,
     payoutSchedule: 'instant',
     cardDiscountActive: false,
   });
+
+  // Estado del Terminal POS (Cajas diarias, Turnos/Horas de Socios y Movimientos de Efectivo)
+  const [posRegisters, setPosRegisters] = useState([]);
+  const [posShifts, setPosShifts] = useState([]);
+  const [posMovements, setPosMovements] = useState([]);
+  const [posMigrationPending, setPosMigrationPending] = useState(false);
+
+  const syncPosData = useCallback(async () => {
+    const res = await fetchPosRegistersAndShifts();
+    setPosRegisters(res.registers || []);
+    setPosShifts(res.shifts || []);
+    setPosMovements(res.movements || []);
+    setPosMigrationPending(Boolean(res.migrationPending));
+  }, []);
 
   // 1. Sincronizar Inventario & Catálogo con Supabase (sin fallback silencioso a datos ficticios en Admin)
   const syncInventoryData = useCallback(async () => {
@@ -475,6 +499,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             petType: p.petType || 'perros',
             format: p.weights?.[0] || '12 kg',
             sku: p.sku || '',
+            barcode: p.barcode ? String(p.barcode).trim() : '',
             stock: realStock,
             minStock: minStockVal,
             salePrice: realPrice,
@@ -626,11 +651,19 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             format: primaryItem.format,
             qty: primaryItem.qty,
             subtotal: Number(o.subtotal ?? o.total ?? 0),
+            discount: Number(o.discount ?? 0),
             shippingCost: Number(o.shipping_cost ?? o.shippingCost ?? 0),
             total: Number(o.total || 0),
             status: o.status || 'en_preparacion',
             paymentMethod: o.payment_method || 'Tarjeta',
             paymentStatus: o.payment_status ? String(o.payment_status).trim().toLowerCase() : 'pendiente',
+            paymentBreakdown: o.payment_breakdown || o.paymentBreakdown || null,
+            cashTendered: Number(o.cash_tendered ?? o.cashTendered ?? 0),
+            cashChange: Number(o.cash_change ?? o.cashChange ?? 0),
+            posRegisterId: o.pos_register_id || o.posRegisterId || null,
+            posShiftId: o.pos_shift_id || o.posShiftId || null,
+            soldByEmail: o.sold_by_email || o.soldByEmail || null,
+            soldByName: o.sold_by_name || o.soldByName || null,
             address: orderAddress,
             city: orderCity,
             lat: Number.isFinite(parsedLat) ? parsedLat : null,
@@ -749,7 +782,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         (payload) => {
           const newRow = payload?.new;
           syncOrdersData();
-          if (!newRow || newRow.channel === 'manual') return;
+          if (!newRow || newRow.channel === 'manual' || newRow.channel === 'pos') return;
 
           const isMpOrder =
             Boolean(newRow.mercadopago_preference_id) ||
@@ -776,7 +809,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           const updatedRow = payload?.new;
           const previousRow = payload?.old;
           syncOrdersData();
-          if (!updatedRow || updatedRow.channel === 'manual') return;
+          if (!updatedRow || updatedRow.channel === 'manual' || updatedRow.channel === 'pos') return;
 
           const isNowPaid = String(updatedRow.payment_status || '').toLowerCase() === 'pagado';
           const wasKnownPaid =
@@ -1018,16 +1051,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     getMercadoPagoSettingsFromSupabase().then((mpSettings) => {
       if (!isMounted) return;
       if (mpSettings) {
+        const hasNewRates =
+          mpSettings.creditCardRatePercent !== undefined || mpSettings.debitCardRatePercent !== undefined;
         setMercadoPagoConfig((prev) => ({
           ...prev,
           ...mpSettings,
-          cardRatePercent: mpSettings.cardRatePercent ?? 2.55,
           webRatePercent: mpSettings.webRatePercent ?? mpSettings.commissionRatePercent ?? 3.19,
-          fixedFeeCLP: mpSettings.cardRatePercent !== undefined ? (mpSettings.fixedFeeCLP ?? 0) : 0,
-          addIvaToCommission: Boolean(mpSettings.addIvaToCommission),
+          creditCardRatePercent: mpSettings.creditCardRatePercent ?? 2.69,
+          debitCardRatePercent: mpSettings.debitCardRatePercent ?? 2.19,
+          cardRatePercent: mpSettings.creditCardRatePercent ?? mpSettings.cardRatePercent ?? 2.69,
+          fixedFeeCLP: mpSettings.fixedFeeCLP ?? 0,
+          addIvaToCommission: hasNewRates ? mpSettings.addIvaToCommission !== false : true,
         }));
       }
     });
+
+    // Cajas diarias y turnos/horas de socios del Terminal POS
+    syncPosData();
 
     // Zonas de Despacho desde Supabase
     getDispatchZonesFromSupabase().then((zones) => {
@@ -1057,7 +1097,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [syncPosData]);
 
   // Auto-guardado de inversiones de socios en localStorage
   useEffect(() => {
@@ -1075,7 +1115,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       console.error('Error saving Mercado Pago settings:', err)
     );
     showToast(
-      `Tasas actualizadas: Tarjeta ${nextConfig.cardRatePercent ?? 2.55}% • Botón de Pago ${nextConfig.webRatePercent ?? 3.19}%.`
+      `Tasas actualizadas: Checkout Pro ${nextConfig.webRatePercent ?? 3.19}% · Crédito ${nextConfig.creditCardRatePercent ?? 2.69}% · Débito/MP ${nextConfig.debitCardRatePercent ?? 2.19}%${nextConfig.addIvaToCommission !== false ? ' (+IVA)' : ''}.`
     );
   };
 
@@ -1391,6 +1431,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         !q ||
         p.name.toLowerCase().includes(q) ||
         (p.sku || '').toLowerCase().includes(q) ||
+        (p.barcode || '').toLowerCase().includes(q) ||
         (p.brand || '').toLowerCase().includes(q) ||
         (p.category || '').toLowerCase().includes(q);
 
@@ -4688,6 +4729,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               petType: editingProduct.petType || item.petType || 'perros',
               format: editingProduct.format || item.format,
               sku: (editingProduct.sku || '').trim(),
+              barcode: (editingProduct.barcode || '').trim(),
               salePrice: updatedPrice !== undefined ? updatedPrice : item.salePrice,
               unitCostNeto: updatedCost !== undefined ? updatedCost : item.unitCostNeto,
               shippingUnitCost:
@@ -4729,6 +4771,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         petType: editingProduct.petType,
         format: editingProduct.format,
         sku: (editingProduct.sku || '').trim() || null,
+        barcode: (editingProduct.barcode || '').trim() || null,
         salePrice: updatedPrice,
         unitCostNeto: updatedCost,
         shippingUnitCost: updatedShippingCost !== undefined ? updatedShippingCost : 0,
@@ -5402,51 +5445,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   }, [periodFilteredInvestments]);
 
   // Helper para calcular la comisión retenida por uso de Máquina de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
-  // Opción A por defecto: el porcentaje se aplica directamente sobre el monto total cobrado (con IVA incluido).
-  const calculateOrderPaymentFee = useCallback((order) => {
-    if (!order || order.status === 'cancelado') {
-      return {
-        norm: 'Transferencia',
-        hasFee: false,
-        ratePercent: 0,
-        feeAmount: 0,
-        netReceived: 0,
-        label: 'Sin comisión (0%)',
-      };
-    }
-
-    const orderTotal = Number(order.total || 0);
-    const norm = normalizePaymentMethod(order.paymentMethod);
-
-    let ratePercent = 0;
-    let label = 'Sin comisión (0%)';
-
-    if (norm === 'Tarjeta') {
-      ratePercent = Number(mercadoPagoConfig.cardRatePercent ?? 2.55);
-      label = `Comisión máquina tarjeta (${ratePercent}%)`;
-    } else if (norm === 'Web') {
-      ratePercent = Number(mercadoPagoConfig.webRatePercent ?? mercadoPagoConfig.commissionRatePercent ?? 3.19);
-      label = `Comisión botón de pago (${ratePercent}%)`;
-    }
-
-    let feeAmount = 0;
-    if (ratePercent > 0 && orderTotal > 0) {
-      const baseCommission = orderTotal * (ratePercent / 100) + (Number(mercadoPagoConfig.fixedFeeCLP) || 0);
-      const ivaMultiplier = mercadoPagoConfig.addIvaToCommission
-        ? 1 + (Number(mercadoPagoConfig.ivaPercent || 19) / 100)
-        : 1;
-      feeAmount = Math.round(baseCommission * ivaMultiplier);
-    }
-
-    return {
-      norm,
-      hasFee: feeAmount > 0,
-      ratePercent,
-      feeAmount,
-      netReceived: Math.max(0, orderTotal - feeAmount),
-      label,
-    };
-  }, [mercadoPagoConfig]);
+  // Cálculo exacto de comisiones (Checkout Pro 3,19% · Crédito físico 2,69% · Débito/Dinero MP 2,19% + 19% IVA, compatible con pago dividido)
+  const calculateOrderPaymentFee = useCallback(
+    (order) => calculateOrderPaymentFeeBreakdown(order, mercadoPagoConfig),
+    [mercadoPagoConfig]
+  );
 
   // Helper reutilizable para calcular el monto de despacho por ruta según dirección, ciudad y auto asignado al usuario
   const calculateRouteDeliveryInfo = useCallback(
@@ -5620,9 +5623,12 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       }
     });
 
-    // 2. Identificar Repartidor solo para pedidos efectivamente entregados (evita asignar despachos en preparación)
+    // 2. Identificar Repartidor / Vendedor (ventas POS no tienen costo de despacho)
+    const isPosOrder = String(order.channel || '').toLowerCase() === 'pos';
     const isDelivered = order.status === 'entregado';
     const rawAssignedDriver = String(
+      order.soldByName ||
+      order.sold_by_name ||
       order.deliveredByName ||
       order.delivered_by_name ||
       (order.id === 'PED-0008' ? 'Alamiro Huerta' : '')
@@ -5636,24 +5642,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         ? 'Alamiro Huerta'
         : 'Ignacio Alarcón';
 
-    // 3. Costo del despacho según zona y según el auto configurado del repartidor (solo si ya fue entregado)
-    const routeInfo = calculateRouteDeliveryInfo(
-      order.address,
-      order.city,
-      order.deliveryZone,
-      order.id,
-      order.notes,
-      isDelivered ? resolvedDriverName : ''
-    );
-    const deliveryCalculatedCost = isDelivered ? routeInfo.deliveryCost : 0;
+    // 3. Costo del despacho según zona y según el auto configurado del repartidor (solo delivery entregado; POS = $0)
+    const routeInfo = isPosOrder
+      ? { deliveryCost: 0, routeBaseCost: 0, isFreeDeliveryOverride: true, zoneName: 'Tienda Física (POS)', zoneDesc: 'Venta presencial Terminal POS (Sin costo de traslado)' }
+      : calculateRouteDeliveryInfo(
+          order.address,
+          order.city,
+          order.deliveryZone,
+          order.id,
+          order.notes,
+          isDelivered ? resolvedDriverName : ''
+        );
+    const deliveryCalculatedCost = isDelivered && !isPosOrder ? routeInfo.deliveryCost : 0;
     const zoneName = routeInfo.zoneName;
-    const zoneDesc = isDelivered ? routeInfo.zoneDesc : `${routeInfo.zoneName} · Pendiente de despacho`;
+    const zoneDesc = isPosOrder
+      ? routeInfo.zoneDesc
+      : isDelivered
+        ? routeInfo.zoneDesc
+        : `${routeInfo.zoneName} · Pendiente de despacho`;
 
-    // 4. Comisión por uso de Tarjeta (2,55%) o Botón de Pago Web (3,19%)
+    // 4. Comisión por uso de Checkout Pro (3,19%), Crédito físico (2,69%) o Débito/MP físico (2,19%) + IVA
     const paymentFeeInfo = calculateOrderPaymentFee(order);
     const paymentFee = paymentFeeInfo.feeAmount;
 
-    // 5. Ganancia Bruta del Producto y Utilidad Neta a Repartir 50/50 (descontando despacho y comisión de pago)
+    // 5. Ganancia Bruta del Producto y Utilidad Neta (descontando despacho y comisión de pago)
     const grossProductProfit = orderTotal - totalProductCostWithIva;
     const realProfit = grossProductProfit - deliveryCalculatedCost - paymentFee;
     const profitMarginPercent = orderTotal > 0 ? ((realProfit / orderTotal) * 100).toFixed(1) : '0.0';
@@ -5670,6 +5682,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       routeBaseCost: routeInfo.routeBaseCost,
       isFreeDeliveryOverride: routeInfo.isFreeDeliveryOverride,
       isDelivered,
+      isPosOrder,
       zoneName,
       zoneDesc,
       paymentFee,
@@ -5692,12 +5705,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const liveSalesFromOrders = periodFilteredOrders.reduce((acc, o) => acc + (o.total || 0), 0);
     const totalSales = liveSalesFromOrders;
 
-    // 1. Desglose de Ventas por Canal (Web vs Manual)
+    // 1. Desglose de Ventas por Canal (Web vs Manual vs POS Tienda Física)
     const webOrders = periodFilteredOrders.filter((o) => (o.channel || 'web') === 'web');
     const manualOrders = periodFilteredOrders.filter((o) => o.channel === 'manual');
+    const posOrders = periodFilteredOrders.filter((o) => String(o.channel || '').toLowerCase() === 'pos');
 
     const webSales = webOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const manualSales = manualOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const posSales = posOrders.reduce((sum, o) => sum + (o.total || 0), 0);
 
     const salesNeto = Math.round(totalSales / 1.19);
     const ivaDebito = totalSales - salesNeto;
@@ -5708,21 +5723,30 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const manualSalesNeto = Math.round(manualSales / 1.19);
     const manualIvaDebito = manualSales - manualSalesNeto;
 
-    // Desglose REAL de ingresos por método de pago (Tarjeta / Botón Web vs Transferencia vs Efectivo)
-    const cardAndWebOrders = periodFilteredOrders.filter((o) =>
-      ['Tarjeta', 'Web'].includes(normalizePaymentMethod(o.paymentMethod))
-    );
-    const transferOrders = periodFilteredOrders.filter(
-      (o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia'
-    );
-    const cashOrders = periodFilteredOrders.filter(
-      (o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo'
-    );
+    const posSalesNeto = Math.round(posSales / 1.19);
+    const posIvaDebito = posSales - posSalesNeto;
 
-    const mpSales = cardAndWebOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-    const transferSales = transferOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-    const cashSales = cashOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-    const mpTxCount = cardAndWebOrders.length;
+    // Desglose REAL de ingresos por método de pago (soporta pago simple y pago dividido)
+    let mpSales = 0;
+    let transferSales = 0;
+    let cashSales = 0;
+    let mpTxCount = 0;
+
+    periodFilteredOrders.forEach((o) => {
+      const lines = getOrderPaymentBreakdown(o);
+      let hasCardOrWebLine = false;
+      lines.forEach((line) => {
+        if (['Tarjeta', 'Web'].includes(line.norm)) {
+          mpSales += line.amount;
+          hasCardOrWebLine = true;
+        } else if (line.norm === 'Transferencia') {
+          transferSales += line.amount;
+        } else if (line.norm === 'Efectivo') {
+          cashSales += line.amount;
+        }
+      });
+      if (hasCardOrWebLine) mpTxCount += 1;
+    });
 
     // Costo de Mercadería Vendida (COGS real por variante vendida en cada pedido)
     const realOrdersCOGS = periodFilteredOrders.reduce(
@@ -5733,8 +5757,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const grossMargin = totalSales - estimatedCOGS;
     const grossMarginPercent = totalSales > 0 ? ((grossMargin / totalSales) * 100).toFixed(1) : '0.0';
 
-    // Cálculo REAL de comisiones por pedidos pagados con Tarjeta (2,55%) o Botón de Pago Web (3,19%)
-    const mpTotalCostWithIva = cardAndWebOrders.reduce(
+    // Cálculo REAL de comisiones (Checkout Pro 3,19%, Crédito 2,69%, Débito/MP 2,19% + 19% IVA)
+    const mpTotalCostWithIva = periodFilteredOrders.reduce(
       (sum, o) => sum + calculateOrderPaymentFee(o).feeAmount,
       0
     );
@@ -5743,7 +5767,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     const mpEffectiveRate =
       mpSales > 0
         ? ((mpTotalCostWithIva / mpSales) * 100).toFixed(2)
-        : String(mercadoPagoConfig.cardRatePercent ?? 2.55);
+        : String(mercadoPagoConfig.creditCardRatePercent ?? 2.69);
     const mpNetRevenueReceived = mpSales - mpTotalCostWithIva;
 
     // 2. Facturas de Proveedores (Mercadería + Flete declarado en factura) & IVA Crédito Fiscal
@@ -5897,6 +5921,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       manualSales,
       manualSalesNeto,
       manualIvaDebito,
+      posOrdersCount: posOrders.length,
+      posSales,
+      posSalesNeto,
+      posIvaDebito,
       mpSales,
       transferSales,
       cashSales,
@@ -5949,11 +5977,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       netCashBalance,
       investmentsSummary,
       partnerDistribution: (() => {
-        let ignacioProductProfit = 0;
+        let ignacioDeliveryProductProfit = 0;
         let ignacioDeliveryFees = 0;
         let ignacioDeliveryCount = 0;
 
-        let alamiroProductProfit = 0;
+        let alamiroDeliveryProductProfit = 0;
         let alamiroDeliveryFees = 0;
         let alamiroDeliveryCount = 0;
         let totalPaymentFees = 0;
@@ -5961,6 +5989,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
         periodFilteredOrders.forEach((ord) => {
           const dist = calculateOrderFinancialDistribution(ord);
+          totalPaymentFees += dist.paymentFee || 0;
+          if (dist.isPosOrder) return; // Ventas POS se reparten por pozo mensual proporcional a horas trabajadas
+
           if (!dist.isDelivered) {
             undeliveredCount += 1;
           } else if (dist.isIgnacio) {
@@ -5970,16 +6001,27 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             alamiroDeliveryFees += dist.deliveryCost;
             alamiroDeliveryCount += 1;
           }
-          ignacioProductProfit += dist.halfProfit;
-          alamiroProductProfit += dist.halfProfit;
-          totalPaymentFees += dist.paymentFee || 0;
+          ignacioDeliveryProductProfit += dist.halfProfit;
+          alamiroDeliveryProductProfit += dist.halfProfit;
         });
 
-        const ordersMarginBeforeOpex = Math.round(ignacioProductProfit + alamiroProductProfit);
+        // Pozo acumulado del período para ventas físicas POS repartido proporcionalmente a las horas trabajadas
+        const posSplit = calculatePosPartnerHoursSplit({
+          orders: periodFilteredOrders,
+          shifts: posShifts,
+          inventory,
+          mercadoPagoConfig,
+          targetPeriod: financesPeriodFilter,
+        });
+
+        const ignacioProductProfit = Math.round(ignacioDeliveryProductProfit) + posSplit.ignacio.profitShare;
+        const alamiroProductProfit = Math.round(alamiroDeliveryProductProfit) + posSplit.alamiro.profitShare;
+
+        const ordersMarginBeforeOpex = ignacioProductProfit + alamiroProductProfit;
         const halfOpexDeduction = Math.round(totalRegisteredExpenses / 2);
         const netDistributableProfit = ordersMarginBeforeOpex - totalRegisteredExpenses;
-        const ignacioNetProfitShare = Math.round(ignacioProductProfit) - halfOpexDeduction;
-        const alamiroNetProfitShare = Math.round(alamiroProductProfit) - (totalRegisteredExpenses - halfOpexDeduction);
+        const ignacioNetProfitShare = ignacioProductProfit - halfOpexDeduction;
+        const alamiroNetProfitShare = alamiroProductProfit - (totalRegisteredExpenses - halfOpexDeduction);
 
         return {
           totalPaymentFees,
@@ -5987,10 +6029,14 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           ordersMarginBeforeOpex,
           registeredOpex: totalRegisteredExpenses,
           netDistributableProfit,
+          posSplit,
           ignacio: {
             total: ignacioNetProfitShare + ignacioDeliveryFees,
-            grossOrderTotal: Math.round(ignacioProductProfit) + ignacioDeliveryFees,
-            productProfit: Math.round(ignacioProductProfit),
+            grossOrderTotal: ignacioProductProfit + ignacioDeliveryFees,
+            productProfit: Math.round(ignacioDeliveryProductProfit),
+            posProfit: posSplit.ignacio.profitShare,
+            posHoursLabel: posSplit.ignacio.hoursLabel,
+            posSharePercent: posSplit.ignacio.sharePercent,
             opexShare: halfOpexDeduction,
             netProfitShare: ignacioNetProfitShare,
             deliveryFees: ignacioDeliveryFees,
@@ -5998,8 +6044,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           },
           alamiro: {
             total: alamiroNetProfitShare + alamiroDeliveryFees,
-            grossOrderTotal: Math.round(alamiroProductProfit) + alamiroDeliveryFees,
-            productProfit: Math.round(alamiroProductProfit),
+            grossOrderTotal: alamiroProductProfit + alamiroDeliveryFees,
+            productProfit: Math.round(alamiroDeliveryProductProfit),
+            posProfit: posSplit.alamiro.profitShare,
+            posHoursLabel: posSplit.alamiro.hoursLabel,
+            posSharePercent: posSplit.alamiro.sharePercent,
             opexShare: totalRegisteredExpenses - halfOpexDeduction,
             netProfitShare: alamiroNetProfitShare,
             deliveryFees: alamiroDeliveryFees,
@@ -6008,7 +6057,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         };
       })(),
     };
-  }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution, calculateOrderPaymentFee]);
+  }, [periodFilteredOrders, periodFilteredInvoices, periodFilteredExpenses, inventory, mercadoPagoConfig, investmentsSummary, calculateOrderFinancialDistribution, calculateOrderPaymentFee, posShifts, financesPeriodFilter]);
 
   // Conciliación Tributaria F29 (SII Chile): criterio devengado (todos los pedidos no cancelados del mes) + arrastre de remanente de meses anteriores
   const f29Summary = useMemo(
@@ -6790,6 +6839,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               )}
             </button>
 
+            {/* 2b. Terminal POS (Solo Escritorio) */}
+            <button
+              onClick={() => setActiveTab('pos')}
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-[13px] font-semibold transition-all cursor-pointer ${activeTab === 'pos'
+                ? 'bg-[#D97706] text-white shadow-sm shadow-[#D97706]/20'
+                : 'text-[#64748B] hover:text-[#111827] hover:bg-[#FAF8F4]'
+                }`}
+            >
+              <div className="flex items-center gap-3">
+                <ScanBarcode className="w-4 h-4" />
+                <span>Terminal POS</span>
+              </div>
+              {posRegisters.some((r) => r.status === 'abierta') ? (
+                <span
+                  className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${activeTab === 'pos'
+                    ? 'bg-white/25 text-white'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}
+                >
+                  Abierta
+                </span>
+              ) : (
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${activeTab === 'pos'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-[#F8FAFC] text-slate-500 border border-[#EAECEF]'
+                    }`}
+                >
+                  Caja
+                </span>
+              )}
+            </button>
+
             {/* 3. Clientes (CRM) */}
             <button
               onClick={() => setActiveTab('clientes')}
@@ -6978,6 +7060,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 </h1>
                 <p className="hidden sm:block text-xs text-slate-400 font-medium truncate">
                   Seguimiento de órdenes, cobros, repartidores asignados y rutas de entrega
+                </p>
+              </>
+            )}
+
+            {activeTab === 'pos' && (
+              <>
+                <h1 className="text-xl sm:text-[25px] font-extrabold text-[#111827] tracking-tight leading-tight">
+                  Terminal POS · Punto de venta físico
+                </h1>
+                <p className="hidden sm:block text-xs text-slate-400 font-medium truncate">
+                  Escaneo USB, Club Patitas, pagos divididos, arqueo de caja diario y horas trabajadas por socio
                 </p>
               </>
             )}
@@ -7498,6 +7591,42 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         {/* MAIN VIEW CONTENT CONTAINER (Scrolls independently)     */}
         {/* ======================================================= */}
         <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 lg:p-10 pb-28 md:pb-10 overflow-y-auto">
+
+          {/* ========================================================================= */}
+          {/* TAB POS: TERMINAL PUNTO DE VENTA FÍSICO (EXCLUSIVO ESCRITORIO)            */}
+          {/* ========================================================================= */}
+          {activeTab === 'pos' && (
+            <Suspense
+              fallback={
+                <div className="py-16 flex items-center justify-center gap-2 text-xs font-bold text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#D97706]" />
+                  <span>Cargando Terminal POS...</span>
+                </div>
+              }
+            >
+              <PosTerminalTab
+                inventory={inventory}
+                customers={customers}
+                orders={orders}
+                currentAdminName={currentAdminName}
+                adminEmail={user?.email || adminEmail}
+                mercadoPagoConfig={mercadoPagoConfig}
+                posRegisters={posRegisters}
+                posShifts={posShifts}
+                posMovements={posMovements}
+                posMigrationPending={posMigrationPending}
+                onReloadPosData={syncPosData}
+                onSyncOrders={syncOrdersData}
+                onSyncInventory={syncInventoryData}
+                onSyncCustomers={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new Event('patitas_customers_updated'));
+                  }
+                }}
+                showToast={showToast}
+              />
+            </Suspense>
+          )}
 
           {/* ========================================================================= */}
           {/* TAB 1: DASHBOARD (FinSet Bento UI — KPIs, Gráficos & Pedidos del Día)     */}
@@ -10463,6 +10592,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               Tarjeta: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Tarjeta').reduce((s, o) => s + (o.total || 0), 0) },
               Efectivo: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Efectivo').reduce((s, o) => s + (o.total || 0), 0) },
               Transferencia: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Transferencia').reduce((s, o) => s + (o.total || 0), 0) },
+              Mixto: { count: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Mixto').length, total: periodFilteredOrders.filter((o) => normalizePaymentMethod(o.paymentMethod) === 'Mixto').reduce((s, o) => s + (o.total || 0), 0) },
             };
 
             const filteredInvoices = periodFilteredInvoices.filter((inv) => {
@@ -10578,8 +10708,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   title: ord.customer?.name || ord.customer || 'Cliente Tienda',
                   subtitle:
                     feeInfo.feeAmount > 0
-                      ? `${ord.channel === 'manual' ? 'Venta Manual' : 'Venta Web'} · Bruto ${formatCLP(grossAmt)} · Com. -${formatCLP(feeInfo.feeAmount)}`
-                      : (ord.channel === 'manual' ? 'Venta Manual (Mesón)' : 'Venta Tienda Web'),
+                      ? `${ord.channel === 'pos' ? 'Venta POS' : ord.channel === 'manual' ? 'Venta Manual' : 'Venta Web'} · Bruto ${formatCLP(grossAmt)} · Com. -${formatCLP(feeInfo.feeAmount)}`
+                      : (ord.channel === 'pos' ? 'Venta Terminal POS (Tienda)' : ord.channel === 'manual' ? 'Venta Manual (Mesón)' : 'Venta Tienda Web'),
                   amount: feeInfo.netReceived,
                   grossAmount: grossAmt,
                   paymentFee: feeInfo.feeAmount,
@@ -10589,8 +10719,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   paymentMethod: ord.paymentMethod || 'Web / Tarjeta',
                   status: ord.status || 'Completado',
                   category: 'Venta Comercial',
-                  badge: ord.channel === 'manual' ? 'Manual' : 'Web',
-                  badgeColor: ord.channel === 'manual' ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
+                  badge: ord.channel === 'pos' ? 'POS' : ord.channel === 'manual' ? 'Manual' : 'Web',
+                  badgeColor: ord.channel === 'pos' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : ord.channel === 'manual' ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]',
                   icon: ShoppingBag,
                   sortTs: getSortableTimestamp(ord),
                   raw: ord,
@@ -11081,7 +11211,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             <div>
                               <h3 className="text-sm font-bold text-[#111827]">Cobros con tarjeta y botón de pago</h3>
                               <p className="text-[11px] text-slate-400 font-medium mt-0.5">
-                                Tarjeta: {mercadoPagoConfig.cardRatePercent ?? 2.55}% · Botón web: {mercadoPagoConfig.webRatePercent ?? 3.19}%
+                                Web: {mercadoPagoConfig.webRatePercent ?? 3.19}% · Crédito: {mercadoPagoConfig.creditCardRatePercent ?? 2.69}% · Débito/MP: {mercadoPagoConfig.debitCardRatePercent ?? 2.19}%{mercadoPagoConfig.addIvaToCommission !== false ? ' (+IVA)' : ''}
                               </p>
                             </div>
                           </div>
@@ -12406,11 +12536,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium space-y-1 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between">
-                                <span>50% margen pedidos:</span>
+                                <span>50% margen delivery:</span>
                                 <strong className="text-[#111827] tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.productProfit || 0)}
                                 </strong>
                               </div>
+                              {((financialMetrics.partnerDistribution?.posSplit?.posOrdersCount || 0) > 0 ||
+                                (financialMetrics.partnerDistribution?.alamiro?.posProfit || 0) !== 0) && (
+                                <div className="flex justify-between text-indigo-700">
+                                  <span>
+                                    POS ({financialMetrics.partnerDistribution?.alamiro?.posHoursLabel || '0m'} ·{' '}
+                                    {financialMetrics.partnerDistribution?.alamiro?.posSharePercent ?? 50}%):
+                                  </span>
+                                  <strong className="tabular-nums">
+                                    +{formatCLP(financialMetrics.partnerDistribution?.alamiro?.posProfit || 0)}
+                                  </strong>
+                                </div>
+                              )}
                               {(financialMetrics.partnerDistribution?.alamiro?.opexShare || 0) > 0 && (
                                 <div className="flex justify-between text-rose-600">
                                   <span>50% gastos operac.:</span>
@@ -12446,11 +12588,23 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                             </div>
                             <div className="text-[11px] text-slate-500 font-medium space-y-1 pt-3 border-t border-[#EAECEF]">
                               <div className="flex justify-between">
-                                <span>50% margen pedidos:</span>
+                                <span>50% margen delivery:</span>
                                 <strong className="text-[#111827] tabular-nums">
                                   +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.productProfit || 0)}
                                 </strong>
                               </div>
+                              {((financialMetrics.partnerDistribution?.posSplit?.posOrdersCount || 0) > 0 ||
+                                (financialMetrics.partnerDistribution?.ignacio?.posProfit || 0) !== 0) && (
+                                <div className="flex justify-between text-indigo-700">
+                                  <span>
+                                    POS ({financialMetrics.partnerDistribution?.ignacio?.posHoursLabel || '0m'} ·{' '}
+                                    {financialMetrics.partnerDistribution?.ignacio?.posSharePercent ?? 50}%):
+                                  </span>
+                                  <strong className="tabular-nums">
+                                    +{formatCLP(financialMetrics.partnerDistribution?.ignacio?.posProfit || 0)}
+                                  </strong>
+                                </div>
+                              )}
                               {(financialMetrics.partnerDistribution?.ignacio?.opexShare || 0) > 0 && (
                                 <div className="flex justify-between text-rose-600">
                                   <span>50% gastos operac.:</span>
@@ -12469,10 +12623,10 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </div>
                         </div>
 
-                        {/* Barra de reconciliación 50/50 */}
+                        {/* Barra de reconciliación 50/50 + POS por horas */}
                         <div className="px-4 py-2.5 rounded-2xl bg-[#FAF8F4] border border-[#FDE68A]/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-600">
                           <span>
-                            Reconciliación 50/50: Margen pedidos <strong className="text-[#111827] tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.ordersMarginBeforeOpex || 0)}</strong> − Gastos operacionales <strong className="text-rose-600 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.registeredOpex || 0)}</strong> = Utilidad repartible <strong className="text-emerald-700 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.netDistributableProfit || 0)}</strong>
+                            Reconciliación: Margen pedidos <strong className="text-[#111827] tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.ordersMarginBeforeOpex || 0)}</strong> − Gastos operacionales <strong className="text-rose-600 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.registeredOpex || 0)}</strong> = Utilidad repartible <strong className="text-emerald-700 tabular-nums">{formatCLP(financialMetrics.partnerDistribution?.netDistributableProfit || 0)}</strong>
                           </span>
                           {(financialMetrics.partnerDistribution?.undeliveredCount || 0) > 0 && (
                             <span className="text-[#D97706] font-semibold">
@@ -12493,6 +12647,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   { id: 'todos', label: `Todos (${periodFilteredOrders.length})` },
                                   { id: 'web', label: `Web (${financialMetrics.webOrdersCount})` },
                                   { id: 'manual', label: `Manual (${financialMetrics.manualOrdersCount})` },
+                                  { id: 'pos', label: `POS (${financialMetrics.posOrdersCount || 0})` },
                                 ].map((ch) => (
                                   <button
                                     key={ch.id}
@@ -12517,6 +12672,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   { id: 'Tarjeta', label: 'Tarjeta', icon: CreditCard, count: paymentBreakdown.Tarjeta.count },
                                   { id: 'Efectivo', label: 'Efectivo', icon: Banknote, count: paymentBreakdown.Efectivo.count },
                                   { id: 'Transferencia', label: 'Transferencia', icon: Landmark, count: paymentBreakdown.Transferencia.count },
+                                  ...(paymentBreakdown.Mixto.count > 0
+                                    ? [{ id: 'Mixto', label: 'Mixto', icon: CreditCard, count: paymentBreakdown.Mixto.count }]
+                                    : []),
                                 ].map((p) => {
                                   const isSel = financesPaymentMethodFilter === p.id;
                                   const Icon = p.icon;
@@ -12588,6 +12746,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 ) : (
                                   filteredFinancesOrders.map((ord) => {
                                     const isManual = ord.channel === 'manual';
+                                    const isPos = String(ord.channel || '').toLowerCase() === 'pos';
                                     const orderNeto = Math.round(ord.total / 1.19);
                                     const orderIva = ord.total - orderNeto;
                                     const dist = calculateOrderFinancialDistribution(ord);
@@ -12616,8 +12775,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                           )}
                                         </td>
                                         <td className="py-3.5 px-4">
-                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isManual ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'}`}>
-                                            {isManual ? 'Manual' : 'Web'}
+                                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isPos ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : isManual ? 'bg-[#FAF8F4] text-[#78350F] border-[#FDE68A]' : 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'}`}>
+                                            {isPos ? 'POS' : isManual ? 'Manual' : 'Web'}
                                           </span>
                                         </td>
                                         <td className="py-3.5 px-4 text-slate-600 whitespace-nowrap tabular-nums">
@@ -21244,8 +21403,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                     </div>
                   </div>
 
-                  {/* Formato & SKU */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Formato, SKU & Código de Barras (Pistola USB) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                       <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1">
                         Formato / Peso (ej: 12 kg)
@@ -21263,10 +21422,28 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       </label>
                       <input
                         type="text"
-                        placeholder="Opcional (dejar vacío si no aplica)"
+                        placeholder="Opcional"
                         value={editingProduct.sku || ''}
                         onChange={(e) => setEditingProduct((prev) => ({ ...prev, sku: e.target.value }))}
                         className="w-full p-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1 mb-1">
+                        <ScanBarcode className="w-3 h-3 text-[#D97706]" />
+                        <span>Código de Barras (POS)</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Haz clic y escanea con pistola USB"
+                        value={editingProduct.barcode || ''}
+                        onChange={(e) => setEditingProduct((prev) => ({ ...prev, barcode: e.target.value }))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="w-full p-2.5 rounded-xl border border-amber-200 bg-amber-50/40 font-mono font-bold text-slate-900 focus:bg-white focus:border-[#D97706] focus:outline-none"
                       />
                     </div>
                   </div>

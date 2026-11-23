@@ -467,7 +467,8 @@ export const resolveInvoiceItems = (inv, inventoryList = []) => {
 export const normalizePaymentMethod = (pm) => {
   if (!pm) return 'Web';
   const s = String(pm).trim().toLowerCase();
-  if (s === 'web' || s === 'webpay' || s.includes('webpay') || s.includes('online')) return 'Web';
+  if (s.includes('mixto') || s.includes('dividido')) return 'Mixto';
+  if (s === 'web' || s === 'webpay' || s.includes('webpay') || s.includes('online') || s.includes('checkout pro') || s.includes('botón web') || s.includes('boton web')) return 'Web';
   if (
     s === 'tarjeta' ||
     s.includes('tarjeta') ||
@@ -476,7 +477,9 @@ export const normalizePaymentMethod = (pm) => {
     s.includes('crédito') ||
     s.includes('credito') ||
     s.includes('mercado pago') ||
-    s.includes('mercadopago')
+    s.includes('mercadopago') ||
+    s.includes('dinero mp') ||
+    s.includes('qr')
   ) {
     return 'Tarjeta';
   }
@@ -485,6 +488,174 @@ export const normalizePaymentMethod = (pm) => {
     return 'Transferencia';
   }
   return 'Web';
+};
+
+// Clasifica la cubeta exacta de comisión de Mercado Pago para un método de pago individual
+export const classifyPaymentFeeBucket = (pm, channel = '') => {
+  const s = String(pm || '').trim().toLowerCase();
+  const ch = String(channel || '').trim().toLowerCase();
+  if (!s) return ch === 'pos' ? 'none' : 'web';
+  if (s.includes('efectivo') || s.includes('transferencia') || s.includes('bci') || s.includes('santander') || s.includes('banco')) {
+    return 'none';
+  }
+  if (
+    s === 'web' ||
+    s.includes('checkout pro') ||
+    s.includes('botón web') ||
+    s.includes('boton web') ||
+    s.includes('webpay') ||
+    s.includes('online') ||
+    (ch === 'web' && (s.includes('mercado pago') || s.includes('mercadopago')) && !s.includes('pos') && !s.includes('contra entrega') && !s.includes('qr') && !s.includes('dinero'))
+  ) {
+    return 'web';
+  }
+  if (s.includes('crédito') || s.includes('credito') || s.includes('credit')) {
+    return 'credit';
+  }
+  if (
+    s.includes('débito') ||
+    s.includes('debito') ||
+    s.includes('debit') ||
+    s.includes('dinero mp') ||
+    s.includes('dinero en cuenta') ||
+    s.includes('dinero mercado pago') ||
+    s.includes('qr') ||
+    (s.includes('mercado pago') && (ch === 'pos' || s.includes('pos') || s.includes('contra entrega')))
+  ) {
+    return 'debit_mp';
+  }
+  if (s.includes('tarjeta') || s.includes('pos')) {
+    return 'card_legacy';
+  }
+  return ch === 'web' ? 'web' : 'none';
+};
+
+// Devuelve siempre el desglose normalizado de pagos de una orden (soporta pago único y pago dividido)
+export const getOrderPaymentBreakdown = (order) => {
+  if (!order) return [];
+  const raw = order.paymentBreakdown ?? order.payment_breakdown;
+  let parsed = raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return parsed
+      .map((entry) => {
+        const method = String(entry?.method || 'Efectivo').trim();
+        const amount = Math.max(0, Number(entry?.amount) || 0);
+        const tendered = entry?.tendered !== undefined ? Math.max(0, Number(entry.tendered) || 0) : amount;
+        const change = entry?.change !== undefined ? Math.max(0, Number(entry.change) || 0) : Math.max(0, tendered - amount);
+        return {
+          method,
+          norm: normalizePaymentMethod(method),
+          feeBucket: classifyPaymentFeeBucket(method, order.channel),
+          amount,
+          tendered,
+          change,
+        };
+      })
+      .filter((entry) => entry.amount > 0);
+  }
+
+  const total = Math.max(0, Number(order.total) || 0);
+  const method = String(order.paymentMethod || order.payment_method || 'Web').trim();
+  const tendered = Number(order.cashTendered ?? order.cash_tendered ?? total) || total;
+  const change = Number(order.cashChange ?? order.cash_change ?? 0) || 0;
+  return [
+    {
+      method,
+      norm: normalizePaymentMethod(method),
+      feeBucket: classifyPaymentFeeBucket(method, order.channel),
+      amount: total,
+      tendered,
+      change,
+    },
+  ];
+};
+
+// Cálculo exacto de comisiones (Checkout Pro 3,19% · Crédito físico 2,69% · Débito/Dinero MP 2,19% + 19% IVA)
+export const calculateOrderPaymentFeeBreakdown = (order, mpConfig = {}) => {
+  if (!order || order.status === 'cancelado') {
+    return {
+      norm: 'Transferencia',
+      hasFee: false,
+      ratePercent: 0,
+      feeAmount: 0,
+      netReceived: 0,
+      label: 'Sin comisión (0%)',
+      lines: [],
+    };
+  }
+
+  const orderTotal = Math.max(0, Number(order.total) || 0);
+  const breakdown = getOrderPaymentBreakdown(order);
+  const webRate = Number(mpConfig.webRatePercent ?? mpConfig.commissionRatePercent ?? 3.19);
+  const creditRate = Number(mpConfig.creditCardRatePercent ?? 2.69);
+  const debitRate = Number(mpConfig.debitCardRatePercent ?? 2.19);
+  const legacyCardRate = Number(mpConfig.cardRatePercent ?? creditRate ?? 2.69);
+  const fixedFee = Number(mpConfig.fixedFeeCLP || 0);
+  const addIva = mpConfig.addIvaToCommission !== false;
+  const ivaMult = addIva ? 1 + Number(mpConfig.ivaPercent || 19) / 100 : 1;
+
+  let totalFee = 0;
+  let chargedAmount = 0;
+  const detailLabels = [];
+
+  const lines = breakdown.map((line) => {
+    let ratePercent = 0;
+    let bucketLabel = 'Sin comisión';
+    if (line.feeBucket === 'web') {
+      ratePercent = webRate;
+      bucketLabel = `Checkout Pro (${ratePercent}%${addIva ? ' + IVA' : ''})`;
+    } else if (line.feeBucket === 'credit') {
+      ratePercent = creditRate;
+      bucketLabel = `Crédito físico (${ratePercent}%${addIva ? ' + IVA' : ''})`;
+    } else if (line.feeBucket === 'debit_mp') {
+      ratePercent = debitRate;
+      bucketLabel = `Débito / MP (${ratePercent}%${addIva ? ' + IVA' : ''})`;
+    } else if (line.feeBucket === 'card_legacy') {
+      ratePercent = legacyCardRate;
+      bucketLabel = `Tarjeta (${ratePercent}%${addIva ? ' + IVA' : ''})`;
+    }
+
+    let lineFee = 0;
+    if (ratePercent > 0 && line.amount > 0) {
+      const baseCommission = line.amount * (ratePercent / 100) + fixedFee;
+      lineFee = Math.round(baseCommission * ivaMult);
+      totalFee += lineFee;
+      chargedAmount += line.amount;
+      detailLabels.push(bucketLabel);
+    }
+
+    return {
+      ...line,
+      ratePercent,
+      feeAmount: lineFee,
+      netReceived: Math.max(0, line.amount - lineFee),
+      label: bucketLabel,
+    };
+  });
+
+  const norm = breakdown.length > 1 ? 'Mixto' : (breakdown[0]?.norm || normalizePaymentMethod(order.paymentMethod));
+  const effectiveRate =
+    chargedAmount > 0 && totalFee > 0
+      ? Number(((totalFee / chargedAmount) * 100).toFixed(2))
+      : (lines.find((l) => l.ratePercent > 0)?.ratePercent || 0);
+
+  return {
+    norm,
+    hasFee: totalFee > 0,
+    ratePercent: effectiveRate,
+    feeAmount: totalFee,
+    netReceived: Math.max(0, orderTotal - totalFee),
+    label: detailLabels.length > 0 ? detailLabels.join(' + ') : 'Sin comisión (0%)',
+    lines,
+  };
 };
 
 // Determina si una factura de compra a proveedor ya fue pagada efectivamente
