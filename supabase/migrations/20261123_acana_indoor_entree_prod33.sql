@@ -144,7 +144,7 @@ SET
           "name": "Grasa de pollo",
           "pill": "Omega 6 y Energía",
           "desc": "Fuente natural de ácidos grasos esenciales Omega-6 (2%) y alta palatabilidad para un pelaje sedoso y vitalidad diaria.",
-          "img": "/images/bowl/ing-aceite-omega.webp"
+          "img": "/images/bowl/ing-grasa-pollo.webp"
         }
       ]
     }'::jsonb,

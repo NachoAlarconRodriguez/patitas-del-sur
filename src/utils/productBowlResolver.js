@@ -85,11 +85,18 @@ export const BOWL_IMAGE_BANK = [
 
   // Pescados y Omega
   {
+    id: 'grasa-pollo',
+    label: 'Grasa de Pollo / Aceites Puros',
+    category: 'Pescados y Omega',
+    url: '/images/bowl/ing-grasa-pollo.webp',
+    keywords: ['grasa de pollo', 'grasa de ave', 'grasa animal', 'aceite de pollo', 'aceite de salmon', 'aceite de pescado', 'grasa', 'aceite'],
+  },
+  {
     id: 'aceite-omega',
-    label: 'Aceite de Salmón / Grasas Omega',
+    label: 'Semillas de Linaza / Chía / Omega',
     category: 'Pescados y Omega',
     url: '/images/bowl/ing-aceite-omega.webp',
-    keywords: ['aceite de salmon', 'aceite de pescado', 'aceite de linaza', 'grasa de pollo', 'grasa de ave', 'grasa animal', 'aceite', 'omega', 'linaza', 'chia', 'semilla de lino'],
+    keywords: ['aceite de linaza', 'semilla de lino', 'linaza', 'chia', 'semillas', 'omega'],
   },
   {
     id: 'trucha',
