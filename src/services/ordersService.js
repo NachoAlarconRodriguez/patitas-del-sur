@@ -301,8 +301,17 @@ export async function createOrderInSupabase(orderData, items = []) {
       }
     }
 
-    // Si es un pedido proveniente de la tienda web, disparar notificación Web Push a dispositivos Admin (best-effort)
-    if (String(orderPayload.channel || 'web').toLowerCase() !== 'manual') {
+    // Si es un pedido proveniente de la tienda web, disparar notificación Web Push a dispositivos Admin (best-effort).
+    // Para Mercado Pago aún pendiente, NO notificar todavía: se notificará una sola vez cuando el pago sea aprobado.
+    const isMercadoPagoOrder =
+      Boolean(orderPayload.mercadopago_preference_id) ||
+      /mercado\s*pago/i.test(String(orderPayload.payment_method || ''));
+    const isPaidOrder = String(orderPayload.payment_status || '').toLowerCase() === 'pagado';
+
+    if (
+      String(orderPayload.channel || 'web').toLowerCase() !== 'manual' &&
+      !(isMercadoPagoOrder && !isPaidOrder)
+    ) {
       triggerAdminNewOrderPush(orderPayload.id, 'new_web_order');
     }
 

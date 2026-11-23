@@ -41,6 +41,7 @@ import {
 } from '../services/customersService';
 import { fetchProductsFromSupabase } from '../services/productsService';
 import { markCouponAsUsed, getLoyaltySettings } from '../services/loyaltyService';
+import { triggerAdminNewOrderPush } from '../services/pushNotificationsService';
 import { supabase } from '../lib/supabase';
 import GoogleAddressAutocomplete from './GoogleAddressAutocomplete';
 import CountryCodeDropdown from './CountryCodeDropdown';
@@ -770,11 +771,15 @@ export default function CartDrawer({
               const alreadyPaidInDb = String(currentOrderRow?.payment_status || '').toLowerCase() === 'pagado';
               const wasCancelledInDb = currentOrderRow?.status === 'cancelado';
 
-              await updateOrderMercadoPagoData(savedPendingOrder.id, {
+              const mpUpdateRes = await updateOrderMercadoPagoData(savedPendingOrder.id, {
                 mpOrderId: savedPendingOrder.mpOrderId,
                 mpPaymentId: livePaymentId || undefined,
                 paymentStatus: 'pagado',
               });
+
+              if (!alreadyPaidInDb && mpUpdateRes?.success && mpUpdateRes?.data) {
+                triggerAdminNewOrderPush(savedPendingOrder.id, 'payment_approved');
+              }
 
               if (wasCancelledInDb) {
                 await supabase
@@ -906,11 +911,15 @@ export default function CartDrawer({
         const alreadyPaidInDb = String(currentOrderRow?.payment_status || '').toLowerCase() === 'pagado';
         const wasCancelledInDb = currentOrderRow?.status === 'cancelado';
 
-        await updateOrderMercadoPagoData(targetOrderId, {
+        const mpUpdateRes = await updateOrderMercadoPagoData(targetOrderId, {
           mpOrderId: cleanMpOrderId || undefined,
           mpPaymentId: cleanPaymentId || undefined,
           paymentStatus: alreadyPaidInDb ? 'pagado' : finalPaymentStatus,
         });
+
+        if (isApproved && !alreadyPaidInDb && mpUpdateRes?.success && mpUpdateRes?.data) {
+          triggerAdminNewOrderPush(targetOrderId, 'payment_approved');
+        }
 
         if (isApproved && wasCancelledInDb) {
           await supabase

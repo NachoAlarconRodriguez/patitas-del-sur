@@ -1,5 +1,5 @@
 // Service Worker for Patitas del Sur Admin PWA
-const CACHE_NAME = 'patitas-pwa-v8';
+const CACHE_NAME = 'patitas-pwa-v9';
 const STATIC_ASSETS = [
   '/index.html',
   '/manifest.webmanifest',
@@ -132,7 +132,7 @@ self.addEventListener('push', (event) => {
     icon: data.icon || '/pwa-icon-192.png',
     badge: data.badge || '/pwa-icon-192.png',
     tag: data.tag || `patitas-order-${data.orderId || Date.now()}`,
-    renotify: true,
+    renotify: data.renotify !== undefined ? Boolean(data.renotify) : true,
     requireInteraction: Boolean(data.requireInteraction),
     vibrate: [160, 80, 160],
     data: {

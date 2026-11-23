@@ -728,6 +728,16 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   }, [isAdminAuthenticated, syncOrdersData, syncInventoryData]);
 
   // 2b. Supabase Realtime: alertas en vivo de nuevos pedidos web y pagos aprobados
+  const paidOrderIdsRef = useRef(new Set());
+  useEffect(() => {
+    const nextPaid = paidOrderIdsRef.current;
+    orders.forEach((o) => {
+      if (o?.id && String(o.paymentStatus || '').toLowerCase() === 'pagado') {
+        nextPaid.add(o.id);
+      }
+    });
+  }, [orders]);
+
   useEffect(() => {
     if (!isAdminAuthenticated) return;
 
@@ -739,12 +749,24 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         (payload) => {
           const newRow = payload?.new;
           syncOrdersData();
-          if (newRow && newRow.channel !== 'manual') {
-            playNewOrderAlertFeedback();
-            showToast(
-              `🐾 Nuevo pedido web ${newRow.id} · ${newRow.customer_name || 'Cliente'} (${formatCLP(Number(newRow.total) || 0)})`
-            );
+          if (!newRow || newRow.channel === 'manual') return;
+
+          const isMpOrder =
+            Boolean(newRow.mercadopago_preference_id) ||
+            /mercado\s*pago/i.test(String(newRow.payment_method || ''));
+          const isPaid = String(newRow.payment_status || '').toLowerCase() === 'pagado';
+
+          if (isPaid && newRow.id) {
+            paidOrderIdsRef.current.add(newRow.id);
           }
+
+          // Para intentos de Mercado Pago aún pendientes, esperar a que el pago sea aprobado
+          if (isMpOrder && !isPaid) return;
+
+          playNewOrderAlertFeedback();
+          showToast(
+            `🐾 Nuevo pedido web ${newRow.id} · ${newRow.customer_name || 'Cliente'} (${formatCLP(Number(newRow.total) || 0)})`
+          );
         }
       )
       .on(
@@ -754,15 +776,18 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
           const updatedRow = payload?.new;
           const previousRow = payload?.old;
           syncOrdersData();
-          if (
-            updatedRow &&
-            updatedRow.channel !== 'manual' &&
-            String(updatedRow.payment_status || '').toLowerCase() === 'pagado' &&
-            String(previousRow?.payment_status || '').toLowerCase() !== 'pagado'
-          ) {
+          if (!updatedRow || updatedRow.channel === 'manual') return;
+
+          const isNowPaid = String(updatedRow.payment_status || '').toLowerCase() === 'pagado';
+          const wasKnownPaid =
+            paidOrderIdsRef.current.has(updatedRow.id) ||
+            String(previousRow?.payment_status || '').toLowerCase() === 'pagado';
+
+          if (isNowPaid && !wasKnownPaid) {
+            paidOrderIdsRef.current.add(updatedRow.id);
             playNewOrderAlertFeedback();
             showToast(
-              `💳 Pago confirmado en ${updatedRow.id} · ${updatedRow.customer_name || 'Cliente'}`
+              `✅ Pago confirmado en ${updatedRow.id} · ${updatedRow.customer_name || 'Cliente'} (${formatCLP(Number(updatedRow.total) || 0)})`
             );
           }
         }

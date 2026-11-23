@@ -85,8 +85,12 @@ export async function sendAdminOrderPushNotification({
   let body = `${cleanCustomer} · ${formattedTotal} · ${cleanCity}`;
 
   if (event === 'payment_approved') {
-    title = `✅ Pago Web Aprobado ${cleanId}`;
-    body = `${cleanCustomer} pagó ${formattedTotal} (${paymentMethod || 'Mercado Pago'}) · ${cleanCity}`;
+    title = isUrgent
+      ? `⚡✅ Pago Urgente Aprobado ${cleanId}`
+      : `✅ Pago Web Aprobado ${cleanId}`;
+    body = deliverySlot
+      ? `${cleanCustomer} pagó ${formattedTotal} · ${cleanCity} (${deliverySlot})`
+      : `${cleanCustomer} pagó ${formattedTotal} (${paymentMethod || 'Mercado Pago'}) · ${cleanCity}`;
   } else if (deliverySlot) {
     body = `${cleanCustomer} · ${formattedTotal} · ${cleanCity} (${deliverySlot})`;
   }
@@ -95,6 +99,7 @@ export async function sendAdminOrderPushNotification({
     title,
     body,
     tag: `patitas-order-${cleanId}-${event}`,
+    renotify: event !== 'payment_approved',
     orderId: cleanId,
     url: `/admin?tab=pedidos&order=${encodeURIComponent(cleanId)}`,
     icon: '/pwa-icon-192.png',
@@ -183,12 +188,39 @@ export default async function handler(req, res) {
     // Verificar contra Supabase que el pedido exista realmente para evitar spam al endpoint público
     const { data: orderRow, error: orderErr } = await supabase
       .from('orders')
-      .select('id, customer_name, total, city, delivery_slot, payment_method, channel')
+      .select(
+        'id, customer_name, total, city, delivery_slot, payment_method, payment_status, mercadopago_preference_id, channel'
+      )
       .eq('id', String(orderId))
       .maybeSingle();
 
     if (orderErr || !orderRow) {
       return res.status(404).json({ error: 'Pedido no encontrado' });
+    }
+
+    const isMercadoPagoOrder =
+      Boolean(orderRow.mercadopago_preference_id) ||
+      /mercado\s*pago/i.test(String(orderRow.payment_method || ''));
+    const isPaidOrder = String(orderRow.payment_status || '').toLowerCase() === 'pagado';
+
+    // Defensa en profundidad: nunca notificar intentos pendientes de Mercado Pago
+    if (event === 'new_web_order' && isMercadoPagoOrder && !isPaidOrder) {
+      return res.status(200).json({
+        ok: true,
+        sent: 0,
+        skipped: true,
+        reason: 'pending_mercadopago_payment',
+      });
+    }
+
+    // Validar que un aviso de payment_approved corresponda a un pedido realmente pagado en Supabase
+    if (event === 'payment_approved' && !isPaidOrder) {
+      return res.status(200).json({
+        ok: true,
+        sent: 0,
+        skipped: true,
+        reason: 'order_not_paid_yet',
+      });
     }
 
     const result = await sendAdminOrderPushNotification({
