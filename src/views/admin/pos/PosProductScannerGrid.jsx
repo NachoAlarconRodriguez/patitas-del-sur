@@ -9,7 +9,7 @@ import {
   AlertTriangle,
   Link2,
   X,
-  Check,
+  CornerDownLeft,
 } from 'lucide-react';
 import { formatCLP } from '../adminUtils.js';
 
@@ -42,9 +42,10 @@ function playPosBeep(type = 'ok') {
 }
 
 /**
- * Buscador + Escáner de Pistola USB + Grilla visual de catálogo POS.
- * - Soporta escaneo directo desde el buscador (auto-enfoque F2) y captura global de ráfagas USB.
- * - Permite asignar al vuelo un código de barras escaneado que aún no exista en Inventario.
+ * Barra de Escaneo USB + Buscador con Lista Desplegable Flotante (sin grilla fija).
+ * - Pistola lectora USB: agrega al carrito al instante (con foco o mediante captura global de ráfagas).
+ * - Al escribir nombre, marca, peso, SKU o código: muestra lista desplegable navegable con ↑/↓/Enter/Click.
+ * - Si el código escaneado no existe, abre un modal compacto para vincularlo a un producto al vuelo.
  */
 export default function PosProductScannerGrid({
   inventory = [],
@@ -56,32 +57,37 @@ export default function PosProductScannerGrid({
   showToast,
 }) {
   const [query, setQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('todos');
-  const [petFilter, setPetFilter] = useState('todos');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [lastScannedId, setLastScannedId] = useState(null);
   const [unknownBarcode, setUnknownBarcode] = useState(null);
   const [assignSearch, setAssignSearch] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
 
   const searchInputRef = useRef(null);
+  const containerRef = useRef(null);
   const scanBufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
 
-  // Mapa rápido de cantidades ya en carrito por producto
   const cartQtyById = useMemo(() => {
     const map = new Map();
     cartItems.forEach((it) => map.set(it.id, (map.get(it.id) || 0) + (it.quantity || 0)));
     return map;
   }, [cartItems]);
 
-  const categories = useMemo(() => {
-    const set = new Set();
-    inventory.forEach((p) => {
-      if (p.category) set.add(p.category);
-    });
-    return ['todos', ...Array.from(set).sort()];
-  }, [inventory]);
+  const tryAddProduct = (prod) => {
+    if (!prod || disabled) return false;
+    const currentInCart = cartQtyById.get(prod.id) || 0;
+    const availableStock = Number(prod.stock) || 0;
+    if (availableStock <= 0 || currentInCart >= availableStock) {
+      if (soundEnabled) playPosBeep('error');
+      showToast?.(`Sin stock suficiente de ${prod.name} (Stock: ${availableStock}).`, 'error');
+      return false;
+    }
+    onAddProduct?.(prod);
+    if (soundEnabled) playPosBeep('ok');
+    return true;
+  };
 
   const handleBarcodeLookup = (rawCode) => {
     const clean = String(rawCode || '').trim();
@@ -95,22 +101,12 @@ export default function PosProductScannerGrid({
     });
 
     if (exactMatch) {
-      const currentInCart = cartQtyById.get(exactMatch.id) || 0;
-      const availableStock = Number(exactMatch.stock) || 0;
-      if (availableStock <= 0 || currentInCart >= availableStock) {
-        if (soundEnabled) playPosBeep('error');
-        showToast?.(`Sin stock suficiente de ${exactMatch.name} (Stock: ${availableStock}).`, 'error');
-        return true;
-      }
-      onAddProduct?.(exactMatch);
-      setLastScannedId(exactMatch.id);
+      tryAddProduct(exactMatch);
       setUnknownBarcode(null);
-      if (soundEnabled) playPosBeep('ok');
-      setTimeout(() => setLastScannedId((prev) => (prev === exactMatch.id ? null : prev)), 900);
       return true;
     }
 
-    // Si parece un código de barras real (>= 6 chars alfanuméricos sin espacios) y no se encontró
+    // Si parece un código de barras real (>= 6 caracteres alfanuméricos sin espacios) y no se encontró
     if (/^[A-Za-z0-9\-_]{6,}$/.test(clean)) {
       if (soundEnabled) playPosBeep('error');
       setUnknownBarcode(clean);
@@ -121,7 +117,18 @@ export default function PosProductScannerGrid({
     return false;
   };
 
-  // Atajo F2 para enfocar buscador + captura global de pistola USB si el foco está fuera de inputs
+  // Cerrar lista desplegable al hacer clic fuera
+  useEffect(() => {
+    const onMouseDown = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
+  // Atajo F2 para enfocar buscador + captura global de pistola USB
   useEffect(() => {
     const onGlobalKeyDown = (e) => {
       if (e.key === 'F2') {
@@ -152,7 +159,6 @@ export default function PosProductScannerGrid({
       }
 
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // Pistola USB teclea cada carácter en < 55ms; si pasó más tiempo, reinicia buffer
         if (now - lastKeyTimeRef.current > 80) {
           scanBufferRef.current = '';
         }
@@ -165,21 +171,28 @@ export default function PosProductScannerGrid({
     return () => window.removeEventListener('keydown', onGlobalKeyDown);
   });
 
-  const filteredProducts = useMemo(() => {
+  // Resultados de la lista desplegable (solo cuando el usuario escribe)
+  const dropdownResults = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return inventory.filter((p) => {
-      if (categoryFilter !== 'todos' && p.category !== categoryFilter) return false;
-      if (petFilter !== 'todos' && String(p.petType || '').toLowerCase() !== petFilter) return false;
-      if (!q) return true;
-      return (
-        String(p.name || '').toLowerCase().includes(q) ||
-        String(p.brand || '').toLowerCase().includes(q) ||
-        String(p.format || '').toLowerCase().includes(q) ||
-        String(p.sku || '').toLowerCase().includes(q) ||
-        String(p.barcode || '').toLowerCase().includes(q)
-      );
-    });
-  }, [inventory, query, categoryFilter, petFilter]);
+    if (!q) return [];
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return inventory
+      .filter((p) => {
+        const haystack = `${p.name || ''} ${p.brand || ''} ${p.format || ''} ${p.sku || ''} ${p.barcode || ''} ${p.category || ''}`.toLowerCase();
+        return tokens.every((tok) => haystack.includes(tok));
+      })
+      .sort((a, b) => {
+        // Priorizar productos con stock disponible sobre agotados
+        const aStock = (Number(a.stock) || 0) - (cartQtyById.get(a.id) || 0) > 0 ? 1 : 0;
+        const bStock = (Number(b.stock) || 0) - (cartQtyById.get(b.id) || 0) > 0 ? 1 : 0;
+        if (aStock !== bStock) return bStock - aStock;
+        return String(a.name || '').localeCompare(String(b.name || ''));
+      })
+      .slice(0, 15);
+  }, [inventory, query, cartQtyById]);
+
+  const safeHighlightedIndex =
+    dropdownResults.length === 0 ? 0 : Math.min(highlightedIndex, dropdownResults.length - 1);
 
   const assignableProducts = useMemo(() => {
     const q = assignSearch.trim().toLowerCase();
@@ -196,38 +209,67 @@ export default function PosProductScannerGrid({
       .slice(0, 12);
   }, [inventory, assignSearch]);
 
+  const handleSelectFromDropdown = (prod) => {
+    const ok = tryAddProduct(prod);
+    if (ok) {
+      setQuery('');
+      setIsDropdownOpen(false);
+      setHighlightedIndex(0);
+      searchInputRef.current?.focus();
+    }
+  };
+
   const handleSearchKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setIsDropdownOpen(false);
+      setQuery('');
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      if (dropdownResults.length > 0) {
+        e.preventDefault();
+        setIsDropdownOpen(true);
+        setHighlightedIndex((prev) => (prev + 1) % dropdownResults.length);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowUp') {
+      if (dropdownResults.length > 0) {
+        e.preventDefault();
+        setIsDropdownOpen(true);
+        setHighlightedIndex((prev) => (prev - 1 + dropdownResults.length) % dropdownResults.length);
+      }
+      return;
+    }
+
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const clean = query.trim();
     if (!clean) return;
 
+    // 1. Intentar match exacto por barcode/SKU (pistola USB)
     const matchedByCode = handleBarcodeLookup(clean);
     if (matchedByCode) {
       setQuery('');
+      setIsDropdownOpen(false);
+      setHighlightedIndex(0);
       return;
     }
 
-    // Si hay exactamente 1 resultado filtrado al presionar Enter, agregarlo
-    if (filteredProducts.length === 1) {
-      const single = filteredProducts[0];
-      const currentInCart = cartQtyById.get(single.id) || 0;
-      if ((Number(single.stock) || 0) > currentInCart) {
-        onAddProduct?.(single);
-        setLastScannedId(single.id);
-        if (soundEnabled) playPosBeep('ok');
-        setQuery('');
-        setTimeout(() => setLastScannedId(null), 900);
-      } else {
-        if (soundEnabled) playPosBeep('error');
-        showToast?.(`Sin stock suficiente de ${single.name}.`, 'error');
-      }
+    // 2. Si hay lista desplegable con resultados, agregar el ítem resaltado
+    if (dropdownResults.length > 0) {
+      const target = dropdownResults[safeHighlightedIndex] || dropdownResults[0];
+      handleSelectFromDropdown(target);
     }
   };
 
+  const showDropdown = isDropdownOpen && query.trim().length > 0 && !disabled;
+
   return (
-    <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-5 flex flex-col gap-4 h-full min-h-[540px]">
-      {/* Buscador + Pistola USB */}
+    <div ref={containerRef} className="relative bg-white border border-[#EAECEF] rounded-3xl p-3.5 sm:px-4 shrink-0 shadow-2xs">
       <div className="flex items-center gap-2.5">
         <div className="relative flex-1">
           <ScanBarcode className="w-4 h-4 text-[#D97706] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -236,9 +278,17 @@ export default function PosProductScannerGrid({
             type="text"
             disabled={disabled}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => {
+              if (query.trim()) setIsDropdownOpen(true);
+            }}
+            onChange={(e) => {
+              const nextVal = e.target.value;
+              setQuery(nextVal);
+              setHighlightedIndex(0);
+              setIsDropdownOpen(nextVal.trim().length > 0);
+            }}
             onKeyDown={handleSearchKeyDown}
-            placeholder="Escanea código de barras con pistola USB o busca por nombre, marca, peso o SKU... (F2)"
+            placeholder="Escanea código con pistola USB o escribe el nombre del producto para buscar... (F2)"
             className="w-full pl-10 pr-10 py-3 rounded-2xl bg-[#F8FAFC] border-2 border-[#EAECEF] focus:border-[#D97706] focus:bg-white text-sm font-semibold text-[#111827] placeholder:text-slate-400 focus:outline-none transition-all disabled:opacity-50"
           />
           {query && (
@@ -246,6 +296,7 @@ export default function PosProductScannerGrid({
               type="button"
               onClick={() => {
                 setQuery('');
+                setIsDropdownOpen(false);
                 searchInputRef.current?.focus();
               }}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
@@ -270,231 +321,213 @@ export default function PosProductScannerGrid({
         </button>
       </div>
 
-      {/* Aviso código de barras no encontrado + asignación rápida */}
-      {unknownBarcode && (
-        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div className="text-xs">
-                <div className="font-extrabold text-amber-950">
-                  Código <span className="font-mono bg-white px-1.5 py-0.5 rounded border border-amber-200">{unknownBarcode}</span> no registrado en inventario
-                </div>
-                <p className="text-amber-800/90 mt-0.5">
-                  Puedes vincularlo ahora mismo a un producto existente y agregarlo al carrito:
-                </p>
-              </div>
+      {/* LISTA DESPLEGABLE FLOTANTE DE PRODUCTOS AL ESCRIBIR */}
+      {showDropdown && (
+        <div className="absolute left-0 right-0 top-full mt-2 z-40 bg-white border border-[#EAECEF] rounded-2xl shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+          {dropdownResults.length === 0 ? (
+            <div className="p-5 text-center text-xs text-slate-400 flex flex-col items-center gap-1">
+              <Search className="w-5 h-5 opacity-40" />
+              <span className="font-bold text-slate-600">No se encontraron productos para &quot;{query.trim()}&quot;</span>
+              <span className="text-[11px]">Prueba con otro nombre, marca, peso o escanea el código de barras.</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setUnknownBarcode(null)}
-              className="p-1 rounded-lg text-amber-700 hover:bg-amber-100 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={assignSearch}
-              onChange={(e) => setAssignSearch(e.target.value)}
-              placeholder="Buscar producto para asignar este código de barras..."
-              className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-amber-200 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#D97706]"
-            />
-          </div>
-
-          <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-            {assignableProducts.map((prod) => (
-              <div
-                key={prod.id}
-                className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white border border-amber-100 hover:border-[#D97706] transition-colors"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 truncate">
-                    {prod.name} <span className="text-slate-400 font-semibold">· {prod.format}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500">
-                    Stock: {prod.stock} · {formatCLP(prod.salePrice || prod.price || 0)}
-                    {prod.barcode ? ` · Actual: ${prod.barcode}` : ''}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={isAssigning}
-                  onClick={async () => {
-                    setIsAssigning(true);
-                    const ok = await onAssignBarcodeToProduct?.(prod, unknownBarcode);
-                    setIsAssigning(false);
-                    if (ok) {
-                      if ((Number(prod.stock) || 0) > (cartQtyById.get(prod.id) || 0)) {
-                        onAddProduct?.({ ...prod, barcode: unknownBarcode });
-                      }
-                      setUnknownBarcode(null);
-                      searchInputRef.current?.focus();
-                    }
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-[#D97706] hover:bg-[#B45309] text-white text-[11px] font-extrabold flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
-                >
-                  <Link2 className="w-3 h-3" />
-                  <span>Vincular y agregar</span>
-                </button>
+          ) : (
+            <>
+              <div className="px-3.5 py-2 bg-[#F8FAFC] border-b border-[#EAECEF] flex items-center justify-between text-[10px] font-bold text-slate-500">
+                <span>{dropdownResults.length} coincidencia(s) encontrada(s)</span>
+                <span className="inline-flex items-center gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono">↑↓</kbd> navegar ·{' '}
+                  <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono inline-flex items-center gap-0.5">
+                    <CornerDownLeft className="w-2.5 h-2.5" /> Enter
+                  </kbd>{' '}
+                  agregar
+                </span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
 
-      {/* Filtros rápidos de categoría y mascota */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1 rounded-full text-[11px] font-bold transition-all cursor-pointer border ${
-                categoryFilter === cat
-                  ? 'bg-[#D97706] text-white border-[#D97706]'
-                  : 'bg-[#F8FAFC] text-slate-600 border-[#EAECEF] hover:bg-[#FAF8F4]'
-              }`}
-            >
-              {cat === 'todos' ? `Todos (${inventory.length})` : cat}
-            </button>
-          ))}
-        </div>
+              <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                {dropdownResults.map((prod, idx) => {
+                  const stock = Number(prod.stock) || 0;
+                  const inCart = cartQtyById.get(prod.id) || 0;
+                  const remaining = Math.max(0, stock - inCart);
+                  const outOfStock = remaining <= 0;
+                  const isHighlighted = idx === safeHighlightedIndex;
+                  const price = Number(prod.salePrice ?? prod.price ?? 0);
 
-        <div className="flex items-center gap-1">
-          {[
-            { id: 'todos', label: 'Todos' },
-            { id: 'perros', label: 'Perros' },
-            { id: 'gatos', label: 'Gatos' },
-          ].map((pf) => (
-            <button
-              key={pf.id}
-              type="button"
-              onClick={() => setPetFilter(pf.id)}
-              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold transition-colors cursor-pointer border ${
-                petFilter === pf.id
-                  ? 'bg-[#111827] text-white border-[#111827]'
-                  : 'bg-white text-slate-500 border-[#EAECEF] hover:text-slate-800'
-              }`}
-            >
-              {pf.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Grilla de productos */}
-      <div className="flex-1 overflow-y-auto pr-1">
-        {filteredProducts.length === 0 ? (
-          <div className="h-56 flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
-            <Package className="w-8 h-8 opacity-40" />
-            <p className="text-xs font-bold text-slate-500">No se encontraron productos</p>
-            <p className="text-[11px]">Prueba otro término o limpia los filtros.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 xl:grid-cols-3 gap-2.5">
-            {filteredProducts.map((prod) => {
-              const stock = Number(prod.stock) || 0;
-              const inCart = cartQtyById.get(prod.id) || 0;
-              const remaining = Math.max(0, stock - inCart);
-              const outOfStock = remaining <= 0;
-              const isJustScanned = lastScannedId === prod.id;
-              const price = Number(prod.salePrice ?? prod.price ?? 0);
-
-              return (
-                <button
-                  key={prod.id}
-                  type="button"
-                  disabled={disabled || outOfStock}
-                  onClick={() => {
-                    onAddProduct?.(prod);
-                    if (soundEnabled) playPosBeep('ok');
-                    searchInputRef.current?.focus();
-                  }}
-                  className={`group text-left p-3 rounded-2xl border transition-all flex flex-col justify-between gap-2 relative ${
-                    isJustScanned
-                      ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/30'
-                      : outOfStock
-                        ? 'bg-slate-50 border-slate-200 opacity-55 cursor-not-allowed'
-                        : 'bg-white border-[#EAECEF] hover:border-[#D97706] hover:bg-[#FAF8F4]/60 cursor-pointer active:scale-[0.98]'
-                  }`}
-                >
-                  {inCart > 0 && (
-                    <span className="absolute -top-2 -right-2 min-w-6 h-6 px-1.5 rounded-full bg-[#D97706] text-white text-[11px] font-black flex items-center justify-center shadow-sm tabular-nums">
-                      {inCart}
-                    </span>
-                  )}
-
-                  <div className="flex items-start gap-2.5">
-                    {prod.image ? (
-                      <img
-                        src={prod.image}
-                        alt={prod.name}
-                        className="w-11 h-11 rounded-xl object-contain bg-[#F8FAFC] border border-[#EAECEF] p-1 shrink-0"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-11 h-11 rounded-xl bg-[#F8FAFC] border border-[#EAECEF] flex items-center justify-center text-slate-400 shrink-0">
-                        <Package className="w-5 h-5" />
+                  return (
+                    <button
+                      key={prod.id}
+                      type="button"
+                      disabled={outOfStock}
+                      onMouseEnter={() => setHighlightedIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        handleSelectFromDropdown(prod);
+                      }}
+                      className={`w-full px-3.5 py-2.5 text-left flex items-center justify-between gap-3 transition-colors ${
+                        outOfStock
+                          ? 'bg-slate-50/80 opacity-55 cursor-not-allowed'
+                          : isHighlighted
+                            ? 'bg-[#FAF8F4] cursor-pointer'
+                            : 'bg-white hover:bg-[#FAF8F4] cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {prod.image ? (
+                          <img
+                            src={prod.image}
+                            alt={prod.name}
+                            className="w-10 h-10 rounded-xl object-contain bg-[#F8FAFC] border border-[#EAECEF] p-1 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-xl bg-[#F8FAFC] border border-[#EAECEF] flex items-center justify-center text-slate-400 shrink-0">
+                            <Package className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-extrabold text-[#111827] truncate">{prod.name}</span>
+                            <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
+                              {prod.format}
+                            </span>
+                            {inCart > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full bg-[#D97706] text-white text-[10px] font-black shrink-0 tabular-nums">
+                                En carrito: {inCart}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                            <span className="font-semibold">{prod.brand}</span>
+                            {prod.barcode && (
+                              <span className="font-mono text-[#92400E] bg-[#FEF3C7]/70 px-1.5 py-0.2 rounded">
+                                {prod.barcode}
+                              </span>
+                            )}
+                            <span
+                              className={`font-extrabold tabular-nums ${
+                                outOfStock
+                                  ? 'text-rose-600'
+                                  : remaining <= (prod.minStock || 5)
+                                    ? 'text-amber-600'
+                                    : 'text-emerald-700'
+                              }`}
+                            >
+                              {outOfStock ? 'Agotado' : `Stock disp.: ${remaining}`}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 truncate">
-                        {prod.brand}
-                      </div>
-                      <div className="text-xs font-extrabold text-[#111827] leading-snug line-clamp-2">
-                        {prod.name}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1 mt-1">
-                        <span className="px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold">
-                          {prod.format}
-                        </span>
-                        {prod.barcode && (
+
+                      <div className="flex items-center gap-2.5 shrink-0">
+                        <span className="text-sm font-black text-[#111827] tabular-nums">{formatCLP(price)}</span>
+                        {!outOfStock && (
                           <span
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-[#FEF3C7]/70 text-[#92400E] text-[9px] font-mono font-bold"
-                            title={`Código de barras: ${prod.barcode}`}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+                              isHighlighted
+                                ? 'bg-[#D97706] text-white'
+                                : 'bg-[#FEF3C7] text-[#D97706]'
+                            }`}
                           >
-                            <ScanBarcode className="w-2.5 h-2.5" />
-                            <span>{prod.barcode.slice(-6)}</span>
+                            <Plus className="w-4 h-4 stroke-[2.5]" />
                           </span>
                         )}
                       </div>
-                    </div>
-                  </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                    <span
-                      className={`text-[10px] font-extrabold tabular-nums ${
-                        stock <= 0
-                          ? 'text-rose-600'
-                          : stock <= (prod.minStock || 5)
-                            ? 'text-amber-600'
-                            : 'text-emerald-700'
-                      }`}
-                    >
-                      {stock <= 0 ? 'Agotado' : `Stock: ${remaining}`}
+      {/* MODAL COMPACTO PARA VINCULAR CÓDIGO DE BARRAS NO REGISTRADO */}
+      {unknownBarcode && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setUnknownBarcode(null)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-lg w-full border border-amber-200 shadow-2xl p-5 space-y-3.5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div className="text-xs">
+                  <div className="font-black text-sm text-[#111827]">
+                    Código no registrado:{' '}
+                    <span className="font-mono bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 text-amber-900">
+                      {unknownBarcode}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-black text-[#111827] tabular-nums">
-                        {formatCLP(price)}
-                      </span>
-                      {!outOfStock && (
-                        <span className="w-6 h-6 rounded-full bg-[#FEF3C7] group-hover:bg-[#D97706] text-[#D97706] group-hover:text-white flex items-center justify-center transition-colors">
-                          {isJustScanned ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5 stroke-[2.5]" />}
-                        </span>
-                      )}
+                  </div>
+                  <p className="text-slate-500 mt-0.5">
+                    Vincúlalo ahora mismo a un producto del inventario y se agregará automáticamente a la venta:
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUnknownBarcode(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                value={assignSearch}
+                onChange={(e) => setAssignSearch(e.target.value)}
+                placeholder="Buscar producto para vincular este código..."
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-[#F8FAFC] border border-[#EAECEF] text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:border-[#D97706]"
+              />
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+              {assignableProducts.map((prod) => (
+                <div
+                  key={prod.id}
+                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#F8FAFC] border border-[#EAECEF] hover:border-[#D97706] transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 truncate">
+                      {prod.name} <span className="text-slate-400 font-semibold">· {prod.format}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Stock: {prod.stock} · {formatCLP(prod.salePrice || prod.price || 0)}
+                      {prod.barcode ? ` · Actual: ${prod.barcode}` : ''}
                     </div>
                   </div>
-                </button>
-              );
-            })}
+                  <button
+                    type="button"
+                    disabled={isAssigning}
+                    onClick={async () => {
+                      setIsAssigning(true);
+                      const ok = await onAssignBarcodeToProduct?.(prod, unknownBarcode);
+                      setIsAssigning(false);
+                      if (ok) {
+                        tryAddProduct({ ...prod, barcode: unknownBarcode });
+                        setUnknownBarcode(null);
+                        searchInputRef.current?.focus();
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#D97706] hover:bg-[#B45309] text-white text-[11px] font-extrabold flex items-center gap-1 shrink-0 cursor-pointer disabled:opacity-50"
+                  >
+                    <Link2 className="w-3 h-3" />
+                    <span>Vincular y agregar</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

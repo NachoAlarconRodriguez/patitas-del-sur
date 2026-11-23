@@ -27,7 +27,7 @@ import {
 } from '../../../services/posService.js';
 import PosCashRegisterBar from './PosCashRegisterBar.jsx';
 import PosProductScannerGrid from './PosProductScannerGrid.jsx';
-import PosCartAndCustomerPanel from './PosCartAndCustomerPanel.jsx';
+import PosCartAndCustomerPanel, { PosCartItemsTable } from './PosCartAndCustomerPanel.jsx';
 import PosCheckoutModal from './PosCheckoutModal.jsx';
 import {
   PosOpenRegisterModal,
@@ -165,6 +165,8 @@ export default function PosTerminalTab({
     saveTicketWidthMm(safe);
   };
 
+  const [lastAddedProductId, setLastAddedProductId] = useState(null);
+
   const handleAddProduct = useCallback((prod) => {
     if (!prod?.id) return;
     const price = Number(prod.salePrice ?? prod.price ?? 0);
@@ -183,12 +185,17 @@ export default function PosTerminalTab({
           id: prod.id,
           name: prod.name,
           brand: prod.brand,
+          image: prod.image || '',
           format: prod.format || prod.weights?.[0] || '1 unidad',
           price,
           quantity: 1,
         },
       ];
     });
+    setLastAddedProductId(prod.id);
+    setTimeout(() => {
+      setLastAddedProductId((prev) => (prev === prod.id ? null : prev));
+    }, 800);
   }, []);
 
   const handleUpdateQty = useCallback((prodId, nextQty) => {
@@ -356,7 +363,7 @@ export default function PosTerminalTab({
   };
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-200">
+    <div className="h-full flex-1 min-h-0 flex flex-col animate-in fade-in duration-200">
       {/* Aviso exclusivo para pantallas móviles */}
       <div className="md:hidden bg-white border border-[#EAECEF] rounded-3xl p-6 text-center space-y-3">
         <div className="w-12 h-12 rounded-2xl bg-[#FEF3C7] text-[#D97706] mx-auto flex items-center justify-center">
@@ -368,11 +375,11 @@ export default function PosTerminalTab({
         </p>
       </div>
 
-      {/* Contenido completo Desktop (md+) */}
-      <div className="hidden md:flex flex-col gap-4">
+      {/* Contenido completo Desktop (md+) — Pantalla única sin scroll global en Caja / Vender */}
+      <div className="hidden md:flex flex-col gap-3 flex-1 min-h-0 h-full">
         {/* Aviso si falta correr la migración SQL en Supabase */}
         {posMigrationPending && (
-          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-center gap-3">
+          <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-center gap-3 shrink-0">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
             <div>
               <strong>Migración SQL pendiente en Supabase:</strong> Ejecuta{' '}
@@ -385,21 +392,23 @@ export default function PosTerminalTab({
         )}
 
         {/* Barra superior de Caja y Turno en vivo */}
-        <PosCashRegisterBar
-          activeRegister={activeRegister}
-          activeShift={activeShift}
-          reconciliation={activeReconciliation}
-          ticketWidthMm={ticketWidthMm}
-          onChangeTicketWidth={handleChangeTicketWidth}
-          onOpenRegisterModal={() => setIsOpenRegModalOpen(true)}
-          onOpenCloseRegisterModal={() => setIsCloseRegModalOpen(true)}
-          onOpenCashMovementModal={() => setIsCashMoveModalOpen(true)}
-          onSwitchPartnerShift={handleSwitchShift}
-          isSwitchingShift={isSwitchingShift}
-        />
+        <div className="shrink-0">
+          <PosCashRegisterBar
+            activeRegister={activeRegister}
+            activeShift={activeShift}
+            reconciliation={activeReconciliation}
+            ticketWidthMm={ticketWidthMm}
+            onChangeTicketWidth={handleChangeTicketWidth}
+            onOpenRegisterModal={() => setIsOpenRegModalOpen(true)}
+            onOpenCloseRegisterModal={() => setIsCloseRegModalOpen(true)}
+            onOpenCashMovementModal={() => setIsCashMoveModalOpen(true)}
+            onSwitchPartnerShift={handleSwitchShift}
+            isSwitchingShift={isSwitchingShift}
+          />
+        </div>
 
         {/* Sub-pestañas del Terminal POS */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 shrink-0">
           <div className="inline-flex items-center p-1 rounded-full bg-white border border-[#EAECEF] shadow-2xs">
             {[
               { id: 'vender', label: 'Caja / Vender', icon: ScanBarcode },
@@ -413,7 +422,7 @@ export default function PosTerminalTab({
                   key={t.id}
                   type="button"
                   onClick={() => setSubTab(t.id)}
-                  className={`px-4 py-2 rounded-full text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                  className={`px-4 py-1.5 rounded-full text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
                     isAct
                       ? 'bg-[#D97706] text-white shadow-xs'
                       : 'text-slate-600 hover:text-[#111827]'
@@ -434,10 +443,11 @@ export default function PosTerminalTab({
           )}
         </div>
 
-        {/* SUB-VISTA 1: CAJA / VENDER */}
+        {/* SUB-VISTA 1: CAJA / VENDER (Pantalla única fija · Scroll solo en productos de la compra) */}
         {subTab === 'vender' && (
-          <div className="grid grid-cols-12 gap-4 items-stretch min-h-[580px]">
-            <div className="col-span-7 xl:col-span-7">
+          <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
+            {/* Columna Izquierda (8 cols): Buscador/Escáner desplegable + Lista scrollable de productos */}
+            <div className="col-span-8 flex flex-col gap-3 min-h-0">
               <PosProductScannerGrid
                 inventory={inventory}
                 cartItems={cartItems}
@@ -447,12 +457,21 @@ export default function PosTerminalTab({
                 onAssignBarcodeToProduct={handleAssignBarcode}
                 showToast={showToast}
               />
-            </div>
 
-            <div className="col-span-5 xl:col-span-5">
-              <PosCartAndCustomerPanel
+              <PosCartItemsTable
                 cartItems={cartItems}
                 inventory={inventory}
+                lastAddedProductId={lastAddedProductId}
+                onUpdateQty={handleUpdateQty}
+                onRemoveItem={(id) => setCartItems((prev) => prev.filter((it) => it.id !== id))}
+                onClearCart={handleResetSaleState}
+              />
+            </div>
+
+            {/* Columna Derecha (4 cols): Cliente, Puntos, Total y Botón Cobrar SIEMPRE VISIBLE */}
+            <div className="col-span-4 min-h-0">
+              <PosCartAndCustomerPanel
+                cartItems={cartItems}
                 customers={customers}
                 loyaltySettings={loyaltySettings}
                 selectedCustomer={selectedCustomer}
@@ -471,9 +490,6 @@ export default function PosTerminalTab({
                   setManualDiscount(val);
                   setManualDiscountReason(reason);
                 }}
-                onUpdateQty={handleUpdateQty}
-                onRemoveItem={(id) => setCartItems((prev) => prev.filter((it) => it.id !== id))}
-                onClearCart={handleResetSaleState}
                 onOpenCheckout={() => setIsCheckoutOpen(true)}
                 onCustomerCreated={() => onSyncCustomers?.()}
                 disabled={!activeRegister}
@@ -485,19 +501,21 @@ export default function PosTerminalTab({
 
         {/* SUB-VISTA 2: TURNOS, HORAS Y REPARTO MENSUAL */}
         {subTab === 'turnos' && (
-          <PosShiftHistoryAndSplitPanel
-            orders={orders}
-            shifts={posShifts}
-            inventory={inventory}
-            mercadoPagoConfig={mercadoPagoConfig}
-            onCreateManualShift={handleCreateManualShift}
-            onUpdateShiftDuration={handleUpdateShiftDuration}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 pb-4">
+            <PosShiftHistoryAndSplitPanel
+              orders={orders}
+              shifts={posShifts}
+              inventory={inventory}
+              mercadoPagoConfig={mercadoPagoConfig}
+              onCreateManualShift={handleCreateManualShift}
+              onUpdateShiftDuration={handleUpdateShiftDuration}
+            />
+          </div>
         )}
 
         {/* SUB-VISTA 3: HISTORIAL DE CAJAS Y VENTAS POS */}
         {subTab === 'historial' && (
-          <div className="space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 pb-4 space-y-5">
             {/* Historial de Cajas Diarias */}
             <div className="bg-white border border-[#EAECEF] rounded-3xl overflow-hidden">
               <div className="p-5 border-b border-[#EAECEF] flex items-center justify-between">

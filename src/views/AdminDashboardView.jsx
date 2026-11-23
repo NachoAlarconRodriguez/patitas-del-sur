@@ -7590,7 +7590,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         {/* ======================================================= */}
         {/* MAIN VIEW CONTENT CONTAINER (Scrolls independently)     */}
         {/* ======================================================= */}
-        <main className="flex-1 min-w-0 p-4 sm:p-6 md:p-8 lg:p-10 pb-28 md:pb-10 overflow-y-auto">
+        <main
+          className={`flex-1 min-w-0 p-4 sm:p-6 ${
+            activeTab === 'pos'
+              ? 'md:p-5 lg:p-6 pb-28 md:pb-5 md:overflow-hidden flex flex-col'
+              : 'md:p-8 lg:p-10 pb-28 md:pb-10 overflow-y-auto'
+          }`}
+        >
 
           {/* ========================================================================= */}
           {/* TAB POS: TERMINAL PUNTO DE VENTA FÍSICO (EXCLUSIVO ESCRITORIO)            */}
