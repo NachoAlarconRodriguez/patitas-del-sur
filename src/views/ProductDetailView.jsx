@@ -20,7 +20,7 @@ import {
   Star,
   ShoppingBag,
   CheckCircle2,
-  ShieldCheck,
+  Zap,
   Truck,
   Sparkles,
   Scale,
@@ -947,24 +947,24 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                 </span>
                 <div className="min-w-0">
                   <div className="text-[11px] font-black text-slate-800 leading-tight">
-                    Despacho en el Sur
+                    Despacho a Domicilio
                   </div>
                   <div className="text-[10px] font-semibold text-slate-500 truncate">
-                    Puerto Varas y alrededores
+                    Frutillar y alrededores
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
                 <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-4 h-4" />
+                  <Zap className="w-4 h-4" />
                 </span>
                 <div className="min-w-0">
                   <div className="text-[11px] font-black text-slate-800 leading-tight">
-                    Calidad Garantizada
+                    Rápidos y Con Stock
                   </div>
                   <div className="text-[10px] font-semibold text-slate-500 truncate">
-                    Ingredientes seleccionados
+                    Despacho todos los días
                   </div>
                 </div>
               </div>
