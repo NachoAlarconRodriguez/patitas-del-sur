@@ -99,9 +99,13 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
   }, [drawBowlLines, product]);
 
   useEffect(() => {
+    setActiveIng(0);
+  }, [product?.id]);
+
+  useEffect(() => {
     const id = requestAnimationFrame(drawBowlLines);
     return () => cancelAnimationFrame(id);
-  }, [activeIng, drawBowlLines]);
+  }, [activeIng, bowlData, drawBowlLines]);
 
   useEffect(() => {
     let ticking = false;

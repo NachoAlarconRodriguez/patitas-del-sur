@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase, cleanIngredientName } from '../services/productsService';
-import { groupProductsForStore, getFlavorSwatchStyle } from '../utils/productVariants';
+import { groupProductsForStore, getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import PawProgressLoader from '../components/PawProgressLoader';
 import ProductIngredientsBowl from '../components/ProductIngredientsBowl';
@@ -128,38 +128,106 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
 
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
-  // Derivar la lista de imágenes del producto
+  // Variantes y variante activa (hoisted para alimentar galería, bol, ingredientes, análisis y guía)
+  const variants = useMemo(() => product?.variants || [], [product?.variants]);
+  const activeVariant = useMemo(() => {
+    if (variants.length === 0) return null;
+    return (
+      variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) ||
+      variants[0]
+    );
+  }, [variants, selectedWeight]);
+
+  // Producto efectivo que refleja la ficha completa del sabor seleccionado (con fallback seguro al maestro)
+  const displayProduct = useMemo(() => {
+    if (!product) return null;
+    if (!product.hasFlavorVariants || !activeVariant) return product;
+
+    const hasVariantIngredients =
+      Array.isArray(activeVariant.ingredients) && activeVariant.ingredients.length > 0;
+    const hasVariantGa =
+      activeVariant.guaranteedAnalysis &&
+      typeof activeVariant.guaranteedAnalysis === 'object' &&
+      Object.keys(activeVariant.guaranteedAnalysis).length > 0;
+    const hasVariantBenefits =
+      Array.isArray(activeVariant.benefits) && activeVariant.benefits.length > 0;
+
+    return {
+      ...product,
+      id: activeVariant.id || product.id,
+      sku: activeVariant.sku || product.sku,
+      image: activeVariant.image || product.image,
+      images:
+        Array.isArray(activeVariant.images) && activeVariant.images.length > 0
+          ? activeVariant.images
+          : product.images,
+      tagline: activeVariant.tagline || product.tagline,
+      badge: activeVariant.badge || product.badge,
+      targetStageLabel: activeVariant.targetStageLabel || product.targetStageLabel,
+      ingredients: hasVariantIngredients ? activeVariant.ingredients : product.ingredients,
+      guaranteedAnalysis: hasVariantGa
+        ? activeVariant.guaranteedAnalysis
+        : product.guaranteedAnalysis,
+      benefits: hasVariantBenefits ? activeVariant.benefits : product.benefits,
+      bowlConfig: activeVariant.bowlConfig || product.bowlConfig,
+      feedingGuide: activeVariant.feedingGuide || product.feedingGuide,
+      mainProtein: activeVariant.mainProtein || product.mainProtein,
+      proteinValue: activeVariant.proteinValue ?? product.proteinValue,
+      proteinPercent: activeVariant.proteinPercent ?? product.proteinPercent,
+      proteinSubtitle: activeVariant.proteinSubtitle || product.proteinSubtitle,
+      animalPercent: activeVariant.animalPercent ?? product.animalPercent,
+      animalPercentDetail: activeVariant.animalPercentDetail || product.animalPercentDetail,
+      lifeStage: activeVariant.lifeStage || product.lifeStage,
+      grainLevel: activeVariant.grainLevel || product.grainLevel,
+    };
+  }, [product, activeVariant]);
+
+  // Derivar la lista de imágenes del producto (o exclusivamente del sabor activo en familias de sabores)
   const productImages = useMemo(() => {
     if (!product) return [isDog ? '/images/hero_dog.png' : '/images/cat_food_tuna.png'];
-    const list = [];
-    if (product.image && typeof product.image === 'string' && product.image.trim()) {
-      list.push(product.image.trim());
-    }
-    if (Array.isArray(product.images)) {
-      product.images.forEach((img) => {
-        if (img && typeof img === 'string' && img.trim() && !list.includes(img.trim())) {
-          list.push(img.trim());
+
+    const isPlaceholderImg = (img) =>
+      typeof img === 'string' && img.includes('photo-1568640347023-a616a30bc3bd');
+    const pushUnique = (target, img) => {
+      if (img && typeof img === 'string') {
+        const clean = img.trim();
+        if (clean && !isPlaceholderImg(clean) && !target.includes(clean)) {
+          target.push(clean);
         }
-      });
+      }
+    };
+
+    const list = [];
+
+    if (product.hasFlavorVariants && activeVariant) {
+      pushUnique(list, activeVariant.image);
+      if (Array.isArray(activeVariant.images)) {
+        activeVariant.images.forEach((img) => pushUnique(list, img));
+      }
+      if (list.length === 0) {
+        list.push(resolveProductImage(activeVariant));
+      }
+      return list;
+    }
+
+    pushUnique(list, product.image);
+    if (Array.isArray(product.images)) {
+      product.images.forEach((img) => pushUnique(list, img));
     }
     if (Array.isArray(product.variants)) {
-      product.variants.forEach((v) => {
-        if (v.image && typeof v.image === 'string' && v.image.trim() && !list.includes(v.image.trim())) {
-          list.push(v.image.trim());
-        }
-      });
+      product.variants.forEach((v) => pushUnique(list, v.image));
     }
     if (list.length === 0) {
-      list.push(isDog ? '/images/hero_dog.png' : '/images/cat_food_tuna.png');
+      list.push(resolveProductImage(product));
     }
     return list;
-  }, [product, isDog]);
+  }, [product, activeVariant, isDog]);
 
   // Análisis garantizado clasificado: 4 métricas principales fijas + micronutrientes/otros
   const { primaryGuaranteed, secondaryGuaranteed } = useMemo(() => {
     const analysis =
-      product?.guaranteedAnalysis && typeof product.guaranteedAnalysis === 'object'
-        ? product.guaranteedAnalysis
+      displayProduct?.guaranteedAnalysis && typeof displayProduct.guaranteedAnalysis === 'object'
+        ? displayProduct.guaranteedAnalysis
         : {};
     const entries = Object.entries(analysis);
 
@@ -167,7 +235,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
       {
         label: 'Proteína Cruda',
         test: (k) => /prote[ií]na/i.test(k) || /protein/i.test(k),
-        fallback: product?.proteinValue ? `${product.proteinValue}%` : '32%',
+        fallback: displayProduct?.proteinValue ? `${displayProduct.proteinValue}%` : '32%',
       },
       {
         label: 'Grasa Cruda',
@@ -201,28 +269,46 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
       .map(([k, v]) => ({ label: k, value: v }));
 
     return { primaryGuaranteed: primaryList, secondaryGuaranteed: secondaryList };
-  }, [product?.guaranteedAnalysis, product?.proteinValue]);
+  }, [displayProduct?.guaranteedAnalysis, displayProduct?.proteinValue]);
 
   // Lista normalizada de ingredientes limpios
   const ingredientList = useMemo(() => {
-    if (Array.isArray(product?.ingredients)) {
-      return product.ingredients
+    if (Array.isArray(displayProduct?.ingredients)) {
+      return displayProduct.ingredients
         .map((i) => cleanIngredientName(i) || (typeof i === 'string' ? i.trim() : ''))
         .filter(Boolean);
     }
-    if (typeof product?.ingredients === 'string' && product.ingredients.trim()) {
-      return product.ingredients
+    if (typeof displayProduct?.ingredients === 'string' && displayProduct.ingredients.trim()) {
+      return displayProduct.ingredients
         .split(',')
         .map((i) => cleanIngredientName(i) || i.trim())
         .filter(Boolean);
     }
     return [];
-  }, [product?.ingredients]);
+  }, [displayProduct?.ingredients]);
 
-  // Reset al cambiar de producto
+  // Reset al cambiar de producto o sabor (sin provocar scroll hacia arriba)
   useEffect(() => {
     setActiveImageIndex(0);
-  }, [product?.id]);
+    setQuantity(1);
+  }, [product?.id, activeVariant?.id]);
+
+  // Precarga pasiva de la portada de los demás sabores para cambio instantáneo sin parpadeo
+  useEffect(() => {
+    if (!product?.hasFlavorVariants || variants.length <= 1) return;
+    variants.forEach((v) => {
+      const src = v?.image;
+      if (
+        src &&
+        typeof src === 'string' &&
+        !src.includes('photo-1568640347023-a616a30bc3bd') &&
+        v.id !== activeVariant?.id
+      ) {
+        const preload = new Image();
+        preload.src = src;
+      }
+    });
+  }, [product?.hasFlavorVariants, variants, activeVariant?.id]);
 
   const mainCtaRef = useRef(null);
   const [showStickyBar, setShowStickyBar] = useState(false);
@@ -287,9 +373,12 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     );
   }
 
-  const customFeedingGuide = product?.feedingGuide && Array.isArray(product.feedingGuide.rows) && product.feedingGuide.rows.length > 0
-    ? product.feedingGuide
-    : null;
+  const customFeedingGuide =
+    displayProduct?.feedingGuide &&
+    Array.isArray(displayProduct.feedingGuide.rows) &&
+    displayProduct.feedingGuide.rows.length > 0
+      ? displayProduct.feedingGuide
+      : null;
 
   const getFeedingGuide = () => {
     if (customFeedingGuide) {
@@ -407,12 +496,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     return matchedFeedingRow;
   })();
 
-  // Variantes y cálculo de precio real por formato seleccionado
-  const variants = product?.variants || [];
-  const activeVariant = variants.length > 0
-    ? (variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) || variants[0])
-    : null;
-
+  // Cálculo de precio y stock real por formato o sabor seleccionado
   const currentPrice = activeVariant ? activeVariant.price : (product?.price || 0);
   const currentOriginalPrice = activeVariant ? activeVariant.originalPrice : (product?.originalPrice || null);
   const currentStock = activeVariant
@@ -453,10 +537,11 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
       : (typeof product.stock === 'number' ? product.stock : 10);
 
     const itemToAdd = {
-      ...product,
+      ...displayProduct,
       id: activeVariant?.id || product.id,
       productId: activeVariant?.id || product.id,
       name: variantName,
+      image: productImages[0] || activeVariant?.image || product.image,
       sku: activeVariant?.sku || product.sku,
       price: currentPrice,
       unitCostNeto: activeVariant?.unitCostNeto ?? product.unitCostNeto ?? 0,
@@ -483,9 +568,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     <div className="pt-28 pb-44 md:pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
       <SEOHead
         title={`${product.name} en Frutillar`}
-        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${product.tagline || 'Alimento natural y super premium para mascotas.'} Stock real y despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones).`}
+        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${displayProduct?.tagline || 'Alimento natural y super premium para mascotas.'} Stock real y despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones).`}
         canonical={`/producto/${product.id}`}
-        ogImage={product.image}
+        ogImage={productImages[0] || product.image}
         ogType="product"
         keywords={`${product.name}, ${product.brand || ''}, alimento ${isDog ? 'perros' : 'gatos'} frutillar, comida mascotas frutillar, despacho frutillar`}
         jsonLd={[
@@ -635,10 +720,10 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                     {product.brand || 'Patagonia Holística'}
                   </span>
 
-                  {product.targetStageLabel && (
+                  {displayProduct?.targetStageLabel && (
                     <span className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-800 border border-slate-200 flex items-center gap-1.5 shadow-2xs">
                       <span>🐾</span>
-                      <span>{product.targetStageLabel}</span>
+                      <span>{displayProduct.targetStageLabel}</span>
                     </span>
                   )}
                   {Boolean(product.isVeterinary) && (
@@ -662,9 +747,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
               </h1>
 
               {/* Tagline */}
-              {product.tagline && (
+              {displayProduct?.tagline && (
                 <p className="text-slate-600 text-xs sm:text-sm font-medium leading-relaxed pt-0.5">
-                  {product.tagline}
+                  {displayProduct.tagline}
                 </p>
               )}
             </div>
@@ -964,7 +1049,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
             {activeTab === 'ingredientes' && (
               <div className="space-y-7 pt-1 animate-in fade-in duration-200">
                 {/* 1. Interactive Ingredients Bowl Explorer (con plato y animaciones) */}
-                <ProductIngredientsBowl product={product} embedded={true} />
+                <ProductIngredientsBowl product={displayProduct} embedded={true} />
 
                 {/* 2. Análisis Nutricional Garantizado + Lista Completa de Ingredientes */}
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1077,7 +1162,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
             {/* TAB 2: GUÍA DE ALIMENTACIÓN DIARIA (FORMULARIO MULTI-PASOS) */}
             {activeTab === 'racion' && (
               <FeedingCalculatorTab
-                product={product}
+                product={displayProduct}
                 isDog={isDog}
                 wizardStep={wizardStep}
                 setWizardStep={setWizardStep}
@@ -1096,8 +1181,8 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
             {/* TAB 3: BENEFICIOS DE NUTRICIÓN */}
             {activeTab === 'beneficios' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 animate-in fade-in duration-200">
-                {Array.isArray(product.benefits) && product.benefits.length > 0 ? (
-                  product.benefits.map((b, idx) => (
+                {Array.isArray(displayProduct?.benefits) && displayProduct.benefits.length > 0 ? (
+                  displayProduct.benefits.map((b, idx) => (
                     <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-start gap-3">
                       <div className="p-2 rounded-lg bg-[#10B981]/15 text-[#10B981] shrink-0">
                         <CheckCircle2 className="w-4 h-4" />
@@ -1185,7 +1270,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
         <div className="flex items-center justify-between gap-3 px-2 max-w-md mx-auto">
           <div className="flex items-center gap-2.5 min-w-0">
             <img
-              src={product.image}
+              src={productImages[0] || product.image}
               alt={product.name}
               className="w-10 h-10 object-contain rounded-xl bg-slate-50 p-1 border border-slate-100 shrink-0"
             />

@@ -85,17 +85,23 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
 
   // Ingredientes destacados para las píldoras flotantes (máx. 3)
   const topIngredients = React.useMemo(() => {
-    if (Array.isArray(product.ingredients) && product.ingredients.length > 0) {
-      return product.ingredients
+    const variantIngredients =
+      isFlavorFamily && Array.isArray(displayVariant?.ingredients) && displayVariant.ingredients.length > 0
+        ? displayVariant.ingredients
+        : null;
+    const sourceIngredients = variantIngredients || product.ingredients;
+    if (Array.isArray(sourceIngredients) && sourceIngredients.length > 0) {
+      return sourceIngredients
         .slice(0, 3)
         .map((ing) => String(ing).replace(/\s*\(.*?\)\s*/g, '').trim())
         .filter(Boolean);
     }
-    if (product.mainProtein) {
-      return [product.mainProtein, isGrainFree ? '100% Grain Free' : 'Receta Natural'];
+    const resolvedMainProtein = (isFlavorFamily && displayVariant?.mainProtein) || product.mainProtein;
+    if (resolvedMainProtein) {
+      return [resolvedMainProtein, isGrainFree ? '100% Grain Free' : 'Receta Natural'];
     }
     return isGrainFree ? ['Proteína Animal', 'Libre de Granos'] : ['Nutrición Completa'];
-  }, [product.ingredients, product.mainProtein, isGrainFree]);
+  }, [isFlavorFamily, displayVariant?.ingredients, displayVariant?.mainProtein, product.ingredients, product.mainProtein, isGrainFree]);
 
   // 3D Physical Perspective Tilt (60fps via CSS variables)
   const handleMouseMove = (e) => {
@@ -567,7 +573,13 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
                 : isAllSelectedOutOfStock
                 ? 'Agotado'
                 : isFlavorFamily && selectedVariants.length > 1
-                ? `Agregar ${selectedVariants.length} latas al carrito`
+                ? `Agregar ${selectedVariants.length} ${
+                    String(product.name || '').toLowerCase().includes('sobre')
+                      ? 'sobres'
+                      : String(product.name || '').toLowerCase().includes('lata')
+                      ? 'latas'
+                      : 'variedades'
+                  } al carrito`
                 : 'Agregar al Carrito'
             }
             aria-label={`Agregar ${product.name} al carrito`}

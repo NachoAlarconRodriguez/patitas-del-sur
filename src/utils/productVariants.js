@@ -53,18 +53,32 @@ export function getProductFamilyInfo(item) {
     };
   }
 
-  // Regla general para líneas de latas, patés o pouches del mismo fabricante
-  const isWetFood = nameLower.includes('lata') || nameLower.includes('pouch') || nameLower.includes('paté') || nameLower.includes('pate');
+  // Regla general para líneas de latas, sobres, patés o pouches del mismo fabricante
+  const isWetFood =
+    nameLower.includes('lata') ||
+    nameLower.includes('pouch') ||
+    nameLower.includes('sobre') ||
+    nameLower.includes('paté') ||
+    nameLower.includes('pate');
   if (isWetFood && brand) {
-    const match = name.match(/^(.*?(?:lata|pouch|paté|pate))\s+(.+)$/i);
+    const match = name.match(/^(.*?(?:lata|pouch|sobre|paté|pate))\s+(.+)$/i);
     if (match) {
       const linePrefix = match[1].trim();
       const variantName = match[2].replace(WEIGHT_REGEX, '').trim();
       if (variantName) {
+        const rawWeight = extractProductFormat(item);
+        const weightLabel =
+          rawWeight && rawWeight !== 'Estándar'
+            ? rawWeight
+            : nameLower.includes('sobre') || nameLower.includes('pouch')
+            ? '85 gr'
+            : '400 gr';
+        const normalizedWeightKey = weightLabel.toLowerCase().replace(/\s+/g, '_');
+        const hasWeightInPrefix = WEIGHT_REGEX.test(linePrefix);
         return {
           isFamily: true,
-          familyKey: `${brand}_${linePrefix.toLowerCase().replace(/\s+/g, '_')}`,
-          masterName: `${linePrefix} 400 gr`,
+          familyKey: `${brand}_${linePrefix.toLowerCase().replace(/\s+/g, '_')}_${normalizedWeightKey}`,
+          masterName: hasWeightInPrefix ? linePrefix : `${linePrefix} ${weightLabel}`,
           tagline: item.tagline || 'Alimento húmedo completo y balanceado.',
           formatLabel: variantName,
         };
@@ -258,10 +272,12 @@ export function areProductsSameGroup(a, b) {
     return false;
   }
 
-  // 4. Agrupación por Familia / Línea de producto (ej: Latas de Alpha Spirit)
+  // 4. Agrupación por Familia / Línea de producto (ej: Latas de Alpha Spirit, Fit Sobre 85 gr)
   const familyA = getProductFamilyInfo(a);
   const familyB = getProductFamilyInfo(b);
-  if (familyA.isFamily && familyB.isFamily && familyA.familyKey === familyB.familyKey) {
+  const keyA = a.familyKey || (familyA.isFamily ? familyA.familyKey : '');
+  const keyB = b.familyKey || (familyB.isFamily ? familyB.familyKey : '');
+  if (keyA && keyB && keyA === keyB) {
     return true;
   }
 
@@ -323,6 +339,7 @@ export function groupProductsForStore(rawProducts) {
         existingGroup.master = {
           ...existingGroup.master,
           name: fInfo.masterName,
+          familyKey: fInfo.familyKey,
           tagline: fInfo.tagline || existingGroup.master.tagline,
           hasFlavorVariants: true,
         };
@@ -333,6 +350,7 @@ export function groupProductsForStore(rawProducts) {
         master: {
           ...prod,
           name: fInfo.isFamily ? fInfo.masterName : cleanBaseProductName(prod.name, prod.brand),
+          familyKey: fInfo.isFamily ? fInfo.familyKey : '',
           tagline: fInfo.isFamily ? (fInfo.tagline || prod.tagline) : prod.tagline,
           hasFlavorVariants: Boolean(fInfo.isFamily),
         },
@@ -379,6 +397,26 @@ export function groupProductsForStore(rawProducts) {
         isPaused: isPaused,
         isActive: isActive,
         image: item.image || master.image,
+        images: Array.isArray(item.images) ? item.images : [],
+        tagline: item.tagline || '',
+        badge: item.badge || '',
+        targetStageLabel: item.targetStageLabel || item.target_stage_label || null,
+        ingredients: Array.isArray(item.ingredients) ? item.ingredients : [],
+        guaranteedAnalysis:
+          item.guaranteedAnalysis && typeof item.guaranteedAnalysis === 'object'
+            ? item.guaranteedAnalysis
+            : {},
+        benefits: Array.isArray(item.benefits) ? item.benefits : [],
+        bowlConfig: item.bowlConfig || null,
+        feedingGuide: item.feedingGuide || null,
+        mainProtein: item.mainProtein || item.main_protein || null,
+        proteinValue: item.proteinValue ?? item.protein_value ?? null,
+        proteinPercent: item.proteinPercent ?? item.protein_percent ?? null,
+        proteinSubtitle: item.proteinSubtitle || item.protein_subtitle || null,
+        animalPercent: item.animalPercent ?? item.animal_percent ?? null,
+        animalPercentDetail: item.animalPercentDetail || item.animal_percent_detail || null,
+        lifeStage: item.lifeStage || item.life_stage || null,
+        grainLevel: item.grainLevel || item.gama || null,
       };
     });
 
@@ -406,6 +444,7 @@ export function groupProductsForStore(rawProducts) {
       id: master.id,
       name: master.name,
       bowlConfig: master.bowlConfig || items.find((i) => i.bowlConfig)?.bowlConfig || null,
+      feedingGuide: master.feedingGuide || items.find((i) => i.feedingGuide)?.feedingGuide || null,
       weights: weights.length > 0 ? weights : ['400 gr'],
       variants: variants,
       hasMultipleVariants: variants.length > 1,

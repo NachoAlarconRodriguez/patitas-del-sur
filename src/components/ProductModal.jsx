@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Star, Check, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
-import { getFlavorSwatchStyle } from '../utils/productVariants';
+import { getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
 import { formatCLP } from '../utils/formatters';
 
 export default function ProductModal({ product, onClose, onAddToCart }) {
@@ -13,12 +13,20 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
 
   const variants = product?.variants || [];
   const activeVariant = variants.find((v) => v.format === selectedWeight || v.weight === selectedWeight) || variants[0];
+  const isFlavorFamily = Boolean(product.hasFlavorVariants);
   const unitPrice = activeVariant ? activeVariant.price : product.price;
   const activeStock = activeVariant && typeof activeVariant.stock === 'number'
     ? activeVariant.stock
     : (typeof product.stock === 'number' ? product.stock : 10);
   const isOutOfStock = activeStock <= 0 || Boolean(activeVariant?.isPaused || product?.isPaused);
-  const hasBenefits = Array.isArray(product.benefits) && product.benefits.length > 0;
+  const displayImage = resolveProductImage(activeVariant || product);
+  const displayBadge = (isFlavorFamily && activeVariant?.badge) || product.badge;
+  const displayTagline = (isFlavorFamily && activeVariant?.tagline) || product.tagline;
+  const displayBenefits =
+    isFlavorFamily && Array.isArray(activeVariant?.benefits) && activeVariant.benefits.length > 0
+      ? activeVariant.benefits
+      : product.benefits;
+  const hasBenefits = Array.isArray(displayBenefits) && displayBenefits.length > 0;
 
   const handleAdd = () => {
     if (isOutOfStock) return;
@@ -28,7 +36,9 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
     const itemToAdd = {
       ...product,
       id: activeVariant?.id || product.id,
+      productId: activeVariant?.id || product.id,
       name: variantName,
+      image: displayImage,
       price: unitPrice,
       selectedWeight: selectedWeight,
       weight: selectedWeight,
@@ -66,13 +76,13 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
 
         {/* Product Image Side: Compact banner on Mobile, 50% showcase on Desktop */}
         <div className="w-full md:w-1/2 bg-[#FAF8F4] p-4 md:p-6 flex flex-row md:flex-col items-center justify-start md:justify-center relative border-b md:border-b-0 md:border-r border-[#1D1D1F]/8 gap-3">
-          {product.badge && (
+          {displayBadge && (
             <span className="absolute top-3 left-3 text-[10px] md:text-xs font-black px-2.5 py-0.5 md:px-3 md:py-1 rounded-full bg-[#1D1D1F] text-[#F5BA13] border border-[#F5BA13]/30 shadow-xs">
-              {product.badge}
+              {displayBadge}
             </span>
           )}
           <img
-            src={product.image}
+            src={displayImage}
             alt={product.name}
             className="w-20 h-20 sm:w-28 sm:h-28 md:w-64 md:h-64 object-contain max-h-72 drop-shadow-md shrink-0 mt-4 md:mt-0"
           />
@@ -111,9 +121,9 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
               {product.name}
             </h2>
 
-            {product.tagline && (
+            {displayTagline && (
               <p className="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed line-clamp-2 sm:line-clamp-none">
-                {product.tagline}
+                {displayTagline}
               </p>
             )}
 
@@ -181,7 +191,7 @@ export default function ProductModal({ product, onClose, onAddToCart }) {
                 <h4 className="text-[11px] md:text-xs font-bold text-slate-400 uppercase tracking-wider">
                   Beneficios Destacados:
                 </h4>
-                {product.benefits.slice(0, 3).map((b, idx) => (
+                {displayBenefits.slice(0, 3).map((b, idx) => (
                   <div key={idx} className="flex items-start gap-2 text-xs font-semibold text-slate-700">
                     <Check className="w-3.5 h-3.5 text-[#D97706] shrink-0 mt-0.5" />
                     <span>{b}</span>
