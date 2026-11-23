@@ -86,10 +86,10 @@ export const BOWL_IMAGE_BANK = [
   // Pescados y Omega
   {
     id: 'aceite-omega',
-    label: 'Aceite de Salmón / Omega 3',
+    label: 'Aceite de Salmón / Grasas Omega',
     category: 'Pescados y Omega',
     url: '/images/bowl/ing-aceite-omega.webp',
-    keywords: ['aceite de salmon', 'aceite de pescado', 'aceite de linaza', 'aceite', 'omega', 'linaza', 'chia', 'semilla de lino'],
+    keywords: ['aceite de salmon', 'aceite de pescado', 'aceite de linaza', 'grasa de pollo', 'grasa de ave', 'grasa animal', 'aceite', 'omega', 'linaza', 'chia', 'semilla de lino'],
   },
   {
     id: 'trucha',
@@ -388,9 +388,10 @@ export function analyzeIngredient(rawText, petLabel = 'perro o gato', fallbackSl
   const title = cleanIngTitle(rawText);
   const img = matchIngredientImage(rawText, fallbackSlotIdx);
 
-  // Pescados y Aceites Omega 3 y 6
+  // Pescados, Aceites y Grasas Saludables Omega 3 y 6
   if (
     t.includes('aceite') ||
+    t.includes('grasa') ||
     t.includes('omega') ||
     t.includes('salmon') ||
     t.includes('trucha') ||
@@ -405,8 +406,14 @@ export function analyzeIngredient(rawText, petLabel = 'perro o gato', fallbackSl
   ) {
     return {
       name: title,
-      pill: t.includes('aceite') || t.includes('omega') || t.includes('linaza') ? 'Omega 3 y 6' : 'Omega 3',
-      desc: `Fuente rica en ácidos grasos esenciales EPA y DHA para nutrir la piel, dar brillo al pelaje y cuidar las articulaciones de tu ${petLabel}.`,
+      pill: t.includes('grasa')
+        ? 'Omega 6 y Energía'
+        : t.includes('aceite') || t.includes('omega') || t.includes('linaza')
+        ? 'Omega 3 y 6'
+        : 'Omega 3',
+      desc: t.includes('grasa')
+        ? `Fuente natural de ácidos grasos esenciales Omega 6 y energía concentrada para una piel sana y un pelaje brillante en tu ${petLabel}.`
+        : `Fuente rica en ácidos grasos esenciales EPA y DHA para nutrir la piel, dar brillo al pelaje y cuidar las articulaciones de tu ${petLabel}.`,
       img,
     };
   }
@@ -415,11 +422,11 @@ export function analyzeIngredient(rawText, petLabel = 'perro o gato', fallbackSl
   if (
     t.includes('pollo') ||
     t.includes('pavo') ||
-    t.includes('ave') ||
+    /(?:^|[^a-z0-9])aves?(?:$|[^a-z0-9])/.test(t) ||
     t.includes('pato') ||
     t.includes('cordero') ||
     t.includes('vacuno') ||
-    t.includes('res') ||
+    /(?:^|[^a-z0-9])res(?:$|[^a-z0-9])/.test(t) ||
     t.includes('buey') ||
     t.includes('cerdo') ||
     t.includes('jabali') ||

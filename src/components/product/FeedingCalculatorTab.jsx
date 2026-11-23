@@ -18,7 +18,18 @@ export default function FeedingCalculatorTab({
   setPetWeight,
   feedingGuide,
   activeFeedingRow,
+  customFeedingGuide = null,
 }) {
+  const isCatConditionsGuide = customFeedingGuide?.type === 'cat_conditions';
+  const conditionOptions = isCatConditionsGuide && Array.isArray(customFeedingGuide.conditions)
+    ? customFeedingGuide.conditions
+    : [
+        { id: 'neutered', label: 'Esterilizado', subtitle: 'Mantenimiento indoor', icon: '🏠' },
+        { id: 'intact', label: 'Entero', subtitle: 'Sin esterilizar', icon: '🐱' },
+        { id: 'overweight', label: 'Control de Peso', subtitle: 'Sobrepeso (≥ 4,5 kg)', icon: '⚖️' },
+      ];
+  const selectedConditionMeta = conditionOptions.find((c) => c.id === selectedLifeStage) || conditionOptions[0];
+
   return (
     <div className="space-y-4 pt-1 animate-in fade-in duration-200">
       {/* Header Title */}
@@ -28,14 +39,23 @@ export default function FeedingCalculatorTab({
             Calculadora Nutricional de Ración Diaria
           </h3>
           <p className="text-[11px] text-slate-500 font-medium">
-            Completa los pasos para conocer la porción recomendada:
+            {isCatConditionsGuide
+              ? 'Guía oficial del fabricante según peso y condición corporal de tu gato adulto:'
+              : 'Completa los pasos para conocer la porción recomendada:'}
           </p>
         </div>
-        {product.targetStageLabel && (
-          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black self-start sm:self-auto">
-            {product.targetStageLabel}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5 flex-wrap self-start sm:self-auto">
+          {customFeedingGuide?.cupLabel && (
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-black">
+              🥣 {customFeedingGuide.cupLabel}
+            </span>
+          )}
+          {product.targetStageLabel && (
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black">
+              {product.targetStageLabel}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Wizard Step Progress Tracker Bar */}
@@ -53,7 +73,7 @@ export default function FeedingCalculatorTab({
           }`}
         >
           <span>{wizardStep > 1 || wizardStep === 'result' ? '✓' : '1'}</span>
-          <span>Etapa</span>
+          <span>{isCatConditionsGuide ? 'Condición' : 'Etapa'}</span>
         </button>
 
         <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
@@ -102,7 +122,7 @@ export default function FeedingCalculatorTab({
         </button>
       </div>
 
-      {/* PASO 1: Seleccionar Etapa de Vida */}
+      {/* PASO 1: Seleccionar Etapa de Vida o Condición del Gato */}
       {wizardStep === 1 && (
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
           <div className="space-y-0.5">
@@ -110,55 +130,78 @@ export default function FeedingCalculatorTab({
               Paso 1 de {isDog ? '3' : '2'}
             </span>
             <h4 className="text-sm font-black text-slate-900 tracking-tight">
-              ¿Cuál es la Etapa de Vida de tu {isDog ? 'Perro' : 'Gato'}?
+              {isCatConditionsGuide
+                ? '¿Cuál es la condición de tu Gato Adulto?'
+                : `¿Cuál es la Etapa de Vida de tu ${isDog ? 'Perro' : 'Gato'}?`}
             </h4>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-2.5 py-1">
-            <button
-              type="button"
-              onClick={() => setSelectedLifeStage('cachorro')}
-              className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
-                selectedLifeStage === 'cachorro'
-                  ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="text-2xl">🐾</span>
-              <div className="text-xs font-black">{isDog ? 'Cachorro' : 'Gatito'}</div>
-              <div className="text-[9px] opacity-80 font-medium">2 - 12 meses</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setSelectedLifeStage('adulto')}
-              className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
-                selectedLifeStage === 'adulto'
-                  ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              <span className="text-2xl">🐕</span>
-              <div className="text-xs font-black">Adulto</div>
-              <div className="text-[9px] opacity-80 font-medium">1 - 7 años</div>
-            </button>
-
-            {isDog && (
+          {isCatConditionsGuide ? (
+            <div className="flex flex-wrap justify-center gap-2.5 py-1">
+              {conditionOptions.map((cond) => (
+                <button
+                  key={cond.id}
+                  type="button"
+                  onClick={() => setSelectedLifeStage(cond.id)}
+                  className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[118px] cursor-pointer active:scale-95 ${
+                    selectedLifeStage === cond.id
+                      ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="text-2xl">{cond.icon || '🐱'}</span>
+                  <div className="text-xs font-black">{cond.label}</div>
+                  <div className="text-[9px] opacity-80 font-medium">{cond.subtitle}</div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-wrap justify-center gap-2.5 py-1">
               <button
                 type="button"
-                onClick={() => setSelectedLifeStage('senior')}
+                onClick={() => setSelectedLifeStage('cachorro')}
                 className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
-                  selectedLifeStage === 'senior'
+                  selectedLifeStage === 'cachorro'
                     ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                <span className="text-2xl">🦴</span>
-                <div className="text-xs font-black">Senior</div>
-                <div className="text-[9px] opacity-80 font-medium">7+ años</div>
+                <span className="text-2xl">🐾</span>
+                <div className="text-xs font-black">{isDog ? 'Cachorro' : 'Gatito'}</div>
+                <div className="text-[9px] opacity-80 font-medium">2 - 12 meses</div>
               </button>
-            )}
-          </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedLifeStage('adulto')}
+                className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                  selectedLifeStage === 'adulto'
+                    ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-2xl">🐕</span>
+                <div className="text-xs font-black">Adulto</div>
+                <div className="text-[9px] opacity-80 font-medium">1 - 7 años</div>
+              </button>
+
+              {isDog && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLifeStage('senior')}
+                  className={`p-3 rounded-2xl border text-xs font-black transition-all flex flex-col items-center gap-1 min-w-[100px] cursor-pointer active:scale-95 ${
+                    selectedLifeStage === 'senior'
+                      ? 'bg-[#1D1D1F] text-white border-[#1D1D1F] shadow-md ring-2 ring-[#F5BA13]/40 scale-102'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="text-2xl">🦴</span>
+                  <div className="text-xs font-black">Senior</div>
+                  <div className="text-[9px] opacity-80 font-medium">7+ años</div>
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="pt-2 border-t border-slate-100 flex justify-end">
             <button
@@ -311,7 +354,7 @@ export default function FeedingCalculatorTab({
             {/* Quick weight chips */}
             <div className="flex flex-wrap justify-center items-center gap-1.5">
               <span className="text-[11px] font-bold text-slate-400 mr-1">Comunes:</span>
-              {(isDog ? [3, 8, 20, 35] : [2, 4, 6]).map((w) => (
+              {(isDog ? [3, 8, 20, 35] : isCatConditionsGuide ? [2.5, 4, 5, 7] : [2, 4, 6]).map((w) => (
                 <button
                   type="button"
                   key={w}
@@ -361,7 +404,13 @@ export default function FeedingCalculatorTab({
             <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-800">
               <span className="text-slate-400">Mascota:</span>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                {selectedLifeStage === 'cachorro' ? '🐾 Cachorro' : selectedLifeStage === 'adulto' ? '🐕 Adulto' : '🦴 Senior'}
+                {isCatConditionsGuide
+                  ? `${selectedConditionMeta.icon || '🐱'} ${selectedConditionMeta.label}`
+                  : selectedLifeStage === 'cachorro'
+                  ? '🐾 Cachorro'
+                  : selectedLifeStage === 'adulto'
+                  ? '🐕 Adulto'
+                  : '🦴 Senior'}
               </span>
               {selectedBreedSize && (
                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800">
@@ -389,53 +438,118 @@ export default function FeedingCalculatorTab({
                 <span className="p-2 rounded-lg text-[#1D1D1F] bg-[#F5BA13] text-xs">🎯</span>
                 <div>
                   <div>Ración Sugerida ({petWeight} kg):</div>
-                  <div className="text-[10px] font-normal opacity-80">{activeFeedingRow.label}</div>
+                  <div className="text-[10px] font-normal opacity-80">
+                    {activeFeedingRow.label}
+                    {isCatConditionsGuide && selectedLifeStage === 'overweight' && !activeFeedingRow.hasDirectConditionValue
+                      ? ' · En este peso se muestra referencia de mantenimiento esterilizado'
+                      : ''}
+                  </div>
                 </div>
               </div>
               <span className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 shadow-2xs text-xs font-black text-emerald-600 self-start sm:self-auto">
-                🟢 {activeFeedingRow.maint} al día
+                🟢 {activeFeedingRow.maint}
               </span>
             </div>
           )}
 
           {/* Feeding Table */}
           <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-2xs bg-white">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-2.5">Peso</th>
-                  <th className="px-4 py-2.5">Ración Recomendada</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
-                {feedingGuide.map((row) => {
-                  const isActive = activeFeedingRow?.id === row.id;
-                  return (
-                    <tr
-                      key={row.id}
-                      className={`transition-all duration-200 ${
-                        isActive
-                          ? 'bg-amber-100/70 font-black text-slate-900'
-                          : 'hover:bg-slate-50'
-                      }`}
-                    >
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-2">
-                          <span>{row.label}</span>
-                          {isActive && (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black text-[#1D1D1F] bg-[#F5BA13]">
-                              ✓ Mascota
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 font-bold">{row.maint}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {isCatConditionsGuide ? (
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-2.5">Peso del Gato</th>
+                    <th className={`px-3 py-2.5 ${selectedLifeStage === 'intact' ? 'bg-amber-100/80 text-slate-900' : ''}`}>
+                      Entero (Mant.)
+                    </th>
+                    <th className={`px-3 py-2.5 ${!selectedLifeStage || selectedLifeStage === 'neutered' ? 'bg-amber-100/80 text-slate-900' : ''}`}>
+                      Esterilizado
+                    </th>
+                    <th className={`px-3 py-2.5 ${selectedLifeStage === 'overweight' ? 'bg-amber-100/80 text-slate-900' : ''}`}>
+                      Sobrepeso
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
+                  {feedingGuide.map((row) => {
+                    const isActive = activeFeedingRow?.id === row.id;
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`transition-all duration-200 ${
+                          isActive
+                            ? 'bg-amber-100/70 font-black text-slate-900'
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span>{row.label}</span>
+                            {isActive && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black text-[#1D1D1F] bg-[#F5BA13]">
+                                ✓ Tu gato
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className={`px-3 py-2.5 ${selectedLifeStage === 'intact' ? 'font-black text-slate-900 bg-amber-50/70' : 'font-bold'}`}>
+                          {row.intact || '—'}
+                        </td>
+                        <td className={`px-3 py-2.5 ${!selectedLifeStage || selectedLifeStage === 'neutered' ? 'font-black text-slate-900 bg-amber-50/70' : 'font-bold'}`}>
+                          {row.neutered || '—'}
+                        </td>
+                        <td className={`px-3 py-2.5 ${selectedLifeStage === 'overweight' ? 'font-black text-slate-900 bg-amber-50/70' : 'font-bold'}`}>
+                          {row.overweight || '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-700 uppercase font-black border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-2.5">Peso</th>
+                    <th className="px-4 py-2.5">Ración Recomendada</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/60 font-semibold text-slate-700">
+                  {feedingGuide.map((row) => {
+                    const isActive = activeFeedingRow?.id === row.id;
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`transition-all duration-200 ${
+                          isActive
+                            ? 'bg-amber-100/70 font-black text-slate-900'
+                            : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span>{row.label}</span>
+                            {isActive && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-black text-[#1D1D1F] bg-[#F5BA13]">
+                                ✓ Mascota
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 font-bold">{row.maint}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
+
+          {customFeedingGuide?.note && (
+            <p className="text-[11px] text-slate-500 font-medium px-1">
+              💡 {customFeedingGuide.note}
+            </p>
+          )}
         </div>
       )}
     </div>

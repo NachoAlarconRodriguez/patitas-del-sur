@@ -87,9 +87,11 @@ export async function fetchProductsFromSupabase({ allowMockFallback = true } = {
         const rawGa = safeParseJsonObject(item.guaranteed_analysis || item.guaranteedAnalysis, {});
         const shippingUnitCost = Number(rawGa._shipping_unit_cost ?? item.shipping_unit_cost ?? item.shippingUnitCost) || 0;
         const bowlConfig = rawGa._bowl_config || item.bowl_config || item.bowlConfig || null;
+        const feedingGuide = rawGa._feeding_guide || item.feeding_guide || item.feedingGuide || null;
         const cleanGa = { ...rawGa };
         delete cleanGa._shipping_unit_cost;
         delete cleanGa._bowl_config;
+        delete cleanGa._feeding_guide;
 
         return {
           ...item,
@@ -99,6 +101,8 @@ export async function fetchProductsFromSupabase({ allowMockFallback = true } = {
           guaranteedAnalysis: cleanGa,
           shippingUnitCost,
           bowlConfig,
+          feedingGuide,
+          targetStageLabel: item.target_stage_label || item.targetStageLabel || null,
           benefits: safeParseJson(item.benefits, []),
           animalPercent: item.animal_percent !== null && item.animal_percent !== undefined && item.animal_percent !== ''
             ? (Number(item.animal_percent) || item.animal_percent)
@@ -229,6 +233,16 @@ export async function updateProductInSupabase(productId, updates) {
         } else {
           delete cleanObj._bowl_config;
         }
+        const fGuide = updates.feedingGuide !== undefined
+          ? updates.feedingGuide
+          : updates.feeding_guide !== undefined
+          ? updates.feeding_guide
+          : existingProd?.feedingGuide;
+        if (fGuide && typeof fGuide === 'object') {
+          cleanObj._feeding_guide = fGuide;
+        } else {
+          delete cleanObj._feeding_guide;
+        }
         payload.guaranteed_analysis = cleanObj;
       } else if (key === 'shippingUnitCost' || key === 'shipping_unit_cost') {
         const shipCost = Number(value) || 0;
@@ -247,6 +261,14 @@ export async function updateProductInSupabase(productId, updates) {
         if (bConfig && typeof bConfig === 'object') {
           baseGa._bowl_config = bConfig;
         }
+        const fGuide = updates.feedingGuide !== undefined
+          ? updates.feedingGuide
+          : updates.feeding_guide !== undefined
+          ? updates.feeding_guide
+          : existingProd?.feedingGuide;
+        if (fGuide && typeof fGuide === 'object') {
+          baseGa._feeding_guide = fGuide;
+        }
         payload.guaranteed_analysis = baseGa;
       } else if (key === 'bowlConfig' || key === 'bowl_config') {
         const existingProd = (memoryCachedProducts || []).find((p) => p.id === productId);
@@ -259,12 +281,47 @@ export async function updateProductInSupabase(productId, updates) {
         if (shipCost > 0) {
           baseGa._shipping_unit_cost = shipCost;
         }
+        const fGuide = updates.feedingGuide !== undefined
+          ? updates.feedingGuide
+          : updates.feeding_guide !== undefined
+          ? updates.feeding_guide
+          : existingProd?.feedingGuide;
+        if (fGuide && typeof fGuide === 'object') {
+          baseGa._feeding_guide = fGuide;
+        }
         if (value && typeof value === 'object') {
           baseGa._bowl_config = value;
         } else {
           delete baseGa._bowl_config;
         }
         payload.guaranteed_analysis = baseGa;
+      } else if (key === 'feedingGuide' || key === 'feeding_guide') {
+        const existingProd = (memoryCachedProducts || []).find((p) => p.id === productId);
+        const baseGa = payload.guaranteed_analysis || (existingProd?.guaranteedAnalysis ? { ...existingProd.guaranteedAnalysis } : {});
+        const shipCost = updates.shippingUnitCost !== undefined
+          ? Number(updates.shippingUnitCost) || 0
+          : updates.shipping_unit_cost !== undefined
+          ? Number(updates.shipping_unit_cost) || 0
+          : Number(existingProd?.shippingUnitCost) || 0;
+        if (shipCost > 0) {
+          baseGa._shipping_unit_cost = shipCost;
+        }
+        const bConfig = updates.bowlConfig !== undefined
+          ? updates.bowlConfig
+          : updates.bowl_config !== undefined
+          ? updates.bowl_config
+          : existingProd?.bowlConfig;
+        if (bConfig && typeof bConfig === 'object') {
+          baseGa._bowl_config = bConfig;
+        }
+        if (value && typeof value === 'object') {
+          baseGa._feeding_guide = value;
+        } else {
+          delete baseGa._feeding_guide;
+        }
+        payload.guaranteed_analysis = baseGa;
+      } else if (key === 'targetStageLabel' || key === 'target_stage_label') {
+        payload.target_stage_label = value || null;
       } else if (key === 'animalPercent' || key === 'animal_percent') {
         payload.animal_percent = value !== '' && value !== null && !isNaN(value) ? String(value) : (value || null);
       }
@@ -390,6 +447,10 @@ export async function createProductInSupabase(productData) {
         const bConfig = productData.bowlConfig ?? productData.bowl_config;
         if (bConfig && typeof bConfig === 'object') {
           baseGa._bowl_config = bConfig;
+        }
+        const fGuide = productData.feedingGuide ?? productData.feeding_guide;
+        if (fGuide && typeof fGuide === 'object') {
+          baseGa._feeding_guide = fGuide;
         }
         return baseGa;
       })(),

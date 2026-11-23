@@ -287,7 +287,29 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     );
   }
 
+  const customFeedingGuide = product?.feedingGuide && Array.isArray(product.feedingGuide.rows) && product.feedingGuide.rows.length > 0
+    ? product.feedingGuide
+    : null;
+
   const getFeedingGuide = () => {
+    if (customFeedingGuide) {
+      const conditionKey =
+        selectedLifeStage && ['intact', 'neutered', 'overweight'].includes(selectedLifeStage)
+          ? selectedLifeStage
+          : 'neutered';
+
+      return customFeedingGuide.rows.map((row, idx) => {
+        const directValue = row[conditionKey];
+        const fallbackValue = row.neutered || row.intact || row.maint || '—';
+        return {
+          ...row,
+          id: row.id || `custom-feed-${idx + 1}`,
+          maint: directValue || fallbackValue,
+          hasDirectConditionValue: Boolean(directValue),
+        };
+      });
+    }
+
     if (!isDog) {
       if (selectedLifeStage === 'cachorro') {
         return [
@@ -342,7 +364,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
   const currentWeightNum = parseFloat(petWeight) || 0;
   const activeFeedingRow = feedingGuide.find(
     (row) => currentWeightNum >= row.min && currentWeightNum <= row.max
-  ) || feedingGuide[0];
+  ) || (currentWeightNum > (feedingGuide[feedingGuide.length - 1]?.max || 0) ? feedingGuide[feedingGuide.length - 1] : feedingGuide[0]);
 
   // Variantes y cálculo de precio real por formato seleccionado
   const variants = product?.variants || [];
@@ -1026,6 +1048,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
                 setPetWeight={setPetWeight}
                 feedingGuide={feedingGuide}
                 activeFeedingRow={activeFeedingRow}
+                customFeedingGuide={customFeedingGuide}
               />
             )}
 
