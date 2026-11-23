@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender-seo.mjs",
     "lint": "oxlint",
     "design:lint": "echo y | npx impeccable detect src/",
     "design:audit": "npx impeccable detect http://localhost:5173",

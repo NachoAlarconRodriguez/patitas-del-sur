@@ -15,7 +15,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import SEOHead from '../components/SEOHead';
-import { getOrganizationSchema } from '../utils/schemaGenerators';
+import { getBreadcrumbSchema } from '../utils/schemaGenerators';
 import { COMPANY_INFO } from '../constants';
 
 export default function NosotrosView() {
@@ -23,10 +23,13 @@ export default function NosotrosView() {
     <div className="pt-24 sm:pt-28 pb-20 bg-[#FAF9F6] text-slate-900 min-h-screen select-none">
       <SEOHead
         title="Nuestra Historia · Por qué creamos Patitas del Sur"
-        description="Conoce la historia real de Patitas del Sur en Frutillar y la cuenca del lago Llanquihue: nacimos para que a ninguna mascota le falte jamás su alimento favorito ni sufra cambios bruscos de dieta."
+        description="Conoce la historia real de Patitas del Sur en Frutillar: nacimos con bodega y stock local permanente para que a ninguna mascota le falte jamás su alimento habitual ni sufra cambios bruscos de dieta."
         canonical="/nosotros"
-        keywords="historia patitas del sur, alimento mascotas frutillar, pet shop puerto varas, nutricion canina llanquihue, despacho alimento mascotas lago llanquihue"
-        jsonLd={getOrganizationSchema()}
+        keywords="historia patitas del sur, alimento mascotas frutillar, pet shop frutillar, nutricion canina frutillar, despacho alimento mascotas frutillar"
+        jsonLd={getBreadcrumbSchema([
+          { name: 'Inicio', url: '/' },
+          { name: 'Nosotros', url: '/nosotros' },
+        ])}
       />
 
       {/* 1. HERO EMOCIONAL CON ATMÓSFERA DORADA Y JERARQUÍA EQUILIBRADA */}
@@ -221,7 +224,7 @@ export default function NosotrosView() {
                   Despacho en la Puerta de tu Hogar
                 </h3>
                 <p className="text-slate-600 text-sm leading-relaxed font-medium">
-                  Olvídate de cargar sacos de 15 o 20 kilos o recorrer tiendas sin stock. Te lo llevamos directo a tu casa en Frutillar, Llanquihue, Puerto Varas y sectores aledaños con trato puntual y cordial.
+                  Olvídate de cargar sacos de 15 o 20 kilos o recorrer tiendas sin stock. Te lo llevamos directo a tu casa o parcela en Frutillar y alrededores (~9 km alrededor de Frutillar Alto) con trato puntual y cordial.
                 </p>
                 <div className="pt-2 flex items-center gap-1.5 text-xs font-black text-[#D97706]">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -304,13 +307,13 @@ export default function NosotrosView() {
         <div className="bg-gradient-to-b from-white to-amber-50/60 rounded-3xl p-8 sm:p-10 border border-amber-200/80 shadow-lg text-center space-y-6">
           <div className="max-w-2xl mx-auto space-y-3">
             <span className="inline-block px-3 py-1 rounded-full bg-amber-100 text-[#78350F] text-xs font-black uppercase tracking-wider">
-              Comunidad del Lago Llanquihue
+              Despacho Propio · Radio ~9 km desde Frutillar Alto
             </span>
             <h3 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight">
-              Frutillar · Llanquihue · Puerto Varas · Puerto Montt
+              Frutillar Bajo · Frutillar Alto · Punta Larga · Parcelaciones
             </h3>
             <p className="text-slate-600 text-sm sm:text-base font-normal">
-              Si buscas un alimento específico, una receta medicada o quieres coordinar tu despacho a domicilio, escríbenos directamente. Te atenderemos personas de la zona que amamos a las mascotas tanto como tú.
+              Si buscas un alimento específico, una receta medicada o quieres coordinar tu despacho a domicilio en Frutillar y alrededores, escríbenos directamente. Te atenderemos personas de la zona que amamos a las mascotas tanto como tú.
             </p>
           </div>
 

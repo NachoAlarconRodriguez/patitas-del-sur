@@ -439,9 +439,22 @@ export function groupProductsForStore(rawProducts) {
     const isPausedOverall = variants.every((v) => v.isPaused);
     const isOutOfStock = totalStock <= 0;
 
+    // ID canónico determinista (independiente del orden de consulta en Supabase)
+    const canonicalSource = [...items].sort((a, b) =>
+      String(a?.id || '').localeCompare(String(b?.id || ''), 'en', { numeric: true })
+    )[0] || master;
+
+    // Fecha de actualización más reciente del grupo (para <lastmod> del sitemap)
+    const latestUpdatedAt = items
+      .map((i) => i?.updated_at || i?.updatedAt)
+      .filter((d) => typeof d === 'string' && d.trim().length > 0)
+      .sort()
+      .pop() || master.updated_at || master.updatedAt || null;
+
     return {
       ...master,
-      id: master.id,
+      id: canonicalSource.id,
+      updated_at: latestUpdatedAt,
       name: master.name,
       bowlConfig: master.bowlConfig || items.find((i) => i.bowlConfig)?.bowlConfig || null,
       feedingGuide: master.feedingGuide || items.find((i) => i.feedingGuide)?.feedingGuide || null,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase, cleanIngredientName } from '../services/productsService';
 import {
@@ -35,6 +35,8 @@ import {
 export default function ProductDetailView({ onAddToCart, onSelectProduct, cartItems = [] }) {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const preferredVariantId = location.state?.variantId || id;
 
   const [allProducts, setAllProducts] = useState(FALLBACK_PRODUCTS);
   const [isLoading, setIsLoading] = useState(
@@ -122,7 +124,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     if (!product) return 'Estándar';
     const list = product.variants || [];
     if (list.length > 0) {
-      const matchV = list.find((v) => v.id === id || v.sku === id);
+      const matchV = list.find((v) => String(v.id) === String(preferredVariantId) || String(v.sku) === String(preferredVariantId));
       if (matchV && isVariantAvailable(matchV)) {
         return matchV.format || matchV.weight;
       }
@@ -358,7 +360,9 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     if (product?.weights && product.weights.length > 0) {
       const list = product.variants || [];
       if (list.length > 0) {
-        const matchV = list.find((v) => v.id === id || v.sku === id);
+        const matchV = list.find(
+          (v) => String(v.id) === String(preferredVariantId) || String(v.sku) === String(preferredVariantId)
+        );
         if (matchV && isVariantAvailable(matchV)) {
           setSelectedWeight(matchV.format || matchV.weight);
           return;
@@ -375,7 +379,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
       }
       setSelectedWeight(product.weights[0]);
     }
-  }, [id, product]);
+  }, [id, preferredVariantId, product]);
 
   if (isLoading) {
     return <PawProgressLoader progress={loadProgress} />;
@@ -598,13 +602,13 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
     <div className="pt-28 pb-44 md:pb-20 bg-[#FAF9F6] min-h-screen text-slate-900 select-none">
       <SEOHead
         title={`${product.name} en Frutillar`}
-        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${displayProduct?.tagline || 'Alimento natural y super premium para mascotas.'} Stock real y despacho a domicilio el mismo día en Frutillar (urbano y parcelaciones).`}
+        description={`${product.name} de ${product.brand || 'Patitas del Sur'}. ${displayProduct?.tagline || 'Alimento natural y super premium para mascotas.'} Stock real y despacho a domicilio el mismo día en Frutillar y alrededores (urbano y parcelaciones).`}
         canonical={`/producto/${product.id}`}
         ogImage={productImages[0] || product.image}
         ogType="product"
         keywords={`${product.name}, ${product.brand || ''}, alimento ${isDog ? 'perros' : 'gatos'} frutillar, comida mascotas frutillar, despacho frutillar`}
         jsonLd={[
-          getProductSchema(product),
+          getProductSchema(product, { images: productImages, displayProduct }),
           getBreadcrumbSchema([
             { name: 'Inicio', url: '/' },
             { name: isDog ? 'Perros' : 'Gatos', url: isDog ? '/perros' : '/gatos' },

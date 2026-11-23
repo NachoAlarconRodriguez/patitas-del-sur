@@ -6,55 +6,132 @@ Disallow: /admin/
 Disallow: /mi-cuenta
 Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
+Disallow: /api/mercadopago-
+Disallow: /api/admin-push-notify
+Disallow: /api/indexnow
 
 # AI Search & Answer Engine Crawlers (GEO / AEO / LLMs)
 User-agent: OAI-SearchBot
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: ChatGPT-User
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: GPTBot
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: PerplexityBot
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: ClaudeBot
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
-User-agent: Google-Extended
+User-agent: Claude-SearchBot
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
+
+User-agent: Claude-User
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
+Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: anthropic-ai
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
+Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 User-agent: Applebot-Extended
 Allow: /
 Disallow: /admin
+Disallow: /admin/
 Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
 Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
+
+User-agent: Amazonbot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
+Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
+
+User-agent: Meta-ExternalAgent
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /mi-cuenta
+Disallow: /mi-cuenta/
+Disallow: /login
+Disallow: /tarjeta
+Disallow: /tarjeta/
 
 # Dynamic XML Sitemap & AI Knowledge Base (LLMs.txt Standard)
 Sitemap: https://www.patitas-delsur.cl/sitemap.xml

@@ -17,7 +17,7 @@ export const FRUTILLAR_FAQS = [
     category: 'frutillar',
     question: '¿A qué sectores y parcelaciones de Frutillar realizan despacho?',
     shortAnswer:
-      'Despachamos tanto en el radio urbano como en parcelaciones de Frutillar: Frutillar Bajo, Frutillar Alto, Loteo Espacio Frutillar, Punta Larga, Reserva Frutillar, Los Colonos, Quilanto, Los Bajos, Playa Maqui, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio.',
+      'Despachamos en un radio aproximado de 9 km alrededor de Frutillar Alto (urbano y parcelaciones): Frutillar Bajo, Frutillar Alto, Loteo Espacio Frutillar, Punta Larga, Reserva Frutillar, Los Colonos, Quilanto, Los Bajos, Playa Maqui, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio.',
     details:
       'Al ingresar tu dirección en el checkout, validamos automáticamente la cobertura y puedes agregar referencias de portón o parcela para asegurar una entrega rápida y sin contratiempos.',
   },

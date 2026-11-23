@@ -26,7 +26,6 @@ import { fetchProductsFromSupabase, getCachedProducts } from '../services/produc
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
 import { groupProductsForStore } from '../utils/productVariants';
 import {
-  getLocalBusinessSchema,
   getFAQPageSchema,
   getBreadcrumbSchema,
 } from '../utils/schemaGenerators';
@@ -148,11 +147,10 @@ export default function FrutillarLandingView({
     <div className="min-h-screen bg-[#FAF8F4] text-[#1D1D1F] pt-24 sm:pt-28 pb-24 sm:pb-16">
       <SEOHead
         title="Alimento para Perros y Gatos con Despacho a Domicilio en Frutillar"
-        description="Compra alimento super premium, Grain Free, snacks y antiparasitarios para perros y gatos con despacho propio el mismo día en Frutillar Bajo, Frutillar Alto, Punta Larga, Reserva Frutillar, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio. Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
+        description="Compra alimento super premium, Grain Free, snacks y antiparasitarios para perros y gatos con despacho propio el mismo día en Frutillar y alrededores (~9 km desde Frutillar Alto): Frutillar Bajo, Frutillar Alto, Punta Larga, Reserva Frutillar, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio. Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
         canonical="/despacho/frutillar"
         keywords="alimento para perros frutillar, alimento para gatos frutillar, tienda de mascotas frutillar, despacho comida mascotas frutillar, alimento mascotas domingo frutillar, parcelas frutillar, lagunita frutillar, colonia la radio, punta larga, reserva frutillar"
         jsonLd={[
-          getLocalBusinessSchema(),
           getFAQPageSchema(FRUTILLAR_FAQS),
           getBreadcrumbSchema([
             { name: 'Inicio', url: '/' },
@@ -184,7 +182,7 @@ export default function FrutillarLandingView({
             <div className="lg:col-span-7 space-y-5">
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#F5BA13]/15 border border-[#F5BA13]/40 text-[#F5BA13] text-xs font-extrabold uppercase tracking-wider">
                 <MapPin className="w-3.5 h-3.5 shrink-0" />
-                <span>Bodega Local en Loteo Espacio Frutillar · Flota Propia</span>
+                <span>Bodega Local en Loteo Espacio Frutillar · Radio ~9 km</span>
               </div>
 
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight leading-[1.08] text-white">
@@ -196,7 +194,8 @@ export default function FrutillarLandingView({
               <p className="text-sm sm:text-base text-white/85 leading-relaxed max-w-2xl">
                 En <strong>Patitas del Sur</strong> despachamos alimento super premium, recetas Grain Free,
                 snacks naturales, arenas y antiparasitarios directo a tu puerta o parcela en{' '}
-                <strong>todo Frutillar</strong>. Tarifa estándar <strong>{formatCLP(COMPANY_INFO.baseShippingFee)} CLP</strong>{' '}
+                <strong>Frutillar y alrededores (~9 km alrededor de Frutillar Alto)</strong>. Tarifa estándar{' '}
+                <strong>{formatCLP(COMPANY_INFO.baseShippingFee)} CLP</strong>{' '}
                 (envío <strong>GRATIS desde {formatCLP(COMPANY_INFO.freeShippingThreshold)} CLP</strong> de lunes a sábado) y{' '}
                 <strong>Pedido Urgente los domingos</strong> de 10:00 a 20:00 hrs por{' '}
                 <strong>{formatCLP(COMPANY_INFO.urgentShippingFee)} CLP</strong>.

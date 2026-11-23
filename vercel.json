@@ -1,4 +1,6 @@
 {
+  "cleanUrls": true,
+  "trailingSlash": false,
   "headers": [
     {
       "source": "/sw.js",
@@ -13,6 +15,18 @@
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" },
         { "key": "Content-Type", "value": "application/manifest+json; charset=utf-8" }
       ]
+    },
+    {
+      "source": "/(admin|admin/.*|mi-cuenta|mi-cuenta/.*|login|tarjeta|tarjeta/.*)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
+    },
+    {
+      "source": "/api/(mercadopago-order|mercadopago-webhook|admin-push-notify|indexnow)",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" }
+      ]
     }
   ],
   "rewrites": [
@@ -21,16 +35,16 @@
     { "source": "/llms-full.txt", "destination": "/api/llms?mode=full" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     {
-      "source": "/((?!api/|images/|assets/|favicon|robots\\.txt|sitemap\\.xml|llms|manifest|sw\\.js).*)",
+      "source": "/((?!api/|images/|assets/|favicon|robots\\.txt|sitemap\\.xml|llms|manifest|sw\\.js|7c4e9b2a8f1d4e6a9c3b5d7f2a8e4c1b\\.txt).*)",
       "has": [
         {
           "type": "header",
           "key": "user-agent",
-          "value": "^(WhatsApp/.*|.*(facebookexternalhit|Facebot|meta-externalagent|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Discordbot|Pinterest|SkypeUriPreview).*)$"
+          "value": "^(WhatsApp/.*|.*(facebookexternalhit|Facebot|meta-externalagent|Meta-ExternalAgent|Twitterbot|TelegramBot|LinkedInBot|Slackbot|Discordbot|Pinterest|SkypeUriPreview|OAI-SearchBot|ChatGPT-User|GPTBot|PerplexityBot|ClaudeBot|Claude-SearchBot|Claude-User|anthropic-ai|Google-Extended|Applebot|Amazonbot|bingbot|BingPreview|DuckDuckBot|YandexBot).*)$"
         }
       ],
       "destination": "/api/og?path=/$1"
     },
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|assets/).*)", "destination": "/_spa.html" }
   ]
 }

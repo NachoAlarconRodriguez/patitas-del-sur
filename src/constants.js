@@ -30,6 +30,7 @@ export const COMPANY_INFO = {
   rut: '78.493.053-K',
   taxId: '78.493.053-K',
   url: SITE_URL,
+  logoUrl: '/pwa-icon-512.png',
   defaultOgImage: '/images/og-patitas-frutillar.jpg',
   phone: '+56 9 5333 2492',
   phoneDisplay: '+56 9 5333 2492',
@@ -55,6 +56,8 @@ export const COMPANY_INFO = {
   hubCity: 'Frutillar',
   hubAddress: 'Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile',
   postalCode: '5620000',
+  coverageRadiusKm: 9,
+  coverageDescription: 'Frutillar y alrededores (radio de ~9 km alrededor de Frutillar Alto: urbano y parcelaciones)',
   coordinates: {
     lat: -41.08985,
     lng: -73.08013,

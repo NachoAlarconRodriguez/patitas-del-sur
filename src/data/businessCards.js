@@ -29,7 +29,7 @@ export const DIGITAL_BUSINESS_CARDS = {
       handle: 'Patitas del Sur',
       url: 'https://www.facebook.com/patitasdelsur.cl',
     },
-    isPublic: true,
+    isPublic: false,
   },
   alamiro: {
     slug: 'alamiro',
@@ -54,7 +54,7 @@ export const DIGITAL_BUSINESS_CARDS = {
       handle: 'Patitas del Sur',
       url: 'https://www.facebook.com/patitasdelsur.cl',
     },
-    isPublic: true,
+    isPublic: false,
   },
 };
 

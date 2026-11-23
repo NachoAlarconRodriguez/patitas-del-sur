@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { groupProductsForStore } from '../src/utils/productVariants.js';
 
 const SITE_URL = (
   process.env.SITE_URL ||
@@ -14,9 +15,12 @@ const SUPABASE_URL =
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ub3VmbHlwb2V3aWpvdmF2a2VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzOTA5MzksImV4cCI6MjEwNzk2NjkzOX0.CgguuTDxIPqNYHQePsivaDMowZo6nkdmD24J1LzZ8mQ';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 const escapeXml = (str) =>
   String(str || '')
@@ -40,10 +44,10 @@ const toDateOnly = (iso) => {
 };
 
 /**
- * Serverless Endpoint: Sitemap XML dinámico conectado al inventario real en Supabase.
- * Reescrito desde /sitemap.xml en vercel.json.
+ * Construye la lista canónica de rutas públicas (estáticas + productos agrupados)
+ * Reutilizada por /sitemap.xml y /api/indexnow.
  */
-export default async function handler(req, res) {
+export async function getCanonicalSiteEntries() {
   const today = toDateOnly();
 
   const staticRoutes = [
@@ -53,8 +57,6 @@ export default async function handler(req, res) {
     { path: '/perros', changefreq: 'daily', priority: '0.9', lastmod: today },
     { path: '/gatos', changefreq: 'daily', priority: '0.9', lastmod: today },
     { path: '/nosotros', changefreq: 'monthly', priority: '0.7', lastmod: today },
-    { path: '/tarjeta/ignacio', changefreq: 'monthly', priority: '0.6', lastmod: today },
-    { path: '/tarjeta/alamiro', changefreq: 'monthly', priority: '0.6', lastmod: today },
     { path: '/politicas-de-despacho', changefreq: 'monthly', priority: '0.6', lastmod: today },
     { path: '/cambios-y-devoluciones', changefreq: 'monthly', priority: '0.6', lastmod: today },
     { path: '/terminos-y-condiciones', changefreq: 'monthly', priority: '0.5', lastmod: today },
@@ -65,12 +67,22 @@ export default async function handler(req, res) {
   try {
     const { data, error } = await supabase
       .from('products')
-      .select('id, updated_at, is_active, is_paused')
-      .order('updated_at', { ascending: false });
+      .select('id, name, brand, pet_type, weights, price, stock, updated_at, is_active, is_paused')
+      .order('id', { ascending: true });
 
     if (!error && Array.isArray(data)) {
-      productRoutes = data
-        .filter((p) => p?.id && p.is_active !== false && !p.is_paused)
+      const activeRaw = data.filter((p) => p?.id && p.is_active !== false && !p.is_paused);
+      const grouped = groupProductsForStore(activeRaw);
+
+      const seenIds = new Set();
+      productRoutes = grouped
+        .filter((p) => {
+          if (!p?.id || p.isPaused) return false;
+          const idKey = String(p.id);
+          if (seenIds.has(idKey)) return false;
+          seenIds.add(idKey);
+          return true;
+        })
         .map((p) => ({
           path: `/producto/${encodeURIComponent(String(p.id))}`,
           changefreq: 'weekly',
@@ -82,7 +94,20 @@ export default async function handler(req, res) {
     console.warn('Error fetching products for dynamic sitemap:', err);
   }
 
-  const allUrls = [...staticRoutes, ...productRoutes];
+  return [...staticRoutes, ...productRoutes];
+}
+
+/**
+ * Serverless Endpoint: Sitemap XML dinámico conectado al inventario real en Supabase.
+ * Emite únicamente URLs canónicas (productos agrupados por familia/formato) y excluye rutas privadas y tarjetas NFC.
+ */
+export default async function handler(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
+    return res.status(405).send('Method Not Allowed');
+  }
+
+  const allUrls = await getCanonicalSiteEntries();
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

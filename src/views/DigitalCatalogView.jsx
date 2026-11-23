@@ -471,6 +471,7 @@ export default function DigitalCatalogView({
                 />
                 <h1 className="text-base sm:text-lg font-black text-[#1D1D1F] tracking-tight truncate leading-none">
                   Patitas del Sur
+                  <span className="sr-only"> — Catálogo de Alimento para Perros y Gatos en Frutillar</span>
                 </h1>
               </div>
 

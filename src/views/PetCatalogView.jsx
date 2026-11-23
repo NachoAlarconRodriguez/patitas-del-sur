@@ -252,8 +252,6 @@ export default function PetCatalogView({
         </symbol>
       </svg>
 
-      <h1 className="sr-only">{config.srTitle}</h1>
-
       {/* Tarjeta 1: Contenedor Hero de Categoría (.card--green) */}
       <section className="card card--green cat-hero">
         <div className="cat-hero__content">
@@ -264,7 +262,10 @@ export default function PetCatalogView({
             {config.hero.eyebrowPrefix} · {filteredProducts.length}{' '}
             {filteredProducts.length === 1 ? 'receta en stock' : 'recetas en stock'}
           </span>
-          <h2 className="h2 text-white">{config.hero.heading}</h2>
+          <h1 className="h2 text-white">
+            {config.hero.heading}
+            <span className="sr-only"> — {config.srTitle}</span>
+          </h1>
           <p className="cat-hero__sub">{config.hero.subheading}</p>
 
           {/* Buscador integrado en el Hero */}

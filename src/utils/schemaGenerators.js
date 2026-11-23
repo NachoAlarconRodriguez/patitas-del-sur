@@ -1,11 +1,76 @@
 /**
  * Schema.org JSON-LD Generators for SEO, GEO & AEO Rich Snippets
- * Compliant with Google Search Central & Schema.org specifications
+ * Compliant with Google Search Central (Merchant Listings & Rich Results) & Schema.org specifications
  */
 
 import { COMPANY_INFO, SITE_URL } from '../constants.js';
 
 export const BASE_URL = String(SITE_URL || COMPANY_INFO.url || 'https://www.patitas-delsur.cl').replace(/\/+$/, '');
+
+const LOGO_IMAGE_OBJECT = {
+  '@type': 'ImageObject',
+  url: `${BASE_URL}${COMPANY_INFO.logoUrl || '/pwa-icon-512.png'}`,
+  width: 512,
+  height: 512,
+};
+
+function toAbsoluteUrl(pathOrUrl, fallback = '/images/og-patitas-frutillar.jpg') {
+  const value = typeof pathOrUrl === 'string' && pathOrUrl.trim() ? pathOrUrl.trim() : fallback;
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value;
+  }
+  return `${BASE_URL}${value.startsWith('/') ? '' : '/'}${value}`;
+}
+
+function buildShippingDetails(priceVal) {
+  const shippingRateVal =
+    priceVal >= (COMPANY_INFO.freeShippingThreshold || 25000)
+      ? 0
+      : (COMPANY_INFO.baseShippingFee || 2500);
+
+  return {
+    '@type': 'OfferShippingDetails',
+    shippingRate: {
+      '@type': 'MonetaryAmount',
+      value: shippingRateVal,
+      currency: 'CLP',
+    },
+    shippingDestination: [
+      {
+        '@type': 'DefinedRegion',
+        addressCountry: 'CL',
+        addressRegion: 'Región de Los Lagos',
+        postalCode: COMPANY_INFO.postalCode || '5620000',
+      },
+    ],
+    deliveryTime: {
+      '@type': 'ShippingDeliveryTime',
+      handlingTime: {
+        '@type': 'QuantitativeValue',
+        minValue: 0,
+        maxValue: 0,
+        unitCode: 'DAY',
+      },
+      transitTime: {
+        '@type': 'QuantitativeValue',
+        minValue: 0,
+        maxValue: 1,
+        unitCode: 'DAY',
+      },
+    },
+  };
+}
+
+function buildReturnPolicy() {
+  return {
+    '@type': 'MerchantReturnPolicy',
+    applicableCountry: 'CL',
+    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+    merchantReturnDays: COMPANY_INFO.returnPolicyDays || 10,
+    returnMethod: 'https://schema.org/ReturnByMail',
+    returnFees: 'https://schema.org/FreeReturn',
+  };
+}
 
 /**
  * Global Organization Schema for Comercial Kira SpA / Patitas del Sur
@@ -19,10 +84,10 @@ export function getOrganizationSchema() {
     legalName: COMPANY_INFO.legalName,
     taxID: COMPANY_INFO.taxId,
     url: BASE_URL,
-    logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
+    logo: LOGO_IMAGE_OBJECT,
     image: `${BASE_URL}${COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg'}`,
     description:
-      'Tienda online de alimento super premium, fórmulas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio propio en Frutillar, Región de Los Lagos, Chile.',
+      'Tienda online de alimento super premium, fórmulas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio propio en Frutillar y alrededores (radio de ~9 km desde Frutillar Alto), Región de Los Lagos, Chile.',
     telephone: COMPANY_INFO.phone,
     email: COMPANY_INFO.email,
     address: {
@@ -60,7 +125,7 @@ export function getWebSiteSchema() {
     '@id': `${BASE_URL}/#website`,
     url: BASE_URL,
     name: 'Patitas del Sur',
-    description: 'Alimento para perros y gatos con despacho a domicilio en Frutillar, Región de Los Lagos, Chile.',
+    description: 'Alimento para perros y gatos con despacho a domicilio en Frutillar y alrededores, Región de Los Lagos, Chile.',
     publisher: {
       '@id': `${BASE_URL}/#organization`,
     },
@@ -112,48 +177,124 @@ export function getCollectionPageSchema({ name, description, url = '/catalogo', 
 }
 
 /**
- * Rich Product Schema for Google Search Rich Snippets & AI Engines
- * Reflects real stock availability, accurate Frutillar shipping cost, and only includes AggregateRating if real reviews exist.
+ * Rich Product Schema for Google Merchant Listings, Rich Snippets & AI Engines
+ * Supports full image gallery, multi-variant AggregateOffer, accurate Frutillar shipping (with handlingTime),
+ * MerchantReturnPolicy, and only includes AggregateRating if real verified reviews exist.
  * @param {Object} product
+ * @param {{ images?: string[], displayProduct?: Object }} [options]
  */
-export function getProductSchema(product) {
+export function getProductSchema(product, options = {}) {
   if (!product) return null;
 
-  const isDog = product.petType === 'perros';
+  const effective = options.displayProduct || product;
+  const petTypeRaw = String(product.petType || product.pet_type || '').toLowerCase();
+  const isDog = petTypeRaw !== 'gatos';
   const categoryLabel = isDog ? 'Alimento para Perros' : 'Alimento para Gatos';
   const productUrl = `${BASE_URL}/producto/${encodeURIComponent(String(product.id))}`;
-  const imageUrl = product.image?.startsWith('http')
-    ? product.image
-    : `${BASE_URL}${product.image?.startsWith('/') ? '' : '/'}${product.image || 'images/og-patitas-frutillar.jpg'}`;
 
-  const priceVal = Number(product.price) || 0;
+  const rawImages = [];
+  const pushImage = (img) => {
+    if (typeof img === 'string' && img.trim() && !img.includes('photo-1568640347023-a616a30bc3bd')) {
+      const abs = toAbsoluteUrl(img);
+      if (!rawImages.includes(abs)) rawImages.push(abs);
+    }
+  };
+
+  if (Array.isArray(options.images)) {
+    options.images.forEach(pushImage);
+  }
+  pushImage(effective.image || product.image);
+  if (Array.isArray(effective.images)) effective.images.forEach(pushImage);
+  if (Array.isArray(product.images)) product.images.forEach(pushImage);
+  if (rawImages.length === 0) {
+    rawImages.push(toAbsoluteUrl('/images/og-patitas-frutillar.jpg'));
+  }
+
   const variants = Array.isArray(product.variants) ? product.variants : [];
-  const hasStock = variants.length > 0
-    ? variants.some((v) => (typeof v.stock === 'number' ? v.stock : 10) > 0 && !v.isPaused)
-    : (typeof product.stock === 'number' ? product.stock : 10) > 0 && !product.isPaused && !product.isOutOfStock;
+  const activeVariants = variants.filter((v) => v && !v.isPaused && v.isActive !== false);
 
-  const shippingRateVal =
-    priceVal >= (COMPANY_INFO.freeShippingThreshold || 25000)
-      ? 0
-      : (COMPANY_INFO.baseShippingFee || 2500);
+  const buildSingleOffer = (item, fallbackUrl = productUrl) => {
+    const pVal = Number(item.price) || 0;
+    const inStock =
+      (typeof item.stock === 'number' ? item.stock : 10) > 0 &&
+      !item.isPaused &&
+      !item.isOutOfStock;
+
+    return {
+      '@type': 'Offer',
+      ...(item.format ? { name: `${product.name} — ${item.format}` } : {}),
+      ...(item.sku ? { sku: String(item.sku) } : {}),
+      priceCurrency: 'CLP',
+      price: pVal,
+      priceValidUntil: '2027-12-31',
+      availability: inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      url: fallbackUrl,
+      itemCondition: 'https://schema.org/NewCondition',
+      seller: {
+        '@type': 'Organization',
+        '@id': `${BASE_URL}/#organization`,
+        name: 'Patitas del Sur',
+        url: BASE_URL,
+      },
+      shippingDetails: buildShippingDetails(pVal),
+      hasMerchantReturnPolicy: buildReturnPolicy(),
+    };
+  };
+
+  let offersNode;
+  if (activeVariants.length > 1) {
+    const validPrices = activeVariants.map((v) => Number(v.price) || 0).filter((p) => p > 0);
+    const lowPrice = validPrices.length > 0 ? Math.min(...validPrices) : (Number(product.price) || 0);
+    const highPrice = validPrices.length > 0 ? Math.max(...validPrices) : lowPrice;
+    const hasAnyStock = activeVariants.some((v) => (typeof v.stock === 'number' ? v.stock : 10) > 0 && !v.isPaused);
+
+    if (lowPrice !== highPrice) {
+      offersNode = {
+        '@type': 'AggregateOffer',
+        priceCurrency: 'CLP',
+        lowPrice,
+        highPrice,
+        offerCount: activeVariants.length,
+        availability: hasAnyStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        url: productUrl,
+        offers: activeVariants.map((v) => buildSingleOffer(v, productUrl)),
+      };
+    } else {
+      offersNode = buildSingleOffer(
+        {
+          price: lowPrice,
+          stock: hasAnyStock ? 1 : 0,
+          sku: effective.sku || product.sku,
+        },
+        productUrl
+      );
+    }
+  } else {
+    const targetItem = activeVariants[0] || product;
+    offersNode = buildSingleOffer(targetItem, productUrl);
+  }
 
   const ratingVal = Number(product.rating);
-  const reviewsCount = Number(product.reviewsCount);
+  const reviewsCount = Number(product.reviewsCount || product.reviews_count);
   const hasVerifiedReviews = Number.isFinite(ratingVal) && ratingVal > 0 && Number.isFinite(reviewsCount) && reviewsCount > 0;
 
   const additionalProperties = [];
-  if (product.proteinValue) {
+  const proteinValue = effective.proteinValue ?? product.proteinValue ?? product.protein_value;
+  const mainProtein = effective.mainProtein || product.mainProtein || product.main_protein;
+  const targetStageLabel = effective.targetStageLabel || product.targetStageLabel || product.target_stage_label;
+
+  if (proteinValue) {
     additionalProperties.push({
       '@type': 'PropertyValue',
       name: 'Porcentaje de Proteína',
-      value: `${product.proteinValue}%`,
+      value: `${proteinValue}%`,
     });
   }
-  if (product.mainProtein) {
+  if (mainProtein) {
     additionalProperties.push({
       '@type': 'PropertyValue',
       name: 'Fuente Proteica Principal',
-      value: product.mainProtein,
+      value: mainProtein,
     });
   }
   if (product.weights && product.weights.length > 0) {
@@ -163,68 +304,32 @@ export function getProductSchema(product) {
       value: product.weights.join(', '),
     });
   }
-  if (product.targetStageLabel) {
+  if (targetStageLabel) {
     additionalProperties.push({
       '@type': 'PropertyValue',
       name: 'Etapa de Vida',
-      value: product.targetStageLabel,
+      value: targetStageLabel,
     });
   }
+
+  const tagline = effective.tagline || product.tagline;
 
   return {
     '@context': 'https://schema.org',
     '@type': 'Product',
     '@id': `${productUrl}#product`,
     name: product.name,
-    image: [imageUrl],
-    description: product.tagline
-      ? `${product.tagline}. Alimento para ${isDog ? 'perros' : 'gatos'} con despacho a domicilio en Frutillar (urbano y parcelaciones).`
-      : `${product.name} disponible en Patitas del Sur con despacho a domicilio el mismo día en Frutillar, Región de Los Lagos.`,
-    sku: String(product.sku || product.id),
+    image: rawImages,
+    description: tagline
+      ? `${tagline}. Alimento para ${isDog ? 'perros' : 'gatos'} con despacho a domicilio en Frutillar y alrededores (urbano y parcelaciones).`
+      : `${product.name} disponible en Patitas del Sur con despacho a domicilio el mismo día en Frutillar y alrededores, Región de Los Lagos.`,
+    sku: String(effective.sku || product.sku || product.id),
     category: categoryLabel,
     brand: {
       '@type': 'Brand',
       name: product.brand || 'Patitas del Sur',
     },
-    offers: {
-      '@type': 'Offer',
-      priceCurrency: 'CLP',
-      price: priceVal,
-      priceValidUntil: '2027-12-31',
-      availability: hasStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-      url: productUrl,
-      itemCondition: 'https://schema.org/NewCondition',
-      seller: {
-        '@type': 'Organization',
-        name: 'Patitas del Sur',
-        url: BASE_URL,
-      },
-      shippingDetails: {
-        '@type': 'OfferShippingDetails',
-        shippingRate: {
-          '@type': 'MonetaryAmount',
-          value: String(shippingRateVal),
-          currency: 'CLP',
-        },
-        shippingDestination: [
-          {
-            '@type': 'DefinedRegion',
-            addressCountry: 'CL',
-            addressRegion: 'Región de Los Lagos',
-            postalCode: COMPANY_INFO.postalCode || '5620000',
-          },
-        ],
-        deliveryTime: {
-          '@type': 'ShippingDeliveryTime',
-          transitTime: {
-            '@type': 'QuantitativeValue',
-            minValue: 0,
-            maxValue: 1,
-            unitCode: 'DAY',
-          },
-        },
-      },
-    },
+    offers: offersNode,
     ...(hasVerifiedReviews
       ? {
           aggregateRating: {
@@ -252,7 +357,7 @@ export function getLocalBusinessSchema() {
     legalName: COMPANY_INFO.legalName,
     taxID: COMPANY_INFO.taxId,
     image: `${BASE_URL}${COMPANY_INFO.defaultOgImage || '/images/og-patitas-frutillar.jpg'}`,
-    logo: `${BASE_URL}/images/logo_patitas_del_sur.svg`,
+    logo: LOGO_IMAGE_OBJECT,
     url: BASE_URL,
     telephone: COMPANY_INFO.phone,
     email: COMPANY_INFO.email,
@@ -288,6 +393,15 @@ export function getLocalBusinessSchema() {
       },
     ],
     areaServed: [
+      {
+        '@type': 'GeoCircle',
+        geoMidpoint: {
+          '@type': 'GeoCoordinates',
+          latitude: COMPANY_INFO.coordinates.hubLat,
+          longitude: COMPANY_INFO.coordinates.hubLng,
+        },
+        geoRadius: String((COMPANY_INFO.coverageRadiusKm || 9) * 1000),
+      },
       { '@type': 'City', name: 'Frutillar' },
       ...(COMPANY_INFO.sectors || []).map((sector) => ({
         '@type': 'Place',

@@ -225,9 +225,9 @@ const FALLBACK_ZONES = [
   {
     id: 'ZONE-DEFAULT-FRUTILLAR',
     name: 'Frutillar',
-    badgeText: 'Hasta 7 km',
-    radiusMaxKm: 7,
-    baseFee: 2000,
+    badgeText: 'Hasta 9 km',
+    radiusMaxKm: 9,
+    baseFee: 2500,
     freeThreshold: 25000,
     deliveryTime: 'Mismo día / 24 hrs',
     color: '#10B981',
@@ -471,8 +471,8 @@ export default function LocalDeliveryZones({ className = '' }) {
       const slots = Array.isArray(az.slots) && az.slots.length > 0
         ? az.slots.filter((s) => s.active !== false)
         : [
-            { id: 'manana', label: 'Mañana (10:00 - 13:30 hrs)', fee: null, noFreeShipping: false },
-            { id: 'tarde', label: 'Tarde (14:30 - 19:30 hrs)', fee: null, noFreeShipping: false },
+            { id: 'manana', label: 'Mañana (10:00 - 13:00 hrs)', fee: null, noFreeShipping: false },
+            { id: 'tarde', label: 'Tarde (15:30 - 19:30 hrs)', fee: null, noFreeShipping: false },
           ];
 
       const slotsHours = getSlotsTimeSpan(slots) || scheduleInfo.hours || '10:00 - 19:30 hrs';

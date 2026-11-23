@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Minus, Trash2, Sparkles, Stethoscope } from 'lucide-react';
 import {
   getDefaultAvailableVariantIndex,
@@ -228,16 +229,21 @@ export default function DigitalCatalogItemCard({
             ) : null}
           </div>
 
-          {/* Título clickeable */}
-          <button
-            type="button"
-            onClick={handleOpenQuickView}
+          {/* Título clickeable con enlace rastreable a la ficha canónica */}
+          <Link
+            to={`/producto/${product.id}`}
+            onClick={(e) => {
+              if (onSelectProduct && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                e.preventDefault();
+                handleOpenQuickView();
+              }
+            }}
             className="text-left block w-full cursor-pointer"
           >
             <h3 className="text-[13.5px] sm:text-sm font-extrabold text-[#1D1D1F] leading-snug line-clamp-2 hover:text-[#B45309] transition-colors">
               {product.name}
             </h3>
-          </button>
+          </Link>
 
           {/* Selector rápido de variantes (pesos o sabores) */}
           {hasVariants ? (

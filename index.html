@@ -1,43 +1,42 @@
 <!doctype html>
-<html lang="es">
+<html lang="es-CL">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-icon-192.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Patitas del Sur | Alimento para Perros y Gatos con Despacho a Domicilio en Frutillar</title>
-    <meta name="description" content="Tienda de alimento super premium, Grain Free, snacks naturales y antiparasitarios para perros y gatos en Frutillar. Despacho hoy a domicilio y parcelaciones (envío gratis desde $25.000) y domingos urgentes de 10:00 a 20:00 hrs." />
+    <meta name="description" content="Tienda de alimento super premium, Grain Free, snacks naturales y antiparasitarios para perros y gatos en Frutillar y alrededores (~9 km desde Frutillar Alto). Despacho hoy a domicilio y parcelaciones (envío gratis desde $25.000 CLP) y domingos urgentes de 10:00 a 20:00 hrs." />
     <meta name="keywords" content="alimento para perros frutillar, alimento para gatos frutillar, pet shop frutillar, comida mascotas domicilio frutillar, despacho alimento mascotas frutillar alto, frutillar bajo, punta larga, reserva frutillar, lagunita frutillar, parcelas frutillar, colonia la radio, patitas del sur" />
     <meta name="author" content="Comercial Kira SpA" />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://www.patitas-delsur.cl/" />
     <link rel="alternate" type="text/plain" href="https://www.patitas-delsur.cl/llms.txt" title="Patitas del Sur AI Knowledge Base" />
     <link rel="alternate" type="text/plain" href="https://www.patitas-delsur.cl/llms-full.txt" title="Patitas del Sur Extended AI Knowledge Base" />
-    
+
     <!-- Geo Tags Frutillar, Región de Los Lagos, Chile -->
     <meta name="geo.region" content="CL-LL" />
     <meta name="geo.placename" content="Frutillar, Región de Los Lagos, Chile" />
     <meta name="geo.position" content="-41.08985;-73.08013" />
     <meta name="ICBM" content="-41.08985, -73.08013" />
 
-    <!-- PWA & Mobile Web App -->
+    <!-- Fonts & Mobile Web App -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Manrope:wght@400;500;600;700&family=Caveat:wght@600&display=swap" rel="stylesheet" />
-    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#F5BA13" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Patitas" />
+    <meta name="apple-mobile-web-app-title" content="Patitas del Sur" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    
+
     <!-- Open Graph / Facebook / WhatsApp / Instagram -->
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="es_CL" />
     <meta property="og:site_name" content="Patitas del Sur" />
     <meta property="og:url" content="https://www.patitas-delsur.cl/" />
     <meta property="og:title" content="Patitas del Sur | Alimento para Mascotas con Despacho en Frutillar" />
-    <meta property="og:description" content="Alimento super premium, Grain Free y snacks naturales para perros y gatos en Frutillar. Despacho hoy en ventanas 10:00–13:00 y 15:30–19:30 (gratis desde $25.000) y domingos urgentes 10:00–20:00." />
+    <meta property="og:description" content="Alimento super premium, Grain Free y snacks naturales para perros y gatos en Frutillar y alrededores (~9 km desde Frutillar Alto). Despacho hoy en ventanas 10:00–13:00 y 15:30–19:30 (gratis desde $25.000) y domingos urgentes 10:00–20:00." />
     <meta property="og:image" content="https://www.patitas-delsur.cl/images/og-patitas-frutillar.jpg" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
@@ -46,10 +45,10 @@
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Patitas del Sur | Alimento para Perros y Gatos en Frutillar" />
-    <meta name="twitter:description" content="Nutrición natural y despacho a domicilio en Frutillar Bajo, Frutillar Alto, Punta Larga, Reserva Frutillar, Lagunita Frutillar y parcelaciones." />
+    <meta name="twitter:description" content="Nutrición natural y despacho a domicilio en Frutillar Bajo, Frutillar Alto, Punta Larga, Reserva Frutillar, Lagunita Frutillar y parcelaciones cercanas (~9 km)." />
     <meta name="twitter:image" content="https://www.patitas-delsur.cl/images/og-patitas-frutillar.jpg" />
 
-    <!-- Static Base JSON-LD Entity Graph for Non-JS Crawlers & AI Engines (SEO / GEO / AEO) -->
+    <!-- Static Base JSON-LD Entity Graph (Single Source of Truth for Crawlers & AI Engines) -->
     <script id="static-base-json-ld" type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -61,9 +60,14 @@
             "legalName": "Comercial Kira SpA",
             "taxID": "78.493.053-K",
             "url": "https://www.patitas-delsur.cl",
-            "logo": "https://www.patitas-delsur.cl/images/logo_patitas_del_sur.svg",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://www.patitas-delsur.cl/pwa-icon-512.png",
+              "width": 512,
+              "height": 512
+            },
             "image": "https://www.patitas-delsur.cl/images/og-patitas-frutillar.jpg",
-            "description": "Tienda online de alimento super premium, fórmulas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio propio en Frutillar, Región de Los Lagos, Chile.",
+            "description": "Tienda online de alimento super premium, fórmulas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio propio en Frutillar y alrededores (~9 km alrededor de Frutillar Alto), Región de Los Lagos, Chile.",
             "telephone": "+56 9 5333 2492",
             "email": "patitasdelsur.cl@gmail.com",
             "address": {
@@ -74,6 +78,16 @@
               "postalCode": "5620000",
               "addressCountry": "CL"
             },
+            "contactPoint": [
+              {
+                "@type": "ContactPoint",
+                "telephone": "+56 9 5333 2492",
+                "email": "patitasdelsur.cl@gmail.com",
+                "contactType": "customer service",
+                "areaServed": "CL",
+                "availableLanguage": ["es", "Spanish"]
+              }
+            ],
             "sameAs": [
               "https://www.instagram.com/patitasdelsur.cl",
               "https://www.facebook.com/patitasdelsur.cl"
@@ -87,7 +101,12 @@
             "taxID": "78.493.053-K",
             "url": "https://www.patitas-delsur.cl",
             "image": "https://www.patitas-delsur.cl/images/og-patitas-frutillar.jpg",
-            "logo": "https://www.patitas-delsur.cl/images/logo_patitas_del_sur.svg",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://www.patitas-delsur.cl/pwa-icon-512.png",
+              "width": 512,
+              "height": 512
+            },
             "telephone": "+56 9 5333 2492",
             "email": "patitasdelsur.cl@gmail.com",
             "priceRange": "$$ (CLP)",
@@ -122,6 +141,15 @@
               }
             ],
             "areaServed": [
+              {
+                "@type": "GeoCircle",
+                "geoMidpoint": {
+                  "@type": "GeoCoordinates",
+                  "latitude": -41.08985,
+                  "longitude": -73.08013
+                },
+                "geoRadius": "9000"
+              },
               { "@type": "City", "name": "Frutillar" },
               { "@type": "Place", "name": "Frutillar Bajo" },
               { "@type": "Place", "name": "Frutillar Alto" },
@@ -135,7 +163,17 @@
               { "@type": "Place", "name": "Lagunita Frutillar" },
               { "@type": "Place", "name": "Parcelas Frutillar" },
               { "@type": "Place", "name": "Colonia La Radio" }
-            ]
+            ],
+            "hasOfferCatalog": {
+              "@type": "OfferCatalog",
+              "name": "Catálogo de Alimentos, Snacks y Cuidado para Mascotas en Frutillar",
+              "itemListElement": [
+                { "@type": "OfferCatalog", "name": "Alimento Super Premium Perros en Frutillar" },
+                { "@type": "OfferCatalog", "name": "Alimento Super Premium Gatos en Frutillar" },
+                { "@type": "OfferCatalog", "name": "Antiparasitarios y Farmacia Veterinaria" },
+                { "@type": "OfferCatalog", "name": "Snacks Naturales y Arenas Sanitarias" }
+              ]
+            }
           },
           {
             "@type": "WebSite",
@@ -158,27 +196,18 @@
     </script>
   </head>
   <body style="margin: 0; background-color: #FAF8F4;">
-    <div id="root">
-      <div style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #FAF8F4; padding: 24px; user-select: none;">
-        <div style="display: flex; flex-direction: column; align-items: center; gap: 22px;">
-          <img src="/images/logo_patitas_del_sur_amber.svg" alt="Patitas del Sur" style="width: clamp(230px, 34vw, 300px); height: auto; display: block;" />
-          <div style="position: relative; display: inline-block; font-family: 'Bricolage Grotesque', 'Outfit', system-ui, -apple-system, sans-serif; font-size: clamp(2.35rem, 5.5vw, 4rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.08; white-space: nowrap;">
-            <span style="color: #D4CFC7;">Patitas del Sur</span>
-            <span style="position: absolute; inset: 0; color: #D97706; background: linear-gradient(95deg, #1D1D1F 0%, #B45309 38%, #D97706 68%, #F5BA13 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; clip-path: inset(0 88% 0 0);">Patitas del Sur</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="root"></div>
     <noscript>
       <main style="max-width: 760px; margin: 40px auto; padding: 24px; font-family: system-ui, sans-serif; color: #1D1D1F;">
         <h1>Patitas del Sur — Alimento para Perros y Gatos con Despacho a Domicilio en Frutillar</h1>
-        <p>Tienda online en Frutillar (Región de Los Lagos, Chile) de alimento super premium, Grain Free, snacks naturales y antiparasitarios para perros y gatos. Despacho propio en Frutillar Bajo, Frutillar Alto, Loteo Espacio Frutillar, Punta Larga, Reserva Frutillar, Los Colonos, Quilanto, Los Bajos, Playa Maqui, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio.</p>
+        <p>Tienda online en Frutillar (Región de Los Lagos, Chile) de alimento super premium, Grain Free, snacks naturales y antiparasitarios para perros y gatos. Despacho propio en Frutillar y alrededores (radio de ~9 km alrededor de Frutillar Alto): Frutillar Bajo, Frutillar Alto, Loteo Espacio Frutillar, Punta Larga, Reserva Frutillar, Los Colonos, Quilanto, Los Bajos, Playa Maqui, Lagunita Frutillar, Parcelas Frutillar y Colonia La Radio.</p>
         <p>Ventanas de reparto Lunes a Sábado: 10:00 a 13:00 hrs y 15:30 a 19:30 hrs ($2.500 CLP, envío gratis desde $25.000 CLP). Domingos: Pedido Urgente de 10:00 a 20:00 hrs ($3.500 CLP). Medios de pago: Mercado Pago y Contra Entrega (transferencia, efectivo o POS móvil). WhatsApp: +56 9 5333 2492.</p>
         <nav>
           <a href="/catalogo">Catálogo Digital</a> |
           <a href="/despacho/frutillar">Despacho en Frutillar</a> |
           <a href="/perros">Alimento para Perros</a> |
-          <a href="/gatos">Alimento para Gatos</a>
+          <a href="/gatos">Alimento para Gatos</a> |
+          <a href="/nosotros">Nosotros</a>
         </nav>
       </main>
     </noscript>

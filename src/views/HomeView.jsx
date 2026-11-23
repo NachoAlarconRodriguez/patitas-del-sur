@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import SEOHead from '../components/SEOHead';
-import { getFAQPageSchema } from '../utils/schemaGenerators';
-import { FRUTILLAR_FAQS } from '../data/faqData';
 import { fetchProductsFromSupabase, getCachedProducts } from '../services/productsService';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { getHiddenProductIdentifiers, isProductHidden } from '../utils/productVisibility';
-import { areProductsSameGroup, extractProductFormat } from '../utils/productVariants';
+import {
+  areProductsSameGroup,
+  extractProductFormat,
+  groupProductsForStore,
+} from '../utils/productVariants';
 import { COMPANY_INFO } from '../constants';
 import { WhatsAppIcon } from '../components/OfficialIcons';
 import { getDispatchZonesFromSupabase } from '../services/dispatchService';
@@ -14,8 +16,8 @@ import { getDispatchZonesFromSupabase } from '../services/dispatchService';
 const REVIEWS_DATA = [
   {
     photo: '/images/reviews/resena-toby.webp',
-    alt: 'Toby, Puerto Varas',
-    tag: 'Puerto Varas · 4 años',
+    alt: 'Toby, Frutillar Bajo',
+    tag: 'Frutillar Bajo · 4 años',
     title: 'Llegó en menos de 2 horas',
     quote: '“Increíble atención. Pedimos el saco de Acana por la mañana y antes del almuerzo ya estaba en la puerta de la casa.”',
     author: 'Camila M.',
@@ -23,8 +25,8 @@ const REVIEWS_DATA = [
   },
   {
     photo: '/images/reviews/resena-nala.webp',
-    alt: 'Nala, Golden, Llanquihue',
-    tag: 'Llanquihue · Golden, 3 años',
+    alt: 'Nala, Golden, Punta Larga Frutillar',
+    tag: 'Punta Larga · Golden, 3 años',
     title: 'Pelaje brillante y cero alergias',
     quote: '“Nos asesoraron por WhatsApp para cambiar a una receta libre de granos. En dos semanas notamos el cambio en su digestión.”',
     author: 'Javier P.',
@@ -32,8 +34,8 @@ const REVIEWS_DATA = [
   },
   {
     photo: '/images/jack_cat.jpg',
-    alt: 'Milo, Gato, Frutillar',
-    tag: 'Frutillar · Felino, 2 años',
+    alt: 'Milo, Gato, Frutillar Alto',
+    tag: 'Frutillar Alto · Felino, 2 años',
     title: 'A nuestro gato le fascina',
     quote: '“Siempre nos costaba encontrar Bravery y snacks naturales para gatos a buen precio en la zona. Ahora compramos todo acá.”',
     author: 'Valentina S.',
@@ -41,17 +43,17 @@ const REVIEWS_DATA = [
   },
   {
     photo: '/images/reviews/resena-rufo.webp',
-    alt: 'Rufo, Mestizo, Puerto Montt',
-    tag: 'Puerto Montt · 5 años',
-    title: 'Los mejores precios del sur',
+    alt: 'Rufo, Mestizo, Reserva Frutillar',
+    tag: 'Reserva Frutillar · 5 años',
+    title: 'Los mejores precios en Frutillar',
     quote: '“Comparé en varias tiendas y Patitas del Sur tiene el mejor precio en alimentos Super Premium, además acumulas puntos.”',
     author: 'Marta G.',
     withPet: 'con Rufo',
   },
   {
     photo: '/images/reviews/resena-kira.webp',
-    alt: 'Kira, Pastor, Puerto Varas',
-    tag: 'Puerto Varas · Senior, 10 años',
+    alt: 'Kira, Pastor, Lagunita Frutillar',
+    tag: 'Lagunita Frutillar · Senior, 10 años',
     title: 'Encargo especial impecable',
     quote: '“Necesitábamos una fórmula específica para senior. La encargaron y nos avisaron por WhatsApp apenas llegó.”',
     author: 'Andrés L.',
@@ -59,8 +61,8 @@ const REVIEWS_DATA = [
   },
   {
     photo: '/images/reviews/resena-pipa.webp',
-    alt: 'Pipa, Cachorro, Llanquihue',
-    tag: 'Llanquihue · Cachorro, 6 meses',
+    alt: 'Pipa, Cachorro, Parcelas Frutillar',
+    tag: 'Parcelas Frutillar · Cachorro, 6 meses',
     title: 'Cachorro feliz y sano',
     quote: '“Sus snacks deshidratados naturales son el premio favorito de Pipa. Se nota el cariño y dedicación detrás de la tienda.”',
     author: 'Sara R.',
@@ -205,10 +207,12 @@ export default function HomeView({
     };
   }, [dispatchZones]);
 
-  // Top 5 featured recipes/products for the Bento Grid
+  // Top 5 featured recipes/products for the Bento Grid (agrupados con ID canónico)
   const featuredFive = useMemo(() => {
-    const visible = allProducts.filter((p) => !isProductHidden(p, hiddenProducts) && !p.isPaused);
-    return visible.slice(0, 5);
+    const visible = allProducts.filter(
+      (p) => !isProductHidden(p, hiddenProducts) && !p.isPaused && p.isActive !== false && p.is_active !== false
+    );
+    return groupProductsForStore(visible).slice(0, 5);
   }, [allProducts, hiddenProducts]);
 
   // MASTER KIBORY ENGINE (Single requestAnimationFrame loop + Video Frame Decoder + Scroll FX)
@@ -1049,10 +1053,9 @@ export default function HomeView({
     <div ref={pageRef} className="kibo-page">
       <SEOHead
         title="Alimento para Perros y Gatos en Frutillar | Despacho a Domicilio"
-        description="Tienda de alimentos super premium, recetas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio el mismo día en todo Frutillar (urbano y parcelaciones). Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
+        description="Tienda de alimentos super premium, recetas Grain Free, snacks naturales y antiparasitarios para perros y gatos con despacho a domicilio el mismo día en Frutillar y alrededores (~9 km desde Frutillar Alto). Envío gratis desde $25.000 CLP y Pedido Urgente los domingos."
         canonical="/"
         keywords="alimento para perros frutillar, alimento para gatos frutillar, tienda de mascotas frutillar, comida mascotas frutillar, despacho alimento mascotas frutillar, parcelas frutillar, lagunita frutillar, colonia la radio"
-        jsonLd={getFAQPageSchema(FRUTILLAR_FAQS)}
       />
 
       <a className="skip" href="#main-kibo">
@@ -1514,14 +1517,16 @@ export default function HomeView({
 
               return (
                 <li key={product.id || idx} style={{ '--i': idx }}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onSelectProduct
-                        ? onSelectProduct(product)
-                        : navigate(`/producto/${product.id}`)
-                    }
+                  <Link
+                    to={`/producto/${product.id}`}
+                    onClick={(e) => {
+                      if (onSelectProduct && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                        e.preventDefault();
+                        onSelectProduct(product);
+                      }
+                    }}
                     className={`rc ${isFeat ? 'rc--feat' : ''}`}
+                    style={{ textDecoration: 'none' }}
                     data-cursor-label="Ver producto"
                   >
                     <span className="rc__top">
@@ -1560,7 +1565,7 @@ export default function HomeView({
                         </svg>
                       </span>
                     )}
-                  </button>
+                  </Link>
                   {isFeat && (
                     <span className="rc__trio" aria-hidden="true">
                       <img
@@ -1617,9 +1622,10 @@ export default function HomeView({
               Del Lago Llanquihue directo a su plato
             </h2>
             <p className="ph__text" data-reveal="rise">
-              Despachamos directo a tu puerta en Frutillar, Llanquihue, Puerto Octay, Totoral,
-              Fresia, Tegualda y alrededores. Tu regalón solo tiene que disfrutar su comida;
-              nosotros nos encargamos del resto.
+              Despachamos directo a tu puerta o parcela en Frutillar Bajo, Frutillar Alto, Punta
+              Larga, Reserva Frutillar, Lagunita Frutillar, Parcelas Frutillar, Colonia La Radio y
+              alrededores (~9 km). Tu regalón solo tiene que disfrutar su comida; nosotros nos
+              encargamos del resto.
             </p>
           </div>
         </section>

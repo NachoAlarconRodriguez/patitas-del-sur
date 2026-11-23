@@ -24,7 +24,6 @@ import Footer from './components/Footer';
 import CartDrawer from './components/CartDrawer';
 import ProductModal from './components/ProductModal';
 import AuthModal from './components/AuthModal';
-import Preloader from './components/Preloader';
 import BottomNavBar from './components/BottomNavBar';
 import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
 import RouteLoadingFallback from './components/RouteLoadingFallback';
@@ -514,11 +513,23 @@ export default function App() {
     if (themeMeta) {
       themeMeta.setAttribute('content', isAdminRoute ? '#FAF8F4' : '#F5BA13');
     }
+
+    // Inyectar manifest de PWA Admin solo en /admin (sin exponerlo en la tienda pública)
+    const existingManifest = document.querySelector('link[rel="manifest"]');
+    if (isAdminRoute) {
+      if (!existingManifest) {
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = '/manifest.webmanifest';
+        document.head.appendChild(link);
+      }
+    } else if (existingManifest) {
+      existingManifest.remove();
+    }
   }, [isAdminRoute]);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-slate-900 font-sans antialiased selection:bg-[#F5BA13] selection:text-[#1D1D1F]">
-      {!isStandaloneExpress && !isAdminRoute && <Preloader />}
       <ScrollToTop />
 
       {/* Global Navigation Bar - Hidden on Login screen, Kibory Home, Digital Catalog Express, and NFC Cards */}

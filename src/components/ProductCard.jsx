@@ -157,8 +157,9 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
     if (e.target.closest('button')) {
       return;
     }
-    const targetId = activeVariant?.id || product.id;
-    navigate(`/producto/${targetId}`);
+    navigate(`/producto/${product.id}`, {
+      state: activeVariant?.id ? { variantId: activeVariant.id } : undefined,
+    });
   };
 
   const resolvedImg = resolveProductImage(displayVariant || activeVariant || product);
@@ -180,7 +181,8 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
           1. FULL-BLEED IMMERSIVE TOP STAGE (Sin recuadro interno aburrido)
          ===================================================================== */}
       <Link
-        to={`/producto/${activeVariant?.id || product.id}`}
+        to={`/producto/${product.id}`}
+        state={activeVariant?.id ? { variantId: activeVariant.id } : undefined}
         onClick={(e) => e.stopPropagation()}
         className="relative w-full aspect-[4/3.65] overflow-hidden bg-[#2D1F0E] block select-none"
         aria-label={`Ver detalles de ${product.name}`}

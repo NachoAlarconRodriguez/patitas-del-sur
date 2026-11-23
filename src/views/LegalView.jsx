@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { ShieldCheck, FileText, Truck, RotateCcw, ChevronRight, ArrowLeft } from 'lucide-react';
 import SEOHead from '../components/SEOHead';
+import { getBreadcrumbSchema } from '../utils/schemaGenerators';
 import { COMPANY_INFO } from '../constants';
 
 const SECTIONS = [
@@ -9,6 +10,13 @@ const SECTIONS = [
     id: 'terminos',
     path: '/terminos-y-condiciones',
     title: 'Términos y Condiciones',
+    seoTitle: 'Términos y Condiciones de Uso y Venta',
+    seoDescription:
+      'Términos y condiciones de compra online en www.patitas-delsur.cl (Comercial Kira SpA, RUT 78.493.053-K): precios con IVA, boleta/factura SII y pagos vía Mercado Pago o Contra Entrega en Frutillar.',
+    h1: 'Términos y Condiciones de Uso y Venta',
+    subtitle:
+      'Condiciones generales de contratación, emisión de documentos tributarios SII y medios de pago habilitados en Patitas del Sur.',
+    keywords: 'terminos y condiciones patitas del sur, comercial kira spa, compras mascotas frutillar',
     icon: FileText,
     badge: 'Comercio Digital',
   },
@@ -16,6 +24,13 @@ const SECTIONS = [
     id: 'privacidad',
     path: '/politicas-de-privacidad',
     title: 'Políticas de Privacidad',
+    seoTitle: 'Políticas de Privacidad y Protección de Datos (Ley 19.628)',
+    seoDescription:
+      'Política de privacidad, resguardo de datos personales de clientes y mascotas y ejercicio de derechos ARCO en Patitas del Sur conforme a la Ley N° 19.628 de Chile.',
+    h1: 'Políticas de Privacidad y Datos Personales',
+    subtitle:
+      'Tratamiento confidencial de la información de clientes y mascotas conforme a la Ley N° 19.628 de la República de Chile.',
+    keywords: 'politicas de privacidad patitas del sur, ley 19628 proteccion datos chile',
     icon: ShieldCheck,
     badge: 'Ley 19.628',
   },
@@ -23,13 +38,27 @@ const SECTIONS = [
     id: 'despacho',
     path: '/politicas-de-despacho',
     title: 'Políticas de Despacho',
+    seoTitle: 'Políticas de Despacho y Horarios de Entrega en Frutillar',
+    seoDescription:
+      'Cobertura (~9 km alrededor de Frutillar Alto), ventanas de reparto Lunes a Sábado (10:00–13:00 y 15:30–19:30 hrs), envío gratis desde $25.000 CLP y Pedido Urgente los domingos ($3.500 CLP).',
+    h1: 'Políticas de Despacho en Frutillar y Alrededores',
+    subtitle:
+      'Cobertura operativa en radio aproximado de 9 km alrededor de Frutillar Alto (urbano y parcelaciones), tarifas vigentes y horarios de reparto.',
+    keywords: 'politicas despacho patitas del sur, envio alimento mascotas frutillar, despacho domingo frutillar',
     icon: Truck,
-    badge: 'Zona Lacustre',
+    badge: 'Frutillar ~9 km',
   },
   {
     id: 'devoluciones',
     path: '/cambios-y-devoluciones',
     title: 'Garantía y Devoluciones',
+    seoTitle: 'Garantía Legal, Cambios y Devoluciones (SERNAC)',
+    seoDescription:
+      'Política de cambios en 10 días corridos con envase sellado, Garantía de Palatabilidad de 5 días hábiles (mínimo 80% del contenido) y 6 meses de garantía legal SERNAC en Frutillar.',
+    h1: 'Garantía Legal, Cambios y Devoluciones',
+    subtitle:
+      'Derechos del consumidor conforme a la Ley N° 19.496 (SERNAC), cambios de receta sellada y Garantía de Palatabilidad.',
+    keywords: 'garantia legal mascotas chile, cambios devoluciones patitas del sur, garantia palatabilidad frutillar',
     icon: RotateCcw,
     badge: 'Garantía SERNAC',
   },
@@ -47,29 +76,19 @@ export default function LegalView() {
     else setActiveTab('terminos');
   }, [location.pathname]);
 
+  const currentSection = SECTIONS.find((s) => s.id === activeTab) || SECTIONS[0];
+
   return (
     <div className="pt-28 pb-20 bg-[#FAF9F6] text-slate-900 min-h-screen">
       <SEOHead
-        title={
-          activeTab === 'privacidad'
-            ? 'Políticas de Privacidad (Ley 19.628)'
-            : activeTab === 'despacho'
-            ? 'Políticas de Despacho y Tiempos de Entrega'
-            : activeTab === 'devoluciones'
-            ? 'Garantía Legal y Devoluciones SERNAC'
-            : 'Términos y Condiciones de Venta'
-        }
-        description="Marco legal, condiciones de contratación, políticas de despacho lacustre y derechos del consumidor de Patitas del Sur (Comercial Kira SpA, RUT 78.493.053-K)."
-        canonical={
-          activeTab === 'privacidad'
-            ? '/politicas-de-privacidad'
-            : activeTab === 'despacho'
-            ? '/politicas-de-despacho'
-            : activeTab === 'devoluciones'
-            ? '/cambios-y-devoluciones'
-            : '/terminos-y-condiciones'
-        }
-        keywords="terminos y condiciones patitas del sur, despacho puerto varas llanquihue, sernac devolucion alimentos mascotas"
+        title={currentSection.seoTitle}
+        description={currentSection.seoDescription}
+        canonical={currentSection.path}
+        keywords={currentSection.keywords}
+        jsonLd={getBreadcrumbSchema([
+          { name: 'Inicio', url: '/' },
+          { name: currentSection.title, url: currentSection.path },
+        ])}
       />
       <div className="max-w-6xl mx-auto px-6">
         {/* Navigation Breadcrumb */}
@@ -79,19 +98,19 @@ export default function LegalView() {
             <span>Inicio</span>
           </Link>
           <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
-          <span className="text-[#0E8388] uppercase tracking-wider">Centro Legal y Normativo</span>
+          <span className="text-[#0E8388] uppercase tracking-wider">{currentSection.title}</span>
         </div>
 
-        {/* Header */}
+        {/* Header (H1 único por ruta legal) */}
         <div className="text-center max-w-2xl mx-auto mb-10 space-y-3">
           <span className="inline-block px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider bg-[#0E8388]/10 text-[#0E8388]">
             Transparencia & Cumplimiento Legal
           </span>
           <h1 className="text-3xl md:text-5xl font-black text-slate-900 tracking-tight">
-            Términos Legales y Políticas 📜
+            {currentSection.h1}
           </h1>
           <p className="text-slate-600 text-xs md:text-sm leading-relaxed">
-            Información legal, garantías de compra, privacidad y condiciones de servicio conforme a la legislación de la República de Chile y normativas SERNAC.
+            {currentSection.subtitle}
           </p>
         </div>
 
@@ -128,7 +147,7 @@ export default function LegalView() {
                   </span>
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-xs sm:text-sm leading-snug">{sec.title}</h3>
+                  <h2 className="font-extrabold text-xs sm:text-sm leading-snug">{sec.title}</h2>
                 </div>
               </Link>
             );
@@ -147,7 +166,7 @@ export default function LegalView() {
                 <h2 className="text-2xl font-black text-slate-900">
                   Términos y Condiciones Generales de Uso y Venta
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">Última actualización: 19 de Octubre de 2026</p>
+                <p className="text-xs text-slate-400 mt-1">Última actualización: Noviembre de 2026</p>
               </div>
 
               <section className="space-y-3">
@@ -177,9 +196,10 @@ export default function LegalView() {
                   Los usuarios pueden realizar sus compras mediante:
                 </p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago):</strong> Transacciones seguras con cifrado bancario de 256 bits y autenticación 3D Secure.</li>
-                  <li><strong>Transferencia Bancaria Directa:</strong> A la cuenta vista {COMPANY_INFO.bankTransfer.bank} de {COMPANY_INFO.legalName} (RUT {COMPANY_INFO.rut}), con validación rápida vía comprobante.</li>
-                  <li><strong>Efectivo contra entrega:</strong> Disponible en zonas habilitadas previa coordinación por WhatsApp ({COMPANY_INFO.phoneDisplay}).</li>
+                  <li><strong>Mercado Pago (Tarjetas de Débito Redcompra, Crédito y Prepago):</strong> Pago online seguro con cifrado bancario de 256 bits y autenticación 3D Secure.</li>
+                  <li><strong>Transferencia Bancaria al recibir (Contra Entrega):</strong> A la cuenta vista {COMPANY_INFO.bankTransfer.bank} de {COMPANY_INFO.legalName} (RUT {COMPANY_INFO.rut}), validada al momento de la entrega.</li>
+                  <li><strong>Tarjeta Débito / Crédito al recibir (Máquina POS móvil):</strong> Disponible directamente en tu domicilio o parcela en Frutillar.</li>
+                  <li><strong>Efectivo contra entrega:</strong> Disponible en toda nuestra zona de despacho en Frutillar y alrededores ({COMPANY_INFO.phoneDisplay}).</li>
                 </ul>
               </section>
             </div>
@@ -209,7 +229,7 @@ export default function LegalView() {
                 <h3 className="text-base font-bold text-slate-900">2. Finalidad del Tratamiento de Datos</h3>
                 <p>Los datos solicitados se emplean exclusivamente para:</p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li>Procesar, preparar y despachar los pedidos a la dirección indicada en la cuenca del lago.</li>
+                  <li>Procesar, preparar y despachar los pedidos a la dirección indicada en Frutillar y alrededores.</li>
                   <li>Calcular la ración diaria y duración estimada del saco de alimento de tu mascota en el portal de tutor.</li>
                   <li>Acumular y acreditar puntos de lealtad en el programa Club Patitas.</li>
                   <li>Remitir avisos importantes respecto al estado de tu despacho o alertas nutricionales relevantes.</li>
@@ -237,40 +257,51 @@ export default function LegalView() {
             <div className="space-y-6 animate-fade-in">
               <div className="border-b border-slate-100 pb-4">
                 <span className="text-[10px] font-black text-[#0E8388] uppercase tracking-widest block mb-1">
-                  Logística Lacustre
+                  Logística Local en Frutillar
                 </span>
                 <h2 className="text-2xl font-black text-slate-900">
-                  Políticas y Tiempos de Entrega Local
+                  Políticas, Tarifas y Horarios de Despacho
                 </h2>
-                <p className="text-xs text-slate-400 mt-1">Cobertura directa en la Región de Los Lagos</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Cobertura propia en un radio aproximado de 9 km alrededor de Frutillar Alto (Región de Los Lagos)
+                </p>
               </div>
 
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">1. Zona de Cobertura</h3>
                 <p>
-                  Despachamos directamente con flota propia climatizada desde nuestro centro de distribución en Frutillar hacia las comunas y localidades de:
+                  Despachamos directamente con flota propia desde nuestra bodega en <strong>Loteo Espacio Frutillar</strong> hacia domicilios urbanos y parcelaciones en un radio aproximado de <strong>9 km alrededor de Frutillar Alto</strong>:
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 font-bold text-xs text-[#0A3E40]">
-                  {COMPANY_INFO.communes.map((city) => (
-                    <div key={city} className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">
-                      📍 {city}
+                  {COMPANY_INFO.sectors.map((sector) => (
+                    <div key={sector} className="p-3 rounded-xl bg-teal-50 border border-teal-200 text-center">
+                      📍 {sector}
                     </div>
                   ))}
                 </div>
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-base font-bold text-slate-900">2. Tarifas y Despacho Gratuito</h3>
+                <h3 className="text-base font-bold text-slate-900">2. Tarifas y Envío Gratis</h3>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Envío Gratis:</strong> Disponible en compras iguales o superiores a <strong>$25.000 CLP</strong> en nuestras zonas principales de cobertura (sujeto al umbral específico de cada comuna o parcelación informado en el calculador).</li>
-                  <li><strong>Tarifa Estándar:</strong> Desde <strong>$2.000 CLP</strong> para compras inferiores al umbral mínimo, calculada de forma transparente según la comuna antes de confirmar tu pedido.</li>
+                  <li><strong>Envío Gratis (Lunes a Sábado):</strong> Disponible en compras iguales o superiores a <strong>$25.000 CLP</strong> dentro de las ventanas horarias estándar.</li>
+                  <li><strong>Tarifa Estándar (Lunes a Sábado):</strong> <strong>$2.500 CLP</strong> para compras inferiores a $25.000 CLP.</li>
+                  <li><strong>Pedido Urgente (Express / Domingos):</strong> Tarifa fija de <strong>$3.500 CLP</strong> (no aplica envío gratis).</li>
                 </ul>
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-base font-bold text-slate-900">3. Tiempos y Ventanas Horarias de Entrega</h3>
-                <p>
-                  En Frutillar, Llanquihue y Puerto Varas los pedidos recibidos antes de las 14:00 hrs se entregan en la <strong>misma jornada (Tarde: 14:30 a 19:30 hrs)</strong> o al siguiente día hábil en ventana matutina (10:00 a 13:30 hrs). En Puerto Montt, Puerto Octay, Casma, Fresia y Totoral las entregas se realizan según los días de ruta programados.
+                <h3 className="text-base font-bold text-slate-900">3. Ventanas Horarias de Entrega</h3>
+                <ul className="list-disc pl-5 space-y-1 text-slate-600">
+                  <li><strong>Bloque Mañana (Lunes a Sábado):</strong> 10:00 a 13:00 hrs.</li>
+                  <li><strong>Bloque Tarde (Lunes a Sábado):</strong> 15:30 a 19:30 hrs.</li>
+                  <li><strong>Domingo Urgente:</strong> Domingos de 10:00 a 20:00 hrs, operando exclusivamente bajo modalidad Pedido Urgente ($3.500 CLP).</li>
+                </ul>
+                <p className="text-xs text-slate-500">
+                  Revisa también el detalle por sector en nuestra{' '}
+                  <Link to="/despacho/frutillar" className="text-[#0E8388] font-bold underline">
+                    Guía de Despacho en Frutillar
+                  </Link>.
                 </p>
               </section>
             </div>
@@ -311,7 +342,7 @@ export default function LegalView() {
               <section className="space-y-3">
                 <h3 className="text-base font-bold text-slate-900">3. Procedimiento para Solicitar un Cambio</h3>
                 <p>
-                  Para gestionar una solicitud, contacta a nuestro equipo de postventa vía WhatsApp directo (<a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-[#0E8388] font-bold underline">{COMPANY_INFO.phoneDisplay}</a>) o escribiendo a <strong>{COMPANY_INFO.supportEmail}</strong> indicando tu número de pedido (ej: `ORD-20261019-XXXX`). Nuestro equipo coordinará el retiro o cambio a domicilio en Frutillar, Llanquihue, Puerto Varas o comunas de cobertura.
+                  Para gestionar una solicitud, contacta a nuestro equipo de postventa vía WhatsApp directo (<a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-[#0E8388] font-bold underline">{COMPANY_INFO.phoneDisplay}</a>) o escribiendo a <strong>{COMPANY_INFO.supportEmail}</strong> indicando tu número de pedido (ej: ORD-20261123-XXXX). Nuestro equipo coordinará el retiro o cambio a domicilio en Frutillar y alrededores.
                 </p>
               </section>
             </div>

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { groupProductsForStore } from '../src/utils/productVariants.js';
 
 const SITE_URL = (
   process.env.SITE_URL ||
@@ -14,9 +15,12 @@ const SUPABASE_URL =
 const SUPABASE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9ub3VmbHlwb2V3aWpvdmF2a2VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIzOTA5MzksImV4cCI6MjEwNzk2NjkzOX0.CgguuTDxIPqNYHQePsivaDMowZo6nkdmD24J1LzZ8mQ';
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 const FRUTILLAR_SECTORS = [
   'Frutillar Bajo',
@@ -41,56 +45,68 @@ const formatCLP = (amount) =>
  * para motores generativos (ChatGPT Search, Perplexity, Gemini, Claude).
  */
 export default async function handler(req, res) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.setHeader('Allow', 'GET, HEAD');
+    return res.status(405).send('Method Not Allowed');
+  }
+
   const mode = String(req?.query?.mode || 'summary').toLowerCase();
   const isFull = mode === 'full';
 
-  let activeProducts = [];
+  let groupedProducts = [];
   try {
     const { data, error } = await supabase
       .from('products')
       .select('id, name, brand, pet_type, category, price, stock, weights, tagline, main_protein, is_active, is_paused')
-      .order('pet_type', { ascending: true });
+      .order('id', { ascending: true });
 
     if (!error && Array.isArray(data)) {
-      activeProducts = data.filter((p) => p?.id && p.is_active !== false && !p.is_paused);
+      const activeRaw = data.filter((p) => p?.id && p.is_active !== false && !p.is_paused);
+      groupedProducts = groupProductsForStore(activeRaw).filter((p) => p?.id && !p.isPaused);
     }
   } catch (err) {
     console.warn('Error fetching products for llms.txt:', err);
   }
 
-  const dogs = activeProducts.filter((p) => String(p.pet_type || '').toLowerCase() === 'perros');
-  const cats = activeProducts.filter((p) => String(p.pet_type || '').toLowerCase() === 'gatos');
+  const dogs = groupedProducts.filter((p) => String(p.pet_type || p.petType || '').toLowerCase() === 'perros');
+  const cats = groupedProducts.filter((p) => String(p.pet_type || p.petType || '').toLowerCase() === 'gatos');
   const brands = Array.from(
-    new Set(activeProducts.map((p) => String(p.brand || '').trim()).filter(Boolean))
-  ).sort();
+    new Set(groupedProducts.map((p) => String(p.brand || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'es'));
 
   const renderProductLine = (p) => {
-    const stockNum = typeof p.stock === 'number' ? p.stock : 0;
-    const stockLabel = stockNum > 0 ? 'Disponible' : 'Temporalmente agotado';
+    const stockLabel = !p.isOutOfStock && (p.totalStock ?? p.stock ?? 0) > 0 ? 'Disponible' : 'Temporalmente agotado';
     const formatStr = Array.isArray(p.weights) && p.weights.length > 0 ? ` (${p.weights.join(', ')})` : '';
-    const brandPrefix = p.brand ? `${p.brand} — ` : '';
+    const brandPrefix = p.brand && !String(p.name || '').toLowerCase().startsWith(String(p.brand).toLowerCase())
+      ? `${p.brand} — `
+      : '';
+    const priceStr =
+      p.minPrice && p.maxPrice && p.maxPrice > p.minPrice
+        ? `desde ${formatCLP(p.minPrice)} hasta ${formatCLP(p.maxPrice)}`
+        : formatCLP(p.price);
     const desc = isFull && p.tagline ? ` · ${p.tagline}` : '';
-    return `- **${brandPrefix}${p.name}**${formatStr}: ${formatCLP(p.price)} · ${stockLabel}${desc} · [Ver producto](${SITE_URL}/producto/${encodeURIComponent(String(p.id))})`;
+    return `- **${brandPrefix}${p.name}**${formatStr}: ${priceStr} · ${stockLabel}${desc} · [Ver producto](${SITE_URL}/producto/${encodeURIComponent(String(p.id))})`;
   };
 
   const limit = isFull ? 200 : 12;
   const dogsBlock = dogs.length > 0
     ? dogs.slice(0, limit).map(renderProductLine).join('\n')
-    : '- Consultar catálogo actualizado en línea en ' + `${SITE_URL}/perros`;
+    : `- Consultar catálogo actualizado en línea en ${SITE_URL}/perros`;
   const catsBlock = cats.length > 0
     ? cats.slice(0, limit).map(renderProductLine).join('\n')
-    : '- Consultar catálogo actualizado en línea en ' + `${SITE_URL}/gatos`;
+    : `- Consultar catálogo actualizado en línea en ${SITE_URL}/gatos`;
 
   const lines = [
     '# Patitas del Sur — Alimento y Snacks Naturales para Mascotas en Frutillar',
     '',
-    `> Patitas del Sur es una tienda online especializada en alimento super premium, fórmulas Grain Free, snacks naturales, arenas y antiparasitarios para perros y gatos con **despacho a domicilio propio en Frutillar, Región de Los Lagos, Chile**.`,
+    '> Patitas del Sur es una tienda online especializada en alimento super premium, fórmulas Grain Free, snacks naturales, arenas y antiparasitarios para perros y gatos con **despacho a domicilio propio en Frutillar y alrededores (radio de ~9 km alrededor de Frutillar Alto), Región de Los Lagos, Chile**.',
     '',
     '## Información Institucional Verificada',
     '- **Marca**: Patitas del Sur',
     '- **Razón Social**: Comercial Kira SpA',
     '- **RUT**: 78.493.053-K',
     '- **Base Operativa / Bodega**: Loteo Espacio Frutillar, Frutillar, Región de Los Lagos, Chile (Lat: -41.08985, Lon: -73.08013)',
+    '- **Cobertura Operativa Actual**: Frutillar y alrededores (radio aproximado de 9 km alrededor de Frutillar Alto, urbano y parcelaciones)',
     `- **Sitio Web**: ${SITE_URL}`,
     `- **Catálogo Digital Rápido (Móvil / WhatsApp / Instagram)**: ${SITE_URL}/catalogo`,
     `- **Guía de Despacho en Frutillar**: ${SITE_URL}/despacho/frutillar`,
@@ -99,8 +115,8 @@ export default async function handler(req, res) {
     '- **Instagram**: https://www.instagram.com/patitasdelsur.cl',
     '- **Moneda**: Pesos Chilenos (CLP $)',
     '',
-    '## Cobertura, Horarios y Tarifas de Despacho en Frutillar',
-    `Despachamos directo a domicilio y parcelaciones en **Frutillar**: ${FRUTILLAR_SECTORS.join(', ')}.`,
+    '## Cobertura, Horarios y Tarifas de Despacho en Frutillar y Alrededores',
+    `Despachamos directo a domicilio y parcelaciones en **Frutillar y alrededores (~9 km alrededor de Frutillar Alto)**: ${FRUTILLAR_SECTORS.join(', ')}.`,
     '',
     '| Modalidad | Días y Horarios | Tarifa en Frutillar | Envío Gratis |',
     '| :--- | :--- | :--- | :--- |',
@@ -133,10 +149,10 @@ export default async function handler(req, res) {
       '',
       '## Preguntas Frecuentes Clave (AEO — Frutillar)',
       '### ¿Dónde comprar alimento para perros y gatos con despacho a domicilio en Frutillar?',
-      `En **Patitas del Sur** (${SITE_URL}/catalogo) puedes comprar alimento super premium, Grain Free, snacks naturales y antiparasitarios con despacho el mismo día en Frutillar, con envío gratis desde $25.000 CLP en ventanas estándar.`,
+      `En **Patitas del Sur** (${SITE_URL}/catalogo) puedes comprar alimento super premium, Grain Free, snacks naturales y antiparasitarios con despacho el mismo día en Frutillar y alrededores (~9 km desde Frutillar Alto), con envío gratis desde $25.000 CLP en ventanas estándar.`,
       '',
       '### ¿A qué sectores y parcelaciones de Frutillar despachan?',
-      `Cubrimos tanto el radio urbano como parcelaciones de Frutillar: ${FRUTILLAR_SECTORS.join(', ')}.`,
+      `Cubrimos el radio urbano y parcelaciones en un radio de ~9 km alrededor de Frutillar Alto: ${FRUTILLAR_SECTORS.join(', ')}.`,
       '',
       '### ¿Hacen despacho los domingos en Frutillar?',
       'Sí. Aunque los domingos no operan las ventanas estándar de reparto, ofrecemos **Pedido Urgente Domingo** entre las **10:00 y 20:00 hrs** con tarifa fija de **$3.500 CLP**.',
