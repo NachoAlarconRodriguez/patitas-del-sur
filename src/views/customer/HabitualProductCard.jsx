@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus } from 'lucide-react';
+import { getDefaultAvailableVariantIndex } from '../../utils/productVariants';
 
 /**
  * Card de Selección de Producto para la Despensa Habitual
@@ -10,7 +11,16 @@ export default function HabitualProductCard({ product, onAdd, formatCLP }) {
       ? product.weights
       : [product.weight || product.format || 'Formato Estándar'];
 
-  const [selectedWeight, setSelectedWeight] = useState(weights[0]);
+  const [selectedWeight, setSelectedWeight] = useState(() => {
+    const list = product?.variants || [];
+    if (list.length > 0) {
+      const defaultVariant = list[getDefaultAvailableVariantIndex(list)];
+      if (defaultVariant?.format || defaultVariant?.weight) {
+        return defaultVariant.format || defaultVariant.weight;
+      }
+    }
+    return weights[0];
+  });
   const [quantity, setQuantity] = useState(1);
 
   // Resolver precio según variante

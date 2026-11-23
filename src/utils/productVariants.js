@@ -494,6 +494,29 @@ export function isProductOutOfStock(product, selectedWeight = null) {
   return false;
 }
 
+/**
+ * Determina si una variante específica tiene unidades disponibles y no está pausada
+ * @param {Object} variant
+ * @returns {boolean}
+ */
+export function isVariantAvailable(variant) {
+  if (!variant) return false;
+  if (variant.isPaused || variant.is_paused) return false;
+  const stock = typeof variant.stock === 'number' ? variant.stock : 10;
+  return stock > 0;
+}
+
+/**
+ * Retorna el índice de la primera variante con stock disponible (o 0 si todas están agotadas)
+ * @param {Array} variants
+ * @returns {number}
+ */
+export function getDefaultAvailableVariantIndex(variants) {
+  if (!Array.isArray(variants) || variants.length === 0) return 0;
+  const firstInStock = variants.findIndex((v) => isVariantAvailable(v));
+  return firstInStock >= 0 ? firstInStock : 0;
+}
+
 
 /**
  * Retorna la configuración de color y estilo visual estilo Apple Swatch para una variedad o sabor

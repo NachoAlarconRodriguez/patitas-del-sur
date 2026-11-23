@@ -1,27 +1,55 @@
 import React, { useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, Stethoscope, Check } from 'lucide-react';
-import { getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
+import {
+  getDefaultAvailableVariantIndex,
+  getFlavorSwatchStyle,
+  resolveProductImage,
+} from '../utils/productVariants';
 import { formatCLP } from '../utils/formatters';
 
 export default function ProductCard({ product, onSelectProduct: _onSelectProduct, onAddToCart }) {
   const navigate = useNavigate();
   const cardRef = useRef(null);
+  const hasUserSelectedRef = useRef(false);
+  const lastProductIdRef = useRef(product.id);
 
   const variants = product.variants || [];
   const hasVariants = variants.length > 1;
   const isFlavorFamily = Boolean(product.hasFlavorVariants);
+  const defaultAvailableIdx = getDefaultAvailableVariantIndex(variants);
+  const variantAvailabilitySignature = variants
+    .map((v) => `${v?.id ?? ''}:${v?.stock ?? ''}:${v?.isPaused ? 1 : 0}`)
+    .join('|');
 
-  // Multi-selección para familias de sabores (array de índices)
-  const [selectedVariantIndices, setSelectedVariantIndices] = React.useState([0]);
-  // Selección simple para formatos estándar de peso
-  const [selectedVariantIdx, setSelectedVariantIdx] = React.useState(0);
+  // Multi-selección para familias de sabores (array de índices) — inicia en el primer sabor con stock
+  const [selectedVariantIndices, setSelectedVariantIndices] = React.useState(() => [defaultAvailableIdx]);
+  // Selección simple para formatos estándar de peso — inicia en el primer formato con stock
+  const [selectedVariantIdx, setSelectedVariantIdx] = React.useState(() => defaultAvailableIdx);
   const [hoveredVariantIdx, setHoveredVariantIdx] = React.useState(null);
   const [lastInteractedIdx, setLastInteractedIdx] = React.useState(null);
   const [justAdded, setJustAdded] = React.useState(false);
 
+  // Al cambiar de producto o sincronizarse el stock real desde Supabase, ajustar al formato disponible
+  // mientras el usuario no haya elegido manualmente otro formato
+  React.useEffect(() => {
+    const productChanged = lastProductIdRef.current !== product.id;
+    if (productChanged) {
+      lastProductIdRef.current = product.id;
+      hasUserSelectedRef.current = false;
+      setLastInteractedIdx(null);
+    }
+    if (productChanged || !hasUserSelectedRef.current) {
+      setSelectedVariantIdx(defaultAvailableIdx);
+      setSelectedVariantIndices([defaultAvailableIdx]);
+    } else if (variants.length > 0 && selectedVariantIdx >= variants.length) {
+      setSelectedVariantIdx(defaultAvailableIdx);
+    }
+  }, [product.id, variantAvailabilitySignature, defaultAvailableIdx, variants.length, selectedVariantIdx]);
+
   // Toggle de selección para sabores
   const toggleVariantSelection = (idx) => {
+    hasUserSelectedRef.current = true;
     setLastInteractedIdx(idx);
     setSelectedVariantIndices((prev) => {
       if (prev.includes(idx)) {
@@ -446,6 +474,7 @@ export default function ProductCard({ product, onSelectProduct: _onSelectProduct
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
+                            hasUserSelectedRef.current = true;
                             setSelectedVariantIdx(idx);
                           }}
                           className={`text-xs font-bold px-3 py-1 rounded-full transition-all cursor-pointer ${

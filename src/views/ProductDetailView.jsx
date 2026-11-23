@@ -2,7 +2,13 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { PRODUCTS as FALLBACK_PRODUCTS } from '../data/mockData';
 import { fetchProductsFromSupabase, cleanIngredientName } from '../services/productsService';
-import { groupProductsForStore, getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
+import {
+  groupProductsForStore,
+  getFlavorSwatchStyle,
+  resolveProductImage,
+  isVariantAvailable,
+  getDefaultAvailableVariantIndex,
+} from '../utils/productVariants';
 import ProductCard from '../components/ProductCard';
 import PawProgressLoader from '../components/PawProgressLoader';
 import ProductIngredientsBowl from '../components/ProductIngredientsBowl';
@@ -114,8 +120,20 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
 
   const [selectedWeight, setSelectedWeight] = useState(() => {
     if (!product) return 'Estándar';
-    const matchV = product.variants?.find((v) => v.id === id || v.sku === id);
-    if (matchV) return matchV.format || matchV.weight;
+    const list = product.variants || [];
+    if (list.length > 0) {
+      const matchV = list.find((v) => v.id === id || v.sku === id);
+      if (matchV && isVariantAvailable(matchV)) {
+        return matchV.format || matchV.weight;
+      }
+      const fallbackAvail = list[getDefaultAvailableVariantIndex(list)];
+      if (fallbackAvail && isVariantAvailable(fallbackAvail)) {
+        return fallbackAvail.format || fallbackAvail.weight;
+      }
+      if (matchV) {
+        return matchV.format || matchV.weight;
+      }
+    }
     return product.weights ? product.weights[0] : 'Estándar';
   });
   const [quantity, setQuantity] = useState(1);
@@ -338,12 +356,24 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     if (product?.weights && product.weights.length > 0) {
-      const matchV = product.variants?.find((v) => v.id === id || v.sku === id);
-      if (matchV) {
-        setSelectedWeight(matchV.format || matchV.weight);
-      } else {
-        setSelectedWeight(product.weights[0]);
+      const list = product.variants || [];
+      if (list.length > 0) {
+        const matchV = list.find((v) => v.id === id || v.sku === id);
+        if (matchV && isVariantAvailable(matchV)) {
+          setSelectedWeight(matchV.format || matchV.weight);
+          return;
+        }
+        const fallbackAvail = list[getDefaultAvailableVariantIndex(list)];
+        if (fallbackAvail && isVariantAvailable(fallbackAvail)) {
+          setSelectedWeight(fallbackAvail.format || fallbackAvail.weight);
+          return;
+        }
+        if (matchV) {
+          setSelectedWeight(matchV.format || matchV.weight);
+          return;
+        }
       }
+      setSelectedWeight(product.weights[0]);
     }
   }, [id, product]);
 

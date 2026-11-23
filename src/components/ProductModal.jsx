@@ -1,12 +1,23 @@
 import React, { useState } from 'react';
 import { X, Star, Check, ShieldCheck, ShoppingBag, Truck } from 'lucide-react';
-import { getFlavorSwatchStyle, resolveProductImage } from '../utils/productVariants';
+import {
+  getDefaultAvailableVariantIndex,
+  getFlavorSwatchStyle,
+  resolveProductImage,
+} from '../utils/productVariants';
 import { formatCLP } from '../utils/formatters';
 
 export default function ProductModal({ product, onClose, onAddToCart }) {
-  const [selectedWeight, setSelectedWeight] = useState(
-    product?.weights ? product.weights[0] : ''
-  );
+  const [selectedWeight, setSelectedWeight] = useState(() => {
+    const list = product?.variants || [];
+    if (list.length > 0) {
+      const defaultVariant = list[getDefaultAvailableVariantIndex(list)];
+      if (defaultVariant?.format || defaultVariant?.weight) {
+        return defaultVariant.format || defaultVariant.weight;
+      }
+    }
+    return product?.weights ? product.weights[0] : '';
+  });
   const [quantity, setQuantity] = useState(1);
 
   if (!product) return null;

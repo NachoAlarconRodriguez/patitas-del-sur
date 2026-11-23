@@ -1,6 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Plus, Minus, Trash2, Sparkles, Stethoscope } from 'lucide-react';
-import { getFlavorSwatchStyle, resolveProductImage } from '../../utils/productVariants';
+import {
+  getDefaultAvailableVariantIndex,
+  getFlavorSwatchStyle,
+  resolveProductImage,
+} from '../../utils/productVariants';
 import { formatCLP } from '../../utils/formatters';
 
 /**
@@ -15,18 +19,36 @@ export default function DigitalCatalogItemCard({
   onRemoveItem,
   onSelectProduct,
 }) {
+  const hasUserSelectedRef = useRef(false);
+  const lastProductIdRef = useRef(product?.id);
   const variants = useMemo(() => product?.variants || [], [product?.variants]);
   const hasVariants = variants.length > 1;
   const isFlavorFamily = Boolean(product?.hasFlavorVariants);
+  const defaultAvailableIdx = getDefaultAvailableVariantIndex(variants);
+  const variantAvailabilitySignature = variants
+    .map((v) => `${v?.id ?? ''}:${v?.stock ?? ''}:${v?.isPaused ? 1 : 0}`)
+    .join('|');
 
   // Seleccionar por defecto la primera variante con stock disponible (si existe)
-  const [selectedVariantIdx, setSelectedVariantIdx] = useState(() => {
-    if (!variants.length) return 0;
-    const firstInStock = variants.findIndex((v) => (typeof v.stock === 'number' ? v.stock : 10) > 0 && !v.isPaused);
-    return firstInStock >= 0 ? firstInStock : 0;
-  });
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState(() => defaultAvailableIdx);
 
-  const safeIdx = selectedVariantIdx < variants.length ? selectedVariantIdx : 0;
+  useEffect(() => {
+    const productChanged = lastProductIdRef.current !== product?.id;
+    if (productChanged) {
+      lastProductIdRef.current = product?.id;
+      hasUserSelectedRef.current = false;
+    }
+    if (productChanged || !hasUserSelectedRef.current) {
+      setSelectedVariantIdx(defaultAvailableIdx);
+    }
+  }, [product?.id, variantAvailabilitySignature, defaultAvailableIdx]);
+
+  const handleSelectVariant = (idx) => {
+    hasUserSelectedRef.current = true;
+    setSelectedVariantIdx(idx);
+  };
+
+  const safeIdx = selectedVariantIdx < variants.length ? selectedVariantIdx : defaultAvailableIdx;
   const activeVariant = variants[safeIdx] || variants[0] || null;
 
   const selectedFormat =
@@ -231,7 +253,7 @@ export default function DigitalCatalogItemCard({
                       <button
                         key={v.id || idx}
                         type="button"
-                        onClick={() => setSelectedVariantIdx(idx)}
+                        onClick={() => handleSelectVariant(idx)}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10.5px] font-bold border transition-all shrink-0 cursor-pointer active:scale-95 ${
                           isSel
                             ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F]'
@@ -259,7 +281,7 @@ export default function DigitalCatalogItemCard({
                     <button
                       key={v.id || idx}
                       type="button"
-                      onClick={() => setSelectedVariantIdx(idx)}
+                      onClick={() => handleSelectVariant(idx)}
                       className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-extrabold border transition-all cursor-pointer active:scale-95 ${
                         isSel
                           ? 'bg-[#1D1D1F] text-[#F5BA13] border-[#1D1D1F] shadow-2xs'
