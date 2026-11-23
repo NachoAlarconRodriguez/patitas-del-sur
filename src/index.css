@@ -744,16 +744,6 @@ h4,
   padding-bottom: 0;
 }
 
-.kibo-page.kibo-bowl-section .sec--ing {
-  margin: 0;
-  border: 1px solid rgba(29, 29, 31, 0.08);
-  box-shadow: 0 20px 50px -24px rgba(29, 29, 31, 0.08);
-}
-
-.kibo-page.kibo-bowl-section .ing__giant {
-  font-size: min(12.2vw, 168px);
-}
-
 .kibo-page *,
 .kibo-page *::before,
 .kibo-page *::after {
@@ -2824,6 +2814,146 @@ html.motion .kibo-page .bowl:not(.in) .bowl__cuts {
   opacity: 0;
 }
 
+/* 4.4 Compact Product Detail Bowl (.kibo-bowl-section) */
+.kibo-page.kibo-bowl-section .sec--ing {
+  container-type: inline-size;
+  margin: 0;
+  padding: clamp(18px, 2.2vw, 28px) clamp(16px, 2.4vw, 30px);
+  border-radius: 24px;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  box-shadow: 0 16px 40px -24px rgba(29, 29, 31, 0.08);
+}
+
+.kibo-page.kibo-bowl-section .ing__head {
+  padding-top: 2px;
+}
+
+.kibo-page.kibo-bowl-section .pill-label {
+  height: 28px;
+  padding: 0 12px 0 9px;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.kibo-page.kibo-bowl-section .pill-label .paw {
+  width: 14px;
+  height: 14px;
+}
+
+.kibo-page.kibo-bowl-section .ing__giant {
+  margin-top: 4px;
+  font-size: clamp(46px, 5.8vw, 84px);
+  line-height: 0.92;
+}
+
+.kibo-page.kibo-bowl-section .ing__stickers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kibo-page.kibo-bowl-section .sticker {
+  left: var(--x);
+  top: var(--y);
+  height: 26px;
+  padding: 0 11px;
+  font-size: 11.5px;
+  translate: -50% 0;
+}
+
+.kibo-page.kibo-bowl-section .ing__sub {
+  margin: 10px auto 0;
+  max-width: 58ch;
+  font-size: clamp(13.5px, 1.05vw, 15px);
+  line-height: 1.4;
+  color: var(--ink-70);
+}
+
+.kibo-page.kibo-bowl-section .bowl {
+  --dish: clamp(235px, 24vw, 310px);
+  max-width: 1120px;
+  margin: clamp(16px, 1.8vw, 24px) auto 0;
+}
+
+@supports (width: 1cqi) {
+  .kibo-page.kibo-bowl-section .bowl {
+    --dish: clamp(235px, 27cqi, 310px);
+  }
+}
+
+.kibo-page.kibo-bowl-section .bowl__list {
+  column-gap: clamp(24px, 3vw, 42px);
+  row-gap: 8px;
+  min-height: calc(var(--dish) + 16px);
+}
+
+@supports (width: 1cqi) {
+  .kibo-page.kibo-bowl-section .bowl__list {
+    column-gap: clamp(22px, 3.4cqi, 42px);
+  }
+}
+
+.kibo-page.kibo-bowl-section .bowl__list>li:nth-child(1),
+.kibo-page.kibo-bowl-section .bowl__list>li:nth-child(3) {
+  margin-right: clamp(4px, 1vw, 14px);
+}
+
+.kibo-page.kibo-bowl-section .bowl__list>li:nth-child(4),
+.kibo-page.kibo-bowl-section .bowl__list>li:nth-child(6) {
+  margin-left: clamp(4px, 1vw, 14px);
+}
+
+.kibo-page.kibo-bowl-section .ing__pt {
+  column-gap: 10px;
+  row-gap: 3px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  transition: opacity 0.3s var(--ease-quint), background-color 0.25s var(--ease-quint), border-color 0.25s var(--ease-quint), box-shadow 0.25s var(--ease-quint);
+}
+
+.kibo-page.kibo-bowl-section .ing__pt.is-active {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(217, 119, 6, 0.22);
+  box-shadow: 0 8px 22px -14px rgba(29, 29, 31, 0.22);
+}
+
+.kibo-page.kibo-bowl-section .ing__pin {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.kibo-page.kibo-bowl-section .ing__name {
+  font-size: clamp(15px, 1.35vw, 18.5px);
+  line-height: 1.16;
+  letter-spacing: -0.02em;
+}
+
+.kibo-page.kibo-bowl-section .ing__pill {
+  height: 22px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.kibo-page.kibo-bowl-section .ing__desc {
+  max-width: 38ch;
+  font-size: 12.5px;
+  line-height: 1.38;
+  color: var(--ink-70);
+}
+
+.kibo-page.kibo-bowl-section .bowl__dish img {
+  filter: drop-shadow(0 18px 26px rgba(29, 29, 31, 0.2));
+}
+
+.kibo-page.kibo-bowl-section .bowl__spot {
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  font-size: 12px;
+}
+
 /* 4.5 Polaroid Gallery */
 .kibo-page .gal {
   max-width: 1240px;
@@ -3751,6 +3881,32 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
     display: block;
   }
 
+  .kibo-page.kibo-bowl-section .bowl {
+    --dish: min(66vw, 270px);
+    gap: 18px;
+    margin-top: 16px;
+  }
+
+  .kibo-page.kibo-bowl-section .bowl__list {
+    min-height: 0;
+    column-gap: 0;
+    row-gap: 0;
+  }
+
+  .kibo-page.kibo-bowl-section .bowl__list>li .ing__pt {
+    padding: 12px 8px;
+    border-radius: 12px;
+  }
+
+  .kibo-page.kibo-bowl-section .ing__pt.is-active {
+    background: rgba(255, 255, 255, 0.8);
+  }
+
+  .kibo-page.kibo-bowl-section .ing__desc {
+    max-width: none;
+    padding-top: 2px;
+  }
+
   .kibo-page .gal__note {
     margin-left: 0;
   }
@@ -4217,6 +4373,40 @@ html.motion .kibo-page .foot__dogs:not(.in) img {
 
   .kibo-page .sticker {
     scale: 0.85;
+  }
+
+  .kibo-page.kibo-bowl-section .sec--ing {
+    padding: 18px 14px;
+    border-radius: 20px;
+  }
+
+  .kibo-page.kibo-bowl-section .ing__giant {
+    font-size: clamp(40px, 11vw, 62px);
+  }
+
+  .kibo-page.kibo-bowl-section .ing__stickers {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+    pointer-events: auto;
+  }
+
+  .kibo-page.kibo-bowl-section .sticker {
+    position: static;
+    height: 24px;
+    padding: 0 10px;
+    font-size: 11px;
+    scale: 1;
+    translate: none !important;
+    rotate: none !important;
+  }
+
+  .kibo-page.kibo-bowl-section .ing__sub {
+    margin-top: 10px;
+    font-size: 13px;
   }
 
   .kibo-page .sec--photo {

@@ -975,7 +975,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
           {/* =====================================================================
               FULL-WIDTH 12-COLUMN TABS SECTION INSIDE THE SAME MAIN CARD
              ===================================================================== */}
-          <div className="mt-8 pt-7 border-t border-slate-200/70 space-y-6">
+          <div className="mt-7 pt-6 border-t border-slate-200/70 space-y-5">
             {/* Centered Capsule Tab Navigation Bar (Kibo / Patitas del Sur 2.0 style) */}
             <div className="flex justify-center w-full">
               <div
@@ -1081,7 +1081,7 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
 
             {/* TAB 1: PLATO INTERACTIVO DE INGREDIENTES + ANÁLISIS GARANTIZADO + LISTA COMPLETA */}
             {activeTab === 'ingredientes' && (
-              <div className="space-y-7 pt-1 animate-in fade-in duration-200">
+              <div className="space-y-5 pt-0.5 animate-in fade-in duration-200">
                 {/* 1. Interactive Ingredients Bowl Explorer (con plato y animaciones) */}
                 <ProductIngredientsBowl product={displayProduct} embedded={true} />
 

@@ -67,9 +67,9 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
       const a = offsetToBowl(pins[i]);
       const s = offsetToBowl(spots[i]);
       const dir = s.x > a.x ? 1 : -1;
-      const ax = a.x + dir * (a.r + 6);
-      const k = Math.abs(s.x - ax) * 0.55;
-      const d = `M ${ax.toFixed(1)} ${a.y.toFixed(1)} C ${(ax + dir * k).toFixed(1)} ${a.y.toFixed(1)}, ${(s.x - dir * k * 0.5).toFixed(1)} ${s.y.toFixed(1)}, ${s.x.toFixed(1)} ${s.y.toFixed(1)}`;
+      const ax = a.x + dir * (a.r + 4);
+      const k = Math.abs(s.x - ax) * 0.48;
+      const d = `M ${ax.toFixed(1)} ${a.y.toFixed(1)} C ${(ax + dir * k).toFixed(1)} ${a.y.toFixed(1)}, ${(s.x - dir * k * 0.45).toFixed(1)} ${s.y.toFixed(1)}, ${s.x.toFixed(1)} ${s.y.toFixed(1)}`;
       paths.push(d);
     }
 
@@ -82,8 +82,15 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
   }, []);
 
   useEffect(() => {
+    let active = true;
     const t = setTimeout(drawBowlLines, 60);
     window.addEventListener('resize', drawBowlLines, { passive: true });
+
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (active) drawBowlLines();
+      });
+    }
 
     let ro;
     if (typeof ResizeObserver !== 'undefined' && bowlRef.current) {
@@ -92,6 +99,7 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
     }
 
     return () => {
+      active = false;
       clearTimeout(t);
       window.removeEventListener('resize', drawBowlLines);
       if (ro) ro.disconnect();
@@ -132,11 +140,11 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
           const p = clamp01((vh - rect.top) / (vh + rect.height));
           const stickerEls = root.querySelectorAll('.ing__head .sticker');
           stickerEls.forEach((el, i) => {
-            const depth = parseFloat(el.style.getPropertyValue('--depth')) || 24;
+            const depth = parseFloat(el.style.getPropertyValue('--depth')) || 14;
             const sign = i % 2 === 1 ? -1 : 1;
             const ty = (0.5 - p) * depth;
-            const rot = (p - 0.5) * 16 * sign;
-            el.style.translate = `0 ${ty.toFixed(1)}px`;
+            const rot = (p - 0.5) * 10 * sign;
+            el.style.translate = `-50% ${ty.toFixed(1)}px`;
             el.style.rotate = `calc(var(--r) + ${rot.toFixed(2)}deg)`;
           });
         }
@@ -188,34 +196,32 @@ export default function ProductIngredientsBowl({ product, embedded = false }) {
           <h2 className="ing__giant" id="ing-product-title">
             <span>ingredientes</span>
           </h2>
-          <span
-            className="sticker"
-            style={{ '--x': '6%', '--y': '18%', '--r': '-14deg', '--depth': 40 }}
-            aria-hidden="true"
-          >
-            {stickers[0]}
-          </span>
-          <span
-            className="sticker"
-            style={{ '--x': '34%', '--y': '4%', '--r': '9deg', '--depth': 24 }}
-            aria-hidden="true"
-          >
-            {stickers[1]}
-          </span>
-          <span
-            className="sticker"
-            style={{ '--x': '58%', '--y': '22%', '--r': '-7deg', '--depth': 32 }}
-            aria-hidden="true"
-          >
-            {stickers[2]}
-          </span>
-          <span
-            className="sticker"
-            style={{ '--x': '82%', '--y': '6%', '--r': '15deg', '--depth': 20 }}
-            aria-hidden="true"
-          >
-            {stickers[3]}
-          </span>
+          <div className="ing__stickers" aria-hidden="true">
+            <span
+              className="sticker"
+              style={{ '--x': '12%', '--y': '10px', '--r': '-7deg', '--depth': 14 }}
+            >
+              {stickers[0]}
+            </span>
+            <span
+              className="sticker"
+              style={{ '--x': '13%', '--y': '52px', '--r': '5deg', '--depth': 10 }}
+            >
+              {stickers[1]}
+            </span>
+            <span
+              className="sticker"
+              style={{ '--x': '88%', '--y': '8px', '--r': '7deg', '--depth': 14 }}
+            >
+              {stickers[2]}
+            </span>
+            <span
+              className="sticker"
+              style={{ '--x': '87%', '--y': '50px', '--r': '-5deg', '--depth': 10 }}
+            >
+              {stickers[3]}
+            </span>
+          </div>
           <p className="ing__sub">{subtitle}</p>
         </div>
 
