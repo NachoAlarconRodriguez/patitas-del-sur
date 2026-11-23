@@ -193,6 +193,13 @@ export const BOWL_IMAGE_BANK = [
     url: '/images/bowl/ing-lentejas.webp',
     keywords: ['lenteja', 'lentejas', 'garbanzo', 'garbanzos', 'haba', 'habas', 'legumbre', 'poroto', 'frijol'],
   },
+  {
+    id: 'soya',
+    label: 'Soya / Harina de Soya',
+    category: 'Verduras y Legumbres',
+    url: '/images/bowl/ing-soya.webp',
+    keywords: ['harina de soya', 'soya', 'soja'],
+  },
 
   // Frutas y Botánicos
   {
@@ -523,6 +530,8 @@ export function analyzeIngredient(rawText, petLabel = 'perro o gato', fallbackSl
     t.includes('lenteja') ||
     t.includes('garbanzo') ||
     t.includes('haba') ||
+    t.includes('soya') ||
+    t.includes('soja') ||
     t.includes('fibra') ||
     t.includes('achicoria') ||
     t.includes('inulina') ||
