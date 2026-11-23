@@ -214,7 +214,14 @@ export const BOWL_IMAGE_BANK = [
     label: 'Manzana Verde',
     category: 'Frutas y Botánicos',
     url: '/images/bowl/ing-manzana-verde.webp',
-    keywords: ['manzana verde', 'pulpa de manzana', 'manzana', 'pera'],
+    keywords: ['manzana verde', 'pulpa de manzana', 'manzana'],
+  },
+  {
+    id: 'pera',
+    label: 'Pera',
+    category: 'Frutas y Botánicos',
+    url: '/images/bowl/ing-pera.webp',
+    keywords: ['pera', 'peras'],
   },
   {
     id: 'platano',
