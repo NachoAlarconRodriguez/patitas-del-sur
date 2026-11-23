@@ -15067,25 +15067,64 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             .filter(Boolean)
         ))];
 
+        // Normalizador de búsqueda sin tildes (permite buscar "salmon", "fit sobre", "sobre pollo", etc.)
+        const normalizeOrderSearchText = (val) =>
+          String(val || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .trim();
+
+        const matchesOrderSearchQuery = (p, rawQuery) => {
+          const normalizedQuery = normalizeOrderSearchText(rawQuery);
+          if (!normalizedQuery) return true;
+          const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+          const haystack = normalizeOrderSearchText(
+            [
+              p.name,
+              p.brand,
+              p.category,
+              p.format,
+              Array.isArray(p.weights) ? p.weights.join(' ') : p.weights,
+              p.sku,
+              p.tagline,
+              Array.isArray(p.ingredients) ? p.ingredients.join(' ') : '',
+              p.petType || p.pet_type,
+            ]
+              .filter(Boolean)
+              .join(' ')
+          );
+          return tokens.every((token) => haystack.includes(token));
+        };
+
         // Productos filtrados según especie, marca y palabra clave
-        const filteredOrderProducts = catalogProducts.filter((p) => {
+        const strictFilteredOrderProducts = catalogProducts.filter((p) => {
           if (orderPetTypeFilter && !matchesOrderPetType(p, orderPetTypeFilter)) return false;
           if (orderBrandFilter !== 'todas' && (p.brand || '').toLowerCase() !== orderBrandFilter.toLowerCase()) return false;
-          if (orderProductSearch.trim()) {
-            const q = orderProductSearch.toLowerCase().trim();
-            const matchName = p.name?.toLowerCase().includes(q);
-            const matchBrand = p.brand?.toLowerCase().includes(q);
-            const matchCategory = p.category?.toLowerCase().includes(q);
-            const matchFormat = p.format?.toLowerCase().includes(q) || p.weights?.some((w) => String(w).toLowerCase().includes(q));
-            const matchSku = p.sku?.toLowerCase().includes(q);
-            const matchTagline = p.tagline?.toLowerCase().includes(q);
-            const matchIngredients = p.ingredients?.some((ing) => ing.toLowerCase().includes(q));
-            if (!matchName && !matchBrand && !matchCategory && !matchFormat && !matchSku && !matchTagline && !matchIngredients) {
-              return false;
-            }
-          }
+          if (orderProductSearch.trim() && !matchesOrderSearchQuery(p, orderProductSearch)) return false;
           return true;
         });
+
+        // Si el usuario escribió una búsqueda y no hay resultados en la especie actual (ej. cliente con perro buscando sobres de gato),
+        // buscar automáticamente en todo el catálogo para no ocultar productos reales con stock.
+        const hasActiveSearchQuery = Boolean(orderProductSearch.trim());
+        const crossSpeciesOrderMatches =
+          hasActiveSearchQuery &&
+          strictFilteredOrderProducts.length === 0 &&
+          orderPetTypeFilter &&
+          orderPetTypeFilter !== 'todos'
+            ? catalogProducts.filter((p) => {
+                if (orderBrandFilter !== 'todas' && (p.brand || '').toLowerCase() !== orderBrandFilter.toLowerCase()) {
+                  return false;
+                }
+                return matchesOrderSearchQuery(p, orderProductSearch);
+              })
+            : [];
+
+        const isShowingCrossSpeciesFallback = crossSpeciesOrderMatches.length > 0;
+        const filteredOrderProducts = isShowingCrossSpeciesFallback
+          ? crossSpeciesOrderMatches
+          : strictFilteredOrderProducts;
 
         const inStockCount = filteredOrderProducts.filter((p) => getProductStock(p) > 0).length;
         const outOfStockCount = filteredOrderProducts.filter((p) => getProductStock(p) <= 0).length;
@@ -15779,6 +15818,21 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 )}
                               </div>
                             </div>
+
+                            {isShowingCrossSpeciesFallback && (
+                              <div className="px-3 py-2 rounded-2xl bg-[#FEF3C7]/75 border border-[#FDE68A] flex items-center justify-between gap-2 text-[11px] text-[#78350F]">
+                                <span className="font-semibold">
+                                  Mostrando coincidencias en <strong>todo el catálogo (Perros y Gatos)</strong> para “{orderProductSearch.trim()}”.
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setOrderPetTypeFilter('todos')}
+                                  className="px-2.5 py-1 rounded-full bg-white border border-[#FDE68A] text-[#D97706] font-bold text-[10px] hover:bg-[#FEF3C7] transition-colors shrink-0 cursor-pointer"
+                                >
+                                  Cambiar a Todos
+                                </button>
+                              </div>
+                            )}
 
                             {filteredOrderProducts.length === 0 ? (
                               <div className="text-center py-6 px-4 bg-white rounded-2xl border border-dashed border-[#EAECEF] text-slate-400 text-xs">
