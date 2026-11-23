@@ -21,6 +21,8 @@ export default function FeedingCalculatorTab({
   customFeedingGuide = null,
 }) {
   const isCatConditionsGuide = customFeedingGuide?.type === 'cat_conditions';
+  const isWeightOnlyGuide = customFeedingGuide?.type === 'weight_only';
+  const effectiveWizardStep = isWeightOnlyGuide && (wizardStep === 1 || wizardStep === 2) ? 3 : wizardStep;
   const conditionOptions = isCatConditionsGuide && Array.isArray(customFeedingGuide.conditions)
     ? customFeedingGuide.conditions
     : [
@@ -41,6 +43,8 @@ export default function FeedingCalculatorTab({
           <p className="text-[11px] text-slate-500 font-medium">
             {isCatConditionsGuide
               ? 'Guía oficial del fabricante según peso y condición corporal de tu gato adulto:'
+              : isWeightOnlyGuide
+              ? 'Guía oficial del fabricante según el peso actual de tu mascota:'
               : 'Completa los pasos para conocer la porción recomendada:'}
           </p>
         </div>
@@ -59,20 +63,21 @@ export default function FeedingCalculatorTab({
       </div>
 
       {/* Wizard Step Progress Tracker Bar */}
+      {!isWeightOnlyGuide && (
       <div className="flex items-center justify-between gap-2 bg-slate-50 p-2 rounded-full border border-slate-200 shadow-2xs">
         {/* Step 1 Pill */}
         <button
           type="button"
           onClick={() => setWizardStep(1)}
           className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
-            wizardStep === 1
+            effectiveWizardStep === 1
               ? 'bg-[#1D1D1F] text-white shadow-2xs'
-              : wizardStep > 1 || wizardStep === 'result'
+              : effectiveWizardStep > 1 || effectiveWizardStep === 'result'
               ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
               : 'bg-white text-slate-400 border border-slate-200'
           }`}
         >
-          <span>{wizardStep > 1 || wizardStep === 'result' ? '✓' : '1'}</span>
+          <span>{effectiveWizardStep > 1 || effectiveWizardStep === 'result' ? '✓' : '1'}</span>
           <span>{isCatConditionsGuide ? 'Condición' : 'Etapa'}</span>
         </button>
 
@@ -86,14 +91,14 @@ export default function FeedingCalculatorTab({
               onClick={() => selectedLifeStage && setWizardStep(2)}
               disabled={!selectedLifeStage}
               className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
-                wizardStep === 2
+                effectiveWizardStep === 2
                   ? 'bg-[#1D1D1F] text-white shadow-2xs'
-                  : wizardStep > 2 || wizardStep === 'result'
+                  : effectiveWizardStep > 2 || effectiveWizardStep === 'result'
                   ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
                   : 'bg-white text-slate-400 border border-slate-200'
               }`}
             >
-              <span>{wizardStep > 2 || wizardStep === 'result' ? '✓' : '2'}</span>
+              <span>{effectiveWizardStep > 2 || effectiveWizardStep === 'result' ? '✓' : '2'}</span>
               <span>Raza</span>
             </button>
             <div className="h-0.5 flex-grow bg-slate-200 rounded-full" />
@@ -110,20 +115,21 @@ export default function FeedingCalculatorTab({
           }}
           disabled={!selectedLifeStage}
           className={`flex items-center gap-1.5 text-xs font-black px-3 py-1 rounded-full transition-all cursor-pointer ${
-            wizardStep === 3
+            effectiveWizardStep === 3
               ? 'bg-[#1D1D1F] text-white shadow-2xs'
-              : wizardStep === 'result'
+              : effectiveWizardStep === 'result'
               ? 'bg-amber-100 text-amber-900 hover:bg-amber-200'
               : 'bg-white text-slate-400 border border-slate-200'
           }`}
         >
-          <span>{wizardStep === 'result' ? '✓' : isDog && selectedLifeStage !== 'cachorro' ? '3' : '2'}</span>
+          <span>{effectiveWizardStep === 'result' ? '✓' : isDog && selectedLifeStage !== 'cachorro' ? '3' : '2'}</span>
           <span>Peso</span>
         </button>
       </div>
+      )}
 
       {/* PASO 1: Seleccionar Etapa de Vida o Condición del Gato */}
-      {wizardStep === 1 && (
+      {effectiveWizardStep === 1 && (
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
           <div className="space-y-0.5">
             <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
@@ -228,7 +234,7 @@ export default function FeedingCalculatorTab({
       )}
 
       {/* PASO 2: Seleccionar Tamaño de Raza */}
-      {wizardStep === 2 && (
+      {effectiveWizardStep === 2 && (
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
           <div className="space-y-0.5">
             <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
@@ -310,14 +316,16 @@ export default function FeedingCalculatorTab({
       )}
 
       {/* PASO 3: Ingresar Peso de la Mascota */}
-      {wizardStep === 3 && (
+      {effectiveWizardStep === 3 && (
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4 text-center animate-in fade-in duration-200">
           <div className="space-y-0.5">
             <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black uppercase tracking-wider">
-              Último Paso
+              {isWeightOnlyGuide ? (customFeedingGuide?.stageLabel || 'Paso Único') : 'Último Paso'}
             </span>
             <h4 className="text-sm font-black text-slate-900 tracking-tight">
-              Ingresa el Peso de tu Mascota
+              {isWeightOnlyGuide
+                ? (customFeedingGuide?.weightPrompt || 'Ingresa el Peso Actual de tu Mascota')
+                : 'Ingresa el Peso de tu Mascota'}
             </h4>
           </div>
 
@@ -354,7 +362,14 @@ export default function FeedingCalculatorTab({
             {/* Quick weight chips */}
             <div className="flex flex-wrap justify-center items-center gap-1.5">
               <span className="text-[11px] font-bold text-slate-400 mr-1">Comunes:</span>
-              {(isDog ? [3, 8, 20, 35] : isCatConditionsGuide ? [2.5, 4, 5, 7] : [2, 4, 6]).map((w) => (
+              {(Array.isArray(customFeedingGuide?.quickWeights)
+                ? customFeedingGuide.quickWeights
+                : isDog
+                ? [3, 8, 20, 35]
+                : isCatConditionsGuide
+                ? [2.5, 4, 5, 7]
+                : [2, 4, 6]
+              ).map((w) => (
                 <button
                   type="button"
                   key={w}
@@ -371,20 +386,22 @@ export default function FeedingCalculatorTab({
             </div>
           </div>
 
-          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => {
-                if (isDog && selectedLifeStage !== 'cachorro') {
-                  setWizardStep(2);
-                } else {
-                  setWizardStep(1);
-                }
-              }}
-              className="px-3 py-1.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
-            >
-              ← Anterior
-            </button>
+          <div className={`pt-2 border-t border-slate-100 flex items-center ${isWeightOnlyGuide ? 'justify-center' : 'justify-between'}`}>
+            {!isWeightOnlyGuide && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isDog && selectedLifeStage !== 'cachorro') {
+                    setWizardStep(2);
+                  } else {
+                    setWizardStep(1);
+                  }
+                }}
+                className="px-3 py-1.5 rounded-full font-bold text-xs text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                ← Anterior
+              </button>
+            )}
 
             <button
               type="button"
@@ -398,13 +415,15 @@ export default function FeedingCalculatorTab({
       )}
 
       {/* VISTA RESULTADO */}
-      {wizardStep === 'result' && (
+      {effectiveWizardStep === 'result' && (
         <div className="space-y-3 animate-in fade-in duration-300">
           <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 flex-wrap text-xs font-black text-slate-800">
               <span className="text-slate-400">Mascota:</span>
               <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                {isCatConditionsGuide
+                {isWeightOnlyGuide
+                  ? (customFeedingGuide?.stageBadge || product.targetStageLabel || '🐾 Cachorro')
+                  : isCatConditionsGuide
                   ? `${selectedConditionMeta.icon || '🐱'} ${selectedConditionMeta.label}`
                   : selectedLifeStage === 'cachorro'
                   ? '🐾 Cachorro'
@@ -412,7 +431,7 @@ export default function FeedingCalculatorTab({
                   ? '🐕 Adulto'
                   : '🦴 Senior'}
               </span>
-              {selectedBreedSize && (
+              {selectedBreedSize && !isWeightOnlyGuide && (
                 <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800">
                   {selectedBreedSize === 'pequena' ? '🐩 Pequeña' : selectedBreedSize === 'mediana' ? '🐕 Mediana' : '🦮 Grande'}
                 </span>
@@ -424,7 +443,7 @@ export default function FeedingCalculatorTab({
 
             <button
               type="button"
-              onClick={() => setWizardStep(1)}
+              onClick={() => setWizardStep(isWeightOnlyGuide ? 3 : 1)}
               className="px-3 py-1 rounded-full text-xs font-black bg-slate-100 text-slate-700 hover:bg-[#1D1D1F] hover:text-white transition-colors cursor-pointer self-start sm:self-auto"
             >
               ✏️ Modificar

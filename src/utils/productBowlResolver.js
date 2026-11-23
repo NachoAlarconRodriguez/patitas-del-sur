@@ -147,7 +147,21 @@ export const BOWL_IMAGE_BANK = [
     label: 'Arroz Integral / Avena',
     category: 'Carbohidratos y Raíces',
     url: '/images/bowl/ing-arroz-avena.webp',
-    keywords: ['arroz integral', 'arroz', 'avena', 'cebada', 'quinoa', 'quinua', 'sorgo', 'maiz', 'trigo', 'cereal', 'grano'],
+    keywords: ['arroz integral', 'arroz', 'avena', 'cebada', 'quinoa', 'quinua', 'sorgo', 'cereal', 'grano'],
+  },
+  {
+    id: 'maiz',
+    label: 'Maíz / Gluten de Maíz',
+    category: 'Carbohidratos y Raíces',
+    url: '/images/bowl/ing-maiz.webp',
+    keywords: ['gluten de maiz', 'harina de maiz', 'maiz', 'choclo'],
+  },
+  {
+    id: 'trigo',
+    label: 'Trigo / Salvado de Trigo',
+    category: 'Carbohidratos y Raíces',
+    url: '/images/bowl/ing-trigo.webp',
+    keywords: ['salvado de trigo', 'harina de trigo', 'germen de trigo', 'trigo', 'salvado'],
   },
 
   // Verduras y Legumbres
@@ -468,11 +482,14 @@ export function analyzeIngredient(rawText, petLabel = 'perro o gato', fallbackSl
     t.includes('avena') ||
     t.includes('arroz') ||
     t.includes('cebada') ||
-    t.includes('quinoa')
+    t.includes('quinoa') ||
+    t.includes('maiz') ||
+    t.includes('trigo') ||
+    t.includes('salvado')
   ) {
     return {
       name: title,
-      pill: t.includes('calabaza') || t.includes('zapallo') ? 'Fibra' : 'Energía Noble',
+      pill: t.includes('calabaza') || t.includes('zapallo') || t.includes('salvado') ? 'Fibra' : 'Energía Noble',
       desc: 'Carbohidratos nobles de asimilación gradual y fibra soluble natural para una digestión suave y energía sostenida.',
       img,
     };

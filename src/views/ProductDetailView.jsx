@@ -293,6 +293,15 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
 
   const getFeedingGuide = () => {
     if (customFeedingGuide) {
+      if (customFeedingGuide.type === 'weight_only') {
+        return customFeedingGuide.rows.map((row, idx) => ({
+          ...row,
+          id: row.id || `custom-feed-${idx + 1}`,
+          maint: row.maint || row.grams || '—',
+          hasDirectConditionValue: true,
+        }));
+      }
+
       const conditionKey =
         selectedLifeStage && ['intact', 'neutered', 'overweight'].includes(selectedLifeStage)
           ? selectedLifeStage
@@ -362,9 +371,26 @@ export default function ProductDetailView({ onAddToCart, onSelectProduct, cartIt
   const feedingGuide = getFeedingGuide();
 
   const currentWeightNum = parseFloat(petWeight) || 0;
-  const activeFeedingRow = feedingGuide.find(
+  const matchedFeedingRow = feedingGuide.find(
     (row) => currentWeightNum >= row.min && currentWeightNum <= row.max
   ) || (currentWeightNum > (feedingGuide[feedingGuide.length - 1]?.max || 0) ? feedingGuide[feedingGuide.length - 1] : feedingGuide[0]);
+
+  const activeFeedingRow = (() => {
+    if (!matchedFeedingRow) return null;
+    const extraRule = customFeedingGuide?.extraPerKgOver;
+    if (extraRule && currentWeightNum > Number(extraRule.thresholdKg)) {
+      const extraKg = currentWeightNum - Number(extraRule.thresholdKg);
+      const totalGrams = Math.round(Number(extraRule.baseGrams) + extraKg * Number(extraRule.gramsPerKg));
+      const cupsText = customFeedingGuide.cupGrams
+        ? ` (~${(totalGrams / Number(customFeedingGuide.cupGrams)).toFixed(1).replace('.', ',')} tazas)`
+        : '';
+      return {
+        ...matchedFeedingRow,
+        maint: `${totalGrams} g / día${cupsText}`,
+      };
+    }
+    return matchedFeedingRow;
+  })();
 
   // Variantes y cálculo de precio real por formato seleccionado
   const variants = product?.variants || [];
