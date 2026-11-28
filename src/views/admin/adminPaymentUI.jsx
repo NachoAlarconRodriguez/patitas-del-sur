@@ -1,10 +1,66 @@
 import React from 'react';
-import { Globe, CreditCard, Banknote, Landmark, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
-import { formatCLP, normalizePaymentMethod, getOrderPaymentStatus } from './adminUtils';
+import {
+  Globe,
+  CreditCard,
+  Banknote,
+  Landmark,
+  CheckCircle2,
+  AlertCircle,
+  XCircle,
+  ShoppingCart,
+  Clock,
+  Truck,
+} from 'lucide-react';
+import {
+  formatCLP,
+  normalizePaymentMethod,
+  getOrderPaymentStatus,
+  isMercadoPagoWebOrder,
+} from './adminUtils';
 
-export function renderPaymentMethodBadge(pm) {
-  const norm = normalizePaymentMethod(pm);
+export function renderPaymentMethodBadge(pm, order = null) {
   const pmLower = String(pm || '').toLowerCase();
+  const isMpWeb =
+    (order && isMercadoPagoWebOrder(order)) ||
+    ((pmLower.includes('mercado pago') || pmLower.includes('mercadopago') || pmLower.includes('checkout pro')) &&
+      !pmLower.includes('pos') &&
+      !pmLower.includes('contra entrega') &&
+      !pmLower.includes('al recibir') &&
+      !pmLower.includes('qr') &&
+      !pmLower.includes('dinero'));
+
+  if (isMpWeb) {
+    return (
+      <span
+        title={pm || 'Mercado Pago (Checkout Web)'}
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200"
+      >
+        <CreditCard className="w-3 h-3 text-sky-600 shrink-0" />
+        <span>Mercado Pago</span>
+      </span>
+    );
+  }
+
+  const isPayOnDeliveryGeneric =
+    (pmLower.includes('al recibir') || pmLower.includes('contra entrega')) &&
+    !pmLower.includes('pos') &&
+    !pmLower.includes('tarjeta') &&
+    !pmLower.includes('efectivo') &&
+    !pmLower.includes('transferencia');
+
+  if (isPayOnDeliveryGeneric) {
+    return (
+      <span
+        title={pm || 'Pago al Recibir'}
+        className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80"
+      >
+        <Truck className="w-3 h-3 text-amber-600 shrink-0" />
+        <span>Pago al Recibir</span>
+      </span>
+    );
+  }
+
+  const norm = normalizePaymentMethod(pm);
   const isPos = pmLower.includes('pos') || pmLower.includes('contra entrega') || pmLower.includes('al recibir');
   const isCredit = pmLower.includes('crédito') || pmLower.includes('credito');
   const isDebit = pmLower.includes('débito') || pmLower.includes('debito');
@@ -15,7 +71,7 @@ export function renderPaymentMethodBadge(pm) {
       return (
         <span
           title={pm || 'Pago dividido'}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+          className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
         >
           <CreditCard className="w-3 h-3 text-indigo-600 shrink-0" />
           <span>Pago Mixto</span>
@@ -23,7 +79,7 @@ export function renderPaymentMethodBadge(pm) {
       );
     case 'Web':
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]">
           <Globe className="w-3 h-3 text-[#D97706] shrink-0" />
           <span>Botón Web</span>
         </span>
@@ -34,7 +90,7 @@ export function renderPaymentMethodBadge(pm) {
       else if (isDebit) label = 'Débito POS';
       else if (isMpQr) label = 'Dinero MP / QR';
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FAF8F4] text-[#78350F] border border-[#EAECEF]">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#FAF8F4] text-[#78350F] border border-[#EAECEF]">
           <CreditCard className="w-3 h-3 text-[#D97706] shrink-0" />
           <span>{label}</span>
         </span>
@@ -42,21 +98,21 @@ export function renderPaymentMethodBadge(pm) {
     }
     case 'Efectivo':
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
           <Banknote className="w-3 h-3 text-emerald-600 shrink-0" />
           <span>Efectivo</span>
         </span>
       );
     case 'Transferencia':
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200/80">
           <Landmark className="w-3 h-3 text-amber-600 shrink-0" />
           <span>Transferencia</span>
         </span>
       );
     default:
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-[#F8FAFC] text-slate-600 border border-[#EAECEF]">
+        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#F8FAFC] text-slate-600 border border-[#EAECEF]">
           <span>{pm || 'Web'}</span>
         </span>
       );
@@ -69,6 +125,42 @@ export function renderPaymentCollectionBanner(order, isCompact = false) {
   const paymentInfo = getOrderPaymentStatus(order);
   const amountStr = formatCLP(order.total || 0);
 
+  if (paymentInfo.isAbandoned) {
+    return (
+      <div
+        className={`flex items-center justify-between gap-2 rounded-xl bg-slate-100 border border-slate-300 text-slate-700 font-extrabold shadow-2xs ${
+          isCompact ? 'px-2.5 py-1.5 text-[10.5px]' : 'px-3 py-2 text-xs'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ShoppingCart className="w-3.5 h-3.5 text-slate-500 shrink-0 stroke-[2.5]" />
+          <span className="truncate">ABANDONÓ CHECKOUT MERCADO PAGO · NO DESPACHAR</span>
+        </div>
+        <span className="font-mono font-black text-slate-800 shrink-0 tabular-nums">
+          {amountStr}
+        </span>
+      </div>
+    );
+  }
+
+  if (paymentInfo.isMpInCheckout) {
+    return (
+      <div
+        className={`flex items-center justify-between gap-2 rounded-xl bg-sky-50 border border-sky-200 text-sky-800 font-extrabold shadow-2xs ${
+          isCompact ? 'px-2.5 py-1.5 text-[10.5px]' : 'px-3 py-2 text-xs'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Clock className="w-3.5 h-3.5 text-sky-600 shrink-0 stroke-[2.5]" />
+          <span className="truncate">ESPERANDO PAGO EN MERCADO PAGO · NO DESPACHAR AÚN</span>
+        </div>
+        <span className="font-mono font-black text-sky-900 shrink-0 tabular-nums">
+          {amountStr}
+        </span>
+      </div>
+    );
+  }
+
   if (paymentInfo.isRejected) {
     return (
       <div
@@ -78,7 +170,11 @@ export function renderPaymentCollectionBanner(order, isCompact = false) {
       >
         <div className="flex items-center gap-1.5 min-w-0">
           <XCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 stroke-[2.5]" />
-          <span className="truncate">PAGO RECHAZADO · COBRAR ANTES DE ENTREGAR</span>
+          <span className="truncate">
+            {paymentInfo.isMercadoPagoWeb
+              ? 'PAGO RECHAZADO EN MERCADO PAGO · NO DESPACHAR'
+              : 'PAGO RECHAZADO · COBRAR ANTES DE ENTREGAR'}
+          </span>
         </div>
         <span className="font-mono font-black text-rose-900 shrink-0 tabular-nums">
           {amountStr}
@@ -90,7 +186,9 @@ export function renderPaymentCollectionBanner(order, isCompact = false) {
   if (!paymentInfo.shouldCollect) {
     const pmLower = String(order.paymentMethod || order.payment_method || '').toLowerCase();
     const isPos = pmLower.includes('pos') || pmLower.includes('contra entrega') || pmLower.includes('al recibir');
-    let detailText = 'PAGADO EN WEB · NO COBRAR AL CLIENTE';
+    let detailText = paymentInfo.isMercadoPagoWeb
+      ? 'PAGADO EN MERCADO PAGO · NO COBRAR AL CLIENTE'
+      : 'PAGADO EN WEB · NO COBRAR AL CLIENTE';
     if (paymentInfo.norm === 'Transferencia') {
       detailText = 'TRANSFERENCIA ACREDITADA · NO COBRAR';
     } else if (paymentInfo.norm === 'Efectivo') {
@@ -116,7 +214,7 @@ export function renderPaymentCollectionBanner(order, isCompact = false) {
   const labelText =
     paymentInfo.norm === 'Transferencia'
       ? 'TRANSFERENCIA PENDIENTE · CONFIRMAR'
-      : `COBRAR AL ENTREGAR (${paymentInfo.norm === 'Tarjeta' ? 'POS' : paymentInfo.norm})`;
+      : `COBRAR AL ENTREGAR (${paymentInfo.norm === 'Tarjeta' ? 'POS' : paymentInfo.norm === 'Web' ? 'AL RECIBIR' : paymentInfo.norm})`;
 
   return (
     <div

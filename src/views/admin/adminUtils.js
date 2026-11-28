@@ -463,12 +463,92 @@ export const resolveInvoiceItems = (inv, inventoryList = []) => {
   });
 };
 
+// Umbral en minutos para considerar abandonado un checkout de Mercado Pago sin pago confirmado (alineado con expiration_time = PT30M)
+export const MP_ABANDONED_THRESHOLD_MINUTES = 30;
+
+// Detecta si un pedido corresponde a un intento de pago online vía Mercado Pago Web (excluyendo POS físico / QR presencial)
+export const isMercadoPagoWebOrder = (order) => {
+  if (!order) return false;
+  const pmLower = String(order.paymentMethod ?? order.payment_method ?? '').trim().toLowerCase();
+  const chLower = String(order.channel || 'web').trim().toLowerCase();
+  const isPhysicalOrOffline =
+    pmLower.includes('pos') ||
+    pmLower.includes('contra entrega') ||
+    pmLower.includes('al recibir') ||
+    pmLower.includes('qr') ||
+    pmLower.includes('dinero') ||
+    pmLower.includes('efectivo') ||
+    pmLower.includes('transferencia');
+
+  if (isPhysicalOrOffline) return false;
+
+  const hasMpIds = Boolean(
+    order.mercadopagoPreferenceId ||
+    order.mercadopago_preference_id ||
+    order.mercadopagoPaymentId ||
+    order.mercadopago_payment_id ||
+    order.mpOrderId ||
+    order.mpPaymentId
+  );
+  if (hasMpIds) return true;
+
+  return (
+    (pmLower.includes('mercado pago') ||
+      pmLower.includes('mercadopago') ||
+      pmLower.includes('checkout pro')) &&
+    chLower !== 'pos' &&
+    chLower !== 'manual'
+  );
+};
+
+// Minutos transcurridos desde la creación del pedido (para evaluar expiración/abandono de checkout MP)
+export const getMercadoPagoCheckoutElapsedMinutes = (order, nowMs = Date.now()) => {
+  const rawTs = order?.created_at || order?.createdAt;
+  if (!rawTs) return null;
+  const parsed = new Date(rawTs);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, Math.floor((nowMs - parsed.getTime()) / 60000));
+};
+
+// Texto legible en español para el tiempo transcurrido desde el inicio del checkout
+export const formatElapsedCheckoutAge = (elapsedMinutes) => {
+  if (elapsedMinutes === null || elapsedMinutes === undefined || !Number.isFinite(elapsedMinutes)) {
+    return '';
+  }
+  if (elapsedMinutes < 1) return 'hace menos de 1 min';
+  if (elapsedMinutes < 60) return `hace ${elapsedMinutes} min`;
+  const hours = Math.floor(elapsedMinutes / 60);
+  if (hours < 24) return `hace ${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
+};
+
 // Normalizador oficial de Medios de Pago
 export const normalizePaymentMethod = (pm) => {
   if (!pm) return 'Web';
   const s = String(pm).trim().toLowerCase();
   if (s.includes('mixto') || s.includes('dividido')) return 'Mixto';
-  if (s === 'web' || s === 'webpay' || s.includes('webpay') || s.includes('online') || s.includes('checkout pro') || s.includes('botón web') || s.includes('boton web')) return 'Web';
+
+  const isMpWebOnline =
+    (s.includes('mercado pago') || s.includes('mercadopago')) &&
+    !s.includes('pos') &&
+    !s.includes('contra entrega') &&
+    !s.includes('al recibir') &&
+    !s.includes('qr') &&
+    !s.includes('dinero');
+
+  if (
+    isMpWebOnline ||
+    s === 'web' ||
+    s === 'webpay' ||
+    s.includes('webpay') ||
+    s.includes('online') ||
+    s.includes('checkout pro') ||
+    s.includes('botón web') ||
+    s.includes('boton web')
+  ) {
+    return 'Web';
+  }
   if (
     s === 'tarjeta' ||
     s.includes('tarjeta') ||
@@ -479,7 +559,8 @@ export const normalizePaymentMethod = (pm) => {
     s.includes('mercado pago') ||
     s.includes('mercadopago') ||
     s.includes('dinero mp') ||
-    s.includes('qr')
+    s.includes('qr') ||
+    s.includes('pos')
   ) {
     return 'Tarjeta';
   }
@@ -753,7 +834,11 @@ export const calculateF29WithCarryover = ({
 }) => {
   const validOrders = (orders || []).filter((o) => {
     if (!o || o.status === 'cancelado') return false;
-    if (!includeUnpaidOrders) return getOrderPaymentStatus(o).isPaid;
+    const payStatus = getOrderPaymentStatus(o);
+    if (payStatus.isAbandoned || payStatus.isMpInCheckout || (payStatus.isRejected && payStatus.isMercadoPagoWeb)) {
+      return false;
+    }
+    if (!includeUnpaidOrders) return payStatus.isPaid;
     return true;
   });
 
@@ -898,12 +983,16 @@ export const calculateF29WithCarryover = ({
 };
 
 // Estado detallado y consistente del pago de una orden
-export const getOrderPaymentStatus = (order) => {
+export const getOrderPaymentStatus = (order, nowMs = Date.now()) => {
   if (!order) {
     return {
       norm: 'Web',
       isPaid: false,
       isRejected: false,
+      isAbandoned: false,
+      isMpInCheckout: false,
+      isMercadoPagoWeb: false,
+      elapsedMinutes: null,
       shouldCollect: true,
       statusText: '⚠️ Cobrar en entrega',
       badgeColor: 'bg-amber-50 text-amber-700 border-amber-200/90',
@@ -917,26 +1006,51 @@ export const getOrderPaymentStatus = (order) => {
   const psLower = String(order.paymentStatus ?? order.payment_status ?? '').trim().toLowerCase();
 
   const isPaidStatus = psLower === 'pagado' || psLower === 'approved' || psLower === 'processed';
-  const isRejectedStatus = ['rechazado', 'rejected', 'failed', 'cancelado', 'canceled', 'expired'].includes(psLower);
-  const isExplicitlyUnpaid = psLower === 'pendiente' || isRejectedStatus;
+  const isAbandonedStatus = ['abandonado', 'abandoned', 'expirado', 'expired'].includes(psLower);
+  const isRejectedStatus = ['rechazado', 'rejected', 'failed', 'cancelado', 'canceled'].includes(psLower);
+  const isExplicitlyUnpaid = psLower === 'pendiente' || isRejectedStatus || isAbandonedStatus;
   const isPosOrContraEntrega =
     pmLower.includes('contra entrega') || pmLower.includes('pos') || pmLower.includes('al recibir');
   const isExplicitlyPaidOnline = order.isPaidOnline === true && !isExplicitlyUnpaid;
 
+  const isMercadoPagoWeb = isMercadoPagoWebOrder(order);
+  const elapsedMinutes = getMercadoPagoCheckoutElapsedMinutes(order, nowMs);
+
   // Solo considerar pagado con confirmación explícita (evita falsos positivos en pagos rechazados, expirados o POS)
-  const isPaid = !isRejectedStatus && (isPaidStatus || isExplicitlyPaidOnline);
-  const isWebCard = norm === 'Web' || (norm === 'Tarjeta' && !isPosOrContraEntrega);
-  const shouldCollect = !isPaid;
+  const isPaid = !isRejectedStatus && !isAbandonedStatus && (isPaidStatus || isExplicitlyPaidOnline);
+  const isTimedOutMp =
+    isMercadoPagoWeb &&
+    !isPaid &&
+    !isRejectedStatus &&
+    !isAbandonedStatus &&
+    elapsedMinutes !== null &&
+    elapsedMinutes >= MP_ABANDONED_THRESHOLD_MINUTES;
+
+  const isAbandoned = !isPaid && !isRejectedStatus && (isAbandonedStatus || isTimedOutMp);
+  const isMpInCheckout = isMercadoPagoWeb && !isPaid && !isRejectedStatus && !isAbandoned;
+
+  const isWebCard = !isPosOrContraEntrega && (norm === 'Web' || norm === 'Tarjeta');
+  const shouldCollect = !isPaid && !isAbandoned && !isMpInCheckout;
 
   let statusText = '';
   let badgeColor = '';
   let actionBadgeText = 'Cobrar';
   let actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
 
-  if (isRejectedStatus) {
-    statusText = '✕ Pago rechazado';
+  if (isAbandoned) {
+    statusText = '🛒 Abandonó en MP';
+    badgeColor = 'bg-slate-100 text-slate-700 border-slate-300';
+    actionBadgeText = 'Abandonado MP';
+    actionBadgeColor = 'text-slate-700 bg-slate-100 border-slate-300';
+  } else if (isMpInCheckout) {
+    statusText = '⏳ En checkout MP';
+    badgeColor = 'bg-sky-50 text-sky-700 border-sky-200';
+    actionBadgeText = 'En checkout MP';
+    actionBadgeColor = 'text-sky-700 bg-sky-50 border-sky-200';
+  } else if (isRejectedStatus) {
+    statusText = isMercadoPagoWeb ? '✕ Rechazado en MP' : '✕ Pago rechazado';
     badgeColor = 'bg-rose-50 text-rose-700 border-rose-200/90';
-    actionBadgeText = 'Rechazado';
+    actionBadgeText = isMercadoPagoWeb ? 'Rechazado MP' : 'Rechazado';
     actionBadgeColor = 'text-rose-700 bg-rose-50 border-rose-200';
   } else if (norm === 'Transferencia') {
     if (isPaid) {
@@ -952,7 +1066,7 @@ export const getOrderPaymentStatus = (order) => {
     }
   } else if (isWebCard) {
     if (isPaid) {
-      statusText = '✓ Pagado Web';
+      statusText = isMercadoPagoWeb ? '✓ Pagado Mercado Pago' : '✓ Pagado Web';
       badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-200/90';
       actionBadgeText = 'No cobrar';
       actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
@@ -981,9 +1095,13 @@ export const getOrderPaymentStatus = (order) => {
       actionBadgeText = 'No cobrar';
       actionBadgeColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
     } else {
-      statusText = '⚠️ Cobrar con POS';
+      statusText = pmLower.includes('al recibir') && !pmLower.includes('pos')
+        ? '⚠️ Cobrar al recibir'
+        : '⚠️ Cobrar con POS';
       badgeColor = 'bg-amber-50 text-amber-700 border-amber-200/90';
-      actionBadgeText = 'Cobrar con POS';
+      actionBadgeText = pmLower.includes('al recibir') && !pmLower.includes('pos')
+        ? 'Cobrar al recibir'
+        : 'Cobrar con POS';
       actionBadgeColor = 'text-amber-700 bg-amber-50 border-amber-200';
     }
   }
@@ -992,12 +1110,26 @@ export const getOrderPaymentStatus = (order) => {
     norm,
     isPaid,
     isRejected: isRejectedStatus,
+    isAbandoned,
+    isMpInCheckout,
+    isMercadoPagoWeb,
+    elapsedMinutes,
     shouldCollect,
     statusText,
     badgeColor,
     actionBadgeText,
     actionBadgeColor,
   };
+};
+
+// Determina si un pedido es operativamente válido para despacho, rutas, "Pedidos hoy" y "Por cobrar"
+// Excluye pedidos cancelados y checkouts de Mercado Pago sin confirmar (en curso, abandonados o rechazados)
+export const isOrderOperational = (order, nowMs = Date.now()) => {
+  if (!order || order.status === 'cancelado') return false;
+  const pay = getOrderPaymentStatus(order, nowMs);
+  if (pay.isAbandoned || pay.isMpInCheckout) return false;
+  if (pay.isRejected && pay.isMercadoPagoWeb) return false;
+  return true;
 };
 
 // Saludo dinámico según la hora del sistema

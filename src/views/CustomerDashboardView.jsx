@@ -1501,14 +1501,44 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
               const isDelivered = o.status === 'entregado';
               const isShipped = o.status === 'en_camino';
               const isCancelled = o.status === 'cancelado';
-              const statusText = isCancelled ? 'Cancelado ✕' : isDelivered ? 'Entregado ✓' : isShipped ? 'En Camino 🚚' : 'En Preparación 📦';
-              const statusColor = isCancelled
-                ? 'bg-rose-50 text-rose-800 border-rose-300'
-                : isDelivered
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                : isShipped
-                ? 'bg-sky-50 text-sky-800 border-sky-300'
-                : 'bg-amber-50 text-amber-900 border-amber-200';
+              const rawPayStatus = String(o.payment_status || (isDelivered ? 'pagado' : 'pendiente')).trim().toLowerCase();
+              const pmLower = String(o.payment_method || '').toLowerCase();
+              const isMpWeb =
+                (Boolean(o.mercadopago_preference_id) || pmLower.includes('mercado pago') || pmLower.includes('mercadopago')) &&
+                !pmLower.includes('pos') &&
+                !pmLower.includes('al recibir') &&
+                !pmLower.includes('contra entrega');
+              const elapsedMin = o.created_at
+                ? Math.max(0, Math.floor((Date.now() - new Date(o.created_at).getTime()) / 60000))
+                : 0;
+              const isMpAbandoned =
+                rawPayStatus === 'abandonado' ||
+                rawPayStatus === 'expirado' ||
+                rawPayStatus === 'expired' ||
+                (isMpWeb && rawPayStatus === 'pendiente' && elapsedMin >= 30);
+              const isMpRejected =
+                isMpWeb && ['rechazado', 'rejected', 'failed'].includes(rawPayStatus);
+
+              const statusText = isMpAbandoned
+                ? 'Pago no completado'
+                : isMpRejected
+                  ? 'Pago rechazado ✕'
+                  : isCancelled
+                    ? 'Cancelado ✕'
+                    : isDelivered
+                      ? 'Entregado ✓'
+                      : isShipped
+                        ? 'En Camino 🚚'
+                        : 'En Preparación 📦';
+              const statusColor = isMpAbandoned
+                ? 'bg-slate-100 text-slate-600 border-slate-300'
+                : isMpRejected || isCancelled
+                  ? 'bg-rose-50 text-rose-800 border-rose-300'
+                  : isDelivered
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                    : isShipped
+                      ? 'bg-sky-50 text-sky-800 border-sky-300'
+                      : 'bg-amber-50 text-amber-900 border-amber-200';
 
               return {
                 id: o.id,
@@ -1518,14 +1548,16 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
                 product: itemDesc,
                 category,
                 total: `$${Number(o.total || 0).toLocaleString('es-CL')}`,
-                pointsEarned: isCancelled ? 0 : (o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000)),
+                pointsEarned: isCancelled || isMpAbandoned || isMpRejected ? 0 : (o.points_earned !== undefined ? o.points_earned : Math.floor((o.total || 0) / 1000)),
                 status: statusText,
-                statusCode: o.status || 'en_preparacion',
+                statusCode: isMpAbandoned ? 'abandonado_mp' : isMpRejected ? 'rechazado_mp' : (o.status || 'en_preparacion'),
                 statusColor,
                 deliveryDayText: o.delivery_day_text || 'Hoy Mismo',
                 deliverySlot: o.delivery_slot || 'Tarde (14:00 - 19:00 hrs)',
                 paymentMethod: o.payment_method || 'Tarjeta',
-                paymentStatus: o.payment_status || (isDelivered ? 'pagado' : 'pendiente'),
+                paymentStatus: isMpAbandoned ? 'abandonado' : rawPayStatus,
+                isMpAbandoned,
+                isMpRejected,
                 address: o.address || 'Puerto Varas',
               };
             });
@@ -1556,7 +1588,7 @@ export default function CustomerDashboardView({ user, onLogout, onAddToCart, onS
       .filter((o) => {
         const isPaid = String(o.paymentStatus || '').toLowerCase() === 'pagado';
         const isCancelled = String(o.statusCode || '').toLowerCase().includes('cancel');
-        return !isPaid && !isCancelled;
+        return !isPaid && !isCancelled && !o.isMpAbandoned && !o.isMpRejected;
       })
       .reduce((sum, o) => sum + (Number(o.pointsEarned) || 0), 0);
   }, [ordersList]);

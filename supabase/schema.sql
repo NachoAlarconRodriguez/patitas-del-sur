@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
     customer_phone TEXT,
     channel TEXT DEFAULT 'web', -- 'web', 'manual'
     payment_method TEXT DEFAULT 'Tarjeta', -- 'Web', 'Tarjeta', 'Efectivo', 'Transferencia'
-    payment_status TEXT DEFAULT 'pendiente', -- 'pendiente', 'pagado', 'fallido'
+    payment_status TEXT DEFAULT 'pendiente', -- 'pendiente', 'pagado', 'rechazado', 'abandonado'
     mercadopago_preference_id TEXT,
     mercadopago_payment_id TEXT,
     status TEXT DEFAULT 'en_preparacion', -- 'en_preparacion', 'en_camino', 'entregado', 'cancelado'

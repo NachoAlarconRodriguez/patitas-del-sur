@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Wallet,
   Loader2,
+  ShoppingCart,
 } from 'lucide-react';
 import { WhatsAppIcon, GoogleMapsIcon } from '../../../components/OfficialIcons';
 import { formatOrderScheduleSummary } from '../../../services/dispatchService.js';
@@ -32,6 +33,7 @@ import {
 import {
   formatCLP,
   getOrderPaymentStatus,
+  isOrderOperational,
   resolveProductImage,
   getOrderCustomerPhoneDigits,
 } from '../adminUtils.js';
@@ -128,11 +130,11 @@ export function MobilePwaDashboardView({
   const [pushBannerDismissed, setPushBannerDismissed] = useState(false);
 
   const enPrepCount = useMemo(
-    () => (orders || []).filter((o) => o.status === 'en_preparacion').length,
+    () => (orders || []).filter((o) => isOrderOperational(o) && o.status === 'en_preparacion').length,
     [orders]
   );
   const enCaminoCount = useMemo(
-    () => (orders || []).filter((o) => o.status === 'en_camino').length,
+    () => (orders || []).filter((o) => isOrderOperational(o) && o.status === 'en_camino').length,
     [orders]
   );
   const deliveredTodayCount = useMemo(
@@ -142,14 +144,14 @@ export function MobilePwaDashboardView({
   const unpaidOrdersCount = useMemo(
     () =>
       (orders || []).filter(
-        (o) => o.status !== 'cancelado' && !getOrderPaymentStatus(o).isPaid
+        (o) => isOrderOperational(o) && !getOrderPaymentStatus(o).isPaid
       ).length,
     [orders]
   );
 
   const routeOptimization = useMemo(() => {
     const rawPendingOrders = (orders || []).filter(
-      (o) => o.status === 'en_camino' || o.status === 'en_preparacion'
+      (o) => isOrderOperational(o) && (o.status === 'en_camino' || o.status === 'en_preparacion')
     );
     return optimizeDeliveryRoute(rawPendingOrders, activeRouteOrigin);
   }, [orders, activeRouteOrigin]);
@@ -690,7 +692,7 @@ export function MobilePwaRepartoView({
   const pendingToOptimize = useMemo(
     () =>
       (orders || []).filter(
-        (o) => o.status === 'en_camino' || o.status === 'en_preparacion'
+        (o) => isOrderOperational(o) && (o.status === 'en_camino' || o.status === 'en_preparacion')
       ),
     [orders]
   );
@@ -718,8 +720,17 @@ export function MobilePwaRepartoView({
   const unpaidAllList = useMemo(
     () =>
       (orders || []).filter(
-        (o) => o.status !== 'cancelado' && !getOrderPaymentStatus(o).isPaid
+        (o) => isOrderOperational(o) && !getOrderPaymentStatus(o).isPaid
       ),
+    [orders]
+  );
+
+  const abandonedMpList = useMemo(
+    () =>
+      (orders || []).filter((o) => {
+        const p = getOrderPaymentStatus(o);
+        return p.isAbandoned || (p.isRejected && p.isMercadoPagoWeb);
+      }),
     [orders]
   );
 
@@ -737,6 +748,9 @@ export function MobilePwaRepartoView({
         count: optimizedPendingOrders.filter((o) => o.status === 'en_camino').length,
       },
       { id: 'por_cobrar', label: 'Por cobrar', count: unpaidAllList.length },
+      ...(abandonedMpList.length > 0
+        ? [{ id: 'abandonado_mp', label: 'Abandonados MP', count: abandonedMpList.length }]
+        : []),
       { id: 'entregados_hoy', label: 'Entregados hoy', count: deliveredTodayList.length },
       {
         id: 'todos_hoy',
@@ -744,7 +758,7 @@ export function MobilePwaRepartoView({
         count: optimizedPendingOrders.length + deliveredTodayList.length,
       },
     ],
-    [optimizedPendingOrders, unpaidAllList, deliveredTodayList]
+    [optimizedPendingOrders, unpaidAllList, abandonedMpList, deliveredTodayList]
   );
 
   const pwaOrdersList = useMemo(() => {
@@ -757,6 +771,8 @@ export function MobilePwaRepartoView({
       baseList = optimizedPendingOrders.filter((o) => o.status === 'en_camino');
     } else if (mobileRepartoFilter === 'entregados_hoy') {
       baseList = deliveredTodayList;
+    } else if (mobileRepartoFilter === 'abandonado_mp') {
+      baseList = abandonedMpList;
     } else if (mobileRepartoFilter === 'por_cobrar') {
       // Colocar primero los pendientes de entrega ya optimizados y luego entregados por cobrar
       const optimizedIds = new Set(optimizedPendingOrders.map((o) => o.id));
@@ -793,6 +809,7 @@ export function MobilePwaRepartoView({
     optimizedPendingOrders,
     deliveredTodayList,
     unpaidAllList,
+    abandonedMpList,
   ]);
 
   const allExpanded =
@@ -1138,9 +1155,13 @@ export function MobilePwaRepartoView({
                         className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1 mt-1 ${
                           payStatus.isPaid
                             ? 'bg-[#34C759]/14 text-[#248A3D]'
-                            : payStatus.isRejected
-                              ? 'bg-rose-100 text-rose-700'
-                              : 'bg-[#FF9500]/16 text-[#C93400]'
+                            : payStatus.isAbandoned
+                              ? 'bg-slate-200/80 text-slate-700'
+                              : payStatus.isMpInCheckout
+                                ? 'bg-sky-100 text-sky-700'
+                                : payStatus.isRejected
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-[#FF9500]/16 text-[#C93400]'
                         }`}
                       >
                         {payStatus.isPaid ? (
@@ -1148,10 +1169,20 @@ export function MobilePwaRepartoView({
                             <CheckCircle2 className="w-3 h-3 shrink-0" />
                             <span>Pagado</span>
                           </>
+                        ) : payStatus.isAbandoned ? (
+                          <>
+                            <ShoppingCart className="w-3 h-3 shrink-0" />
+                            <span>Abandonó MP</span>
+                          </>
+                        ) : payStatus.isMpInCheckout ? (
+                          <>
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>En checkout MP</span>
+                          </>
                         ) : payStatus.isRejected ? (
                           <>
                             <AlertTriangle className="w-3 h-3 shrink-0" />
-                            <span>Rechazado</span>
+                            <span>{payStatus.isMercadoPagoWeb ? 'Rechazado MP' : 'Rechazado'}</span>
                           </>
                         ) : (
                           <>
@@ -1163,8 +1194,8 @@ export function MobilePwaRepartoView({
                     </div>
                   </div>
 
-                  {/* Agenda de Despacho (oculta en pedidos entregados o cancelados) */}
-                  {showDeliverySchedule && sched && (
+                  {/* Agenda de Despacho (oculta en pedidos entregados, cancelados o abandonados MP) */}
+                  {showDeliverySchedule && !payStatus.isAbandoned && sched && (
                     <div
                       className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl text-[11.5px] font-bold border ${
                         sched.isUrgent
@@ -1230,7 +1261,7 @@ export function MobilePwaRepartoView({
                         </div>
                       </div>
                       <div className="shrink-0">
-                        {renderPaymentMethodBadge(order.paymentMethod)}
+                        {renderPaymentMethodBadge(order.paymentMethod, order)}
                       </div>
                     </div>
 
@@ -1375,7 +1406,7 @@ export function MobilePwaRepartoView({
                         </div>
                       )}
 
-                      {order.status === 'en_preparacion' && (
+                      {isOrderOperational(order) && order.status === 'en_preparacion' && (
                         <button
                           type="button"
                           onClick={() => onUpdateOrderStatus(order.id, 'en_camino')}
@@ -1385,7 +1416,7 @@ export function MobilePwaRepartoView({
                           <span className="truncate">Despachar</span>
                         </button>
                       )}
-                      {order.status === 'en_camino' && (
+                      {isOrderOperational(order) && order.status === 'en_camino' && (
                         <button
                           type="button"
                           onClick={() => onUpdateOrderStatus(order.id, 'entregado')}
@@ -1395,7 +1426,7 @@ export function MobilePwaRepartoView({
                           <span className="truncate">Entregar</span>
                         </button>
                       )}
-                      {order.status === 'entregado' && (
+                      {(order.status === 'entregado' || !isOrderOperational(order)) && (
                         <button
                           type="button"
                           onClick={() => onSelectOrderModal(order)}

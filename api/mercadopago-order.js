@@ -282,6 +282,7 @@ export default async function handler(req, res) {
       const mpPayload = {
         type: 'online',
         processing_mode: 'manual',
+        expiration_time: String(body.expirationTime || 'PT30M'),
         total_amount: String(numericTotal),
         external_reference: String(externalReference || `PED-${Date.now()}`),
         description: String(description || `Pedido Patitas del Sur #${externalReference || ''}`).slice(0, 120),

@@ -47,7 +47,12 @@ function parseDateToIso(dateStr) {
 function getDeliveryInfo(order) {
   const statusCode = String(order.statusCode || order.status || '').toLowerCase();
   const isDelivered = statusCode.includes('entregado');
-  const isCancelled = statusCode.includes('cancelado');
+  const isCancelled =
+    statusCode.includes('cancelado') ||
+    statusCode.includes('abandonado') ||
+    statusCode.includes('rechazado') ||
+    Boolean(order.isMpAbandoned) ||
+    Boolean(order.isMpRejected);
 
   // Fecha actual local
   const now = new Date();
@@ -365,6 +370,8 @@ export default function CustomerOrdersTable({
                     {(() => {
                       const isDelivered = String(order.statusCode || order.status || '').toLowerCase().includes('entregado');
                       const isPaid = (String(order.paymentStatus || '').toLowerCase() === 'pagado') || isDelivered;
+                      const isMpAbandoned = Boolean(order.isMpAbandoned) || String(order.paymentStatus || '').toLowerCase() === 'abandonado';
+                      const isMpRejected = Boolean(order.isMpRejected) || String(order.paymentStatus || '').toLowerCase() === 'rechazado';
 
                       return (
                         <div className="space-y-0.5">
@@ -373,9 +380,19 @@ export default function CustomerOrdersTable({
                           </span>
                           {!isPaid && (
                             <div>
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200 shadow-2xs" title="Los puntos se sumarán a tu saldo cuando el pago sea aprobado">
-                                <Clock className="w-2.5 h-2.5 text-amber-600" /> Pago pendiente
-                              </span>
+                              {isMpAbandoned ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-md border border-slate-300 shadow-2xs" title="El checkout en Mercado Pago no se completó">
+                                  Pago no completado (MP)
+                                </span>
+                              ) : isMpRejected ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-200 shadow-2xs" title="El pago en Mercado Pago fue rechazado">
+                                  Pago rechazado (MP)
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200 shadow-2xs" title="Los puntos se sumarán a tu saldo cuando el pago sea aprobado">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600" /> Pago pendiente
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -388,7 +405,10 @@ export default function CustomerOrdersTable({
                       const isDelivered = String(order.statusCode || order.status || '').toLowerCase().includes('entregado');
                       const isShipped = String(order.statusCode || order.status || '').toLowerCase().includes('camino');
                       const isCancelled = String(order.statusCode || order.status || '').toLowerCase().includes('cancelado');
-                      const statusColor = isCancelled
+                      const isMpAbandoned = Boolean(order.isMpAbandoned) || String(order.statusCode || '').toLowerCase() === 'abandonado_mp';
+                      const statusColor = isMpAbandoned
+                        ? 'bg-slate-100 text-slate-600 border-slate-300 shadow-2xs'
+                        : isCancelled
                         ? 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
                         : isDelivered
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-300 shadow-2xs'

@@ -746,6 +746,20 @@ export default function CartDrawer({
             paymentStatus === 'approved' ||
             paymentStatus === 'processed';
 
+          const isRejectedLive =
+            !isPaidLive &&
+            (liveStatus === 'rejected' ||
+              liveStatus === 'failed' ||
+              paymentStatus === 'rejected' ||
+              paymentStatus === 'failed');
+
+          const isExpiredOrAbandonedLive =
+            !isPaidLive &&
+            !isRejectedLive &&
+            (liveStatus === 'expired' ||
+              liveDetail === 'expired' ||
+              liveStatus === 'canceled');
+
           if (isPaidLive) {
             const livePaymentId = firstPayment?.reference?.id || firstPayment?.id || null;
             const restoredOrder = {
@@ -805,6 +819,16 @@ export default function CartDrawer({
             window.dispatchEvent(new Event('patitas_orders_updated'));
             window.dispatchEvent(new Event('patitas_products_updated'));
             window.dispatchEvent(new Event('patitas_customers_updated'));
+          } else if ((isRejectedLive || isExpiredOrAbandonedLive) && savedPendingOrder.id) {
+            const nextStatus = isRejectedLive ? 'rechazado' : 'abandonado';
+            await updateOrderMercadoPagoData(savedPendingOrder.id, {
+              mpOrderId: savedPendingOrder.mpOrderId,
+              paymentStatus: nextStatus,
+            });
+            if (isExpiredOrAbandonedLive) {
+              localStorage.removeItem('patitas_pending_mp_order');
+            }
+            window.dispatchEvent(new Event('patitas_orders_updated'));
           }
         });
       }
@@ -837,6 +861,20 @@ export default function CartDrawer({
     window.history.replaceState(window.history.state || {}, '', window.location.pathname);
 
     if (isRejectedOrCanceled) {
+      if (targetOrderId) {
+        const failurePaymentStatus = mpStatus === 'rejected' ? 'rechazado' : 'abandonado';
+        updateOrderMercadoPagoData(targetOrderId, {
+          mpOrderId: cleanMpOrderId || undefined,
+          mpPaymentId: cleanPaymentId || undefined,
+          paymentStatus: failurePaymentStatus,
+        })
+          .then(() => {
+            window.dispatchEvent(new Event('patitas_orders_updated'));
+          })
+          .catch((syncErr) => {
+            console.warn('Error registrando abandono/rechazo MP en Supabase:', syncErr);
+          });
+      }
       if (savedPendingOrder) {
         if (savedPendingOrder.recipientName) setRecipientName(savedPendingOrder.recipientName);
         if (savedPendingOrder.phone) setPhone(formatChileanPhone(savedPendingOrder.phone));

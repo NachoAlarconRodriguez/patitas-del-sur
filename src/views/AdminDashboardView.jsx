@@ -82,6 +82,7 @@ import {
   Star,
   Save,
   ScanBarcode,
+  ShoppingCart,
 } from 'lucide-react';
 import { PRODUCTS } from '../data/mockData';
 import CustomDropdown from '../components/CustomDropdown';
@@ -148,6 +149,8 @@ import {
   createOrderInSupabase,
   deleteOrderFromSupabase,
   adjustStockForItemsInSupabase,
+  getMercadoPagoOrderById,
+  updateOrderMercadoPagoData,
 } from '../services/ordersService.js';
 import {
   fetchAllCustomersForAdmin,
@@ -225,6 +228,9 @@ import {
   getOrderPaymentBreakdown,
   calculateOrderPaymentFeeBreakdown,
   getOrderPaymentStatus,
+  isMercadoPagoWebOrder,
+  formatElapsedCheckoutAge,
+  isOrderOperational,
   getDynamicGreeting,
   getProductImage,
   resolveProductImage,
@@ -457,7 +463,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const todayOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       const iso = getChileIsoDateFromRecord(o);
       return iso === chileDateRanges.todayIso;
     });
@@ -672,6 +678,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
             status: o.status || 'en_preparacion',
             paymentMethod: o.payment_method || 'Tarjeta',
             paymentStatus: o.payment_status ? String(o.payment_status).trim().toLowerCase() : 'pendiente',
+            mercadopagoPreferenceId: o.mercadopago_preference_id || null,
+            mercadopagoPaymentId: o.mercadopago_payment_id || null,
             paymentBreakdown: o.payment_breakdown || o.paymentBreakdown || null,
             cashTendered: Number(o.cash_tendered ?? o.cashTendered ?? 0),
             cashChange: Number(o.cash_change ?? o.cashChange ?? 0),
@@ -1188,14 +1196,27 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [inventoryViewMode, setInventoryViewMode] = useState('list');
   const [financesPaymentMethodFilter, setFinancesPaymentMethodFilter] = useState('todos'); // 'todos' | 'Web' | 'Tarjeta' | 'Efectivo' | 'Transferencia'
 
-  // Resumen en tiempo real de pedidos con pago pendiente (especialmente entregados por cobrar)
+  const [verifyingMpOrderId, setVerifyingMpOrderId] = useState(null);
+  const [isSyncingAbandonedMp, setIsSyncingAbandonedMp] = useState(false);
+
+  // Resumen en tiempo real de pedidos con pago pendiente real (excluyendo abandonados/en checkout MP)
   const unpaidOrdersSummary = useMemo(() => {
     const unpaidActive = orders.filter(
-      (o) => o.status !== 'cancelado' && !getOrderPaymentStatus(o).isPaid
+      (o) => isOrderOperational(o) && !getOrderPaymentStatus(o).isPaid
     );
     const deliveredUnpaid = unpaidActive.filter((o) => o.status === 'entregado');
     const totalUnpaidAmount = unpaidActive.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
     const deliveredUnpaidAmount = deliveredUnpaid.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+    const abandonedMpOrders = orders.filter((o) => {
+      const p = getOrderPaymentStatus(o);
+      return p.isAbandoned || (p.isRejected && p.isMercadoPagoWeb);
+    });
+    const staleUncancelledMpOrders = abandonedMpOrders.filter((o) => o.status !== 'cancelado');
+    const inCheckoutMpOrders = orders.filter(
+      (o) => o.status !== 'cancelado' && getOrderPaymentStatus(o).isMpInCheckout
+    );
+
     return {
       unpaidActive,
       unpaidCount: unpaidActive.length,
@@ -1203,56 +1224,319 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
       deliveredUnpaidCount: deliveredUnpaid.length,
       totalUnpaidAmount,
       deliveredUnpaidAmount,
+      abandonedMpOrders,
+      abandonedMpCount: abandonedMpOrders.length,
+      staleUncancelledMpOrders,
+      staleUncancelledMpCount: staleUncancelledMpOrders.length,
+      inCheckoutMpOrders,
+      inCheckoutMpCount: inCheckoutMpOrders.length,
     };
   }, [orders]);
 
+  // Verificar un pedido de Mercado Pago directamente contra la API /v1/orders/{id} y sincronizar Supabase + stock
+  const handleVerifyMercadoPagoOrder = useCallback(
+    async (order, { silent = false, cancelIfTimedOutWithoutPayment = false } = {}) => {
+      if (!order?.id) return { outcome: 'skipped' };
+      const mpOrderId = order.mercadopagoPreferenceId || order.mercadopago_preference_id || null;
+      const payInfo = getOrderPaymentStatus(order);
+
+      if (!mpOrderId) {
+        if (cancelIfTimedOutWithoutPayment && payInfo.isAbandoned && order.status !== 'cancelado') {
+          await supabase
+            .from('orders')
+            .update({ payment_status: 'abandonado', status: 'cancelado' })
+            .eq('id', order.id);
+          if (Array.isArray(order.items) && order.items.length > 0) {
+            await adjustStockForItemsInSupabase(order.items, 1);
+          }
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(`Pedido ${order.id} marcado como abandonado en MP y stock devuelto a bodega.`);
+          }
+          return { outcome: 'abandoned_cancelled' };
+        }
+        if (!silent) {
+          showToast('Este pedido no tiene ID de orden de Mercado Pago registrado.', 'error');
+        }
+        return { outcome: 'no_mp_id' };
+      }
+
+      if (!silent) setVerifyingMpOrderId(order.id);
+      try {
+        const res = await getMercadoPagoOrderById(mpOrderId);
+        if (!res?.success || !res.mpOrder) {
+          if (!silent) {
+            showToast(res?.error?.message || 'No se pudo consultar el estado en Mercado Pago.', 'error');
+          }
+          return { outcome: 'error' };
+        }
+
+        const mpData = res.mpOrder;
+        const mpStatus = String(mpData.status || '').toLowerCase();
+        const mpStatusDetail = String(mpData.status_detail || '').toLowerCase();
+        const firstPayment = mpData.transactions?.payments?.[0] || null;
+        const firstPaymentStatus = String(firstPayment?.status || '').toLowerCase();
+        const livePaymentId = firstPayment?.reference?.id || firstPayment?.id || null;
+
+        const isPaidLive =
+          mpStatus === 'processed' ||
+          mpStatus === 'approved' ||
+          mpStatusDetail === 'accredited' ||
+          firstPaymentStatus === 'approved' ||
+          firstPaymentStatus === 'processed';
+
+        const isRejectedLive =
+          !isPaidLive &&
+          (mpStatus === 'rejected' ||
+            mpStatus === 'failed' ||
+            firstPaymentStatus === 'rejected' ||
+            firstPaymentStatus === 'failed');
+
+        const isExpiredOrCanceledLive =
+          !isPaidLive &&
+          !isRejectedLive &&
+          (mpStatus === 'expired' || mpStatusDetail === 'expired' || mpStatus === 'canceled');
+
+        const isTimedOutWithoutPayment =
+          !isPaidLive &&
+          !isRejectedLive &&
+          !isExpiredOrCanceledLive &&
+          !firstPayment &&
+          payInfo.isAbandoned;
+
+        if (isPaidLive) {
+          const wasPaidBefore = String(order.paymentStatus || '').toLowerCase() === 'pagado';
+          const wasCancelledBefore = order.status === 'cancelado';
+
+          await updateOrderMercadoPagoData(order.id, {
+            mpOrderId,
+            mpPaymentId: livePaymentId ? String(livePaymentId) : undefined,
+            paymentStatus: 'pagado',
+          });
+
+          if (wasCancelledBefore) {
+            await supabase
+              .from('orders')
+              .update({ status: 'en_preparacion' })
+              .eq('id', order.id);
+            if (Array.isArray(order.items) && order.items.length > 0) {
+              await adjustStockForItemsInSupabase(order.items, -1);
+            }
+          }
+
+          if (!wasPaidBefore && order.customerId) {
+            const pts = order.pointsEarned ?? Math.floor((Number(order.total) || 0) / 1000);
+            const amt = Number(order.total) || 0;
+            if (pts > 0 || amt > 0) {
+              await updateCustomerPointsAndSpent(order.customerId, pts, amt).catch(() => {});
+            }
+          }
+
+          if (selectedOrderModal?.id === order.id) {
+            setSelectedOrderModal((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    paymentStatus: 'pagado',
+                    mercadopagoPaymentId: livePaymentId ? String(livePaymentId) : prev.mercadopagoPaymentId,
+                    status: wasCancelledBefore ? 'en_preparacion' : prev.status,
+                  }
+                : prev
+            );
+          }
+
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(`✅ Pago confirmado en Mercado Pago para ${order.id}.`);
+          }
+          return { outcome: 'paid' };
+        }
+
+        if (isRejectedLive || isExpiredOrCanceledLive || (cancelIfTimedOutWithoutPayment && isTimedOutWithoutPayment)) {
+          const nextPaymentStatus = isRejectedLive ? 'rechazado' : 'abandonado';
+          const shouldCancelAndRestore = order.status !== 'cancelado';
+
+          const updatePayload = {
+            payment_status: nextPaymentStatus,
+            ...(livePaymentId ? { mercadopago_payment_id: String(livePaymentId) } : {}),
+            ...(shouldCancelAndRestore ? { status: 'cancelado' } : {}),
+          };
+
+          await supabase.from('orders').update(updatePayload).eq('id', order.id);
+
+          if (shouldCancelAndRestore && Array.isArray(order.items) && order.items.length > 0) {
+            await adjustStockForItemsInSupabase(order.items, 1);
+          }
+
+          if (selectedOrderModal?.id === order.id) {
+            setSelectedOrderModal((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    paymentStatus: nextPaymentStatus,
+                    status: shouldCancelAndRestore ? 'cancelado' : prev.status,
+                  }
+                : prev
+            );
+          }
+
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(
+              isRejectedLive
+                ? `Pago rechazado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
+                : `Checkout expirado/abandonado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
+            );
+          }
+          return { outcome: isRejectedLive ? 'rejected_cancelled' : 'abandoned_cancelled' };
+        }
+
+        // Sigue abierta en MP sin pagos registrados
+        if (isTimedOutWithoutPayment) {
+          await updateOrderMercadoPagoData(order.id, {
+            mpOrderId,
+            paymentStatus: 'abandonado',
+          });
+          if (selectedOrderModal?.id === order.id) {
+            setSelectedOrderModal((prev) => (prev ? { ...prev, paymentStatus: 'abandonado' } : prev));
+          }
+          if (!silent) {
+            await syncOrdersData();
+            showToast(
+              `Mercado Pago reporta orden sin pago (${mpStatus || 'created'}). Marcada como Abandonó en MP; puedes cancelar para devolver stock.`
+            );
+          }
+          return { outcome: 'still_open_abandoned' };
+        }
+
+        if (!silent) {
+          showToast(`Estado actual en Mercado Pago para ${order.id}: ${mpStatus || 'pendiente'} (sin pago confirmado aún).`);
+        }
+        return { outcome: 'pending' };
+      } catch (err) {
+        console.error('Error verificando orden en Mercado Pago:', err);
+        if (!silent) {
+          showToast('Error consultando Mercado Pago. Intenta nuevamente.', 'error');
+        }
+        return { outcome: 'error' };
+      } finally {
+        if (!silent) setVerifyingMpOrderId(null);
+      }
+    },
+    [selectedOrderModal, syncOrdersData, syncInventoryData, showToast]
+  );
+
+  // Sincronización masiva segura de pedidos MP abandonados que aún siguen sin cancelar (verifica en MP y devuelve stock)
+  const handleSyncAbandonedMpOrders = useCallback(async () => {
+    const targets = unpaidOrdersSummary.staleUncancelledMpOrders || [];
+    if (targets.length === 0) {
+      showToast('No hay checkouts abandonados de Mercado Pago pendientes de cierre.');
+      return;
+    }
+
+    setIsSyncingAbandonedMp(true);
+    let paidCount = 0;
+    let closedCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const ord of targets) {
+        const res = await handleVerifyMercadoPagoOrder(ord, {
+          silent: true,
+          cancelIfTimedOutWithoutPayment: true,
+        });
+        if (res.outcome === 'paid') paidCount += 1;
+        else if (res.outcome === 'abandoned_cancelled' || res.outcome === 'rejected_cancelled') closedCount += 1;
+        else if (res.outcome === 'error') errorCount += 1;
+      }
+
+      await Promise.all([syncOrdersData(), syncInventoryData()]);
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      window.dispatchEvent(new Event('patitas_products_updated'));
+
+      const parts = [];
+      if (paidCount > 0) parts.push(`${paidCount} pago${paidCount === 1 ? '' : 's'} confirmado${paidCount === 1 ? '' : 's'}`);
+      if (closedCount > 0) parts.push(`${closedCount} abandonado${closedCount === 1 ? '' : 's'} cerrado${closedCount === 1 ? '' : 's'} (stock devuelto)`);
+      if (errorCount > 0) parts.push(`${errorCount} con error de consulta`);
+
+      showToast(
+        parts.length > 0
+          ? `Sincronización MP: ${parts.join(' · ')}.`
+          : 'Sincronización con Mercado Pago completada sin cambios.'
+      );
+    } finally {
+      setIsSyncingAbandonedMp(false);
+    }
+  }, [unpaidOrdersSummary.staleUncancelledMpOrders, handleVerifyMercadoPagoOrder, syncOrdersData, syncInventoryData, showToast]);
+
   // Opciones de lista desplegable para filtros de pedidos (Estándar iOS)
   const orderDayFilterOptions = useMemo(() => {
-    const todayCount = orders.filter((o) => getChileIsoDateFromRecord(o) === chileDateRanges.todayIso).length;
+    const todayCount = orders.filter((o) => isOrderOperational(o) && getChileIsoDateFromRecord(o) === chileDateRanges.todayIso).length;
+    const activeTotalCount = orders.filter((o) => {
+      const p = getOrderPaymentStatus(o);
+      return !(p.isAbandoned || (p.isRejected && p.isMercadoPagoWeb));
+    }).length;
     return [
-      { value: 'todos', label: `Todos los días (${orders.length})` },
+      { value: 'todos', label: `Todos los días (${activeTotalCount})` },
       { value: 'hoy', label: `⚡ Solo Hoy (${todayCount})` },
     ];
   }, [orders, chileDateRanges.todayIso]);
 
   const orderStatusFilterOptions = useMemo(() => {
-    const prepCount = orders.filter((o) => o.status === 'en_preparacion').length;
-    const caminoCount = orders.filter((o) => o.status === 'en_camino').length;
+    const nonAbandonedCount = orders.filter((o) => {
+      const p = getOrderPaymentStatus(o);
+      return !(p.isAbandoned || (p.isRejected && p.isMercadoPagoWeb));
+    }).length;
+    const prepCount = orders.filter((o) => isOrderOperational(o) && o.status === 'en_preparacion').length;
+    const caminoCount = orders.filter((o) => isOrderOperational(o) && o.status === 'en_camino').length;
     const entregadoCount = orders.filter((o) => o.status === 'entregado').length;
     const canceladoCount = orders.filter((o) => o.status === 'cancelado').length;
     const porCobrarCount = unpaidOrdersSummary.unpaidCount;
+    const abandonedMpCount = unpaidOrdersSummary.abandonedMpCount;
     return [
-      { value: 'todos', label: `Todos los estados (${orders.length})` },
+      { value: 'todos', label: `Todos los estados (${nonAbandonedCount})` },
       { value: 'por_cobrar', label: `💸 Pago Pendiente (${porCobrarCount})` },
       { value: 'en_preparacion', label: `⏳ En Preparación (${prepCount})` },
       { value: 'en_camino', label: `🚚 En Camino (${caminoCount})` },
       { value: 'entregado', label: `✓ Entregados (${entregadoCount})` },
+      { value: 'abandonado_mp', label: `🛒 Abandonados MP (${abandonedMpCount})` },
       { value: 'cancelado', label: `✕ Cancelados (${canceladoCount})` },
     ];
-  }, [orders, unpaidOrdersSummary.unpaidCount]);
+  }, [orders, unpaidOrdersSummary.unpaidCount, unpaidOrdersSummary.abandonedMpCount]);
 
   // Lista de pedidos filtrados para vista PWA móvil y vista escritorio
   const filteredOrdersList = useMemo(() => {
+    const hasSearchQuery = Boolean(orderSearch.trim());
     return orders.filter((o) => {
       const matchQ =
-        !orderSearch ||
+        !hasSearchQuery ||
         o.id.toLowerCase().includes(orderSearch.toLowerCase()) ||
         o.customer.toLowerCase().includes(orderSearch.toLowerCase()) ||
         (o.petName && o.petName.toLowerCase().includes(orderSearch.toLowerCase())) ||
         (o.city && o.city.toLowerCase().includes(orderSearch.toLowerCase())) ||
         (o.address && o.address.toLowerCase().includes(orderSearch.toLowerCase()));
-      const isOrderPaid = getOrderPaymentStatus(o).isPaid;
+      const payInfo = getOrderPaymentStatus(o);
+      const isOrderPaid = payInfo.isPaid;
+      const isAbandonedOrFailedMp = payInfo.isAbandoned || (payInfo.isRejected && payInfo.isMercadoPagoWeb);
+      const operational = isOrderOperational(o);
+
       const matchS =
         orderStatusFilter === 'todos'
-          ? true
-          : orderStatusFilter === 'por_cobrar'
-            ? o.status !== 'cancelado' && !isOrderPaid
-            : o.status === orderStatusFilter;
+          ? hasSearchQuery ? true : !isAbandonedOrFailedMp
+          : orderStatusFilter === 'abandonado_mp'
+            ? isAbandonedOrFailedMp
+            : orderStatusFilter === 'por_cobrar'
+              ? operational && !isOrderPaid
+              : orderStatusFilter === 'en_preparacion'
+                ? operational && o.status === 'en_preparacion'
+                : orderStatusFilter === 'en_camino'
+                  ? operational && o.status === 'en_camino'
+                  : o.status === orderStatusFilter;
       const matchP =
         orderPaymentFilter === 'todos'
           ? true
           : orderPaymentFilter === 'pendiente'
-            ? o.status !== 'cancelado' && !isOrderPaid
+            ? operational && !isOrderPaid
             : orderPaymentFilter === 'entregado_pendiente'
               ? o.status === 'entregado' && !isOrderPaid
               : true;
@@ -2005,11 +2289,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   };
 
   const handleOpenRouteOptimizer = () => {
-    // Buscar pedidos en preparación o en camino para despacho
+    // Buscar pedidos operativos en preparación o en camino para despacho (excluye abandonados/en checkout MP)
     const activeOrders = orders.filter(
-      (o) => o.status === 'en_preparacion' || o.status === 'en_camino'
+      (o) => isOrderOperational(o) && (o.status === 'en_preparacion' || o.status === 'en_camino')
     );
-    const candidateOrders = activeOrders.length > 0 ? activeOrders : orders.filter((o) => o.status !== 'cancelado').slice(0, 8);
+    const candidateOrders = activeOrders.length > 0 ? activeOrders : orders.filter((o) => isOrderOperational(o)).slice(0, 8);
 
     if (candidateOrders.length === 0) {
       showToast('⚠️ No hay pedidos registrados para calcular una ruta de despacho.');
@@ -6390,17 +6674,17 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     return m.charAt(0).toUpperCase() + m.slice(1);
   }, []);
 
-  // Colecciones de pedidos no cancelados por período real en hora de Chile
+  // Colecciones de pedidos operativos por período real en hora de Chile (excluye cancelados y abandonados/en checkout MP)
   const yesterdayOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       return getChileIsoDateFromRecord(o) === chileDateRanges.yesterdayIso;
     });
   }, [orders, chileDateRanges.yesterdayIso]);
 
   const weekOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       const iso = getChileIsoDateFromRecord(o);
       return Boolean(iso && iso >= chileDateRanges.weekStartIso && iso <= chileDateRanges.todayIso);
     });
@@ -6408,7 +6692,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const prevWeekOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       const iso = getChileIsoDateFromRecord(o);
       return Boolean(iso && iso >= chileDateRanges.prevWeekStartIso && iso <= chileDateRanges.prevWeekEndIso);
     });
@@ -6416,7 +6700,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const currentMonthOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       const iso = getChileIsoDateFromRecord(o);
       return Boolean(iso && iso.slice(0, 7) === chileDateRanges.currentYM);
     });
@@ -6424,7 +6708,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
   const prevMonthOrders = useMemo(() => {
     return orders.filter((o) => {
-      if (o.status === 'cancelado') return false;
+      if (!isOrderOperational(o)) return false;
       const iso = getChileIsoDateFromRecord(o);
       return Boolean(iso && iso.slice(0, 7) === chileDateRanges.prevYM);
     });
@@ -6998,7 +7282,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   // =========================================================================
   // VIEW 2: FINSET BENTO ADMIN PORTAL WITH PILL SIDEBAR MENU
   // =========================================================================
-  const pendingOrdersCount = orders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length;
+  const pendingOrdersCount = orders.filter((o) => isOrderOperational(o) && (o.status === 'en_preparacion' || o.status === 'en_camino')).length;
 
   return (
     <div className="finset-admin h-dvh bg-[#F8FAFC] text-[#111827] flex font-sans antialiased overflow-hidden">
@@ -8941,13 +9225,13 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
               {/* FinSet Pure White Bento KPI Row (3 Cards - Solo Escritorio) */}
               {(() => {
                 const listedOrdersTotal = filteredOrdersList
-                  .filter((o) => o.status !== 'cancelado')
+                  .filter((o) => isOrderOperational(o))
                   .reduce((acc, o) => acc + (Number(o.total) || 0), 0);
                 const settledOrdersCount = filteredOrdersList.filter(
                   (o) => o.status === 'entregado' && getOrderPaymentStatus(o).isPaid
                 ).length;
                 const activeDispatchCount = filteredOrdersList.filter(
-                  (o) => o.status === 'en_preparacion' || o.status === 'en_camino'
+                  (o) => isOrderOperational(o) && (o.status === 'en_preparacion' || o.status === 'en_camino')
                 ).length;
                 const settledRatio =
                   filteredOrdersList.length > 0
@@ -9153,53 +9437,80 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                   </div>
                 </div>
 
-                {/* Banner de Cobros Pendientes & Píldoras de Filtro Rápido */}
-                {(unpaidOrdersSummary.unpaidCount > 0 || orderPaymentFilter !== 'todos' || orderStatusFilter === 'por_cobrar') && (
+                {/* Banner de Cobros Pendientes, Abandonados MP & Píldoras de Filtro Rápido */}
+                {(unpaidOrdersSummary.unpaidCount > 0 ||
+                  unpaidOrdersSummary.abandonedMpCount > 0 ||
+                  orderPaymentFilter !== 'todos' ||
+                  orderStatusFilter === 'por_cobrar' ||
+                  orderStatusFilter === 'abandonado_mp') && (
                   <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-[#111827]">
-                      <div className="w-7 h-7 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0">
-                        <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
-                      </div>
-                      <div className="text-xs leading-snug">
-                        <span className="font-bold text-[#111827]">
-                          {unpaidOrdersSummary.unpaidCount === 1
-                            ? '1 pedido con pago pendiente'
-                            : `${unpaidOrdersSummary.unpaidCount} pedidos con pago pendiente`}
-                        </span>
-                        <span className="text-slate-500 font-medium">
-                          {' '}· Total por cobrar:{' '}
-                          <strong className="font-mono font-bold text-[#111827]">
-                            {formatCLP(unpaidOrdersSummary.totalUnpaidAmount)}
-                          </strong>
-                        </span>
-                        {unpaidOrdersSummary.deliveredUnpaidCount > 0 && (
-                          <span className="inline-flex items-center gap-1 ml-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            {unpaidOrdersSummary.deliveredUnpaidCount} ya {unpaidOrdersSummary.deliveredUnpaidCount === 1 ? 'entregado' : 'entregados'} ({formatCLP(unpaidOrdersSummary.deliveredUnpaidAmount)})
+                    {unpaidOrdersSummary.unpaidCount > 0 ? (
+                      <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-[#111827]">
+                        <div className="w-7 h-7 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0">
+                          <Clock className="w-3.5 h-3.5 stroke-[2.5]" />
+                        </div>
+                        <div className="text-xs leading-snug">
+                          <span className="font-bold text-[#111827]">
+                            {unpaidOrdersSummary.unpaidCount === 1
+                              ? '1 pedido con pago pendiente'
+                              : `${unpaidOrdersSummary.unpaidCount} pedidos con pago pendiente`}
                           </span>
-                        )}
+                          <span className="text-slate-500 font-medium">
+                            {' '}· Total por cobrar:{' '}
+                            <strong className="font-mono font-bold text-[#111827]">
+                              {formatCLP(unpaidOrdersSummary.totalUnpaidAmount)}
+                            </strong>
+                          </span>
+                          {unpaidOrdersSummary.deliveredUnpaidCount > 0 && (
+                            <span className="inline-flex items-center gap-1 ml-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              {unpaidOrdersSummary.deliveredUnpaidCount} ya {unpaidOrdersSummary.deliveredUnpaidCount === 1 ? 'entregado' : 'entregados'} ({formatCLP(unpaidOrdersSummary.deliveredUnpaidAmount)})
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-[#F8FAFC] border border-[#EAECEF] text-[#111827]">
+                        <div className="w-7 h-7 rounded-xl bg-sky-50 border border-sky-200/80 flex items-center justify-center text-sky-600 shrink-0">
+                          <ShoppingCart className="w-3.5 h-3.5 stroke-[2.5]" />
+                        </div>
+                        <div className="text-xs leading-snug">
+                          <span className="font-bold text-[#111827]">
+                            {unpaidOrdersSummary.abandonedMpCount === 1
+                              ? '1 checkout abandonado en Mercado Pago'
+                              : `${unpaidOrdersSummary.abandonedMpCount} checkouts abandonados en Mercado Pago`}
+                          </span>
+                          {unpaidOrdersSummary.staleUncancelledMpCount > 0 && (
+                            <span className="text-slate-500 font-medium">
+                              {' '}· {unpaidOrdersSummary.staleUncancelledMpCount} sin cerrar aún (stock reservado)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
-                    {/* Píldoras de Filtro Rápido de Cobro */}
+                    {/* Píldoras de Filtro Rápido de Cobro & Abandonos MP */}
                     <div className="flex items-center gap-1.5 flex-wrap shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (orderPaymentFilter === 'pendiente') {
-                            setOrderPaymentFilter('todos');
-                            if (orderStatusFilter === 'por_cobrar') setOrderStatusFilter('todos');
-                          } else {
-                            setOrderPaymentFilter('pendiente');
-                          }
-                        }}
-                        className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 border ${orderPaymentFilter === 'pendiente' || orderStatusFilter === 'por_cobrar'
-                          ? 'bg-[#D97706] text-white border-[#D97706] shadow-2xs'
-                          : 'bg-white hover:bg-[#FAF8F4] text-slate-700 border-[#EAECEF]'
-                          }`}
-                      >
-                        <Clock className="w-3 h-3 stroke-[2.5]" />
-                        <span>Pendientes de pago ({unpaidOrdersSummary.unpaidCount})</span>
-                      </button>
+                      {(unpaidOrdersSummary.unpaidCount > 0 || orderPaymentFilter === 'pendiente' || orderStatusFilter === 'por_cobrar') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (orderPaymentFilter === 'pendiente' || orderStatusFilter === 'por_cobrar') {
+                              setOrderPaymentFilter('todos');
+                              if (orderStatusFilter === 'por_cobrar') setOrderStatusFilter('todos');
+                            } else {
+                              if (orderStatusFilter === 'abandonado_mp') setOrderStatusFilter('todos');
+                              setOrderPaymentFilter('pendiente');
+                            }
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 border ${orderPaymentFilter === 'pendiente' || orderStatusFilter === 'por_cobrar'
+                            ? 'bg-[#D97706] text-white border-[#D97706] shadow-2xs'
+                            : 'bg-white hover:bg-[#FAF8F4] text-slate-700 border-[#EAECEF]'
+                            }`}
+                        >
+                          <Clock className="w-3 h-3 stroke-[2.5]" />
+                          <span>Pendientes de pago ({unpaidOrdersSummary.unpaidCount})</span>
+                        </button>
+                      )}
 
                       {unpaidOrdersSummary.deliveredUnpaidCount > 0 && (
                         <button
@@ -9209,7 +9520,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               setOrderPaymentFilter('todos');
                             } else {
                               setOrderPaymentFilter('entregado_pendiente');
-                              if (orderStatusFilter === 'por_cobrar') setOrderStatusFilter('todos');
+                              if (orderStatusFilter === 'por_cobrar' || orderStatusFilter === 'abandonado_mp') {
+                                setOrderStatusFilter('todos');
+                              }
                             }
                           }}
                           className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 border ${orderPaymentFilter === 'entregado_pendiente'
@@ -9221,16 +9534,57 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                         </button>
                       )}
 
-                      {(orderPaymentFilter !== 'todos' || orderStatusFilter === 'por_cobrar') && (
+                      {(unpaidOrdersSummary.abandonedMpCount > 0 || orderStatusFilter === 'abandonado_mp') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (orderStatusFilter === 'abandonado_mp') {
+                              setOrderStatusFilter('todos');
+                            } else {
+                              setOrderPaymentFilter('todos');
+                              setOrderStatusFilter('abandonado_mp');
+                            }
+                          }}
+                          className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1.5 border ${orderStatusFilter === 'abandonado_mp'
+                            ? 'bg-slate-800 text-white border-slate-800 shadow-2xs'
+                            : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200'
+                            }`}
+                          title="Ver clientes que intentaron pagar por Mercado Pago y abandonaron el checkout"
+                        >
+                          <ShoppingCart className="w-3 h-3 stroke-[2.5]" />
+                          <span>Abandonados MP ({unpaidOrdersSummary.abandonedMpCount})</span>
+                        </button>
+                      )}
+
+                      {unpaidOrdersSummary.staleUncancelledMpCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={isSyncingAbandonedMp}
+                          onClick={handleSyncAbandonedMpOrders}
+                          className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-white hover:bg-sky-50 text-sky-700 border border-sky-200 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                          title="Consultar en vivo en Mercado Pago los checkouts abandonados aún abiertos y devolver stock si expiraron"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isSyncingAbandonedMp ? 'animate-spin' : ''}`} />
+                          <span>
+                            {isSyncingAbandonedMp
+                              ? 'Sincronizando MP...'
+                              : `Sincronizar MP (${unpaidOrdersSummary.staleUncancelledMpCount})`}
+                          </span>
+                        </button>
+                      )}
+
+                      {(orderPaymentFilter !== 'todos' || orderStatusFilter === 'por_cobrar' || orderStatusFilter === 'abandonado_mp') && (
                         <button
                           type="button"
                           onClick={() => {
                             setOrderPaymentFilter('todos');
-                            if (orderStatusFilter === 'por_cobrar') setOrderStatusFilter('todos');
+                            if (orderStatusFilter === 'por_cobrar' || orderStatusFilter === 'abandonado_mp') {
+                              setOrderStatusFilter('todos');
+                            }
                           }}
                           className="px-3 py-1.5 rounded-full text-[11px] font-semibold bg-[#F8FAFC] hover:bg-slate-100 text-slate-600 border border-[#EAECEF] transition-colors cursor-pointer"
                         >
-                          Mostrar todos
+                          Mostrar activos
                         </button>
                       )}
                     </div>
@@ -9294,17 +9648,34 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           </td>
                         </tr>
                       ) : (
-                        filteredOrdersList.map((order) => (
+                        filteredOrdersList.map((order) => {
+                          const payInfo = getOrderPaymentStatus(order);
+                          const isOrderPaid = payInfo.isPaid;
+                          const isAbandonedMp = payInfo.isAbandoned;
+                          const isMpInCheckout = payInfo.isMpInCheckout;
+                          const isRejectedPayment = payInfo.isRejected;
+                          const checkoutAgeText = formatElapsedCheckoutAge(payInfo.elapsedMinutes);
+
+                          return (
                           <tr
                             key={order.id}
                             onClick={() => setSelectedOrderModal(order)}
-                            className={`hover:bg-[#F8FAFC] transition-all cursor-pointer select-none ${selectedOrderModal?.id === order.id ? 'bg-[#FEF3C7]/50 border-l-4 border-l-[#D97706]' : ''
-                              }`}
+                            className={`hover:bg-[#F8FAFC] transition-all cursor-pointer select-none ${
+                              selectedOrderModal?.id === order.id
+                                ? 'bg-[#FEF3C7]/50 border-l-4 border-l-[#D97706]'
+                                : isAbandonedMp
+                                  ? 'bg-slate-50/75 opacity-85'
+                                  : ''
+                            }`}
                             title="Haz clic para ver el detalle del pedido y cliente en el panel derecho"
                           >
                             <td className="py-4 px-4 whitespace-nowrap">
                               <div className="font-mono font-bold text-[#D97706] text-xs whitespace-nowrap leading-none flex items-center gap-1.5">
-                                <span className="px-2.5 py-1 rounded-full bg-[#FEF3C7] border border-[#FDE68A]">
+                                <span className={`px-2.5 py-1 rounded-full border ${
+                                  isAbandonedMp
+                                    ? 'bg-slate-100 text-slate-600 border-slate-300'
+                                    : 'bg-[#FEF3C7] border-[#FDE68A]'
+                                }`}>
                                   {order.id}
                                 </span>
                                 {(orderBoletas[order.id] || order.invoiceFile) && (
@@ -9364,7 +9735,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                 <MapPin className="w-3 h-3 text-[#D97706] shrink-0" />
                                 <span>{order.city}</span>
                               </div>
-                              {order.status !== 'entregado' && order.status !== 'cancelado' && (() => {
+                              {order.status !== 'entregado' && order.status !== 'cancelado' && !isAbandonedMp && (() => {
                                 const sched = formatOrderScheduleSummary(order);
                                 return (
                                   <div
@@ -9390,15 +9761,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               })()}
                             </td>
                             <td className="py-4 px-4 whitespace-nowrap">
-                              <div className="font-extrabold text-[#111827] text-sm">
+                              <div className={`font-extrabold text-sm ${isAbandonedMp ? 'text-slate-500 line-through decoration-slate-300' : 'text-[#111827]'}`}>
                                 {formatCLP(order.total)}
                                 <span className="finset-suffix text-[11px] font-semibold text-slate-300 ml-0.5">.00</span>
                               </div>
                             </td>
                             <td className="py-4 px-3.5 whitespace-nowrap">
-                              {(() => {
-                                const isOrderPaid = getOrderPaymentStatus(order).isPaid;
-                                return (
+                              <div className="flex flex-col items-start gap-1">
+                                {isAbandonedMp ? (
+                                  <span
+                                    title={`Cliente intentó pagar por Mercado Pago${checkoutAgeText ? ` (${checkoutAgeText})` : ''} y abandonó el checkout sin completar el pago. Haz clic en la fila para verificar en MP o recuperar.`}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border bg-slate-100 text-slate-700 border-slate-300"
+                                  >
+                                    <ShoppingCart className="w-2.5 h-2.5 text-slate-500 shrink-0" />
+                                    <span>Abandonó en MP</span>
+                                  </span>
+                                ) : isMpInCheckout ? (
+                                  <span
+                                    title={`El cliente está completando el pago en Mercado Pago${checkoutAgeText ? ` (iniciado ${checkoutAgeText})` : ''}.`}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border bg-sky-50 text-sky-700 border-sky-200"
+                                  >
+                                    <Clock className="w-2.5 h-2.5 text-sky-600 shrink-0 animate-pulse" />
+                                    <span>En checkout MP</span>
+                                  </span>
+                                ) : isRejectedPayment ? (
+                                  <span
+                                    title="El intento de pago fue rechazado"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold border bg-rose-50 text-rose-700 border-rose-200"
+                                  >
+                                    <X className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                                    <span>{payInfo.isMercadoPagoWeb ? 'Rechazado en MP' : 'Pago rechazado'}</span>
+                                  </span>
+                                ) : (
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -9429,27 +9823,40 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                       </>
                                     )}
                                   </button>
-                                );
-                              })()}
+                                )}
+                                <div>{renderPaymentMethodBadge(order.paymentMethod, order)}</div>
+                              </div>
                             </td>
                             <td className="py-4 px-4 whitespace-nowrap">
                               <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${order.status === 'cancelado'
-                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                    : order.status === 'entregado'
-                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                      : order.status === 'en_camino'
-                                        ? 'bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]'
-                                        : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                    }`}
-                                >
-                                  {order.status === 'cancelado' && <X className="w-2.5 h-2.5 shrink-0" />}
-                                  {order.status === 'entregado' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
-                                  {order.status === 'en_camino' && <Truck className="w-2.5 h-2.5 shrink-0" />}
-                                  {order.status === 'en_preparacion' && <Clock className="w-2.5 h-2.5 shrink-0" />}
-                                  <span>{order.status.replace('_', ' ')}</span>
-                                </span>
+                                {isAbandonedMp && order.status !== 'cancelado' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                                    <ShoppingCart className="w-2.5 h-2.5 shrink-0" />
+                                    <span>Abandonó carrito</span>
+                                  </span>
+                                ) : isMpInCheckout && order.status !== 'cancelado' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                    <Clock className="w-2.5 h-2.5 shrink-0" />
+                                    <span>Esperando MP</span>
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold capitalize ${order.status === 'cancelado'
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                      : order.status === 'entregado'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : order.status === 'en_camino'
+                                          ? 'bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]'
+                                          : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      }`}
+                                  >
+                                    {order.status === 'cancelado' && <X className="w-2.5 h-2.5 shrink-0" />}
+                                    {order.status === 'entregado' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                    {order.status === 'en_camino' && <Truck className="w-2.5 h-2.5 shrink-0" />}
+                                    {order.status === 'en_preparacion' && <Clock className="w-2.5 h-2.5 shrink-0" />}
+                                    <span>{order.status.replace('_', ' ')}</span>
+                                  </span>
+                                )}
                                 {order.status === 'cancelado' && (
                                   <button
                                     type="button"
@@ -9464,6 +9871,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                   </button>
                                 )}
                               </div>
+                              {isAbandonedMp && order.status !== 'cancelado' && (
+                                <div className="text-[10px] text-amber-700 font-semibold mt-1">
+                                  Sin cerrar · stock reservado
+                                </div>
+                              )}
                               {order.status === 'entregado' && (
                                 <div
                                   className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-1"
@@ -9477,7 +9889,8 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                               )}
                             </td>
                           </tr>
-                        ))
+                          );
+                        })
                       )}
                     </tbody>
                   </table>
@@ -13068,7 +13481,7 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                                           {ord.time && <div className="text-[11px] text-slate-400">{ord.time}</div>}
                                         </td>
                                         <td className="py-3.5 px-4">
-                                          {renderPaymentMethodBadge(ord.paymentMethod)}
+                                          {renderPaymentMethodBadge(ord.paymentMethod, ord)}
                                         </td>
                                         <td className="py-3.5 px-4 tabular-nums text-slate-700">{formatCLP(orderNeto)}</td>
                                         <td className="py-3.5 px-4 tabular-nums font-semibold text-rose-600">+{formatCLP(orderIva)}</td>
@@ -14484,6 +14897,140 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
 
             {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Banner de Estado de Checkout Mercado Pago (Abandonado / En curso / Rechazado / Aprobado) */}
+              {(() => {
+                const mpPayInfo = getOrderPaymentStatus(selectedOrderModal);
+                if (!mpPayInfo.isMercadoPagoWeb && !mpPayInfo.isAbandoned) return null;
+
+                const mpPrefId = selectedOrderModal.mercadopagoPreferenceId || selectedOrderModal.mercadopago_preference_id;
+                const mpPayId = selectedOrderModal.mercadopagoPaymentId || selectedOrderModal.mercadopago_payment_id;
+                const ageStr = formatElapsedCheckoutAge(mpPayInfo.elapsedMinutes);
+                const modalPhoneDigits = getOrderCustomerPhoneDigits(selectedOrderModal);
+                const isVerifyingThis = verifyingMpOrderId === selectedOrderModal.id;
+
+                if (mpPayInfo.isPaid) {
+                  return (
+                    <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-200 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0">
+                          <CreditCard className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-[11px] text-sky-900 font-bold block">
+                            Pagado vía Mercado Pago Checkout Web
+                          </span>
+                          <div className="text-[10.5px] text-sky-700 font-mono truncate">
+                            {mpPayId ? `Pago #${mpPayId}` : 'Aprobado'}
+                            {mpPrefId ? ` · Orden ${mpPrefId}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                        Aprobado
+                      </span>
+                    </div>
+                  );
+                }
+
+                const isAbandoned = mpPayInfo.isAbandoned;
+                const isInCheckout = mpPayInfo.isMpInCheckout;
+                const isRejected = mpPayInfo.isRejected;
+
+                const boxStyles = isAbandoned
+                  ? 'bg-slate-100/90 border-slate-300 text-slate-900'
+                  : isInCheckout
+                    ? 'bg-sky-50 border-sky-200 text-sky-950'
+                    : 'bg-rose-50 border-rose-200 text-rose-950';
+
+                const iconStyles = isAbandoned
+                  ? 'bg-slate-700 text-white'
+                  : isInCheckout
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-rose-600 text-white';
+
+                return (
+                  <div className={`p-4 rounded-2xl border space-y-3 ${boxStyles}`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconStyles}`}>
+                        {isAbandoned ? (
+                          <ShoppingCart className="w-4 h-4" />
+                        ) : isInCheckout ? (
+                          <Clock className="w-4 h-4" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-xs font-extrabold">
+                            {isAbandoned
+                              ? 'Carrito abandonado en Mercado Pago'
+                              : isInCheckout
+                                ? 'Cliente en checkout de Mercado Pago'
+                                : 'Pago rechazado en Mercado Pago'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/80 border border-black/10">
+                            Mercado Pago Web
+                          </span>
+                        </div>
+                        <p className="text-[11px] opacity-85 mt-1 leading-relaxed">
+                          {isAbandoned
+                            ? `El cliente intentó pagar por Mercado Pago${ageStr ? ` (${ageStr})` : ''} y salió sin completar el pago. No despachar este pedido.${selectedOrderModal.status !== 'cancelado' ? ' El stock sigue reservado hasta cerrarlo.' : ' El stock ya fue devuelto a bodega.'}`
+                            : isInCheckout
+                              ? `El cliente fue redirigido a Mercado Pago${ageStr ? ` (${ageStr})` : ''}. Si no completa el pago en 30 min, pasará automáticamente a abandonado.`
+                              : `Mercado Pago rechazó el intento de pago.${selectedOrderModal.status !== 'cancelado' ? ' Verifica antes de preparar o cancelar.' : ' El stock fue devuelto a bodega.'}`}
+                        </p>
+                        {(mpPrefId || mpPayId) && (
+                          <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] font-mono opacity-80">
+                            {mpPrefId && <span className="bg-white/70 px-2 py-0.5 rounded-md border border-black/10">Orden MP: {mpPrefId}</span>}
+                            {mpPayId && <span className="bg-white/70 px-2 py-0.5 rounded-md border border-black/10">Pago MP: #{mpPayId}</span>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-black/10">
+                      {mpPrefId && (
+                        <button
+                          type="button"
+                          disabled={isVerifyingThis}
+                          onClick={() => handleVerifyMercadoPagoOrder(selectedOrderModal)}
+                          className="px-3 py-1.5 rounded-full bg-white hover:bg-sky-50 text-sky-800 border border-sky-300 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isVerifyingThis ? 'animate-spin' : ''}`} />
+                          <span>{isVerifyingThis ? 'Consultando MP...' : 'Verificar estado en MP'}</span>
+                        </button>
+                      )}
+
+                      {modalPhoneDigits && (isAbandoned || isRejected) && (
+                        <a
+                          href={`https://wa.me/${modalPhoneDigits}?text=${encodeURIComponent(
+                            `¡Hola ${selectedOrderModal.customer}! 👋 Te escribimos de Patitas del Sur. Vimos que intentaste completar tu pedido ${selectedOrderModal.id} por Mercado Pago pero el pago quedó pendiente. ¿Tuviste algún inconveniente? Si quieres te ayudamos a finalizarlo o podemos coordinar pago al recibir 🐾`
+                          )}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1.5 transition-colors"
+                        >
+                          <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>Recuperar por WhatsApp</span>
+                        </a>
+                      )}
+
+                      {selectedOrderModal.status !== 'cancelado' && (isAbandoned || isRejected) && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateOrderStatus(selectedOrderModal.id, 'cancelado')}
+                          className="px-3 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                          <span>Cancelar y liberar stock</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Badge de Pedido Cancelado */}
               {selectedOrderModal.status === 'cancelado' && (
                 <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/90 flex items-center justify-between">
@@ -14881,7 +15428,11 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                 const realProfit = dist.realProfit;
                 const profitMarginPercent = dist.profitMarginPercent;
 
-                const isPaid = getOrderPaymentStatus(selectedOrderModal).isPaid;
+                const modalPayInfo = getOrderPaymentStatus(selectedOrderModal);
+                const isPaid = modalPayInfo.isPaid;
+                const dropdownPaymentValue = isMercadoPagoWebOrder(selectedOrderModal)
+                  ? 'Mercado Pago'
+                  : normalizePaymentMethod(selectedOrderModal.paymentMethod);
 
                 return (
                   <div>
@@ -14889,29 +15440,39 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                       <span className="text-xs font-semibold text-slate-500">
                         Resumen financiero del pedido
                       </span>
-                      <span className={`text-[10px] font-medium ${selectedOrderModal.status === 'cancelado' ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
-                        {selectedOrderModal.status === 'cancelado' ? 'Pedido cancelado · Sin efecto en finanzas' : 'Rentabilidad neta calculada'}
+                      <span className={`text-[10px] font-medium ${selectedOrderModal.status === 'cancelado' || modalPayInfo.isAbandoned ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>
+                        {selectedOrderModal.status === 'cancelado'
+                          ? 'Pedido cancelado · Sin efecto en finanzas'
+                          : modalPayInfo.isAbandoned
+                            ? 'Abandonó en MP · Sin efecto en ventas'
+                            : 'Rentabilidad neta calculada'}
                       </span>
                     </div>
 
                     <div className="bg-white rounded-3xl border border-[#EAECEF] p-4 space-y-3 text-xs">
                       {/* Fila Minimalista de Método y Estado de Pago */}
-                      <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] font-semibold text-slate-500">Pago:</span>
-                          <div className="w-32">
+                          <div className="w-36">
                             <CustomDropdown
-                              value={normalizePaymentMethod(selectedOrderModal.paymentMethod)}
+                              value={dropdownPaymentValue}
                               options={[
-                                { value: 'Web', label: 'Web' },
-                                { value: 'Tarjeta', label: 'Tarjeta' },
+                                { value: 'Mercado Pago', label: 'Mercado Pago' },
+                                { value: 'Web', label: 'Botón Web' },
+                                { value: 'Tarjeta', label: 'Tarjeta POS' },
                                 { value: 'Efectivo', label: 'Efectivo' },
                                 { value: 'Transferencia', label: 'Transferencia' },
                               ]}
-                              onChange={(val) => handleUpdateOrderPaymentMethod(selectedOrderModal.id, val)}
+                              onChange={(val) =>
+                                handleUpdateOrderPaymentMethod(
+                                  selectedOrderModal.id,
+                                  val === 'Mercado Pago' ? 'Tarjeta Débito / Crédito (Mercado Pago)' : val
+                                )
+                              }
                               usePortal={true}
                               align="left"
-                              minMenuWidth={130}
+                              minMenuWidth={145}
                               buttonClassName="h-7 px-3 rounded-full bg-[#F8FAFC] hover:bg-slate-100 border border-[#EAECEF] text-[10px] font-semibold text-[#111827] flex items-center justify-between gap-1 w-full transition-colors"
                               popoverClassName="p-1 rounded-2xl shadow-xl border border-[#EAECEF]"
                             />
@@ -14923,16 +15484,38 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
                           onClick={() => {
                             handleUpdateOrderPaymentStatus(selectedOrderModal.id, isPaid ? 'pendiente' : 'pagado');
                           }}
-                          className={`text-[10px] font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer flex items-center gap-1.5 ${isPaid
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                            }`}
+                          className={`text-[10px] font-bold px-3 py-1.5 rounded-full border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                            isPaid
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              : modalPayInfo.isAbandoned
+                                ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                                : modalPayInfo.isMpInCheckout
+                                  ? 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100'
+                                  : modalPayInfo.isRejected
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                          }`}
                           title={isPaid ? 'Clic para cambiar a pendiente' : 'Clic para marcar como pagado'}
                         >
                           {isPaid ? (
                             <>
                               <Check className="w-3 h-3" />
                               <span>Pagado</span>
+                            </>
+                          ) : modalPayInfo.isAbandoned ? (
+                            <>
+                              <ShoppingCart className="w-3 h-3" />
+                              <span>Abandonó MP</span>
+                            </>
+                          ) : modalPayInfo.isMpInCheckout ? (
+                            <>
+                              <Clock className="w-3 h-3" />
+                              <span>En checkout MP</span>
+                            </>
+                          ) : modalPayInfo.isRejected ? (
+                            <>
+                              <X className="w-3 h-3" />
+                              <span>{modalPayInfo.isMercadoPagoWeb ? 'Rechazado MP' : 'Rechazado'}</span>
                             </>
                           ) : (
                             <>
@@ -24147,9 +24730,9 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
         >
           <div className="relative">
             <Truck className={`w-[22px] h-[22px] ${activeTab === 'pedidos' || activeTab === 'despachos' ? 'stroke-[2.4]' : 'stroke-[1.9]'}`} />
-            {orders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length > 0 && (
+            {pendingOrdersCount > 0 && (
               <span className="absolute -top-1.5 -right-3 min-w-[17px] h-[17px] px-1 rounded-full bg-[#FF3B30] text-white text-[10px] font-bold tabular-nums flex items-center justify-center ring-2 ring-white leading-none">
-                {orders.filter((o) => o.status === 'en_preparacion' || o.status === 'en_camino').length}
+                {pendingOrdersCount}
               </span>
             )}
           </div>

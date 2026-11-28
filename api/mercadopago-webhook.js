@@ -156,6 +156,7 @@ export default async function handler(req, res) {
     const mpStatusDetail = String(orderDetails.status_detail || '').toLowerCase();
 
     const firstPayment = orderDetails.transactions?.payments?.[0] || null;
+    const firstPaymentStatus = String(firstPayment?.status || '').toLowerCase();
     const mpPaymentId =
       firstPayment?.reference?.id ||
       firstPayment?.id ||
@@ -166,16 +167,35 @@ export default async function handler(req, res) {
       mpStatus === 'processed' ||
       mpStatus === 'approved' ||
       mpStatusDetail === 'accredited' ||
+      firstPaymentStatus === 'approved' ||
+      firstPaymentStatus === 'processed' ||
       action === 'order.processed';
 
-    const isCanceledOrFailed =
-      mpStatus === 'canceled' ||
-      mpStatus === 'failed' ||
-      mpStatus === 'rejected' ||
-      mpStatus === 'expired' ||
-      mpStatusDetail === 'expired';
+    const isRejectedOrFailed =
+      !isPaid &&
+      (mpStatus === 'failed' ||
+        mpStatus === 'rejected' ||
+        firstPaymentStatus === 'rejected' ||
+        firstPaymentStatus === 'failed');
 
-    const newPaymentStatus = isPaid ? 'pagado' : isCanceledOrFailed ? 'rechazado' : 'pendiente';
+    const isExpiredOrAbandoned =
+      !isPaid &&
+      !isRejectedOrFailed &&
+      (mpStatus === 'expired' ||
+        mpStatusDetail === 'expired' ||
+        mpStatus === 'canceled' ||
+        action === 'order.expired' ||
+        action === 'order.canceled');
+
+    const isCanceledOrFailed = isRejectedOrFailed || isExpiredOrAbandoned;
+
+    const newPaymentStatus = isPaid
+      ? 'pagado'
+      : isRejectedOrFailed
+        ? 'rechazado'
+        : isExpiredOrAbandoned
+          ? 'abandonado'
+          : 'pendiente';
 
     // Helper para ajustar stock de los ítems del pedido (+1 reintegra, -1 descuenta)
     const adjustOrderStock = async (orderId, direction) => {

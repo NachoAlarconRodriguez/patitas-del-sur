@@ -354,7 +354,7 @@ export function buildLiveSystemAlerts({ inventory = [], orders = [], posRegister
     });
   });
 
-  // B. Pagos rechazados recientes
+  // B. Pagos rechazados recientes (excluyendo checkouts abandonados/expirados y pedidos ya cancelados)
   const rejectedOrders = (orders || []).filter(
     (o) =>
       String(o.status || '').toLowerCase() !== 'cancelado' &&
@@ -377,11 +377,12 @@ export function buildLiveSystemAlerts({ inventory = [], orders = [], posRegister
     });
   });
 
-  // C. Pedidos entregados con pago pendiente (alerta consolidada accionable)
+  // C. Pedidos entregados con pago pendiente (alerta consolidada accionable, excluyendo abandonados MP)
   const deliveredUnpaid = (orders || []).filter(
     (o) =>
       o.status === 'entregado' &&
-      String(o.paymentStatus || '').toLowerCase() === 'pendiente'
+      String(o.paymentStatus || '').toLowerCase() === 'pendiente' &&
+      !String(o.paymentMethod || '').toLowerCase().includes('mercado pago')
   );
   if (deliveredUnpaid.length > 0) {
     const unpaidSum = deliveredUnpaid.reduce((acc, o) => acc + (Number(o.total) || 0), 0);
