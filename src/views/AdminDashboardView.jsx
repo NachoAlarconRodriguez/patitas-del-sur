@@ -1233,242 +1233,6 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
     };
   }, [orders]);
 
-  // Verificar un pedido de Mercado Pago directamente contra la API /v1/orders/{id} y sincronizar Supabase + stock
-  const handleVerifyMercadoPagoOrder = useCallback(
-    async (order, { silent = false, cancelIfTimedOutWithoutPayment = false } = {}) => {
-      if (!order?.id) return { outcome: 'skipped' };
-      const mpOrderId = order.mercadopagoPreferenceId || order.mercadopago_preference_id || null;
-      const payInfo = getOrderPaymentStatus(order);
-
-      if (!mpOrderId) {
-        if (cancelIfTimedOutWithoutPayment && payInfo.isAbandoned && order.status !== 'cancelado') {
-          await supabase
-            .from('orders')
-            .update({ payment_status: 'abandonado', status: 'cancelado' })
-            .eq('id', order.id);
-          if (Array.isArray(order.items) && order.items.length > 0) {
-            await adjustStockForItemsInSupabase(order.items, 1);
-          }
-          if (!silent) {
-            await Promise.all([syncOrdersData(), syncInventoryData()]);
-            showToast(`Pedido ${order.id} marcado como abandonado en MP y stock devuelto a bodega.`);
-          }
-          return { outcome: 'abandoned_cancelled' };
-        }
-        if (!silent) {
-          showToast('Este pedido no tiene ID de orden de Mercado Pago registrado.', 'error');
-        }
-        return { outcome: 'no_mp_id' };
-      }
-
-      if (!silent) setVerifyingMpOrderId(order.id);
-      try {
-        const res = await getMercadoPagoOrderById(mpOrderId);
-        if (!res?.success || !res.mpOrder) {
-          if (!silent) {
-            showToast(res?.error?.message || 'No se pudo consultar el estado en Mercado Pago.', 'error');
-          }
-          return { outcome: 'error' };
-        }
-
-        const mpData = res.mpOrder;
-        const mpStatus = String(mpData.status || '').toLowerCase();
-        const mpStatusDetail = String(mpData.status_detail || '').toLowerCase();
-        const firstPayment = mpData.transactions?.payments?.[0] || null;
-        const firstPaymentStatus = String(firstPayment?.status || '').toLowerCase();
-        const livePaymentId = firstPayment?.reference?.id || firstPayment?.id || null;
-
-        const isPaidLive =
-          mpStatus === 'processed' ||
-          mpStatus === 'approved' ||
-          mpStatusDetail === 'accredited' ||
-          firstPaymentStatus === 'approved' ||
-          firstPaymentStatus === 'processed';
-
-        const isRejectedLive =
-          !isPaidLive &&
-          (mpStatus === 'rejected' ||
-            mpStatus === 'failed' ||
-            firstPaymentStatus === 'rejected' ||
-            firstPaymentStatus === 'failed');
-
-        const isExpiredOrCanceledLive =
-          !isPaidLive &&
-          !isRejectedLive &&
-          (mpStatus === 'expired' || mpStatusDetail === 'expired' || mpStatus === 'canceled');
-
-        const isTimedOutWithoutPayment =
-          !isPaidLive &&
-          !isRejectedLive &&
-          !isExpiredOrCanceledLive &&
-          !firstPayment &&
-          payInfo.isAbandoned;
-
-        if (isPaidLive) {
-          const wasPaidBefore = String(order.paymentStatus || '').toLowerCase() === 'pagado';
-          const wasCancelledBefore = order.status === 'cancelado';
-
-          await updateOrderMercadoPagoData(order.id, {
-            mpOrderId,
-            mpPaymentId: livePaymentId ? String(livePaymentId) : undefined,
-            paymentStatus: 'pagado',
-          });
-
-          if (wasCancelledBefore) {
-            await supabase
-              .from('orders')
-              .update({ status: 'en_preparacion' })
-              .eq('id', order.id);
-            if (Array.isArray(order.items) && order.items.length > 0) {
-              await adjustStockForItemsInSupabase(order.items, -1);
-            }
-          }
-
-          if (!wasPaidBefore && order.customerId) {
-            const pts = order.pointsEarned ?? Math.floor((Number(order.total) || 0) / 1000);
-            const amt = Number(order.total) || 0;
-            if (pts > 0 || amt > 0) {
-              await updateCustomerPointsAndSpent(order.customerId, pts, amt).catch(() => {});
-            }
-          }
-
-          if (selectedOrderModal?.id === order.id) {
-            setSelectedOrderModal((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    paymentStatus: 'pagado',
-                    mercadopagoPaymentId: livePaymentId ? String(livePaymentId) : prev.mercadopagoPaymentId,
-                    status: wasCancelledBefore ? 'en_preparacion' : prev.status,
-                  }
-                : prev
-            );
-          }
-
-          if (!silent) {
-            await Promise.all([syncOrdersData(), syncInventoryData()]);
-            showToast(`✅ Pago confirmado en Mercado Pago para ${order.id}.`);
-          }
-          return { outcome: 'paid' };
-        }
-
-        if (isRejectedLive || isExpiredOrCanceledLive || (cancelIfTimedOutWithoutPayment && isTimedOutWithoutPayment)) {
-          const nextPaymentStatus = isRejectedLive ? 'rechazado' : 'abandonado';
-          const shouldCancelAndRestore = order.status !== 'cancelado';
-
-          const updatePayload = {
-            payment_status: nextPaymentStatus,
-            ...(livePaymentId ? { mercadopago_payment_id: String(livePaymentId) } : {}),
-            ...(shouldCancelAndRestore ? { status: 'cancelado' } : {}),
-          };
-
-          await supabase.from('orders').update(updatePayload).eq('id', order.id);
-
-          if (shouldCancelAndRestore && Array.isArray(order.items) && order.items.length > 0) {
-            await adjustStockForItemsInSupabase(order.items, 1);
-          }
-
-          if (selectedOrderModal?.id === order.id) {
-            setSelectedOrderModal((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    paymentStatus: nextPaymentStatus,
-                    status: shouldCancelAndRestore ? 'cancelado' : prev.status,
-                  }
-                : prev
-            );
-          }
-
-          if (!silent) {
-            await Promise.all([syncOrdersData(), syncInventoryData()]);
-            showToast(
-              isRejectedLive
-                ? `Pago rechazado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
-                : `Checkout expirado/abandonado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
-            );
-          }
-          return { outcome: isRejectedLive ? 'rejected_cancelled' : 'abandoned_cancelled' };
-        }
-
-        // Sigue abierta en MP sin pagos registrados
-        if (isTimedOutWithoutPayment) {
-          await updateOrderMercadoPagoData(order.id, {
-            mpOrderId,
-            paymentStatus: 'abandonado',
-          });
-          if (selectedOrderModal?.id === order.id) {
-            setSelectedOrderModal((prev) => (prev ? { ...prev, paymentStatus: 'abandonado' } : prev));
-          }
-          if (!silent) {
-            await syncOrdersData();
-            showToast(
-              `Mercado Pago reporta orden sin pago (${mpStatus || 'created'}). Marcada como Abandonó en MP; puedes cancelar para devolver stock.`
-            );
-          }
-          return { outcome: 'still_open_abandoned' };
-        }
-
-        if (!silent) {
-          showToast(`Estado actual en Mercado Pago para ${order.id}: ${mpStatus || 'pendiente'} (sin pago confirmado aún).`);
-        }
-        return { outcome: 'pending' };
-      } catch (err) {
-        console.error('Error verificando orden en Mercado Pago:', err);
-        if (!silent) {
-          showToast('Error consultando Mercado Pago. Intenta nuevamente.', 'error');
-        }
-        return { outcome: 'error' };
-      } finally {
-        if (!silent) setVerifyingMpOrderId(null);
-      }
-    },
-    [selectedOrderModal, syncOrdersData, syncInventoryData, showToast]
-  );
-
-  // Sincronización masiva segura de pedidos MP abandonados que aún siguen sin cancelar (verifica en MP y devuelve stock)
-  const handleSyncAbandonedMpOrders = useCallback(async () => {
-    const targets = unpaidOrdersSummary.staleUncancelledMpOrders || [];
-    if (targets.length === 0) {
-      showToast('No hay checkouts abandonados de Mercado Pago pendientes de cierre.');
-      return;
-    }
-
-    setIsSyncingAbandonedMp(true);
-    let paidCount = 0;
-    let closedCount = 0;
-    let errorCount = 0;
-
-    try {
-      for (const ord of targets) {
-        const res = await handleVerifyMercadoPagoOrder(ord, {
-          silent: true,
-          cancelIfTimedOutWithoutPayment: true,
-        });
-        if (res.outcome === 'paid') paidCount += 1;
-        else if (res.outcome === 'abandoned_cancelled' || res.outcome === 'rejected_cancelled') closedCount += 1;
-        else if (res.outcome === 'error') errorCount += 1;
-      }
-
-      await Promise.all([syncOrdersData(), syncInventoryData()]);
-      window.dispatchEvent(new Event('patitas_orders_updated'));
-      window.dispatchEvent(new Event('patitas_products_updated'));
-
-      const parts = [];
-      if (paidCount > 0) parts.push(`${paidCount} pago${paidCount === 1 ? '' : 's'} confirmado${paidCount === 1 ? '' : 's'}`);
-      if (closedCount > 0) parts.push(`${closedCount} abandonado${closedCount === 1 ? '' : 's'} cerrado${closedCount === 1 ? '' : 's'} (stock devuelto)`);
-      if (errorCount > 0) parts.push(`${errorCount} con error de consulta`);
-
-      showToast(
-        parts.length > 0
-          ? `Sincronización MP: ${parts.join(' · ')}.`
-          : 'Sincronización con Mercado Pago completada sin cambios.'
-      );
-    } finally {
-      setIsSyncingAbandonedMp(false);
-    }
-  }, [unpaidOrdersSummary.staleUncancelledMpOrders, handleVerifyMercadoPagoOrder, syncOrdersData, syncInventoryData, showToast]);
-
   // Opciones de lista desplegable para filtros de pedidos (Estándar iOS)
   const orderDayFilterOptions = useMemo(() => {
     const todayCount = orders.filter((o) => isOrderOperational(o) && getChileIsoDateFromRecord(o) === chileDateRanges.todayIso).length;
@@ -1872,6 +1636,238 @@ export default function AdminDashboardView({ user, onSwitchRole, onLogout }) {
   const [selectedOrderModal, setSelectedOrderModal] = useState(null);
   const [paymentDeliveryConfirmModal, setPaymentDeliveryConfirmModal] = useState(null); // { order, paymentMethod: 'Transferencia' | 'Efectivo' | 'Tarjeta' }
   const [cancelOrderConfirmModal, setCancelOrderConfirmModal] = useState(null); // order object to cancel
+
+  // Verificar un pedido de Mercado Pago directamente contra la API /v1/orders/{id} y sincronizar Supabase + stock
+  const handleVerifyMercadoPagoOrder = useCallback(
+    async (order, { silent = false, cancelIfTimedOutWithoutPayment = false } = {}) => {
+      if (!order?.id) return { outcome: 'skipped' };
+      const mpOrderId = order.mercadopagoPreferenceId || order.mercadopago_preference_id || null;
+      const payInfo = getOrderPaymentStatus(order);
+
+      if (!mpOrderId) {
+        if (cancelIfTimedOutWithoutPayment && payInfo.isAbandoned && order.status !== 'cancelado') {
+          await supabase
+            .from('orders')
+            .update({ payment_status: 'abandonado', status: 'cancelado' })
+            .eq('id', order.id);
+          if (Array.isArray(order.items) && order.items.length > 0) {
+            await adjustStockForItemsInSupabase(order.items, 1);
+          }
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(`Pedido ${order.id} marcado como abandonado en MP y stock devuelto a bodega.`);
+          }
+          return { outcome: 'abandoned_cancelled' };
+        }
+        if (!silent) {
+          showToast('Este pedido no tiene ID de orden de Mercado Pago registrado.', 'error');
+        }
+        return { outcome: 'no_mp_id' };
+      }
+
+      if (!silent) setVerifyingMpOrderId(order.id);
+      try {
+        const res = await getMercadoPagoOrderById(mpOrderId);
+        if (!res?.success || !res.mpOrder) {
+          if (!silent) {
+            showToast(res?.error?.message || 'No se pudo consultar el estado en Mercado Pago.', 'error');
+          }
+          return { outcome: 'error' };
+        }
+
+        const mpData = res.mpOrder;
+        const mpStatus = String(mpData.status || '').toLowerCase();
+        const mpStatusDetail = String(mpData.status_detail || '').toLowerCase();
+        const firstPayment = mpData.transactions?.payments?.[0] || null;
+        const firstPaymentStatus = String(firstPayment?.status || '').toLowerCase();
+        const livePaymentId = firstPayment?.reference?.id || firstPayment?.id || null;
+
+        const isPaidLive =
+          mpStatus === 'processed' ||
+          mpStatus === 'approved' ||
+          mpStatusDetail === 'accredited' ||
+          firstPaymentStatus === 'approved' ||
+          firstPaymentStatus === 'processed';
+
+        const isRejectedLive =
+          !isPaidLive &&
+          (mpStatus === 'rejected' ||
+            mpStatus === 'failed' ||
+            firstPaymentStatus === 'rejected' ||
+            firstPaymentStatus === 'failed');
+
+        const isExpiredOrCanceledLive =
+          !isPaidLive &&
+          !isRejectedLive &&
+          (mpStatus === 'expired' || mpStatusDetail === 'expired' || mpStatus === 'canceled');
+
+        const isTimedOutWithoutPayment =
+          !isPaidLive &&
+          !isRejectedLive &&
+          !isExpiredOrCanceledLive &&
+          !firstPayment &&
+          payInfo.isAbandoned;
+
+        if (isPaidLive) {
+          const wasPaidBefore = String(order.paymentStatus || '').toLowerCase() === 'pagado';
+          const wasCancelledBefore = order.status === 'cancelado';
+
+          await updateOrderMercadoPagoData(order.id, {
+            mpOrderId,
+            mpPaymentId: livePaymentId ? String(livePaymentId) : undefined,
+            paymentStatus: 'pagado',
+          });
+
+          if (wasCancelledBefore) {
+            await supabase
+              .from('orders')
+              .update({ status: 'en_preparacion' })
+              .eq('id', order.id);
+            if (Array.isArray(order.items) && order.items.length > 0) {
+              await adjustStockForItemsInSupabase(order.items, -1);
+            }
+          }
+
+          if (!wasPaidBefore && order.customerId) {
+            const pts = order.pointsEarned ?? Math.floor((Number(order.total) || 0) / 1000);
+            const amt = Number(order.total) || 0;
+            if (pts > 0 || amt > 0) {
+              await updateCustomerPointsAndSpent(order.customerId, pts, amt).catch(() => {});
+            }
+          }
+
+          setSelectedOrderModal((prev) =>
+            prev?.id === order.id
+              ? {
+                  ...prev,
+                  paymentStatus: 'pagado',
+                  mercadopagoPaymentId: livePaymentId ? String(livePaymentId) : prev.mercadopagoPaymentId,
+                  status: wasCancelledBefore ? 'en_preparacion' : prev.status,
+                }
+              : prev
+          );
+
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(`✅ Pago confirmado en Mercado Pago para ${order.id}.`);
+          }
+          return { outcome: 'paid' };
+        }
+
+        if (isRejectedLive || isExpiredOrCanceledLive || (cancelIfTimedOutWithoutPayment && isTimedOutWithoutPayment)) {
+          const nextPaymentStatus = isRejectedLive ? 'rechazado' : 'abandonado';
+          const shouldCancelAndRestore = order.status !== 'cancelado';
+
+          const updatePayload = {
+            payment_status: nextPaymentStatus,
+            ...(livePaymentId ? { mercadopago_payment_id: String(livePaymentId) } : {}),
+            ...(shouldCancelAndRestore ? { status: 'cancelado' } : {}),
+          };
+
+          await supabase.from('orders').update(updatePayload).eq('id', order.id);
+
+          if (shouldCancelAndRestore && Array.isArray(order.items) && order.items.length > 0) {
+            await adjustStockForItemsInSupabase(order.items, 1);
+          }
+
+          setSelectedOrderModal((prev) =>
+            prev?.id === order.id
+              ? {
+                  ...prev,
+                  paymentStatus: nextPaymentStatus,
+                  status: shouldCancelAndRestore ? 'cancelado' : prev.status,
+                }
+              : prev
+          );
+
+          if (!silent) {
+            await Promise.all([syncOrdersData(), syncInventoryData()]);
+            showToast(
+              isRejectedLive
+                ? `Pago rechazado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
+                : `Checkout expirado/abandonado en MP (${order.id}).${shouldCancelAndRestore ? ' Pedido cancelado y stock devuelto.' : ''}`
+            );
+          }
+          return { outcome: isRejectedLive ? 'rejected_cancelled' : 'abandoned_cancelled' };
+        }
+
+        // Sigue abierta en MP sin pagos registrados
+        if (isTimedOutWithoutPayment) {
+          await updateOrderMercadoPagoData(order.id, {
+            mpOrderId,
+            paymentStatus: 'abandonado',
+          });
+          setSelectedOrderModal((prev) =>
+            prev?.id === order.id ? { ...prev, paymentStatus: 'abandonado' } : prev
+          );
+          if (!silent) {
+            await syncOrdersData();
+            showToast(
+              `Mercado Pago reporta orden sin pago (${mpStatus || 'created'}). Marcada como Abandonó en MP; puedes cancelar para devolver stock.`
+            );
+          }
+          return { outcome: 'still_open_abandoned' };
+        }
+
+        if (!silent) {
+          showToast(`Estado actual en Mercado Pago para ${order.id}: ${mpStatus || 'pendiente'} (sin pago confirmado aún).`);
+        }
+        return { outcome: 'pending' };
+      } catch (err) {
+        console.error('Error verificando orden en Mercado Pago:', err);
+        if (!silent) {
+          showToast('Error consultando Mercado Pago. Intenta nuevamente.', 'error');
+        }
+        return { outcome: 'error' };
+      } finally {
+        if (!silent) setVerifyingMpOrderId(null);
+      }
+    },
+    [syncOrdersData, syncInventoryData, showToast]
+  );
+
+  // Sincronización masiva segura de pedidos MP abandonados que aún siguen sin cancelar (verifica en MP y devuelve stock)
+  const handleSyncAbandonedMpOrders = useCallback(async () => {
+    const targets = unpaidOrdersSummary.staleUncancelledMpOrders || [];
+    if (targets.length === 0) {
+      showToast('No hay checkouts abandonados de Mercado Pago pendientes de cierre.');
+      return;
+    }
+
+    setIsSyncingAbandonedMp(true);
+    let paidCount = 0;
+    let closedCount = 0;
+    let errorCount = 0;
+
+    try {
+      for (const ord of targets) {
+        const res = await handleVerifyMercadoPagoOrder(ord, {
+          silent: true,
+          cancelIfTimedOutWithoutPayment: true,
+        });
+        if (res.outcome === 'paid') paidCount += 1;
+        else if (res.outcome === 'abandoned_cancelled' || res.outcome === 'rejected_cancelled') closedCount += 1;
+        else if (res.outcome === 'error') errorCount += 1;
+      }
+
+      await Promise.all([syncOrdersData(), syncInventoryData()]);
+      window.dispatchEvent(new Event('patitas_orders_updated'));
+      window.dispatchEvent(new Event('patitas_products_updated'));
+
+      const parts = [];
+      if (paidCount > 0) parts.push(`${paidCount} pago${paidCount === 1 ? '' : 's'} confirmado${paidCount === 1 ? '' : 's'}`);
+      if (closedCount > 0) parts.push(`${closedCount} abandonado${closedCount === 1 ? '' : 's'} cerrado${closedCount === 1 ? '' : 's'} (stock devuelto)`);
+      if (errorCount > 0) parts.push(`${errorCount} con error de consulta`);
+
+      showToast(
+        parts.length > 0
+          ? `Sincronización MP: ${parts.join(' · ')}.`
+          : 'Sincronización con Mercado Pago completada sin cambios.'
+      );
+    } finally {
+      setIsSyncingAbandonedMp(false);
+    }
+  }, [unpaidOrdersSummary.staleUncancelledMpOrders, handleVerifyMercadoPagoOrder, syncOrdersData, syncInventoryData, showToast]);
 
   // Abrir automáticamente el pedido al llegar desde una notificación push
   useEffect(() => {
